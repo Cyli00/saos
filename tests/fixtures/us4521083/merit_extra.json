@@ -1,0 +1,7 @@
+[
+ {"type": "EFLY", "int1": 1, "int2": 16, "target": 10.0, "weight": 10},
+ {"type": "CTGT", "int1": 0, "target": 13.2, "weight": 10},
+ {"type": "MNCG", "int1": 1, "int2": 16, "target": 0.6, "weight": 10},
+ {"type": "MNEG", "int1": 1, "int2": 16, "data": [0, 1], "target": 0.4, "weight": 10},
+ {"type": "MNCA", "int1": 1, "int2": 15, "target": 0.05, "weight": 10}
+]

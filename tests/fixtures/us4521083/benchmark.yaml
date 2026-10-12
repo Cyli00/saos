@@ -1,0 +1,21 @@
+# US 4521083 实施例 1（Olympus，20×/0.4 长工作距离平场物镜）的基准规格。
+# 除注明“基准专用”的条目外，其余取第 1 步文档的格式默认值，用来检验这些默认值。
+spec_version: 1
+correction_class: plan_achromat
+magnification: {value: 20, source: assumption, basis: "专利 β = -20×；按 f = 10 mm、参考筒镜 200 mm 缩放"}
+na: {value: 0.4, source: user, basis: "专利实施例 1 表头"}
+tube_lens_focal_length: 200
+objective_field_number: {value: 27, source: user, basis: "专利：flat image surface ... up to the field number of 27"}
+receiver: visual
+cover_glass: null   # 基准专用：专利未提盖玻片，按无盖玻片（反射/工业用途）处理
+limits:
+  magnification_tolerance: 0.05
+  working_distance_min: {value: 12.0, basis: "基准专用：专利 WD = 1.334f 是顶点距离（13.35 mm）；按 ISO 10934 计入第 1 面边缘凸出 1.12 mm 后，机械工作距离 12.23 mm"}
+  optical_length_max: {value: 55, basis: "基准专用：专利物面到最后一面实测 47.6 mm（f = 10），格式默认的 45 mm 对长工作距离物镜不够"}
+  max_clear_diameter: 16
+  glass: {catalogs: [OHARA, SCHOTT, HOYA, SUMITA], allowed_status: [Standard, Preferred, Obsolete]}   # 基准专用：1982 年的设计用了已停产玻璃
+  min_center_thickness_glass: 0.5
+  min_edge_thickness_glass: 0.3
+  min_air_gap: {value: 0, scale: 0.01}
+targets:
+  lateral_color: {threshold_um: 100, basis: "基准专用：复现值 86 µm（像高 13.5 mm 的 0.64%）。用专利自带成像透镜验证，倍率色差未被补偿（间隔 20–250 mm 时为 134–349 µm），说明该物镜本身就有这一残余。格式默认值（艾里斑半径 16.7 µm）对这类设计偏严，待更多实施例标定"}

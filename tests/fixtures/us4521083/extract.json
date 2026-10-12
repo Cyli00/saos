@@ -1,0 +1,48 @@
+{
+  "patent": "US 4521083 A",
+  "embodiment_1": {
+    "header": {"f": 1, "NA": 0.4, "WD": 1.334, "beta": "-20X", "other": {"f56": -12.99, "r1/(n1-1)": -2.936}},
+    "surfaces": [
+      {"i": 1, "r": -1.740, "d": 0.1668, "n": 1.5927, "nu": 35.29},
+      {"i": 2, "r": -1.134, "d": 0.0111},
+      {"i": 3, "r": -22.781, "d": 0.2446, "n": 1.4970, "nu": 81.61},
+      {"i": 4, "r": -1.639, "d": 0.0167},
+      {"i": 5, "r": 1.442, "d": 0.5449, "n": 1.4970, "nu": 81.61},
+      {"i": 6, "r": -1.277, "d": 0.2113, "n": 1.6968, "nu": 56.49},
+      {"i": 7, "r": -2.075, "d": 0.0111},
+      {"i": 8, "r": 0.790, "d": 0.4337, "n": 1.4970, "nu": 81.61},
+      {"i": 9, "r": -2.582, "d": 0.1001, "n": 1.71736, "nu": 29.51},
+      {"i": 10, "r": 0.500, "d": 0.4003},
+      {"i": 11, "r": -0.505, "d": 0.1001, "n": 1.68893, "nu": 31.08},
+      {"i": 12, "r": 19.856, "d": 0.3558, "n": 1.497, "nu": 81.61},
+      {"i": 13, "r": -0.650, "d": 0.1101},
+      {"i": 14, "r": 1.180, "d": 0.2780, "n": 1.78472, "nu": 25.71},
+      {"i": 15, "r": -24.911, "d": 0.4448, "n": 1.53172, "nu": 48.90},
+      {"i": 16, "r": 0.809, "d": null}
+    ]
+  },
+  "imaging_lens": {
+    "applies_to": "Therefore, they are to be used in combination with an imaging lens system which has, for example, a lens configuration as shown in FIG. 5 and numerical data as shown below. The numerical data of the imaging lens system shown in the above represents the values when the focal length f of the lens system as a whole of the microscope objective according to Embodiment 1 is regarded as f=1.",
+    "surfaces": [
+      {"i": 17, "r": 3.282, "d": 0.4447, "n": 1.4875, "nu": 70.15},
+      {"i": 18, "r": -12.536, "d": 0.2223},
+      {"i": 19, "r": -6.394, "d": 0.2223, "n": 1.7400, "nu": 28.29},
+      {"i": 20, "r": -13.591, "d": 1.6674},
+      {"i": 21, "r": 4.885, "d": 0.2001, "n": 1.4875, "nu": 70.15},
+      {"i": 22, "r": 2.184, "d": null}
+    ]
+  },
+  "quotes": {
+    "aperture_stop": null,
+    "working_distance": {"page": "6-7", "text": "The microscope objective according to Embodiment 1 comprises ten lens elements and has a working distance of 12 mm and flat image surface over a wide field up to the field number of 27."},
+    "field_number": {"page": "6-7", "text": "The microscope objective according to Embodiment 1 comprises ten lens elements and has a working distance of 12 mm and flat image surface over a wide field up to the field number of 27."},
+    "wavelength": null,
+    "objective_to_imaging_lens_distance": null
+  },
+  "doubts": [
+    "面 5（n3 所在行，d5 = 0.5449）的 ν：PDF 第 6 页 Embodiment 1 表印为 ν4 = 81.61（标号疑似误印，该表中 ν4 同时出现在 n4 行）；PDF 第 7 页 claim 3 表同一行印为 ν3 = 81.61。两种读法：ν3 / ν4。数值两处均为 81.61，JSON 取 81.61。",
+    "面 1 的 r1：文字层 OCR 为 'r = -2.740'，页面图像（400 dpi 裁切）为 r1 = -1.740。两种读法：-1.740 / -2.740。JSON 取图像读数 -1.740。",
+    "面 20 的 d20（成像透镜，PDF 第 6 页）：页面图像为 d20 = 1.6674；文字层 OCR 为 'd20 at .6674'（首位数字缺失）。两种读法：1.6674 / 0.6674。JSON 取图像读数 1.6674。",
+    "[未纳入本 JSON 的 Embodiment 2] 表内标号重复：r7 出现两次（-2.0670 与 -4.7178），d6 出现两次（0.4378 与 0.1334），n4 出现两次（1.497 与 1.7725），ν4 出现两次（81.61 与 49.66）；印刷的 r 值共 17 个，而正文定义为 r1 至 r16。PDF 第 6 页与第 7 页 claim 5 表标号相同。未推断其面号，留待人工核对。"
+  ]
+}
