@@ -1,0 +1,158 @@
+{
+  "schema": 2,
+  "source": {
+    "patent": "US 12493165 B2",
+    "assignee": "Evident Corporation",
+    "priority_date": "2021-12-14",
+    "url": "https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/12493165"
+  },
+  "embodiment": "Objective Lens 4 (Fourth Example)",
+  "units": "mm",
+  "order": "object_to_image",
+  "wavelength": "d",
+  "header": {
+    "f": 45,
+    "NA": 0.13,
+    "WD": 16.31,
+    "beta": 4,
+    "field_number": 26.5,
+    "image_height": null,
+    "tube_lens_f": 180,
+    "other": {
+      "TL": 50.011,
+      "L": 33.701,
+      "d1": 0.3,
+      "d2": 12.552,
+      "L12": 21.342,
+      "fG1": 21.547,
+      "fG2": -11.001,
+      "fG3": 21.071,
+      "fU21": -36.799,
+      "fU22": -16.932,
+      "R212": 8.0645,
+      "R21c": -17.3049,
+      "d_s11_to_tube_lens": 110.0,
+      "image_height_quoted_mm_at_70pct": 9.27,
+      "correction_statement": "标题 'INFINITY-CORRECTED MICROSCOPE OBJECTIVE' (p.1); 'the aberrations are favorably corrected in a wide field of view' (p.29)",
+      "tube_lens_quote": "'Note that the focal length of the tube lens 10 is 180 mm.' (p.28)",
+      "d_s11_quote": "'Surface spacing d11 represents a distance (110 mm) on the optical axis between the surface represented by the surface number s11 and the tube lens.' (p.27); 'the distance ... is 110 mm' (p.28)"
+    }
+  },
+  "cover_glass": null,
+  "claimed_class": null,
+  "surfaces": [
+    {
+      "i": 2,
+      "r": 26.3865,
+      "d": 1.533,
+      "n": 1.883,
+      "nu": 40.76,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 3,
+      "r": -66.3467,
+      "d": 0.3,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 4,
+      "r": 11.8701,
+      "d": 5.159,
+      "n": 1.43875,
+      "nu": 94.66,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 5,
+      "r": -17.3049,
+      "d": 3.331,
+      "n": 1.57501,
+      "nu": 41.5,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 6,
+      "r": 8.0645,
+      "d": 12.552,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 7,
+      "r": -7.376,
+      "d": 3.224,
+      "n": 1.804,
+      "nu": 46.53,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 8,
+      "r": 29.1238,
+      "d": 2.564,
+      "n": 1.43875,
+      "nu": 94.66,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 9,
+      "r": -9.5667,
+      "d": 1.001,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 10,
+      "r": 85.5752,
+      "d": 4.037,
+      "n": 1.51823,
+      "nu": 58.9,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 11,
+      "r": -12.3154,
+      "d": null,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    }
+  ],
+  "quotes": {
+    "aperture_stop": null,
+    "working_distance": "'Various data of the objective 4 are as follows. NAob=0.13, β=4, f=45 mm, ... WD=16.31 mm, L=33.701 mm, ...' (p.29)",
+    "field_number": "'coma aberration at the level of 70% of an image height ratio (image height of 9.27 mm)' (p.29; 原句为像高，原文未印视场数)",
+    "wavelength": "'Here, s represents a surface number, r represents a radius of curvature (mm), d represents surface spacing (mm), nd represents a refractive index with respect to the d line, and vd represents an Abbe number.' (p.27)"
+  },
+  "doubts": [
+    "面 s11 的 d 为 110.000。p.27 原句说明 d11 是 s11 面到筒镜的间隔（110 mm）。按 schema 最后一面 d 写 null，110.000 记入 header.other.d_s11_to_tube_lens。读法 A（已采用）：surfaces 末行 d=null。读法 B：保留 d=110.000，与表原值一致，但与 schema 不符。",
+    "光阑：表中无光阑行，OCR 文字层与 p.27–p.29 图像中均未见 stop、aperture、diaphragm 字样，quotes.aperture_stop 写 null，全部面 stop=false。读法 A（已采用）：原文无光阑，按库规则放在后焦面。读法 B：附图（FIG. 8，实施例 4 截面图）未查看，若附图中有光阑标记则与此结论冲突。",
+    "像高与视场：p.29 原句为 'image height of 9.27 mm' 且与 70% 像高比相关。读法 A：9.27 mm 为 70% 像高处的像高，满像高大于 9.27 mm。读法 B：9.27 mm 为满像高。原文未印视场数，field_number 与 image_height 均写 null，9.27 记入 header.other.image_height_quoted_mm_at_70pct。",
+    "筒镜焦距 180 mm：p.28 原句位于实施例 1 的描述段，原文只写了一个筒镜 10；p.28–p.29 的 'system including the objective 4 and the tube lens 10' 表明实施例 4 使用同一筒镜。读法 A（已采用）：tube_lens_f=180 适用于实施例 4。读法 B：该句只针对实施例 1，tube_lens_f 应为 null。",
+    "β 符号：正文与表头印 'β=4'，无负号，原文未说明符号约定。读法 A（已采用）：按原文写 4。读法 B：若按像方倒立的约定，应写 -4。",
+    "校正等级：原文无 plan 或 flat field 字样。标题为 'INFINITY-CORRECTED MICROSCOPE OBJECTIVE'（p.1），p.29 写 'the aberrations are favorably corrected in a wide field of view'。读法 A（已采用）：claimed_class=null，按消色差评估。读法 B：把 'favorably corrected in a wide field of view' 视作平场说法，则按平场消色差评估。",
+    "谱线：p.27 原句 'nd represents a refractive index with respect to the d line' 说明 nd 为 d 线折射率，wavelength 写 'd'。读法 B：若只把 nd 视为符号名，则谱线未注明，应写 null。",
+    "盖玻片：原文未提及盖玻片及其厚度、折射率，cover_glass=null，WD=16.31 视为从物面量起。读法 B：若 WD 实际从盖玻片上表面量起，原文没有给出盖玻片厚度与折射率，无法补全该行。",
+    "d1、d2：正文 'd1=0.300 mm, d2=12.552 mm' 未说明它们对应表中哪一个间隔；数值与表中 s3 后、s6 后的间隔相同。只按原值记入 header.other，不做对应。读法 A：d1、d2 指 s3 后、s6 后的间隔（数值相同，原文未说明）。读法 B：d1、d2 指原文未定义的其它间隔。",
+    "OCR 文字层与图像不一致（单位）：文字层 'TL=50.011 nam'，图像 p.29 为 'TL=50.011 mm'。读法 A（已采用）：单位 mm，TL=50.011。读法 B：'nam' 为印刷错误，同行其它量均为 mm，单位结论不变。",
+    "OCR 文字层与图像不一致（符号）：文字层 'fos=21.071'，图像 p.29 为 'fG3=21.071 mm'，文字层把下标 G3 误读为 'os'。读法 A（已采用）：fG3=21.071。读法 B：若按文字层读作 fOS，则是另一个未定义的量，但图像中该位置明确为 G3 下标，且同行 fG1、fG2 也用 G 下标。",
+    "OCR 文字层与图像不一致（行号）：文字层 'WD=16.31 mm' 前带 '10'，图像中 '10' 为页边行号，不属于数值，WD 数值两者一致（16.31 mm）；表中 s1 行 d 印为 16.310。读法 A（已采用）：WD=16.31（正文印刷值）。读法 B：以表中 16.310 为准，数值相同，仅位数不同。",
+    "主 agent 补充（入库时）：原文未印视场数。p.29 写 70% 像高比处的像高为 9.27 mm，按读法 A 满像高为 9.27 / 0.7 = 13.24 mm，即 180 mm 筒镜下的视场数 26.5（与同一申请人 US 11048071 B2 印出的 FN 26.5 一致），header.field_number 据此写 26.5。原文没有平场说法，按消色差评估。"
+  ]
+}

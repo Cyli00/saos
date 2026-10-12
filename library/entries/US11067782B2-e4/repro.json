@@ -1,0 +1,36 @@
+{
+  "job": "20261013-024051-library-verify",
+  "file": "US11067782B2-e4.zmx",
+  "dirty": false,
+  "pass": true,
+  "rel_tol": 0.01,
+  "metrics": [
+    {
+      "metric": "efl",
+      "expected": 18.0,
+      "measured": 17.99909124872991,
+      "rel_error": 5.048618167158292e-05,
+      "allowed_abs": 0.18,
+      "pass": true
+    },
+    {
+      "metric": "na",
+      "expected": 0.4,
+      "measured": 0.4,
+      "rel_error": 0.0,
+      "allowed_abs": 0.004,
+      "pass": true
+    },
+    {
+      "metric": "wd",
+      "expected": 3.6607,
+      "measured": 3.662226340821876,
+      "rel_error": 0.00041695326628143903,
+      "allowed_abs": 0.036607,
+      "pass": true
+    }
+  ],
+  "working_distance_mechanical_mm": 3.2911067853334517,
+  "front_sag_mm": -0.37111955548842457,
+  "pmag_at_best_focus": 11.107215451497058
+}

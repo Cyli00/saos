@@ -1,0 +1,354 @@
+{
+  "scale": 4.0,
+  "focal_length_mm": 4.0,
+  "field_number": 27.0,
+  "paraxial": {
+    "wavelength": "d",
+    "efl_mm": 4.000995951106683,
+    "front_focal_distance_mm": 10.113547627486446,
+    "back_focal_distance_mm": -7.820515678292546
+  },
+  "stop": "rear_focal",
+  "cover_glass": null,
+  "cover_glass_assumed": false,
+  "printed_decimals": {
+    "r": 4,
+    "d": 4,
+    "n": 4,
+    "nu": 2
+  },
+  "rounding_envelope": {
+    "efl": [
+      3.9998656433472592,
+      4.002126608967981
+    ],
+    "wd": [
+      10.109411606437618,
+      10.118035788557082
+    ]
+  },
+  "elements": 11,
+  "glasses": [
+    {
+      "n": 1.883,
+      "nu": 40.76,
+      "printed": null,
+      "material": "N-LASF31A",
+      "catalog": "SCHOTT",
+      "status": "Preferred",
+      "how": "nd/νd 最近（距离 0.00）",
+      "candidates": [
+        {
+          "catalog": "SCHOTT",
+          "name": "N-LASF31A",
+          "nd": 1.883,
+          "vd": 40.76,
+          "status": "Preferred",
+          "distance": 0.0
+        },
+        {
+          "catalog": "NIKON-HIKARI",
+          "name": "E-LASF08",
+          "nd": 1.882997,
+          "vd": 40.764336,
+          "status": "Obsolete",
+          "distance": 0.09
+        },
+        {
+          "catalog": "OHARA",
+          "name": "S-LAH58",
+          "nd": 1.882997,
+          "vd": 40.765107,
+          "status": "Standard",
+          "distance": 0.1
+        }
+      ]
+    },
+    {
+      "n": 1.651,
+      "nu": 56.15,
+      "printed": null,
+      "material": "LAL54",
+      "catalog": "OHARA",
+      "status": "Obsolete",
+      "how": "nd/νd 最近（距离 0.10）",
+      "candidates": [
+        {
+          "catalog": "OHARA",
+          "name": "LAL54",
+          "nd": 1.650996,
+          "vd": 56.154774,
+          "status": "Obsolete",
+          "distance": 0.1
+        },
+        {
+          "catalog": "OHARA",
+          "name": "S-LAL54",
+          "nd": 1.650996,
+          "vd": 56.163717,
+          "status": "Standard",
+          "distance": 0.27
+        },
+        {
+          "catalog": "NIKON-HIKARI",
+          "name": "E-LAK04",
+          "nd": 1.651,
+          "vd": 56.171366,
+          "status": "Obsolete",
+          "distance": 0.43
+        }
+      ]
+    },
+    {
+      "n": 1.4339,
+      "nu": 95.15,
+      "printed": null,
+      "material": "LITHOTEC-CAF2",
+      "catalog": "SCHOTT",
+      "status": "Obsolete",
+      "how": "nd/νd 最近（距离 1.60）",
+      "candidates": [
+        {
+          "catalog": "SCHOTT",
+          "name": "LITHOTEC-CAF2",
+          "nd": 1.43385,
+          "vd": 95.23,
+          "status": "Obsolete",
+          "distance": 1.6
+        },
+        {
+          "catalog": "NIKON-HIKARI",
+          "name": "NICF-A",
+          "nd": 1.433837,
+          "vd": 95.260792,
+          "status": "Standard",
+          "distance": 2.22
+        },
+        {
+          "catalog": "NIKON-HIKARI",
+          "name": "NICF-U",
+          "nd": 1.433837,
+          "vd": 95.260792,
+          "status": "Standard",
+          "distance": 2.22
+        }
+      ]
+    },
+    {
+      "n": 1.74,
+      "nu": 31.7,
+      "printed": null,
+      "material": "KZFS50",
+      "catalog": "SUMITA",
+      "status": "Obsolete",
+      "how": "nd/νd 最近（距离 0.00）",
+      "candidates": [
+        {
+          "catalog": "SUMITA",
+          "name": "KZFS50",
+          "nd": 1.74,
+          "vd": 31.7,
+          "status": "Obsolete",
+          "distance": 0.0
+        },
+        {
+          "catalog": "OHARA",
+          "name": "BPH50",
+          "nd": 1.739997,
+          "vd": 31.710001,
+          "status": "Obsolete",
+          "distance": 0.2
+        },
+        {
+          "catalog": "HOYA",
+          "name": "ADF505",
+          "nd": 1.739996,
+          "vd": 31.655919,
+          "status": "Obsolete",
+          "distance": 0.88
+        }
+      ]
+    },
+    {
+      "n": 1.6765,
+      "nu": 37.5,
+      "printed": null,
+      "material": "ADF405",
+      "catalog": "HOYA",
+      "status": "Obsolete",
+      "how": "nd/νd 最近（距离 0.44）",
+      "candidates": [
+        {
+          "catalog": "HOYA",
+          "name": "ADF405",
+          "nd": 1.6765,
+          "vd": 37.477902,
+          "status": "Obsolete",
+          "distance": 0.44
+        },
+        {
+          "catalog": "OHARA",
+          "name": "BPH40",
+          "nd": 1.676498,
+          "vd": 37.537388,
+          "status": "Obsolete",
+          "distance": 0.75
+        },
+        {
+          "catalog": "SCHOTT",
+          "name": "KZFS7A",
+          "nd": 1.68064,
+          "vd": 37.389991,
+          "status": "Obsolete",
+          "distance": 8.57
+        }
+      ]
+    },
+    {
+      "n": 1.497,
+      "nu": 81.61,
+      "printed": null,
+      "material": "N-PK52A",
+      "catalog": "SCHOTT",
+      "status": "Preferred",
+      "how": "nd/νd 最近（距离 0.00）",
+      "candidates": [
+        {
+          "catalog": "SCHOTT",
+          "name": "N-PK52A",
+          "nd": 1.497,
+          "vd": 81.61,
+          "status": "Preferred",
+          "distance": 0.0
+        },
+        {
+          "catalog": "HOYA",
+          "name": "FCD1",
+          "nd": 1.497,
+          "vd": 81.61,
+          "status": "Preferred",
+          "distance": 0.0
+        },
+        {
+          "catalog": "CDGM",
+          "name": "D-FK61",
+          "nd": 1.497,
+          "vd": 81.611615,
+          "status": "Standard",
+          "distance": 0.03
+        }
+      ]
+    },
+    {
+      "n": 1.5268,
+      "nu": 51.12,
+      "printed": null,
+      "material": "CF2",
+      "catalog": "HOYA",
+      "status": "Obsolete",
+      "how": "nd/νd 最近（距离 1.79）",
+      "candidates": [
+        {
+          "catalog": "HOYA",
+          "name": "CF2",
+          "nd": 1.526296,
+          "vd": 51.046045,
+          "status": "Obsolete",
+          "distance": 1.79
+        },
+        {
+          "catalog": "SUMITA",
+          "name": "KF2",
+          "nd": 1.5263,
+          "vd": 51.0,
+          "status": "Obsolete",
+          "distance": 2.6
+        },
+        {
+          "catalog": "HOYA",
+          "name": "CF5",
+          "nd": 1.5231,
+          "vd": 50.951831,
+          "status": "Obsolete",
+          "distance": 8.13
+        }
+      ]
+    },
+    {
+      "n": 1.6779,
+      "nu": 55.33,
+      "printed": null,
+      "material": "LAL12",
+      "catalog": "OHARA",
+      "status": "Obsolete",
+      "how": "nd/νd 最近（距离 0.15）",
+      "candidates": [
+        {
+          "catalog": "OHARA",
+          "name": "LAL12",
+          "nd": 1.6779,
+          "vd": 55.337587,
+          "status": "Obsolete",
+          "distance": 0.15
+        },
+        {
+          "catalog": "OHARA",
+          "name": "S-LAL12",
+          "nd": 1.6779,
+          "vd": 55.341195,
+          "status": "Standard",
+          "distance": 0.22
+        },
+        {
+          "catalog": "OHARA",
+          "name": "S-LAL12Q",
+          "nd": 1.6779,
+          "vd": 55.346888,
+          "status": "Standard",
+          "distance": 0.34
+        }
+      ]
+    },
+    {
+      "n": 1.7847,
+      "nu": 25.71,
+      "printed": null,
+      "material": "PBH11",
+      "catalog": "OHARA",
+      "status": "Obsolete",
+      "how": "nd/νd 最近（距离 0.07）",
+      "candidates": [
+        {
+          "catalog": "OHARA",
+          "name": "PBH11",
+          "nd": 1.784718,
+          "vd": 25.712726,
+          "status": "Obsolete",
+          "distance": 0.07
+        },
+        {
+          "catalog": "OHARA",
+          "name": "PBH11W",
+          "nd": 1.784718,
+          "vd": 25.712726,
+          "status": "Obsolete",
+          "distance": 0.07
+        },
+        {
+          "catalog": "HOYA",
+          "name": "FD11",
+          "nd": 1.784715,
+          "vd": 25.704276,
+          "status": "Obsolete",
+          "distance": 0.12
+        }
+      ]
+    }
+  ],
+  "assumptions": [
+    "专利折射率按 d 线处理（专利未注明，按 d 线假设）",
+    "光阑放在物镜后焦面（物方远心）",
+    "焦距 4 mm（缩放 4），参考筒镜 200 mm",
+    "物镜视场数 27"
+  ]
+}

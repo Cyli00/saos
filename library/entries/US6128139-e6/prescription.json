@@ -1,0 +1,151 @@
+{
+  "title": "US 6128139 A Example 6 f=20 mm",
+  "aperture": {
+    "type": "object_na",
+    "value": 0.25
+  },
+  "fields": {
+    "type": "object_height",
+    "y": [
+      0.0,
+      0.55,
+      0.77,
+      1.1
+    ]
+  },
+  "wavelengths": {
+    "um": [
+      0.4861327,
+      0.5875618,
+      0.6562725
+    ],
+    "weights": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "primary": 2
+  },
+  "catalogs": [
+    "OHARA"
+  ],
+  "ray_aiming": "real",
+  "telecentric_object": true,
+  "object": {
+    "thickness": 0.17,
+    "material": {
+      "model": {
+        "nd": 1.523,
+        "vd": 55.0,
+        "dpgf": 0.0
+      }
+    },
+    "comment": "zea:object"
+  },
+  "surfaces": [
+    {
+      "radius": "inf",
+      "thickness": 6.392865175979284,
+      "comment": "zea:cover_top"
+    },
+    {
+      "radius": -15.6253,
+      "thickness": 3.0,
+      "material": {
+        "model": {
+          "nd": 1.81,
+          "vd": 25.4,
+          "dpgf": 0.0
+        }
+      },
+      "comment": "patent r1",
+      "stop": false
+    },
+    {
+      "radius": 16.6876,
+      "thickness": 5.3,
+      "material": {
+        "model": {
+          "nd": 1.77,
+          "vd": 50.2,
+          "dpgf": 0.0
+        }
+      },
+      "comment": "patent r2",
+      "stop": false
+    },
+    {
+      "radius": -12.9743,
+      "thickness": 0.72,
+      "material": "",
+      "comment": "patent r3",
+      "stop": false
+    },
+    {
+      "radius": 595.5739,
+      "thickness": 2.5,
+      "material": {
+        "model": {
+          "nd": 1.8,
+          "vd": 46.5,
+          "dpgf": 0.0
+        }
+      },
+      "comment": "patent r4",
+      "stop": false
+    },
+    {
+      "radius": -30.9621,
+      "thickness": 20.25,
+      "material": "",
+      "comment": "patent r5",
+      "stop": false
+    },
+    {
+      "radius": -55.5827,
+      "thickness": 1.85,
+      "material": {
+        "model": {
+          "nd": 1.8,
+          "vd": 39.6,
+          "dpgf": 0.0
+        }
+      },
+      "comment": "patent r6",
+      "stop": false
+    },
+    {
+      "radius": 23.9829,
+      "thickness": 3.1,
+      "material": {
+        "model": {
+          "nd": 1.62,
+          "vd": 54.0,
+          "dpgf": 0.0
+        }
+      },
+      "comment": "patent r7",
+      "stop": false
+    },
+    {
+      "radius": -19.9336,
+      "thickness": -0.09170400700775659,
+      "material": "",
+      "comment": "patent r8",
+      "stop": false
+    },
+    {
+      "radius": "inf",
+      "thickness": 0.0,
+      "comment": "zea:stop",
+      "stop": true
+    },
+    {
+      "type": "paraxial",
+      "focal_length": 200.0,
+      "opd_mode": 1,
+      "thickness": 200.0,
+      "comment": "zea:tube"
+    }
+  ]
+}

@@ -1,0 +1,208 @@
+{
+  "schema": 2,
+  "source": {
+    "patent": "US 4540248 A",
+    "assignee": "Olympus Optical Co., Ltd., Tokyo, Japan",
+    "priority_date": "1983-03-24",
+    "url": null
+  },
+  "embodiment": "Embodiment 1",
+  "units": "normalized",
+  "order": "object_to_image",
+  "wavelength": null,
+  "header": {
+    "f": 1,
+    "NA": 0.55,
+    "WD": 2.529,
+    "beta": -50,
+    "field_number": 27,
+    "image_height": null,
+    "tube_lens_f": null,
+    "other": {
+      "fig3_IM_H": 3.43
+    }
+  },
+  "cover_glass": null,
+  "claimed_class": "flat image surface up to field number 27",
+  "surfaces": [
+    {
+      "i": 1,
+      "r": -5.1445,
+      "d": 0.7502,
+      "n": 1.883,
+      "nu": 40.76,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 2,
+      "r": -2.6127,
+      "d": 0.0556,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 3,
+      "r": 9.4957,
+      "d": 0.389,
+      "n": 1.651,
+      "nu": 56.15,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 4,
+      "r": 3.9786,
+      "d": 1.3337,
+      "n": 1.4339,
+      "nu": 95.15,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 5,
+      "r": -3.9786,
+      "d": 0.0417,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 6,
+      "r": 8.5713,
+      "d": 0.389,
+      "n": 1.74,
+      "nu": 31.7,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 7,
+      "r": 3.6432,
+      "d": 1.0003,
+      "n": 1.4339,
+      "nu": 95.15,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 8,
+      "r": -8.7233,
+      "d": 0.0417,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 9,
+      "r": 4.5349,
+      "d": 1.1114,
+      "n": 1.4339,
+      "nu": 95.15,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 10,
+      "r": -4.06,
+      "d": 0.3334,
+      "n": 1.6765,
+      "nu": 37.5,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 11,
+      "r": 11.4976,
+      "d": 0.0417,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 12,
+      "r": 2.0283,
+      "d": 1.5282,
+      "n": 1.497,
+      "nu": 81.61,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 13,
+      "r": -3.5343,
+      "d": 1.0044,
+      "n": 1.5268,
+      "nu": 51.12,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 14,
+      "r": 1.0081,
+      "d": 1.7827,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 15,
+      "r": -36.1998,
+      "d": 0.2223,
+      "n": 1.6779,
+      "nu": 55.33,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 16,
+      "r": 1.1298,
+      "d": 0.4724,
+      "n": 1.7847,
+      "nu": 25.71,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 17,
+      "r": 3.237,
+      "d": null,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    }
+  ],
+  "quotes": {
+    "aperture_stop": null,
+    "working_distance": "a working distance of at least 8 mm or twice of its focal length (page5 摘要段); f = 1, NA = 0.55, WD = 2.529, β = -50X (page6 实施例 1 表头; 权利要求 5 同, page7)",
+    "field_number": "an image surface which is flat over a wide range up to a field number of 27 (page5 摘要段; page1 ABSTRACT 同句)",
+    "wavelength": null,
+    "designed_for_infinity": "Since both the Embodiments are designed as objective lens systems designed for infinity (lens systems so designed as to form images at infinite distance), said lens systems actually form no image. (page6 印刷栏 4)",
+    "imaging_lens": "used in combination, for example, with an imaging lens system having the composition shown in FIG.5 and the following numerical data (page6 印刷栏 4)"
+  },
+  "doubts": [
+    "成像透镜: page6 印刷栏 4 下部印有 FIG. 5 成像透镜数据 r1=7.530 d1=1.020 n1=1.4875 ν1=70.15; r2=-31.310 d2=0.510; r3=-14.668 d3=0.510 n2=1.7400 ν2=28.29; r4=-31.179 d4=3.827; r5=11.207 d5=0.459 n3=1.4875 ν3=70.15; r6=5.011。未放入 surfaces, header.tube_lens_f 写 null (原文未给成像透镜焦距)。原文用 'for example' 引出该组合。两种读法: (a) 本实施例配套使用该成像透镜; (b) 只是示例组合, 原文未规定配套关系。",
+    "f 句不完整: page6 印刷栏 3 'The above-mentioned numerical data are given taking focal length f of the lens system of the Embodiment 1 as' 句末 as 之后无数值。两种读法: (a) 缺失值为 1, 与表头 f = 1 一致; (b) 印刷脱落, 无法从页面确定。",
+    "光阑: 全文 (page1-8) 无 stop、diaphragm、aperture 字样, 表中无光阑行。aperture_stop 引文写 null, 所有面 stop 写 false。两种读法: (a) 原文未设光阑, 光阑位置由下游按规则确定; (b) 光阑未印。",
+    "谱线: 原文未注明折射率 n 与 ν 对应的谱线, wavelength 写 null。像差图 FIG. 3 (page3) 标注 d、C、F、g 谱线, 但正文未说明 n 所用谱线。两种读法: (a) n 为 d 线 (nd); (b) 原文未定, 不能判定。",
+    "盖玻片: 原文无盖玻片描述, WD 的起算面未说明, cover_glass 写 null。两种读法: (a) WD 从第一面 r1 量起, 无盖玻片; (b) WD 含盖玻片但原文未印厚度和折射率。",
+    "校正等级: 原文 'a flat image surface' (page5 印刷栏 1) 与 'an image surface which is flat over a wide range up to a field number of 27' (page5 摘要段) 之外, 未用 plan 或 flat field 字样。两种读法: (a) 视为平场, 按平场消色差评估; (b) 仅为像面平坦范围的描述, 按消色差评估。",
+    "像高: 图 3 (page3) 标注 'IM.H 3.43', 单位未印。写入 header.other.fig3_IM_H, image_height 写 null (正文未给像高数值)。两种读法: (a) 像高 3.43, 单位未印; (b) 图中标注的含义正文未定义, 不能判定为像高。",
+    "玻璃与非球面: 原文只印 r、d、n、ν, 未印玻璃牌号和非球面系数。surfaces 的 glass 写 null, aspheric 写 false。两种读法: (a) 球面系统; (b) 非球面未印 (原文未作声明)。",
+    "文字层差异: OCR 文字层把第 1 面半径写作 'f-5.1445' (r 误识为 f), 图像为 r1 = -5.1445, 以图像为准。",
+    "印刷痕迹: page6 印刷栏 4 表中 d8 行带撇号 (印作 'd8 ' 0.0417'), 读作 0.0417; 权利要求 5 (page7) 的 d8 = 0.0417 与之一致。",
+    "主 agent 补充（入库时）：近轴核对 f = 1.0002、前焦距 2.5284，与表头 f = 1、WD = 2.529 相差 0.02%；WD 等于前焦距，与原文 'designed for infinity' 一致，按无盖玻片处理。claimed_class 按原文 'flat over a wide range up to a field number of 27' 归为平场类。"
+  ]
+}

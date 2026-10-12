@@ -1,0 +1,395 @@
+{
+  "job": "20261013-024051-library-verify",
+  "file": "US11067782B2-e7.zmx",
+  "spec": "spec/US11067782B2-e7-probe.yaml",
+  "verdict": "fail",
+  "spec_shortfall": 0.6340287727059754,
+  "invalid": null,
+  "items": [
+    {
+      "id": "magnification",
+      "category": "constraint",
+      "kind": "upper",
+      "value": 4.8524253268844575e-06,
+      "threshold": 0.05,
+      "scale": 0.05,
+      "unit": "比例",
+      "shortfall": 0.0,
+      "pass": true,
+      "details": {
+        "m_act": 11.111165026948076,
+        "f_obj_mm": 17.999912656767943
+      }
+    },
+    {
+      "id": "working_distance",
+      "category": "constraint",
+      "kind": "lower",
+      "value": 3.5363309267747587,
+      "threshold": 0.01,
+      "scale": 0.01,
+      "unit": "mm",
+      "shortfall": 0.0,
+      "pass": true,
+      "details": {
+        "gap_mm": 3.894261685718004,
+        "front_sag_mm": -0.35793075894324533
+      }
+    },
+    {
+      "id": "optical_length",
+      "category": "constraint",
+      "kind": "upper",
+      "value": 50.639561685718,
+      "threshold": 1000000.0,
+      "scale": 1000000.0,
+      "unit": "mm",
+      "shortfall": 0.0,
+      "pass": true,
+      "details": null
+    },
+    {
+      "id": "clear_diameter",
+      "category": "constraint",
+      "kind": "upper",
+      "value": 17.047834356387366,
+      "threshold": 1000000.0,
+      "scale": 1000000.0,
+      "unit": "mm",
+      "shortfall": 0.0,
+      "pass": true,
+      "details": null
+    },
+    {
+      "id": "glass_status",
+      "category": "constraint",
+      "kind": "count",
+      "value": 0.0,
+      "threshold": 0.0,
+      "scale": 1.0,
+      "unit": "件",
+      "shortfall": 0.0,
+      "pass": true,
+      "details": [
+        {
+          "surface": 2,
+          "material": "S-NBM51",
+          "ok": true,
+          "catalog": "OHARA",
+          "status": "Standard"
+        },
+        {
+          "surface": 3,
+          "material": "S-FPL55",
+          "ok": true,
+          "catalog": "OHARA",
+          "status": "Standard"
+        },
+        {
+          "surface": 5,
+          "material": "S-FPL55",
+          "ok": true,
+          "catalog": "OHARA",
+          "status": "Standard"
+        },
+        {
+          "surface": 7,
+          "material": "S-FPL55",
+          "ok": true,
+          "catalog": "OHARA",
+          "status": "Standard"
+        },
+        {
+          "surface": 9,
+          "material": "S-FPL55",
+          "ok": true,
+          "catalog": "OHARA",
+          "status": "Standard"
+        },
+        {
+          "surface": 10,
+          "material": "S-BSL7",
+          "ok": true,
+          "catalog": "OHARA",
+          "status": "Standard"
+        },
+        {
+          "surface": 12,
+          "material": "N-KZFS2",
+          "ok": true,
+          "catalog": "SCHOTT",
+          "status": "Preferred"
+        },
+        {
+          "surface": 13,
+          "material": "S-FPL55",
+          "ok": true,
+          "catalog": "OHARA",
+          "status": "Standard"
+        },
+        {
+          "surface": 15,
+          "material": "S-FPL55",
+          "ok": true,
+          "catalog": "OHARA",
+          "status": "Standard"
+        }
+      ]
+    },
+    {
+      "id": "surface_types",
+      "category": "constraint",
+      "kind": "count",
+      "value": 0.0,
+      "threshold": 0.0,
+      "scale": 1.0,
+      "unit": "件",
+      "shortfall": 0.0,
+      "pass": true,
+      "details": []
+    },
+    {
+      "id": "center_thickness_glass",
+      "category": "constraint",
+      "kind": "lower",
+      "value": 2.9343,
+      "threshold": 0.001,
+      "scale": 0.001,
+      "unit": "mm",
+      "shortfall": 0.0,
+      "pass": true,
+      "details": null
+    },
+    {
+      "id": "edge_thickness_glass",
+      "category": "constraint",
+      "kind": "lower",
+      "value": 0.5673143477633391,
+      "threshold": 0.001,
+      "scale": 0.001,
+      "unit": "mm",
+      "shortfall": 0.0,
+      "pass": true,
+      "details": {
+        "2": 5.726544587157814,
+        "3": 1.4567251988097212,
+        "5": 1.178806128554879,
+        "7": 0.9527128594086567,
+        "9": 0.5673143477633391,
+        "10": 8.171817435374006,
+        "12": 3.846413242230523,
+        "13": 2.256342078938596,
+        "15": 1.6998654815026528
+      }
+    },
+    {
+      "id": "air_gap",
+      "category": "constraint",
+      "kind": "lower",
+      "value": 0.1918,
+      "threshold": 0.0,
+      "scale": 0.01,
+      "unit": "mm",
+      "shortfall": 0.0,
+      "pass": true,
+      "details": {
+        "center": {
+          "4": 0.3242,
+          "6": 0.1918,
+          "8": 1.6854,
+          "11": 7.786,
+          "14": 0.3159
+        },
+        "edge": {
+          "4": 1.3826686909537618,
+          "6": 4.492466401899799,
+          "8": 5.30533099713865,
+          "11": 4.44553771347561,
+          "14": 3.239319422621049
+        }
+      }
+    },
+    {
+      "id": "axial_rms_wfe",
+      "category": "target",
+      "kind": "upper",
+      "value": 0.00867303347080869,
+      "threshold": 0.07142857142857142,
+      "scale": 0.07142857142857142,
+      "unit": "λe",
+      "shortfall": 0.0,
+      "pass": true,
+      "details": {
+        "rms_centroid": 0.00867303347080869,
+        "c4": 1.4077604379320063e-12,
+        "pv_centroid": 0.026218865861919276
+      }
+    },
+    {
+      "id": "axial_color",
+      "category": "target",
+      "kind": "upper",
+      "value": 5.576838074447199,
+      "threshold": 3.4129374999999995,
+      "scale": 3.4129374999999995,
+      "unit": "µm 物方",
+      "shortfall": 0.6340287727059754,
+      "pass": false,
+      "details": {
+        "focus_F_um": -1.8725902202429978,
+        "focus_C_um": 3.704247854204201
+      }
+    },
+    {
+      "id": "osc",
+      "category": "target",
+      "kind": "upper",
+      "value": 0.0006016015586729869,
+      "threshold": 0.0025,
+      "scale": 0.0025,
+      "unit": "—",
+      "shortfall": 0.0,
+      "pass": true,
+      "details": {
+        "0.7": 0.00019851133933365748,
+        "1.0": 0.0006016015586729869
+      }
+    }
+  ],
+  "diagnostics": {
+    "design_apertures": [],
+    "na_object": 0.4,
+    "plan_field": {
+      "delta_um": 1182.8973765432097,
+      "pfr": 1.0,
+      "pfn_mm": 24.44,
+      "excess": -0.7806101696126323,
+      "points": [
+        {
+          "r": 0.0,
+          "mean_um": 4.1095749545261655e-09,
+          "astig_um": 1.677555368097461e-13
+        },
+        {
+          "r": 0.05,
+          "mean_um": 0.6919846428989492,
+          "astig_um": 0.5681237446581233
+        },
+        {
+          "r": 0.1,
+          "mean_um": 2.783178263509766,
+          "astig_um": 2.262843769522117
+        },
+        {
+          "r": 0.15,
+          "mean_um": 6.2982475474814725,
+          "astig_um": 5.046084927757265
+        },
+        {
+          "r": 0.2,
+          "mean_um": 11.281231926314044,
+          "astig_um": 8.854368284005577
+        },
+        {
+          "r": 0.25,
+          "mean_um": 17.793416956017712,
+          "astig_um": 13.600336436349815
+        },
+        {
+          "r": 0.3,
+          "mean_um": 25.913357973215305,
+          "astig_um": 19.17175041886988
+        },
+        {
+          "r": 0.35,
+          "mean_um": 35.73779743980826,
+          "astig_um": 25.430020853396957
+        },
+        {
+          "r": 0.4,
+          "mean_um": 47.37787220001317,
+          "astig_um": 32.217062522989615
+        },
+        {
+          "r": 0.45,
+          "mean_um": 60.96213156839595,
+          "astig_um": 39.349530232690746
+        },
+        {
+          "r": 0.5,
+          "mean_um": 76.63555195718541,
+          "astig_um": 46.622518519986926
+        },
+        {
+          "r": 0.55,
+          "mean_um": 94.55428456874971,
+          "astig_um": 53.8110645230659
+        },
+        {
+          "r": 0.6,
+          "mean_um": 114.89002332720732,
+          "astig_um": 60.669003968302086
+        },
+        {
+          "r": 0.65,
+          "mean_um": 137.8249010295077,
+          "astig_um": 66.93769668383423
+        },
+        {
+          "r": 0.7,
+          "mean_um": 163.55206621551392,
+          "astig_um": 72.34222300488298
+        },
+        {
+          "r": 0.75,
+          "mean_um": 192.2716752724641,
+          "astig_um": 76.59812384458895
+        },
+        {
+          "r": 0.8,
+          "mean_um": 224.19153221554575,
+          "astig_um": 79.41041607084314
+        },
+        {
+          "r": 0.85,
+          "mean_um": 259.515654805477,
+          "astig_um": 80.49210938423569
+        },
+        {
+          "r": 0.9,
+          "mean_um": 298.4461973024914,
+          "astig_um": 79.56083346476892
+        },
+        {
+          "r": 0.95,
+          "mean_um": 341.17906228453353,
+          "astig_um": 76.34336908780246
+        },
+        {
+          "r": 1.0,
+          "mean_um": 387.88628303272844,
+          "astig_um": 70.60869852643403
+        }
+      ]
+    },
+    "distortion_pct": {
+      "0.3": 0.036316300325055596,
+      "0.5": 0.10083876004085233,
+      "0.7": 0.19751957054532873,
+      "0.85": 0.29105042930040415,
+      "1.0": 0.402501021508892
+    },
+    "strehl_axis_e": 0.9970707954820541,
+    "pmag_check": 9.01643114529227e-05
+  },
+  "derived": {
+    "objective_focal_length_mm": 18.0,
+    "exit_pupil_diameter_mm": 14.4,
+    "object_field_diameter_mm": 2.1996,
+    "delta_ob_um": 1.7064687499999998,
+    "berek_image_um": 1182.8973765432097,
+    "airy_radius_image_um": 9.252852777777777
+  },
+  "elapsed_s": 24.59,
+  "acceptance_model": "eval/US11067782B2-e7.accept.zmx"
+}

@@ -1,0 +1,193 @@
+{
+  "id": "US4521083-e1",
+  "status": "admitted",
+  "source": {
+    "patent": "US 4521083 A",
+    "assignee": "Olympus Optical Co., Ltd.",
+    "priority_date": "1982-11-26",
+    "url": "https://patents.google.com/patent/US4521083A/en"
+  },
+  "embodiment": "Embodiment 1",
+  "metrics": {
+    "focal_length_mm": 10.0,
+    "na": 0.4,
+    "field_number": 27.0,
+    "elements": 10,
+    "claimed_class": "flat image surface (plan), field number 27",
+    "cover_glass": null,
+    "catalogs": [
+      "OHARA",
+      "SCHOTT",
+      "CDGM",
+      "SUMITA"
+    ],
+    "glasses": [
+      {
+        "material": "FTM16",
+        "catalog": "OHARA",
+        "status": "Obsolete",
+        "how": "nd/νd 最近（距离 0.13）"
+      },
+      {
+        "material": "N-PK52A",
+        "catalog": "SCHOTT",
+        "status": "Preferred",
+        "how": "nd/νd 最近（距离 0.00）"
+      },
+      {
+        "material": "LAK31",
+        "catalog": "SCHOTT",
+        "status": "Obsolete",
+        "how": "nd/νd 最近（距离 1.40）"
+      },
+      {
+        "material": "SF1",
+        "catalog": "SCHOTT",
+        "status": "Preferred",
+        "how": "nd/νd 最近（距离 0.00）"
+      },
+      {
+        "material": "D-ZF10",
+        "catalog": "CDGM",
+        "status": "Standard",
+        "how": "nd/νd 最近（距离 0.05）"
+      },
+      {
+        "material": "PBH11",
+        "catalog": "OHARA",
+        "status": "Obsolete",
+        "how": "nd/νd 最近（距离 0.05）"
+      },
+      {
+        "material": "LLF6",
+        "catalog": "SUMITA",
+        "status": "Obsolete",
+        "how": "nd/νd 最近（距离 0.00）"
+      }
+    ],
+    "wd_vertex_mm": 13.350875468500805,
+    "wd_mech_mm": 12.271912985139414,
+    "optical_length_mm": 47.6445091845286,
+    "clear_diameter_mm": 14.536446623332917
+  },
+  "assumptions": [
+    "专利折射率按 d 线处理（专利未注明，按 d 线假设）",
+    "光阑放在物镜后焦面（物方远心）",
+    "焦距 10 mm（缩放 10），参考筒镜 200 mm",
+    "物镜视场数 27"
+  ],
+  "doubts": [
+    "面 5（n3 所在行，d5 = 0.5449）的 ν：PDF 第 6 页 Embodiment 1 表印为 ν4 = 81.61（标号疑似误印，该表中 ν4 同时出现在 n4 行）；PDF 第 7 页 claim 3 表同一行印为 ν3 = 81.61。两种读法：ν3 / ν4。数值两处均为 81.61，JSON 取 81.61。",
+    "面 1 的 r1：文字层 OCR 为 'r = -2.740'，页面图像（400 dpi 裁切）为 r1 = -1.740。两种读法：-1.740 / -2.740。JSON 取图像读数 -1.740。",
+    "面 20 的 d20（成像透镜，PDF 第 6 页）：页面图像为 d20 = 1.6674；文字层 OCR 为 'd20 at .6674'（首位数字缺失）。两种读法：1.6674 / 0.6674。JSON 取图像读数 1.6674。",
+    "[未纳入本 JSON 的 Embodiment 2] 表内标号重复：r7 出现两次（-2.0670 与 -4.7178），d6 出现两次（0.4378 与 0.1334），n4 出现两次（1.497 与 1.7725），ν4 出现两次（81.61 与 49.66）；印刷的 r 值共 17 个，而正文定义为 r1 至 r16。PDF 第 6 页与第 7 页 claim 5 表标号相同。未推断其面号，留待人工核对。"
+  ],
+  "repro": {
+    "pass": true,
+    "metrics": {
+      "efl": 0.000587,
+      "na": 0.0,
+      "wd": 0.000815
+    }
+  },
+  "probe": {
+    "class": "plan_achromat",
+    "items": {
+      "magnification": {
+        "value": 0.0021630960442551306,
+        "threshold": 0.05,
+        "pass": true
+      },
+      "working_distance": {
+        "value": 12.271912985139414,
+        "threshold": 0.01,
+        "pass": true
+      },
+      "optical_length": {
+        "value": 47.6445091845286,
+        "threshold": 1000000.0,
+        "pass": true
+      },
+      "clear_diameter": {
+        "value": 14.536446623332917,
+        "threshold": 1000000.0,
+        "pass": true
+      },
+      "glass_status": {
+        "value": 0.0,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "surface_types": {
+        "value": 0.0,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "center_thickness_glass": {
+        "value": 1.001,
+        "threshold": 0.001,
+        "pass": true
+      },
+      "edge_thickness_glass": {
+        "value": 0.7962984168334388,
+        "threshold": 0.001,
+        "pass": true
+      },
+      "air_gap": {
+        "value": 0.111,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "axial_rms_wfe": {
+        "value": 0.015835901819811583,
+        "threshold": 0.07142857142857142,
+        "pass": true
+      },
+      "axial_color": {
+        "value": 1.4746476947014031,
+        "threshold": 3.4129374999999995,
+        "pass": true
+      },
+      "osc": {
+        "value": 0.0007813060353568628,
+        "threshold": 0.0025,
+        "pass": true
+      },
+      "plan_field": {
+        "value": -0.44704260764588954,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "field_rms_wfe": {
+        "value": 0.05273378142143598,
+        "threshold": 0.07142857142857142,
+        "pass": true
+      },
+      "lateral_color": {
+        "value": 86.26829032600014,
+        "threshold": 16.655135,
+        "pass": false
+      }
+    }
+  },
+  "benchmark": {
+    "eligible": true,
+    "class": "plan_achromat",
+    "failed_fixed_items": {},
+    "calibration_evidence": [
+      {
+        "item": "lateral_color",
+        "default": 16.655135,
+        "measured": 86.26829032600014,
+        "benchmark_threshold": 103.522
+      },
+      {
+        "item": "optical_length_max",
+        "default": 45.0,
+        "measured": 47.6445091845286,
+        "benchmark_threshold": 53
+      }
+    ],
+    "baseline_shortfall": 0.0
+  }
+}

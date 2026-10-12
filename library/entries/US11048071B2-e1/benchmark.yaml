@@ -1,0 +1,31 @@
+spec_version: 1
+correction_class: plan_achromat
+magnification: 4.444444444444445
+na: 0.16
+tube_lens_focal_length: 200.0
+objective_field_number: 29.444444444444443
+receiver: visual
+cover_glass:
+  thickness: 0.17
+  nd: 1.52397
+  vd: 54.41
+limits:
+  magnification_tolerance: 0.05
+  working_distance_min: 12.58
+  optical_length_max: 53
+  max_clear_diameter: 17
+  glass:
+    catalogs:
+    - OHARA
+    - HOYA
+    allowed_status:
+    - Standard
+    - Preferred
+    - Obsolete
+    - Special
+    allow_model: false
+  min_center_thickness_glass: 0.5
+  min_edge_thickness_glass: 0.3
+  min_air_gap:
+    value: 0.0
+    scale: 0.01

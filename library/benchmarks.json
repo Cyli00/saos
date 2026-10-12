@@ -1,0 +1,107 @@
+{
+  "rule": "以专利为单位分组，同一专利的条目只进同一组；每个专利最多取编号最前的 2 个可作基准的条目；专利按最高 NA 分档，档内按 SHA-1(专利号) 排序，依次放进本档案例较少的组，持平时放进总案例较少的组",
+  "perturbation": {
+    "seed": 1,
+    "radius_rel": 0.01,
+    "thickness_rel": 0.03
+  },
+  "groups": {
+    "tuning": [
+      "US12493165B2-e3",
+      "US12493165B2-e4",
+      "US11048071B2-e1",
+      "US11048071B2-e2",
+      "US4521083-e1",
+      "US11067782B2-e1",
+      "US11067782B2-e3"
+    ],
+    "validation": [
+      "US6128139-e1",
+      "US6128139-e2",
+      "US11002950B2-e1",
+      "US11002950B2-e3",
+      "US4540248A-e1",
+      "US4540248A-e2"
+    ]
+  },
+  "cases": [
+    {
+      "entry": "US11002950B2-e1",
+      "patent": "US11002950B2",
+      "group": "validation",
+      "na_band": "mid"
+    },
+    {
+      "entry": "US11002950B2-e3",
+      "patent": "US11002950B2",
+      "group": "validation",
+      "na_band": "mid"
+    },
+    {
+      "entry": "US11048071B2-e1",
+      "patent": "US11048071B2",
+      "group": "tuning",
+      "na_band": "low"
+    },
+    {
+      "entry": "US11048071B2-e2",
+      "patent": "US11048071B2",
+      "group": "tuning",
+      "na_band": "mid"
+    },
+    {
+      "entry": "US11067782B2-e1",
+      "patent": "US11067782B2",
+      "group": "tuning",
+      "na_band": "mid"
+    },
+    {
+      "entry": "US11067782B2-e3",
+      "patent": "US11067782B2",
+      "group": "tuning",
+      "na_band": "mid"
+    },
+    {
+      "entry": "US12493165B2-e3",
+      "patent": "US12493165B2",
+      "group": "tuning",
+      "na_band": "low"
+    },
+    {
+      "entry": "US12493165B2-e4",
+      "patent": "US12493165B2",
+      "group": "tuning",
+      "na_band": "low"
+    },
+    {
+      "entry": "US4521083-e1",
+      "patent": "US4521083A",
+      "group": "tuning",
+      "na_band": "mid"
+    },
+    {
+      "entry": "US4540248A-e1",
+      "patent": "US4540248A",
+      "group": "validation",
+      "na_band": "high"
+    },
+    {
+      "entry": "US4540248A-e2",
+      "patent": "US4540248A",
+      "group": "validation",
+      "na_band": "high"
+    },
+    {
+      "entry": "US6128139-e1",
+      "patent": "US6128139A",
+      "group": "validation",
+      "na_band": "mid"
+    },
+    {
+      "entry": "US6128139-e2",
+      "patent": "US6128139A",
+      "group": "validation",
+      "na_band": "mid"
+    }
+  ]
+}

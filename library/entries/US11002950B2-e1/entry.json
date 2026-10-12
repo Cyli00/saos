@@ -1,0 +1,184 @@
+{
+  "id": "US11002950B2-e1",
+  "status": "admitted",
+  "source": {
+    "patent": "US 11002950 B2",
+    "assignee": "OLYMPUS CORPORATION",
+    "priority_date": "2015-12-15",
+    "url": null
+  },
+  "embodiment": "Objective 1 (Example 1)",
+  "metrics": {
+    "focal_length_mm": 45.0,
+    "na": 0.28,
+    "field_number": 33.333333333333336,
+    "elements": 12,
+    "claimed_class": null,
+    "cover_glass": {
+      "thickness_mm": 0.17,
+      "n": 1.521,
+      "nu": 56.02
+    },
+    "catalogs": [
+      "HOYA",
+      "OHARA",
+      "SCHOTT"
+    ],
+    "glasses": [
+      {
+        "material": "TAC6",
+        "catalog": "HOYA",
+        "status": "Special",
+        "how": "nd/νd 最近（距离 0.00）"
+      },
+      {
+        "material": "S-LAL12",
+        "catalog": "OHARA",
+        "status": "Standard",
+        "how": "nd/νd 最近（距离 0.02）"
+      },
+      {
+        "material": "S-FSL5",
+        "catalog": "OHARA",
+        "status": "Standard",
+        "how": "nd/νd 最近（距离 0.13）"
+      },
+      {
+        "material": "S-FPL51",
+        "catalog": "OHARA",
+        "status": "Standard",
+        "how": "nd/νd 最近（距离 0.12）"
+      },
+      {
+        "material": "S-FPL53",
+        "catalog": "OHARA",
+        "status": "Standard",
+        "how": "nd/νd 最近（距离 0.32）"
+      },
+      {
+        "material": "N-KZFS4",
+        "catalog": "SCHOTT",
+        "status": "Preferred",
+        "how": "nd/νd 最近（距离 0.00）"
+      },
+      {
+        "material": "LAL14",
+        "catalog": "OHARA",
+        "status": "Obsolete",
+        "how": "nd/νd 最近（距离 0.04）"
+      }
+    ],
+    "wd_vertex_mm": 4.997746356366615,
+    "wd_mech_mm": 4.359036917672367,
+    "optical_length_mm": 81.79728950273083,
+    "clear_diameter_mm": 31.55088780996906
+  },
+  "assumptions": [
+    "专利折射率按 d 线处理",
+    "光阑放在物镜后焦面（物方远心）",
+    "焦距 45 mm（缩放 1），参考筒镜 200 mm",
+    "物镜视场数 33.3333"
+  ],
+  "doubts": [
+    "文字层与图像不一致：s2 的 r，文字层为 20.3849（无负号），图像为 -20.3849，表头 R11 = -20.3849 也带负号。以图像为准写 -20.3849。两种读法：-20.3849（采用，与表头 R11 一致）；+20.3849（文字层读法，与 R11 矛盾）。s10 的 r 同样：文字层为 34.7339，图像为 -34.7339，以图像为准。",
+    "光阑行缺失：表中所有面的 stop 均为 false。原文没有 aperture stop 或 diaphragm 字样。page1.png 的 FIG. 1 只标 s0–s19、L1–L12、CL1–CL5、G1–G3，没有光阑标记。两种读法：(a) 原文未标光阑，aperture_stop 写 null（采用）；(b) 光阑位置在原文中未印出，需要另行假设，本次不推断。",
+    "筒镜焦距未给出数值：原文只说 FN 与 β 是与 tube lens 10 组合时的值，tube lens 10 的数据表只有透镜数据，没有焦距。SUMMARY 段（page11 文字层）另有一般范围 \"a tube lens with a focal length from 160 mm through 200 mm\"，不是本实施例的值。两种读法：tube_lens_f = null（采用）；取 160–200 mm（不采用）。",
+    "校正等级无用语：原文没有 plan、flat field 或 achromatic 字样。最接近的句子是背景段对现有物镜的批评（page11 文字层）：\"do not provide sufficient correction of the field curvature and comatic aberrations\"。两种读法：claimed_class = null（采用）；把该句视为本实施例的校正目标（不采用，它描述的是现有技术）。",
+    "β 符号：印刷为正值 4，图像清楚。两种读法：+4（采用，原样抄写）；原文未给符号约定，无法确认是否应为 -4，本次不推断。",
+    "surfaces 的 i 沿用原表的 s 编号（s2–s19），s0–s1 为盖玻片，未放入 surfaces。两种读法：保留原编号（采用）；入库若要求从 1 连续编号，则 i = 原编号 - 1。",
+    "主 agent 补充（入库时）：原文说明 FN 与 β 是与 tube lens 10 组合时的值，但未印筒镜焦距。由 β × F = 4 × 45 mm 得筒镜焦距 180 mm；表头物高 Hob = -3.75 = FN / β / 2 = 30 / 4 / 2，与此一致。header.tube_lens_f 据此写 180，视场数按 200 mm 参考筒镜换算。原文没有平场说法，按消色差评估。"
+  ],
+  "repro": {
+    "pass": true,
+    "metrics": {
+      "efl": 0.0,
+      "na": 0.0,
+      "wd": 0.000451
+    }
+  },
+  "probe": {
+    "class": "achromat",
+    "items": {
+      "magnification": {
+        "value": 5.998815775853927e-05,
+        "threshold": 0.05,
+        "pass": true
+      },
+      "working_distance": {
+        "value": 4.359036917672367,
+        "threshold": 0.01,
+        "pass": true
+      },
+      "optical_length": {
+        "value": 81.79728950273083,
+        "threshold": 1000000.0,
+        "pass": true
+      },
+      "clear_diameter": {
+        "value": 31.55088780996906,
+        "threshold": 1000000.0,
+        "pass": true
+      },
+      "glass_status": {
+        "value": 0.0,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "surface_types": {
+        "value": 0.0,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "center_thickness_glass": {
+        "value": 1.4027,
+        "threshold": 0.001,
+        "pass": true
+      },
+      "edge_thickness_glass": {
+        "value": 0.627554182901428,
+        "threshold": 0.001,
+        "pass": true
+      },
+      "air_gap": {
+        "value": 0.1,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "axial_rms_wfe": {
+        "value": 0.014027276924465091,
+        "threshold": 0.07142857142857142,
+        "pass": true
+      },
+      "axial_color": {
+        "value": 3.7068628253642544,
+        "threshold": 6.965178571428571,
+        "pass": true
+      },
+      "osc": {
+        "value": 3.46744726134517e-05,
+        "threshold": 0.0025,
+        "pass": true
+      }
+    }
+  },
+  "benchmark": {
+    "eligible": true,
+    "class": "achromat",
+    "failed_fixed_items": {},
+    "calibration_evidence": [
+      {
+        "item": "optical_length_max",
+        "default": 45.0,
+        "measured": 81.79728950273083,
+        "benchmark_threshold": 90
+      },
+      {
+        "item": "max_clear_diameter",
+        "default": 16.0,
+        "measured": 31.55088780996906,
+        "benchmark_threshold": 35
+      }
+    ],
+    "baseline_shortfall": 0.0
+  }
+}

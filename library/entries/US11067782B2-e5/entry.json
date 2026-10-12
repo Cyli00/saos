@@ -1,0 +1,157 @@
+{
+  "id": "US11067782B2-e5",
+  "status": "admitted",
+  "source": {
+    "patent": "US 11067782 B2",
+    "assignee": "Olympus Corporation",
+    "priority_date": "2018-04-19",
+    "url": "https://patents.google.com/patent/US11067782B2/en"
+  },
+  "embodiment": "Embodiment 5",
+  "metrics": {
+    "focal_length_mm": 18.0,
+    "na": 0.4,
+    "field_number": 24.44,
+    "elements": 9,
+    "claimed_class": null,
+    "cover_glass": {
+      "thickness_mm": 0.17,
+      "n": 1.52397,
+      "nu": 54.41
+    },
+    "catalogs": [
+      "SCHOTT",
+      "OHARA"
+    ],
+    "glasses": [
+      {
+        "material": "N-KZFS4",
+        "catalog": "SCHOTT",
+        "status": "Preferred",
+        "how": "nd/νd 最近（距离 0.00）"
+      },
+      {
+        "material": "S-FPL55",
+        "catalog": "OHARA",
+        "status": "Standard",
+        "how": "nd/νd 最近（距离 0.02）"
+      },
+      {
+        "material": "S-BSL7",
+        "catalog": "OHARA",
+        "status": "Standard",
+        "how": "nd/νd 最近（距离 0.04）"
+      }
+    ],
+    "wd_vertex_mm": 3.714273980943908,
+    "wd_mech_mm": 3.36647807447297,
+    "optical_length_mm": 46.69201218508979,
+    "clear_diameter_mm": 16.57569364399274
+  },
+  "assumptions": [
+    "专利折射率按 d 线处理",
+    "光阑放在物镜后焦面（物方远心）",
+    "焦距 18 mm（缩放 1），参考筒镜 200 mm",
+    "物镜视场数 24.44"
+  ],
+  "doubts": [
+    "WD 原文未给出（原文只给 NA、f、物高、H、a、b、c、|Δz|、DOF_e）。header.WD=3.7134 取 s1→s2 的间距，即盖玻片像方面（上表面）到第一透镜面；另一种读法是以 s0 为上表面，则应为 d(s0)+d(s1)。",
+    "盖玻片在原表中列为 s0（物面）与 s1（盖玻片像方面），不是 schema 示例的第 1–2 面。已移入 cover_glass，surfaces 从 s2 开始。",
+    "beta 写 null：原文实施例未给放大率。第 5–6 栏（page21.png）只有泛称 'the magnification is around 10×'，不取作本实施例的值。",
+    "s5 r=140.679 位数少于同表其余 4 位小数值，按页面原样抄写，请对照 page26.png。",
+    "主 agent 补充（入库时）：原文未给视场数和筒镜焦距，只给最大物高 1.1 mm；入库时用 --field-number 24.44（= 2×1.1×200/18，200 mm 参考筒镜下的物镜视场数）。原文未声明平场，按 achromat 类处理。header.WD 取自表中间隔而非原文印出的工作距离，因此 WD 复现只检验该间隔是否就是物镜的对焦位置。"
+  ],
+  "repro": {
+    "pass": true,
+    "metrics": {
+      "efl": 1.7e-05,
+      "na": 0.0,
+      "wd": 0.000235
+    }
+  },
+  "probe": {
+    "class": "achromat",
+    "items": {
+      "magnification": {
+        "value": 1.7640413798591936e-06,
+        "threshold": 0.05,
+        "pass": true
+      },
+      "working_distance": {
+        "value": 3.36647807447297,
+        "threshold": 0.01,
+        "pass": true
+      },
+      "optical_length": {
+        "value": 46.69201218508979,
+        "threshold": 1000000.0,
+        "pass": true
+      },
+      "clear_diameter": {
+        "value": 16.57569364399274,
+        "threshold": 1000000.0,
+        "pass": true
+      },
+      "glass_status": {
+        "value": 0.0,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "surface_types": {
+        "value": 0.0,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "center_thickness_glass": {
+        "value": 2.8056,
+        "threshold": 0.001,
+        "pass": true
+      },
+      "edge_thickness_glass": {
+        "value": 0.8828712832815949,
+        "threshold": 0.001,
+        "pass": true
+      },
+      "air_gap": {
+        "value": 0.1753,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "axial_rms_wfe": {
+        "value": 0.004449280002733632,
+        "threshold": 0.07142857142857142,
+        "pass": true
+      },
+      "axial_color": {
+        "value": 2.711205600073985,
+        "threshold": 3.4129374999999995,
+        "pass": true
+      },
+      "osc": {
+        "value": 0.0013419210653237315,
+        "threshold": 0.0025,
+        "pass": true
+      }
+    }
+  },
+  "benchmark": {
+    "eligible": true,
+    "class": "achromat",
+    "failed_fixed_items": {},
+    "calibration_evidence": [
+      {
+        "item": "optical_length_max",
+        "default": 45.0,
+        "measured": 46.69201218508979,
+        "benchmark_threshold": 52
+      },
+      {
+        "item": "max_clear_diameter",
+        "default": 16.0,
+        "measured": 16.57569364399274,
+        "benchmark_threshold": 19
+      }
+    ],
+    "baseline_shortfall": 0.0
+  }
+}

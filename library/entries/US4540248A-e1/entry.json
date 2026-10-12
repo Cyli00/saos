@@ -1,0 +1,212 @@
+{
+  "id": "US4540248A-e1",
+  "status": "admitted",
+  "source": {
+    "patent": "US 4540248 A",
+    "assignee": "Olympus Optical Co., Ltd., Tokyo, Japan",
+    "priority_date": "1983-03-24",
+    "url": null
+  },
+  "embodiment": "Embodiment 1",
+  "metrics": {
+    "focal_length_mm": 4.0,
+    "na": 0.55,
+    "field_number": 27.0,
+    "elements": 11,
+    "claimed_class": "flat image surface up to field number 27",
+    "cover_glass": null,
+    "catalogs": [
+      "SCHOTT",
+      "OHARA",
+      "SUMITA",
+      "HOYA"
+    ],
+    "glasses": [
+      {
+        "material": "N-LASF31A",
+        "catalog": "SCHOTT",
+        "status": "Preferred",
+        "how": "nd/νd 最近（距离 0.00）"
+      },
+      {
+        "material": "LAL54",
+        "catalog": "OHARA",
+        "status": "Obsolete",
+        "how": "nd/νd 最近（距离 0.10）"
+      },
+      {
+        "material": "LITHOTEC-CAF2",
+        "catalog": "SCHOTT",
+        "status": "Obsolete",
+        "how": "nd/νd 最近（距离 1.60）"
+      },
+      {
+        "material": "KZFS50",
+        "catalog": "SUMITA",
+        "status": "Obsolete",
+        "how": "nd/νd 最近（距离 0.00）"
+      },
+      {
+        "material": "ADF405",
+        "catalog": "HOYA",
+        "status": "Obsolete",
+        "how": "nd/νd 最近（距离 0.44）"
+      },
+      {
+        "material": "N-PK52A",
+        "catalog": "SCHOTT",
+        "status": "Preferred",
+        "how": "nd/νd 最近（距离 0.00）"
+      },
+      {
+        "material": "CF2",
+        "catalog": "HOYA",
+        "status": "Obsolete",
+        "how": "nd/νd 最近（距离 1.79）"
+      },
+      {
+        "material": "LAL12",
+        "catalog": "OHARA",
+        "status": "Obsolete",
+        "how": "nd/νd 最近（距离 0.15）"
+      },
+      {
+        "material": "PBH11",
+        "catalog": "OHARA",
+        "status": "Obsolete",
+        "how": "nd/νd 最近（距离 0.07）"
+      }
+    ],
+    "wd_vertex_mm": 10.108537170786414,
+    "wd_mech_mm": 9.126579666732193,
+    "optical_length_mm": 52.099168697251,
+    "clear_diameter_mm": 15.839395691790836
+  },
+  "assumptions": [
+    "专利折射率按 d 线处理（专利未注明，按 d 线假设）",
+    "光阑放在物镜后焦面（物方远心）",
+    "焦距 4 mm（缩放 4），参考筒镜 200 mm",
+    "物镜视场数 27"
+  ],
+  "doubts": [
+    "成像透镜: page6 印刷栏 4 下部印有 FIG. 5 成像透镜数据 r1=7.530 d1=1.020 n1=1.4875 ν1=70.15; r2=-31.310 d2=0.510; r3=-14.668 d3=0.510 n2=1.7400 ν2=28.29; r4=-31.179 d4=3.827; r5=11.207 d5=0.459 n3=1.4875 ν3=70.15; r6=5.011。未放入 surfaces, header.tube_lens_f 写 null (原文未给成像透镜焦距)。原文用 'for example' 引出该组合。两种读法: (a) 本实施例配套使用该成像透镜; (b) 只是示例组合, 原文未规定配套关系。",
+    "f 句不完整: page6 印刷栏 3 'The above-mentioned numerical data are given taking focal length f of the lens system of the Embodiment 1 as' 句末 as 之后无数值。两种读法: (a) 缺失值为 1, 与表头 f = 1 一致; (b) 印刷脱落, 无法从页面确定。",
+    "光阑: 全文 (page1-8) 无 stop、diaphragm、aperture 字样, 表中无光阑行。aperture_stop 引文写 null, 所有面 stop 写 false。两种读法: (a) 原文未设光阑, 光阑位置由下游按规则确定; (b) 光阑未印。",
+    "谱线: 原文未注明折射率 n 与 ν 对应的谱线, wavelength 写 null。像差图 FIG. 3 (page3) 标注 d、C、F、g 谱线, 但正文未说明 n 所用谱线。两种读法: (a) n 为 d 线 (nd); (b) 原文未定, 不能判定。",
+    "盖玻片: 原文无盖玻片描述, WD 的起算面未说明, cover_glass 写 null。两种读法: (a) WD 从第一面 r1 量起, 无盖玻片; (b) WD 含盖玻片但原文未印厚度和折射率。",
+    "校正等级: 原文 'a flat image surface' (page5 印刷栏 1) 与 'an image surface which is flat over a wide range up to a field number of 27' (page5 摘要段) 之外, 未用 plan 或 flat field 字样。两种读法: (a) 视为平场, 按平场消色差评估; (b) 仅为像面平坦范围的描述, 按消色差评估。",
+    "像高: 图 3 (page3) 标注 'IM.H 3.43', 单位未印。写入 header.other.fig3_IM_H, image_height 写 null (正文未给像高数值)。两种读法: (a) 像高 3.43, 单位未印; (b) 图中标注的含义正文未定义, 不能判定为像高。",
+    "玻璃与非球面: 原文只印 r、d、n、ν, 未印玻璃牌号和非球面系数。surfaces 的 glass 写 null, aspheric 写 false。两种读法: (a) 球面系统; (b) 非球面未印 (原文未作声明)。",
+    "文字层差异: OCR 文字层把第 1 面半径写作 'f-5.1445' (r 误识为 f), 图像为 r1 = -5.1445, 以图像为准。",
+    "印刷痕迹: page6 印刷栏 4 表中 d8 行带撇号 (印作 'd8 ' 0.0417'), 读作 0.0417; 权利要求 5 (page7) 的 d8 = 0.0417 与之一致。",
+    "主 agent 补充（入库时）：近轴核对 f = 1.0002、前焦距 2.5284，与表头 f = 1、WD = 2.529 相差 0.02%；WD 等于前焦距，与原文 'designed for infinity' 一致，按无盖玻片处理。claimed_class 按原文 'flat over a wide range up to a field number of 27' 归为平场类。"
+  ],
+  "repro": {
+    "pass": true,
+    "metrics": {
+      "efl": 0.000787,
+      "na": 0.0,
+      "wd": 0.000738
+    }
+  },
+  "probe": {
+    "class": "plan_achromat",
+    "items": {
+      "magnification": {
+        "value": 0.0004750378541487077,
+        "threshold": 0.05,
+        "pass": true
+      },
+      "working_distance": {
+        "value": 9.126579666732193,
+        "threshold": 0.01,
+        "pass": true
+      },
+      "optical_length": {
+        "value": 52.099168697251,
+        "threshold": 1000000.0,
+        "pass": true
+      },
+      "clear_diameter": {
+        "value": 15.839395691790836,
+        "threshold": 1000000.0,
+        "pass": true
+      },
+      "glass_status": {
+        "value": 0.0,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "surface_types": {
+        "value": 0.0,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "center_thickness_glass": {
+        "value": 0.8892,
+        "threshold": 0.001,
+        "pass": true
+      },
+      "edge_thickness_glass": {
+        "value": 1.1968816996218437,
+        "threshold": 0.001,
+        "pass": true
+      },
+      "air_gap": {
+        "value": 0.1668,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "axial_rms_wfe": {
+        "value": 0.020959398426535526,
+        "threshold": 0.07142857142857142,
+        "pass": true
+      },
+      "axial_color": {
+        "value": 0.5525323197854703,
+        "threshold": 1.805190082644628,
+        "pass": true
+      },
+      "osc": {
+        "value": 0.00013423327545060106,
+        "threshold": 0.0025,
+        "pass": true
+      },
+      "plan_field": {
+        "value": -0.17117574093390164,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "field_rms_wfe": {
+        "value": 0.053931223767694665,
+        "threshold": 0.07142857142857142,
+        "pass": true
+      },
+      "lateral_color": {
+        "value": 59.26547320776265,
+        "threshold": 30.282063636363635,
+        "pass": false
+      }
+    }
+  },
+  "benchmark": {
+    "eligible": true,
+    "class": "plan_achromat",
+    "failed_fixed_items": {},
+    "calibration_evidence": [
+      {
+        "item": "lateral_color",
+        "default": 30.282063636363635,
+        "measured": 59.26547320776265,
+        "benchmark_threshold": 71.119
+      },
+      {
+        "item": "optical_length_max",
+        "default": 45.0,
+        "measured": 52.099168697251,
+        "benchmark_threshold": 58
+      }
+    ],
+    "baseline_shortfall": 0.0
+  }
+}

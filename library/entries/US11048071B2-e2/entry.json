@@ -1,0 +1,178 @@
+{
+  "id": "US11048071B2-e2",
+  "status": "admitted",
+  "source": {
+    "patent": "US 11048071 B2",
+    "assignee": "Olympus Corporation",
+    "priority_date": "2018-04-19",
+    "url": "https://patents.google.com/patent/US11048071B2/en"
+  },
+  "embodiment": "Second Embodiment",
+  "metrics": {
+    "focal_length_mm": 18.0,
+    "na": 0.4,
+    "field_number": 29.444444444444443,
+    "elements": 9,
+    "claimed_class": "flat field: high flatness for both visual and camera observation",
+    "cover_glass": {
+      "thickness_mm": 0.17,
+      "n": 1.52397,
+      "nu": 54.41
+    },
+    "catalogs": [
+      "SCHOTT",
+      "OHARA"
+    ],
+    "glasses": [
+      {
+        "material": "N-KZFS4",
+        "catalog": "SCHOTT",
+        "status": "Preferred",
+        "how": "nd/νd 最近（距离 0.00）"
+      },
+      {
+        "material": "S-FPL51",
+        "catalog": "OHARA",
+        "status": "Standard",
+        "how": "nd/νd 最近（距离 0.12）"
+      },
+      {
+        "material": "S-FPL55",
+        "catalog": "OHARA",
+        "status": "Standard",
+        "how": "nd/νd 最近（距离 0.02）"
+      },
+      {
+        "material": "S-BSL7",
+        "catalog": "OHARA",
+        "status": "Standard",
+        "how": "nd/νd 最近（距离 0.04）"
+      }
+    ],
+    "wd_vertex_mm": 3.715537293390534,
+    "wd_mech_mm": 3.2377114556301625,
+    "optical_length_mm": 46.83489153975047,
+    "clear_diameter_mm": 16.927036240755545
+  },
+  "assumptions": [
+    "专利折射率按 d 线处理",
+    "光阑放在物镜后焦面（物方远心）",
+    "焦距 18 mm（缩放 1），参考筒镜 200 mm",
+    "物镜视场数 29.4444"
+  ],
+  "doubts": [
+    "盖玻片：表中 s1（d=0.17, nd=1.52397, vd=54.41）与 s2（r=∞, d=3.714）为盖玻片两面，已移入 cover_glass，并从 surfaces 中去除。header.WD 取盖玻片上表面（s2）到第一透镜面的距离。原文 s1、s2 的定义位于第 14 页，并声明“These marks are also applicable to the embodiments described hereinafter”，因此适用于第二实施例。",
+    "WD 精度：原文文本为 WD=3.71 mm，表中 s2 的 d 印为 3.714。两者差异仅来自文本的四舍五入。header.WD 按 schema 写原文 WD 3.71，未采用 3.714。",
+    "放大率符号：原文仅给 |β|=10（绝对值），未注明正负号。header.beta 写 null，绝对值 10 存于 header.other.abs_beta。",
+    "印刷位数：s4 的 nd 印为 1.497（3 位小数，其余 nd 多为 5 位）。按印刷原样抄写，未补零。",
+    "主 agent 补充（入库时）：header.tube_lens_f 设为 180，依据原文 'combined with a tube lens having a focal length of 180 mm'，并且原文最大物高按 (FN/β)/2 计算，即 FN 26.5 是 180 mm 筒镜下的视场数；claimed_class 依据原文对目视与相机观察都达到 high flatness 的表述，按平场类处理。"
+  ],
+  "repro": {
+    "pass": true,
+    "metrics": {
+      "efl": 0.000471,
+      "na": 0.0,
+      "wd": 0.001493
+    }
+  },
+  "probe": {
+    "class": "plan_achromat",
+    "items": {
+      "magnification": {
+        "value": 0.0005526733313843124,
+        "threshold": 0.05,
+        "pass": true
+      },
+      "working_distance": {
+        "value": 3.2377114556301625,
+        "threshold": 0.01,
+        "pass": true
+      },
+      "optical_length": {
+        "value": 46.83489153975047,
+        "threshold": 1000000.0,
+        "pass": true
+      },
+      "clear_diameter": {
+        "value": 16.927036240755545,
+        "threshold": 1000000.0,
+        "pass": true
+      },
+      "glass_status": {
+        "value": 0.0,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "surface_types": {
+        "value": 0.0,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "center_thickness_glass": {
+        "value": 2.8128,
+        "threshold": 0.001,
+        "pass": true
+      },
+      "edge_thickness_glass": {
+        "value": 0.6123897377073946,
+        "threshold": 0.001,
+        "pass": true
+      },
+      "air_gap": {
+        "value": 0.2018,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "axial_rms_wfe": {
+        "value": 0.0026003827993242704,
+        "threshold": 0.07142857142857142,
+        "pass": true
+      },
+      "axial_color": {
+        "value": 2.143667020581219,
+        "threshold": 3.4129374999999995,
+        "pass": true
+      },
+      "osc": {
+        "value": 0.0008967248284205478,
+        "threshold": 0.0025,
+        "pass": true
+      },
+      "plan_field": {
+        "value": -0.5992063391769589,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "field_rms_wfe": {
+        "value": 0.07005376476785058,
+        "threshold": 0.07142857142857142,
+        "pass": true
+      },
+      "lateral_color": {
+        "value": 1.2414249902663599,
+        "threshold": 9.252852777777777,
+        "pass": true
+      }
+    }
+  },
+  "benchmark": {
+    "eligible": true,
+    "class": "plan_achromat",
+    "failed_fixed_items": {},
+    "calibration_evidence": [
+      {
+        "item": "optical_length_max",
+        "default": 45.0,
+        "measured": 46.83489153975047,
+        "benchmark_threshold": 52
+      },
+      {
+        "item": "max_clear_diameter",
+        "default": 16.0,
+        "measured": 16.927036240755545,
+        "benchmark_threshold": 19
+      }
+    ],
+    "baseline_shortfall": 0.0
+  }
+}

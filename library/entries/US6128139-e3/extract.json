@@ -1,0 +1,135 @@
+{
+  "schema": 2,
+  "source": {
+    "patent": "US 6128139 A",
+    "assignee": "Nikon Corporation",
+    "priority_date": "1996-10-30",
+    "url": "https://patents.google.com/patent/US6128139A/en"
+  },
+  "embodiment": "Example 3",
+  "units": "mm",
+  "order": "object_to_image",
+  "wavelength": "d",
+  "header": {
+    "f": 20.0,
+    "NA": 0.25,
+    "WD": 6.5,
+    "beta": 10,
+    "field_number": null,
+    "image_height": null,
+    "tube_lens_f": null,
+    "other": {
+      "f1": -1769.37,
+      "f2": 28.59,
+      "f3": 68.61,
+      "cond1_f_over_f1": -0.011,
+      "cond2_n3n_minus_n3p": 0.18,
+      "cond3_v1p_minus_v1": 22.2
+    }
+  },
+  "cover_glass": {
+    "thickness": null,
+    "n": null,
+    "nu": null,
+    "note": "原文：WD 为盖玻片像方表面到第一面的距离；全文未给盖玻片厚度"
+  },
+  "claimed_class": "achromat-class",
+  "surfaces": [
+    {
+      "i": 1,
+      "r": -13.0436,
+      "d": 6.0,
+      "n": 1.8,
+      "nu": 28.6,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 2,
+      "r": 20.4091,
+      "d": 2.3,
+      "n": 1.66,
+      "nu": 50.8,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 3,
+      "r": -12.5008,
+      "d": 0.35,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 4,
+      "r": 28.3836,
+      "d": 2.5,
+      "n": 1.8,
+      "nu": 46.5,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 5,
+      "r": -116.2243,
+      "d": 15.25,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 6,
+      "r": -272.9142,
+      "d": 1.8,
+      "n": 1.8,
+      "nu": 40.9,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 7,
+      "r": 16.9631,
+      "d": 3.1,
+      "n": 1.62,
+      "nu": 54.0,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 8,
+      "r": -22.6105,
+      "d": null,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    }
+  ],
+  "quotes": {
+    "aperture_stop": null,
+    "working_distance": {
+      "page": 19,
+      "text": "WD denotes the working distance (a distance do along the optical axis between the image-side surface of the cover glass and the surface located closest to the object in the first lens group G1)"
+    },
+    "field_number": null,
+    "wavelength": {
+      "page": 19,
+      "text": "Numerals at the left end denote the order of lens surface from the object-side, r denotes the radius of curvature of the lens surface, d denotes the distance between the lens surfaces, and n and v denote a refractive index for the d-line (λ=587.6 nm) and the Abbe number, respectively."
+    },
+    "tube_lens": {
+      "page": 18,
+      "text": "As shown in FIG. 15, the imaging lens is constituted by a positive cemented lens G4 of a double-convex lens and a double-concave lens, a negative cemented lens G5 of a double-convex lens and a double-concave lens, and a prism P."
+    }
+  },
+  "doubts": [
+    "quotes.working_distance 原句中距离符号印为 'a distance do'（字母 o），其他实施例为 'd0'；读法A：排版误植，应为 d0；读法B：原文确为 do。JSON 原样保留。",
+    "header.other 中 cond3 原文印为 'v1p − v1 = 22.2'，缺下标 n。读法A：指面1的 ν（v1n），表中面2 ν=50.8 减面1 ν=28.6 = 22.2 与之吻合，下标 n 漏印；读法B：v1 为其他量（原文未定义）。JSON 键名保留印刷形式 cond3_v1p_minus_v1。",
+    "header.beta 原文印为 '10×'，无符号；按印刷值记为 10，未补负号（schema 示例为 -10），请确认符号约定。",
+    "原文全文未标注光阑面（无 stop / aperture stop 表述）；surfaces 全部 stop=false，quotes.aperture_stop 记为 null。"
+  ]
+}

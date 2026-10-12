@@ -1,0 +1,171 @@
+{
+  "title": "US 11067782 B2 Embodiment 1 f=18 mm",
+  "aperture": {
+    "type": "object_na",
+    "value": 0.4
+  },
+  "fields": {
+    "type": "object_height",
+    "y": [
+      0.0,
+      0.5499,
+      0.76986,
+      1.0998
+    ]
+  },
+  "wavelengths": {
+    "um": [
+      0.4861327,
+      0.5875618,
+      0.6562725
+    ],
+    "weights": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "primary": 2
+  },
+  "catalogs": [
+    "SCHOTT",
+    "OHARA"
+  ],
+  "ray_aiming": "real",
+  "telecentric_object": true,
+  "object": {
+    "thickness": 0.17,
+    "material": {
+      "model": {
+        "nd": 1.52397,
+        "vd": 54.41,
+        "dpgf": 0.0
+      }
+    },
+    "comment": "zea:object"
+  },
+  "surfaces": [
+    {
+      "radius": "inf",
+      "thickness": 3.712095337517142,
+      "comment": "zea:cover_top"
+    },
+    {
+      "radius": -8.3986,
+      "thickness": 4.2209,
+      "material": "N-KZFS4",
+      "comment": "patent r2",
+      "stop": false
+    },
+    {
+      "radius": 12.1766,
+      "thickness": 3.4801,
+      "material": "S-FPL51",
+      "comment": "patent r3",
+      "stop": false
+    },
+    {
+      "radius": -10.5755,
+      "thickness": 0.2002,
+      "material": "",
+      "comment": "patent r4",
+      "stop": false
+    },
+    {
+      "radius": 125.8891,
+      "thickness": 2.8103,
+      "material": "S-FPL55",
+      "comment": "patent r5",
+      "stop": false
+    },
+    {
+      "radius": -18.6353,
+      "thickness": 0.2005,
+      "material": "",
+      "comment": "patent r6",
+      "stop": false
+    },
+    {
+      "radius": 14.7946,
+      "thickness": 4.4811,
+      "material": "S-FPL55",
+      "comment": "patent r7",
+      "stop": false
+    },
+    {
+      "radius": -18.4565,
+      "thickness": 1.6867,
+      "material": "",
+      "comment": "patent r8",
+      "stop": false
+    },
+    {
+      "radius": 12.8039,
+      "thickness": 4.81,
+      "material": "S-FPL55",
+      "comment": "patent r9",
+      "stop": false
+    },
+    {
+      "radius": -9.1339,
+      "thickness": 4.4901,
+      "material": "S-BSL7",
+      "comment": "patent r10",
+      "stop": false
+    },
+    {
+      "radius": 7.2434,
+      "thickness": 5.7114,
+      "material": "",
+      "comment": "patent r11",
+      "stop": false
+    },
+    {
+      "radius": -5.268,
+      "thickness": 2.9001,
+      "material": "S-BSL7",
+      "comment": "patent r12",
+      "stop": false
+    },
+    {
+      "radius": 70.4239,
+      "thickness": 4.17,
+      "material": "S-FPL55",
+      "comment": "patent r13",
+      "stop": false
+    },
+    {
+      "radius": -10.1954,
+      "thickness": 0.2264,
+      "material": "",
+      "comment": "patent r14",
+      "stop": false
+    },
+    {
+      "radius": -199.538,
+      "thickness": 3.53,
+      "material": "S-FPL55",
+      "comment": "patent r15",
+      "stop": false
+    },
+    {
+      "radius": -13.7504,
+      "thickness": -20.79061932542946,
+      "material": "",
+      "comment": "patent r16",
+      "stop": false
+    },
+    {
+      "radius": "inf",
+      "thickness": 0.0,
+      "comment": "zea:stop",
+      "stop": true
+    },
+    {
+      "type": "paraxial",
+      "focal_length": 200.0,
+      "opd_mode": 1,
+      "thickness": 200.0,
+      "comment": "zea:tube"
+    }
+  ]
+}

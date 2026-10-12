@@ -1,0 +1,284 @@
+{
+  "scale": 10.0,
+  "focal_length_mm": 10.0,
+  "field_number": 27.0,
+  "paraxial": {
+    "wavelength": "d",
+    "efl_mm": 9.994409543989308,
+    "front_focal_distance_mm": 13.349428750154143,
+    "back_focal_distance_mm": -9.740889959615028
+  },
+  "stop": "rear_focal",
+  "cover_glass": null,
+  "cover_glass_assumed": false,
+  "printed_decimals": {
+    "r": 3,
+    "d": 4,
+    "n": 5,
+    "nu": 2
+  },
+  "rounding_envelope": {
+    "efl": [
+      9.97494555403462,
+      10.014134011417175
+    ],
+    "wd": [
+      13.307894920844435,
+      13.392764808532458
+    ]
+  },
+  "elements": 10,
+  "glasses": [
+    {
+      "n": 1.5927,
+      "nu": 35.29,
+      "printed": null,
+      "material": "FTM16",
+      "catalog": "OHARA",
+      "status": "Obsolete",
+      "how": "nd/νd 最近（距离 0.13）",
+      "candidates": [
+        {
+          "catalog": "OHARA",
+          "name": "FTM16",
+          "nd": 1.592701,
+          "vd": 35.296315,
+          "status": "Obsolete",
+          "distance": 0.13
+        },
+        {
+          "catalog": "NIKON-HIKARI",
+          "name": "E-F16",
+          "nd": 1.592701,
+          "vd": 35.298957,
+          "status": "Obsolete",
+          "distance": 0.18
+        },
+        {
+          "catalog": "NIKON-HIKARI",
+          "name": "J-F16",
+          "nd": 1.5927,
+          "vd": 35.271777,
+          "status": "Standard",
+          "distance": 0.36
+        }
+      ]
+    },
+    {
+      "n": 1.497,
+      "nu": 81.61,
+      "printed": null,
+      "material": "N-PK52A",
+      "catalog": "SCHOTT",
+      "status": "Preferred",
+      "how": "nd/νd 最近（距离 0.00）",
+      "candidates": [
+        {
+          "catalog": "SCHOTT",
+          "name": "N-PK52A",
+          "nd": 1.497,
+          "vd": 81.61,
+          "status": "Preferred",
+          "distance": 0.0
+        },
+        {
+          "catalog": "HOYA",
+          "name": "FCD1",
+          "nd": 1.497,
+          "vd": 81.61,
+          "status": "Preferred",
+          "distance": 0.0
+        },
+        {
+          "catalog": "CDGM",
+          "name": "D-FK61",
+          "nd": 1.497,
+          "vd": 81.611615,
+          "status": "Standard",
+          "distance": 0.03
+        }
+      ]
+    },
+    {
+      "n": 1.6968,
+      "nu": 56.49,
+      "printed": null,
+      "material": "LAK31",
+      "catalog": "SCHOTT",
+      "status": "Obsolete",
+      "how": "nd/νd 最近（距离 1.40）",
+      "candidates": [
+        {
+          "catalog": "SCHOTT",
+          "name": "LAK31",
+          "nd": 1.696732,
+          "vd": 56.420174,
+          "status": "Obsolete",
+          "distance": 1.4
+        },
+        {
+          "catalog": "CDGM",
+          "name": "H-LAK12",
+          "nd": 1.6968,
+          "vd": 56.175305,
+          "status": "Standard",
+          "distance": 6.29
+        },
+        {
+          "catalog": "SUMITA",
+          "name": "K-LaFK55",
+          "nd": 1.694,
+          "vd": 56.3,
+          "status": "Standard",
+          "distance": 6.77
+        }
+      ]
+    },
+    {
+      "n": 1.71736,
+      "nu": 29.51,
+      "printed": null,
+      "material": "SF1",
+      "catalog": "SCHOTT",
+      "status": "Preferred",
+      "how": "nd/νd 最近（距离 0.00）",
+      "candidates": [
+        {
+          "catalog": "SCHOTT",
+          "name": "SF1",
+          "nd": 1.71736,
+          "vd": 29.51,
+          "status": "Preferred",
+          "distance": 0.0
+        },
+        {
+          "catalog": "CDGM",
+          "name": "ZF3",
+          "nd": 1.717365,
+          "vd": 29.510385,
+          "status": "Obsolete",
+          "distance": 0.01
+        },
+        {
+          "catalog": "OHARA",
+          "name": "PBH1",
+          "nd": 1.717362,
+          "vd": 29.513538,
+          "status": "Obsolete",
+          "distance": 0.07
+        }
+      ]
+    },
+    {
+      "n": 1.68893,
+      "nu": 31.08,
+      "printed": null,
+      "material": "D-ZF10",
+      "catalog": "CDGM",
+      "status": "Standard",
+      "how": "nd/νd 最近（距离 0.05）",
+      "candidates": [
+        {
+          "catalog": "CDGM",
+          "name": "D-ZF10",
+          "nd": 1.68893,
+          "vd": 31.077677,
+          "status": "Standard",
+          "distance": 0.05
+        },
+        {
+          "catalog": "OHARA",
+          "name": "PBM28",
+          "nd": 1.68893,
+          "vd": 31.082901,
+          "status": "Obsolete",
+          "distance": 0.06
+        },
+        {
+          "catalog": "OHARA",
+          "name": "PBM28W",
+          "nd": 1.68893,
+          "vd": 31.082901,
+          "status": "Obsolete",
+          "distance": 0.06
+        }
+      ]
+    },
+    {
+      "n": 1.78472,
+      "nu": 25.71,
+      "printed": null,
+      "material": "PBH11",
+      "catalog": "OHARA",
+      "status": "Obsolete",
+      "how": "nd/νd 最近（距离 0.05）",
+      "candidates": [
+        {
+          "catalog": "OHARA",
+          "name": "PBH11",
+          "nd": 1.784718,
+          "vd": 25.712726,
+          "status": "Obsolete",
+          "distance": 0.05
+        },
+        {
+          "catalog": "OHARA",
+          "name": "PBH11W",
+          "nd": 1.784718,
+          "vd": 25.712726,
+          "status": "Obsolete",
+          "distance": 0.05
+        },
+        {
+          "catalog": "HOYA",
+          "name": "FD11",
+          "nd": 1.784715,
+          "vd": 25.704276,
+          "status": "Obsolete",
+          "distance": 0.11
+        }
+      ]
+    },
+    {
+      "n": 1.53172,
+      "nu": 48.9,
+      "printed": null,
+      "material": "LLF6",
+      "catalog": "SUMITA",
+      "status": "Obsolete",
+      "how": "nd/νd 最近（距离 0.00）",
+      "candidates": [
+        {
+          "catalog": "SUMITA",
+          "name": "LLF6",
+          "nd": 1.53172,
+          "vd": 48.9,
+          "status": "Obsolete",
+          "distance": 0.0
+        },
+        {
+          "catalog": "OHARA",
+          "name": "PBL6",
+          "nd": 1.531717,
+          "vd": 48.904553,
+          "status": "Obsolete",
+          "distance": 0.09
+        },
+        {
+          "catalog": "SCHOTT",
+          "name": "N-LLF6",
+          "nd": 1.531688,
+          "vd": 48.895238,
+          "status": "Obsolete",
+          "distance": 0.11
+        }
+      ]
+    }
+  ],
+  "assumptions": [
+    "专利折射率按 d 线处理（专利未注明，按 d 线假设）",
+    "光阑放在物镜后焦面（物方远心）",
+    "焦距 10 mm（缩放 10），参考筒镜 200 mm",
+    "物镜视场数 27"
+  ]
+}

@@ -1,0 +1,249 @@
+{
+  "scale": 1.0,
+  "focal_length_mm": 20.0,
+  "field_number": 22.0,
+  "paraxial": {
+    "wavelength": "d",
+    "efl_mm": 20.16244550749316,
+    "front_focal_distance_mm": 6.778186832873675,
+    "back_focal_distance_mm": 6.405193517281998
+  },
+  "stop": "rear_focal",
+  "cover_glass": {
+    "thickness": 0.17,
+    "n": 1.523,
+    "nu": 55.0
+  },
+  "cover_glass_assumed": true,
+  "printed_decimals": {
+    "r": 4,
+    "d": 2,
+    "n": 2,
+    "nu": 1
+  },
+  "rounding_envelope": {
+    "efl": [
+      19.728509048621827,
+      20.602532644866955
+    ],
+    "wd": [
+      6.250998488303224,
+      7.082805840028354
+    ]
+  },
+  "elements": 5,
+  "glasses": [
+    {
+      "n": 1.81,
+      "nu": 25.4,
+      "printed": null,
+      "material": {
+        "model": {
+          "nd": 1.81,
+          "vd": 25.4,
+          "dpgf": 0.0
+        }
+      },
+      "catalog": null,
+      "status": "Model",
+      "how": "原文折射率只印 2 位小数，用模型玻璃",
+      "candidates": [
+        {
+          "catalog": "SCHOTT",
+          "name": "SF6G05",
+          "nd": 1.80906,
+          "vd": 25.27,
+          "status": "Preferred",
+          "distance": 3.21
+        },
+        {
+          "catalog": "CDGM",
+          "name": "ZF7",
+          "nd": 1.806277,
+          "vd": 25.380144,
+          "status": "Standard",
+          "distance": 7.46
+        },
+        {
+          "catalog": "SUMITA",
+          "name": "K-SFLD6",
+          "nd": 1.80518,
+          "vd": 25.4,
+          "status": "Standard",
+          "distance": 9.64
+        }
+      ]
+    },
+    {
+      "n": 1.66,
+      "nu": 50.8,
+      "printed": null,
+      "material": {
+        "model": {
+          "nd": 1.66,
+          "vd": 50.8,
+          "dpgf": 0.0
+        }
+      },
+      "catalog": null,
+      "status": "Model",
+      "how": "原文折射率只印 2 位小数，用模型玻璃",
+      "candidates": [
+        {
+          "catalog": "SUMITA",
+          "name": "SSK5",
+          "nd": 1.65844,
+          "vd": 50.8,
+          "status": "Obsolete",
+          "distance": 3.12
+        },
+        {
+          "catalog": "NIKON-HIKARI",
+          "name": "J-SSK5",
+          "nd": 1.65844,
+          "vd": 50.835655,
+          "status": "Standard",
+          "distance": 3.2
+        },
+        {
+          "catalog": "CDGM",
+          "name": "H-ZBAF50",
+          "nd": 1.65844,
+          "vd": 50.852265,
+          "status": "Standard",
+          "distance": 3.29
+        }
+      ]
+    },
+    {
+      "n": 1.8,
+      "nu": 46.5,
+      "printed": null,
+      "material": {
+        "model": {
+          "nd": 1.8,
+          "vd": 46.5,
+          "dpgf": 0.0
+        }
+      },
+      "catalog": null,
+      "status": "Model",
+      "how": "原文折射率只印 2 位小数，用模型玻璃",
+      "candidates": [
+        {
+          "catalog": "SUMITA",
+          "name": "LASFN6",
+          "nd": 1.80235,
+          "vd": 46.7,
+          "status": "Obsolete",
+          "distance": 6.17
+        },
+        {
+          "catalog": "SCHOTT",
+          "name": "LASFN30",
+          "nd": 1.803181,
+          "vd": 46.379894,
+          "status": "Obsolete",
+          "distance": 6.8
+        },
+        {
+          "catalog": "CDGM",
+          "name": "H-ZLAF2A",
+          "nd": 1.80279,
+          "vd": 46.761307,
+          "status": "Standard",
+          "distance": 7.65
+        }
+      ]
+    },
+    {
+      "n": 1.72,
+      "nu": 37.9,
+      "printed": null,
+      "material": {
+        "model": {
+          "nd": 1.72,
+          "vd": 37.9,
+          "dpgf": 0.0
+        }
+      },
+      "catalog": null,
+      "status": "Model",
+      "how": "原文折射率只印 2 位小数，用模型玻璃",
+      "candidates": [
+        {
+          "catalog": "OHARA",
+          "name": "BAH28",
+          "nd": 1.72342,
+          "vd": 37.949115,
+          "status": "Obsolete",
+          "distance": 6.91
+        },
+        {
+          "catalog": "NIKON-HIKARI",
+          "name": "E-BASF8",
+          "nd": 1.72342,
+          "vd": 37.950657,
+          "status": "Obsolete",
+          "distance": 6.91
+        },
+        {
+          "catalog": "OHARA",
+          "name": "S-BAH28",
+          "nd": 1.72342,
+          "vd": 37.955602,
+          "status": "Standard",
+          "distance": 6.93
+        }
+      ]
+    },
+    {
+      "n": 1.51,
+      "nu": 54.5,
+      "printed": null,
+      "material": {
+        "model": {
+          "nd": 1.51,
+          "vd": 54.5,
+          "dpgf": 0.0
+        }
+      },
+      "catalog": null,
+      "status": "Model",
+      "how": "原文折射率只印 2 位小数，用模型玻璃",
+      "candidates": [
+        {
+          "catalog": "SUMITA",
+          "name": "KF3",
+          "nd": 1.51454,
+          "vd": 54.6,
+          "status": "Obsolete",
+          "distance": 9.3
+        },
+        {
+          "catalog": "HOYA",
+          "name": "CF3",
+          "nd": 1.51454,
+          "vd": 54.628437,
+          "status": "Obsolete",
+          "distance": 9.44
+        },
+        {
+          "catalog": "SCHOTT",
+          "name": "KF3",
+          "nd": 1.51454,
+          "vd": 54.702547,
+          "status": "Obsolete",
+          "distance": 9.94
+        }
+      ]
+    }
+  ],
+  "assumptions": [
+    "专利折射率按 d 线处理",
+    "光阑放在物镜后焦面（物方远心）",
+    "焦距 20 mm（缩放 1），参考筒镜 200 mm",
+    "物镜视场数 22（专利未给，按默认 22 假设）",
+    "原文工作距离从盖玻片量起但未给厚度：按 0.17 mm、nd 1.523、νd 55 假设"
+  ]
+}

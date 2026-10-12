@@ -1,0 +1,169 @@
+{
+  "title": "US 4521083 A Embodiment 1 f=10 mm",
+  "aperture": {
+    "type": "object_na",
+    "value": 0.4
+  },
+  "fields": {
+    "type": "object_height",
+    "y": [
+      0.0,
+      0.3375,
+      0.4725,
+      0.675
+    ]
+  },
+  "wavelengths": {
+    "um": [
+      0.4861327,
+      0.5875618,
+      0.6562725
+    ],
+    "weights": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "primary": 2
+  },
+  "catalogs": [
+    "OHARA",
+    "SCHOTT",
+    "CDGM",
+    "SUMITA"
+  ],
+  "ray_aiming": "real",
+  "telecentric_object": true,
+  "object": {
+    "thickness": 13.349428750154143,
+    "material": "",
+    "comment": "zea:object"
+  },
+  "surfaces": [
+    {
+      "radius": -17.4,
+      "thickness": 1.6680000000000001,
+      "material": "FTM16",
+      "comment": "patent r1",
+      "stop": false
+    },
+    {
+      "radius": -11.34,
+      "thickness": 0.111,
+      "material": "",
+      "comment": "patent r2",
+      "stop": false
+    },
+    {
+      "radius": -227.81,
+      "thickness": 2.446,
+      "material": "N-PK52A",
+      "comment": "patent r3",
+      "stop": false
+    },
+    {
+      "radius": -16.39,
+      "thickness": 0.16699999999999998,
+      "material": "",
+      "comment": "patent r4",
+      "stop": false
+    },
+    {
+      "radius": 14.42,
+      "thickness": 5.449000000000001,
+      "material": "N-PK52A",
+      "comment": "patent r5",
+      "stop": false
+    },
+    {
+      "radius": -12.77,
+      "thickness": 2.113,
+      "material": "LAK31",
+      "comment": "patent r6",
+      "stop": false
+    },
+    {
+      "radius": -20.75,
+      "thickness": 0.111,
+      "material": "",
+      "comment": "patent r7",
+      "stop": false
+    },
+    {
+      "radius": 7.9,
+      "thickness": 4.337,
+      "material": "N-PK52A",
+      "comment": "patent r8",
+      "stop": false
+    },
+    {
+      "radius": -25.82,
+      "thickness": 1.001,
+      "material": "SF1",
+      "comment": "patent r9",
+      "stop": false
+    },
+    {
+      "radius": 5.0,
+      "thickness": 4.003,
+      "material": "",
+      "comment": "patent r10",
+      "stop": false
+    },
+    {
+      "radius": -5.05,
+      "thickness": 1.001,
+      "material": "D-ZF10",
+      "comment": "patent r11",
+      "stop": false
+    },
+    {
+      "radius": 198.56,
+      "thickness": 3.558,
+      "material": "N-PK52A",
+      "comment": "patent r12",
+      "stop": false
+    },
+    {
+      "radius": -6.5,
+      "thickness": 1.101,
+      "material": "",
+      "comment": "patent r13",
+      "stop": false
+    },
+    {
+      "radius": 11.799999999999999,
+      "thickness": 2.7800000000000002,
+      "material": "PBH11",
+      "comment": "patent r14",
+      "stop": false
+    },
+    {
+      "radius": -249.11,
+      "thickness": 4.4479999999999995,
+      "material": "LLF6",
+      "comment": "patent r15",
+      "stop": false
+    },
+    {
+      "radius": 8.09,
+      "thickness": -9.740889959615028,
+      "material": "",
+      "comment": "patent r16",
+      "stop": false
+    },
+    {
+      "radius": "inf",
+      "thickness": 0.0,
+      "comment": "zea:stop",
+      "stop": true
+    },
+    {
+      "type": "paraxial",
+      "focal_length": 200.0,
+      "opd_mode": 1,
+      "thickness": 200.0,
+      "comment": "zea:tube"
+    }
+  ]
+}

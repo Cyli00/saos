@@ -1,0 +1,214 @@
+{
+  "scale": 1.0,
+  "focal_length_mm": 36.0,
+  "field_number": 29.444444444444443,
+  "paraxial": {
+    "wavelength": "d",
+    "efl_mm": 35.99955390362077,
+    "front_focal_distance_mm": 20.288203792497175,
+    "back_focal_distance_mm": -11.62402547559745
+  },
+  "stop": "rear_focal",
+  "cover_glass": null,
+  "cover_glass_assumed": false,
+  "printed_decimals": {
+    "r": 4,
+    "d": 3,
+    "n": 5,
+    "nu": 2
+  },
+  "rounding_envelope": {
+    "efl": [
+      35.99268675198509,
+      36.007390809003546
+    ],
+    "wd": [
+      20.27785079381395,
+      20.29898969820756
+    ]
+  },
+  "elements": 6,
+  "glasses": [
+    {
+      "n": 1.72916,
+      "nu": 54.68,
+      "printed": null,
+      "material": "S-LAL18",
+      "catalog": "OHARA",
+      "status": "Standard",
+      "how": "nd/νd 最近（距离 0.01）",
+      "candidates": [
+        {
+          "catalog": "OHARA",
+          "name": "S-LAL18",
+          "nd": 1.729157,
+          "vd": 54.680013,
+          "status": "Standard",
+          "distance": 0.01
+        },
+        {
+          "catalog": "OHARA",
+          "name": "LAL18",
+          "nd": 1.729157,
+          "vd": 54.683134,
+          "status": "Obsolete",
+          "distance": 0.06
+        },
+        {
+          "catalog": "CDGM",
+          "name": "H-LAK52",
+          "nd": 1.72916,
+          "vd": 54.684737,
+          "status": "Preferred",
+          "distance": 0.09
+        }
+      ]
+    },
+    {
+      "n": 1.43875,
+      "nu": 94.66,
+      "printed": null,
+      "material": "S-FPL55",
+      "catalog": "OHARA",
+      "status": "Standard",
+      "how": "nd/νd 最近（距离 0.02）",
+      "candidates": [
+        {
+          "catalog": "OHARA",
+          "name": "S-FPL55",
+          "nd": 1.43875,
+          "vd": 94.661059,
+          "status": "Standard",
+          "distance": 0.02
+        },
+        {
+          "catalog": "CDGM",
+          "name": "H-FK95N",
+          "nd": 1.4378,
+          "vd": 94.523389,
+          "status": "Standard",
+          "distance": 3.33
+        },
+        {
+          "catalog": "CDGM",
+          "name": "D-FK95",
+          "nd": 1.4378,
+          "vd": 94.523389,
+          "status": "Standard",
+          "distance": 3.33
+        }
+      ]
+    },
+    {
+      "n": 1.6134,
+      "nu": 44.27,
+      "printed": null,
+      "material": "S-NBM51",
+      "catalog": "OHARA",
+      "status": "Standard",
+      "how": "nd/νd 最近（距离 0.05）",
+      "candidates": [
+        {
+          "catalog": "OHARA",
+          "name": "S-NBM51",
+          "nd": 1.613397,
+          "vd": 44.267706,
+          "status": "Standard",
+          "distance": 0.05
+        },
+        {
+          "catalog": "OHARA",
+          "name": "BPM51",
+          "nd": 1.613397,
+          "vd": 44.266767,
+          "status": "Obsolete",
+          "distance": 0.06
+        },
+        {
+          "catalog": "SCHOTT",
+          "name": "KZFSN4",
+          "nd": 1.6134,
+          "vd": 44.29,
+          "status": "Obsolete",
+          "distance": 0.4
+        }
+      ]
+    },
+    {
+      "n": 1.804,
+      "nu": 46.53,
+      "printed": null,
+      "material": "S-LAH65VS",
+      "catalog": "OHARA",
+      "status": "Standard",
+      "how": "nd/νd 最近（距离 0.05）",
+      "candidates": [
+        {
+          "catalog": "OHARA",
+          "name": "S-LAH65VS",
+          "nd": 1.804,
+          "vd": 46.527532,
+          "status": "Standard",
+          "distance": 0.05
+        },
+        {
+          "catalog": "SCHOTT",
+          "name": "N-LASF44",
+          "nd": 1.8042,
+          "vd": 46.5,
+          "status": "Preferred",
+          "distance": 0.72
+        },
+        {
+          "catalog": "HOYA",
+          "name": "TAF3D",
+          "nd": 1.8042,
+          "vd": 46.5,
+          "status": "Preferred",
+          "distance": 0.72
+        }
+      ]
+    },
+    {
+      "n": 1.51823,
+      "nu": 58.9,
+      "printed": null,
+      "material": "S-NSL3",
+      "catalog": "OHARA",
+      "status": "Standard",
+      "how": "nd/νd 最近（距离 0.04）",
+      "candidates": [
+        {
+          "catalog": "OHARA",
+          "name": "S-NSL3",
+          "nd": 1.518229,
+          "vd": 58.902057,
+          "status": "Standard",
+          "distance": 0.04
+        },
+        {
+          "catalog": "NIKON-HIKARI",
+          "name": "K3",
+          "nd": 1.51823,
+          "vd": 58.909268,
+          "status": "Obsolete",
+          "distance": 0.19
+        },
+        {
+          "catalog": "NIKON-HIKARI",
+          "name": "E-K3",
+          "nd": 1.518229,
+          "vd": 58.93364,
+          "status": "Obsolete",
+          "distance": 0.67
+        }
+      ]
+    }
+  ],
+  "assumptions": [
+    "专利折射率按 d 线处理",
+    "光阑放在物镜后焦面（物方远心）",
+    "焦距 36 mm（缩放 1），参考筒镜 200 mm",
+    "物镜视场数 29.4444"
+  ]
+}

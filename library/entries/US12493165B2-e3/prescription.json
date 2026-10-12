@@ -1,0 +1,124 @@
+{
+  "title": "US 12493165 B2 Objective Lens 3 (Third Example) f=36 mm",
+  "aperture": {
+    "type": "object_na",
+    "value": 0.15
+  },
+  "fields": {
+    "type": "object_height",
+    "y": [
+      0.0,
+      1.325,
+      1.8549999999999998,
+      2.65
+    ]
+  },
+  "wavelengths": {
+    "um": [
+      0.4861327,
+      0.5875618,
+      0.6562725
+    ],
+    "weights": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "primary": 2
+  },
+  "catalogs": [
+    "OHARA"
+  ],
+  "ray_aiming": "real",
+  "telecentric_object": true,
+  "object": {
+    "thickness": 20.288203792497175,
+    "material": "",
+    "comment": "zea:object"
+  },
+  "surfaces": [
+    {
+      "radius": 25.0411,
+      "thickness": 1.847,
+      "material": "S-LAL18",
+      "comment": "patent r2",
+      "stop": false
+    },
+    {
+      "radius": -36.1028,
+      "thickness": 0.2,
+      "material": "",
+      "comment": "patent r3",
+      "stop": false
+    },
+    {
+      "radius": 10.4061,
+      "thickness": 5.707,
+      "material": "S-FPL55",
+      "comment": "patent r4",
+      "stop": false
+    },
+    {
+      "radius": -15.6126,
+      "thickness": 4.66,
+      "material": "S-NBM51",
+      "comment": "patent r5",
+      "stop": false
+    },
+    {
+      "radius": 7.2915,
+      "thickness": 7.807,
+      "material": "",
+      "comment": "patent r6",
+      "stop": false
+    },
+    {
+      "radius": -5.5361,
+      "thickness": 1.5,
+      "material": "S-LAH65VS",
+      "comment": "patent r7",
+      "stop": false
+    },
+    {
+      "radius": 24.6954,
+      "thickness": 3.133,
+      "material": "S-FPL55",
+      "comment": "patent r8",
+      "stop": false
+    },
+    {
+      "radius": -7.6813,
+      "thickness": 0.535,
+      "material": "",
+      "comment": "patent r9",
+      "stop": false
+    },
+    {
+      "radius": 102.0044,
+      "thickness": 3.16,
+      "material": "S-NSL3",
+      "comment": "patent r10",
+      "stop": false
+    },
+    {
+      "radius": -9.962,
+      "thickness": -11.62402547559745,
+      "material": "",
+      "comment": "patent r11",
+      "stop": false
+    },
+    {
+      "radius": "inf",
+      "thickness": 0.0,
+      "comment": "zea:stop",
+      "stop": true
+    },
+    {
+      "type": "paraxial",
+      "focal_length": 200.0,
+      "opd_mode": 1,
+      "thickness": 200.0,
+      "comment": "zea:tube"
+    }
+  ]
+}

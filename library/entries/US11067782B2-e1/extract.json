@@ -1,0 +1,201 @@
+{
+  "schema": 2,
+  "source": {
+    "patent": "US 11067782 B2",
+    "assignee": "Olympus Corporation",
+    "priority_date": "2018-04-19",
+    "url": "https://patents.google.com/patent/US11067782B2/en"
+  },
+  "embodiment": "Embodiment 1",
+  "units": "mm",
+  "order": "object_to_image",
+  "wavelength": "d",
+  "header": {
+    "f": 18,
+    "NA": 0.4,
+    "WD": 3.7115,
+    "beta": null,
+    "field_number": null,
+    "image_height": null,
+    "tube_lens_f": null,
+    "other": {
+      "object_height": 1.1,
+      "H": 46.8,
+      "a": 2.09,
+      "b": 4.49,
+      "c": 4.22,
+      "abs_dz_um": 7.09,
+      "DOF_e_um": 1.70647
+    }
+  },
+  "cover_glass": {
+    "thickness": 0.17,
+    "n": 1.52397,
+    "nu": 54.41
+  },
+  "claimed_class": null,
+  "surfaces": [
+    {
+      "i": 2,
+      "r": -8.3986,
+      "d": 4.2209,
+      "n": 1.61336,
+      "nu": 44.49,
+      "glass": "glass 6",
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 3,
+      "r": 12.1766,
+      "d": 3.4801,
+      "n": 1.497,
+      "nu": 81.54,
+      "glass": "glass 2",
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 4,
+      "r": -10.5755,
+      "d": 0.2002,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 5,
+      "r": 125.8891,
+      "d": 2.8103,
+      "n": 1.43875,
+      "nu": 94.66,
+      "glass": "glass 1",
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 6,
+      "r": -18.6353,
+      "d": 0.2005,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 7,
+      "r": 14.7946,
+      "d": 4.4811,
+      "n": 1.43875,
+      "nu": 94.66,
+      "glass": "glass 1",
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 8,
+      "r": -18.4565,
+      "d": 1.6867,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 9,
+      "r": 12.8039,
+      "d": 4.81,
+      "n": 1.43875,
+      "nu": 94.66,
+      "glass": "glass 1",
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 10,
+      "r": -9.1339,
+      "d": 4.4901,
+      "n": 1.51633,
+      "nu": 64.14,
+      "glass": "glass 3",
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 11,
+      "r": 7.2434,
+      "d": 5.7114,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 12,
+      "r": -5.268,
+      "d": 2.9001,
+      "n": 1.51633,
+      "nu": 64.14,
+      "glass": "glass 3",
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 13,
+      "r": 70.4239,
+      "d": 4.17,
+      "n": 1.43875,
+      "nu": 94.66,
+      "glass": "glass 1",
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 14,
+      "r": -10.1954,
+      "d": 0.2264,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 15,
+      "r": -199.538,
+      "d": 3.53,
+      "n": 1.43875,
+      "nu": 94.66,
+      "glass": "glass 1",
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 16,
+      "r": -13.7504,
+      "d": null,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    }
+  ],
+  "quotes": {
+    "aperture_stop": null,
+    "working_distance": null,
+    "field_number": null,
+    "wavelength": {
+      "page": 23,
+      "text": "nd denotes a refractive index at the d-line, and vd denotes an Abbe number."
+    },
+    "tube_lens": {
+      "page": 20,
+      "text": "The objective is an infinity-corrected microscope objective used in combination with a tube lens."
+    },
+    "object_plane": {
+      "page": 23,
+      "text": "Note that the surfaces denoted by the surface numbers s0 and s1 are an object surface (a surface of a cover glass CG on the object side) and a surface of the cover glass CG on an image side, respectively."
+    }
+  },
+  "doubts": [
+    "WD 原文未给出（原文只给 NA、f、物高、H、a、b、c、|Δz|、DOF_e）。header.WD=3.7115 取 s1→s2 的间距，即盖玻片像方面（上表面）到第一透镜面；另一种读法是以 s0 为上表面，则应为 d(s0)+d(s1)。",
+    "盖玻片在原表中列为 s0（物面）与 s1（盖玻片像方面），不是 schema 示例的第 1–2 面。已移入 cover_glass，surfaces 从 s2 开始。",
+    "beta 写 null：原文实施例未给放大率。第 5–6 栏（page21.png）只有泛称 'the magnification is around 10×'，不取作本实施例的值。",
+    "印刷位数与同表其余值不一致：s9 d=4.81、s12 r=-5.268、s15 r=-199.538（同表多为 4 位小数），按页面原样抄写，请对照 page23.png。",
+    "主 agent 补充（入库时）：原文未给视场数和筒镜焦距，只给最大物高 1.1 mm；入库时用 --field-number 24.44（= 2×1.1×200/18，200 mm 参考筒镜下的物镜视场数）。原文未声明平场，按 achromat 类处理。header.WD 取自表中间隔而非原文印出的工作距离，因此 WD 复现只检验该间隔是否就是物镜的对焦位置。"
+  ]
+}

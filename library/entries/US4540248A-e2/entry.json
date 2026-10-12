@@ -1,0 +1,217 @@
+{
+  "id": "US4540248A-e2",
+  "status": "admitted",
+  "source": {
+    "patent": "US 4540248 A",
+    "assignee": "Olympus Optical Co., Ltd., Tokyo, Japan",
+    "priority_date": "1983-03-24",
+    "url": null
+  },
+  "embodiment": "Embodiment 2",
+  "metrics": {
+    "focal_length_mm": 4.0,
+    "na": 0.55,
+    "field_number": 27.0,
+    "elements": 10,
+    "claimed_class": "flat image surface up to field number 27",
+    "cover_glass": null,
+    "catalogs": [
+      "SCHOTT",
+      "CDGM",
+      "SUMITA",
+      "OHARA",
+      "NIKON-HIKARI"
+    ],
+    "glasses": [
+      {
+        "material": "N-LASF31A",
+        "catalog": "SCHOTT",
+        "status": "Preferred",
+        "how": "nd/νd 最近（距离 0.00）"
+      },
+      {
+        "material": "H-LAF51",
+        "catalog": "CDGM",
+        "status": "Standard",
+        "how": "nd/νd 最近（距离 0.00）"
+      },
+      {
+        "material": "LITHOTEC-CAF2",
+        "catalog": "SCHOTT",
+        "status": "Obsolete",
+        "how": "nd/νd 最近（距离 1.60）"
+      },
+      {
+        "material": "KZFS50",
+        "catalog": "SUMITA",
+        "status": "Obsolete",
+        "how": "nd/νd 最近（距离 0.00）"
+      },
+      {
+        "material": "N-PK52A",
+        "catalog": "SCHOTT",
+        "status": "Preferred",
+        "how": "nd/νd 最近（距离 0.00）"
+      },
+      {
+        "material": {
+          "model": {
+            "nd": 1.5085,
+            "vd": 60.83,
+            "dpgf": 0.0
+          }
+        },
+        "catalog": null,
+        "status": "Model",
+        "how": "模型玻璃"
+      },
+      {
+        "material": "LAL12",
+        "catalog": "OHARA",
+        "status": "Obsolete",
+        "how": "nd/νd 最近（距离 0.15）"
+      },
+      {
+        "material": "E-SF6",
+        "catalog": "NIKON-HIKARI",
+        "status": "Obsolete",
+        "how": "nd/νd 最近（距离 0.04）"
+      }
+    ],
+    "wd_vertex_mm": 10.191938985184658,
+    "wd_mech_mm": 9.065954156058627,
+    "optical_length_mm": 48.938078202196095,
+    "clear_diameter_mm": 14.865580583280936
+  },
+  "assumptions": [
+    "专利折射率按 d 线处理（专利未注明，按 d 线假设）",
+    "光阑放在物镜后焦面（物方远心）",
+    "焦距 4 mm（缩放 4），参考筒镜 200 mm",
+    "物镜视场数 27"
+  ],
+  "doubts": [
+    "成像透镜: page6 印刷栏 4 下部印有 FIG. 5 成像透镜数据 (与实施例 1 共用的同一组数据) r1=7.530 d1=1.020 n1=1.4875 ν1=70.15; r2=-31.310 d2=0.510; r3=-14.668 d3=0.510 n2=1.7400 ν2=28.29; r4=-31.179 d4=3.827; r5=11.207 d5=0.459 n3=1.4875 ν3=70.15; r6=5.011。未放入 surfaces, header.tube_lens_f 写 null (原文未给成像透镜焦距)。原文用 'for example' 引出该组合。两种读法: (a) 本实施例配套使用该成像透镜; (b) 只是示例组合, 原文未规定配套关系。",
+    "f 句不完整: page6 印刷栏 3 'The above-mentioned numerical data are given taking focal length f of the lens system of the Embodiment 1 as' 句末 as 之后无数值 (该句指实施例 1, 同样见于本实施例的数据说明)。两种读法: (a) 缺失值为 1, 与表头 f = 1 一致; (b) 印刷脱落, 无法从页面确定。",
+    "光阑: 全文 (page1-8) 无 stop、diaphragm、aperture 字样, 表中无光阑行。aperture_stop 引文写 null, 所有面 stop 写 false。两种读法: (a) 原文未设光阑, 光阑位置由下游按规则确定; (b) 光阑未印。",
+    "谱线: 原文未注明折射率 n 与 ν 对应的谱线, wavelength 写 null。像差图 FIG. 4 (page4) 标注 d、C、F、g 谱线, 但正文未说明 n 所用谱线。两种读法: (a) n 为 d 线 (nd); (b) 原文未定, 不能判定。",
+    "盖玻片: 原文无盖玻片描述, WD 的起算面未说明, cover_glass 写 null。两种读法: (a) WD 从第一面 r1 量起, 无盖玻片; (b) WD 含盖玻片但原文未印厚度和折射率。",
+    "校正等级: 原文 'a flat image surface' (page5 印刷栏 1) 与 'an image surface which is flat over a wide range up to a field number of 27' (page5 摘要段) 之外, 未用 plan 或 flat field 字样。两种读法: (a) 视为平场, 按平场消色差评估; (b) 仅为像面平坦范围的描述, 按消色差评估。",
+    "像高: 图 4 (page4) 标注 'IM.H3.39', 单位未印。写入 header.other.fig4_IM_H, image_height 写 null (正文未给像高数值)。两种读法: (a) 像高 3.39, 单位未印; (b) 图中标注的含义正文未定义, 不能判定为像高。",
+    "玻璃与非球面: 原文只印 r、d、n、ν, 未印玻璃牌号和非球面系数。surfaces 的 glass 写 null, aspheric 写 false。两种读法: (a) 球面系统; (b) 非球面未印 (原文未作声明)。",
+    "r5 不一致: page6 印刷栏 3 表中 r5 = -3.6381; page7 权利要求 6 印作 r5 = -3.4925。文字层表中为 'rs=3.6381' (负号漏识), 权利要求 6 段为 'rs=-3.4925'。两种读法: (a) -3.6381 (主表, 写入 surfaces i=5); (b) -3.4925 (权利要求 6)。",
+    "d13 不一致: page6 表中 d13 = 0.2233; page7 权利要求 6 印作 d13 = 0.2223。文字层表中为 'd13=0.2233', 权利要求 6 段为 'd13. =0.2223'。两种读法: (a) 0.2233 (主表, 写入 surfaces i=13); (b) 0.2223 (权利要求 6)。",
+    "r13 印刷异常: page6 表中 r13 = -5.3417; page7 权利要求 6 印作 'r13 = -31 5.3417' (数字间多出 '31')。文字层为 'r13=-315.3417'。两种读法: (a) -5.3417 (与主表一致, 写入 surfaces i=13); (b) 按权利要求 6 的字面无法确定原值。",
+    "d8 印刷脱点: page6 表印作 'd8 = 3891' (小数点缺失); page7 权利要求 6 印作 d8 = 0.3891。写入 surfaces i=8 的 d = 0.3891。两种读法: (a) 0.3891 (权利要求 6 印作 0.3891); (b) 原表字面 3891, 与权利要求 6 不一致。",
+    "文字层 r9 符号: page6 表与 page7 权利要求 6 均印 r9 = -7.9648; 文字层权利要求 6 段为 'r9 =7.9648' (负号漏识)。以图像为准, 写 -7.9648 (surfaces i=9)。",
+    "r2/(n1-1) 印刷值: page6 与 page7 均印 r2/(n1-1) = -2.677。由印刷的 r2 = -2.3644 与 n1 = 1.8830 直接算得 -2.67769, 末位舍入为 -2.678。两种读法: (a) -2.677 (印刷值, 原样保留); (b) -2.678 (由印刷的 r2、n1 重算)。",
+    "主 agent 补充（入库时）：按主表 r5 = -3.6381、d13 = 0.2233 算得 f = 1.0000、前焦距 2.5472，与表头 f = 1、WD = 2.547 相差 ≤ 0.01%，主表自洽，采用主表读法。WD 等于前焦距，与原文 'designed for infinity' 一致，按无盖玻片处理。claimed_class 按原文 'flat over a wide range up to a field number of 27' 归为平场类。"
+  ],
+  "repro": {
+    "pass": true,
+    "metrics": {
+      "efl": 0.000163,
+      "na": 0.0,
+      "wd": 0.000387
+    }
+  },
+  "probe": {
+    "class": "plan_achromat",
+    "items": {
+      "magnification": {
+        "value": 0.0009725222019161261,
+        "threshold": 0.05,
+        "pass": true
+      },
+      "working_distance": {
+        "value": 9.065954156058627,
+        "threshold": 0.01,
+        "pass": true
+      },
+      "optical_length": {
+        "value": 48.938078202196095,
+        "threshold": 1000000.0,
+        "pass": true
+      },
+      "clear_diameter": {
+        "value": 14.865580583280936,
+        "threshold": 1000000.0,
+        "pass": true
+      },
+      "glass_status": {
+        "value": 0.0,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "surface_types": {
+        "value": 0.0,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "center_thickness_glass": {
+        "value": 0.8932,
+        "threshold": 0.001,
+        "pass": true
+      },
+      "edge_thickness_glass": {
+        "value": 0.6761447906379143,
+        "threshold": 0.001,
+        "pass": true
+      },
+      "air_gap": {
+        "value": 0.1112,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "axial_rms_wfe": {
+        "value": 0.024580650398260396,
+        "threshold": 0.07142857142857142,
+        "pass": true
+      },
+      "axial_color": {
+        "value": 0.7897240553695895,
+        "threshold": 1.805190082644628,
+        "pass": true
+      },
+      "osc": {
+        "value": 0.00041060342957552256,
+        "threshold": 0.0025,
+        "pass": true
+      },
+      "plan_field": {
+        "value": -0.6244754485411923,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "field_rms_wfe": {
+        "value": 0.042393903016863625,
+        "threshold": 0.07142857142857142,
+        "pass": true
+      },
+      "lateral_color": {
+        "value": 54.92111965512514,
+        "threshold": 30.282063636363635,
+        "pass": false
+      }
+    }
+  },
+  "benchmark": {
+    "eligible": true,
+    "class": "plan_achromat",
+    "failed_fixed_items": {},
+    "calibration_evidence": [
+      {
+        "item": "lateral_color",
+        "default": 30.282063636363635,
+        "measured": 54.92111965512514,
+        "benchmark_threshold": 65.906
+      },
+      {
+        "item": "optical_length_max",
+        "default": 45.0,
+        "measured": 48.938078202196095,
+        "benchmark_threshold": 54
+      }
+    ],
+    "baseline_shortfall": 0.0
+  }
+}

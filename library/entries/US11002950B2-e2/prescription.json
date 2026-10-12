@@ -1,0 +1,228 @@
+{
+  "title": "US 11002950 B2 Objective 2 (Example 2) f=45 mm",
+  "aperture": {
+    "type": "object_na",
+    "value": 0.35
+  },
+  "fields": {
+    "type": "object_height",
+    "y": [
+      0.0,
+      1.875,
+      2.625,
+      3.75
+    ]
+  },
+  "wavelengths": {
+    "um": [
+      0.4861327,
+      0.5875618,
+      0.6562725
+    ],
+    "weights": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "primary": 2
+  },
+  "catalogs": [
+    "HOYA",
+    "OHARA",
+    "SCHOTT"
+  ],
+  "ray_aiming": "real",
+  "telecentric_object": true,
+  "object": {
+    "thickness": 0.17,
+    "material": {
+      "model": {
+        "nd": 1.521,
+        "vd": 56.02,
+        "dpgf": 0.0
+      }
+    },
+    "comment": "zea:object"
+  },
+  "surfaces": [
+    {
+      "radius": "inf",
+      "thickness": 4.999896772669885,
+      "comment": "zea:cover_top"
+    },
+    {
+      "radius": -21.3341,
+      "thickness": 13.0344,
+      "material": "TAC6",
+      "comment": "patent r2",
+      "stop": false
+    },
+    {
+      "radius": -32.8824,
+      "thickness": 10.0857,
+      "material": "S-LAL7",
+      "comment": "patent r3",
+      "stop": false
+    },
+    {
+      "radius": -21.6693,
+      "thickness": 0.1,
+      "material": "",
+      "comment": "patent r4",
+      "stop": false
+    },
+    {
+      "radius": 93.3157,
+      "thickness": 3.0,
+      "material": "S-FPL53",
+      "comment": "patent r5",
+      "stop": false
+    },
+    {
+      "radius": -57.0645,
+      "thickness": 2.4849,
+      "material": "LAL14",
+      "comment": "patent r6",
+      "stop": false
+    },
+    {
+      "radius": -259.4907,
+      "thickness": 0.1,
+      "material": "",
+      "comment": "patent r7",
+      "stop": false
+    },
+    {
+      "radius": 21.6715,
+      "thickness": 5.1924,
+      "material": "S-NSL5",
+      "comment": "patent r8",
+      "stop": false
+    },
+    {
+      "radius": 14.4057,
+      "thickness": 14.5453,
+      "material": "S-FPL51",
+      "comment": "patent r9",
+      "stop": false
+    },
+    {
+      "radius": -33.6197,
+      "thickness": 8.4043,
+      "material": "LAL14",
+      "comment": "patent r10",
+      "stop": false
+    },
+    {
+      "radius": 118.9664,
+      "thickness": 0.1,
+      "material": "",
+      "comment": "patent r11",
+      "stop": false
+    },
+    {
+      "radius": 46.8362,
+      "thickness": 4.8199,
+      "material": "S-FPL53",
+      "comment": "patent r12",
+      "stop": false
+    },
+    {
+      "radius": -82.8972,
+      "thickness": 0.1,
+      "material": "",
+      "comment": "patent r13",
+      "stop": false
+    },
+    {
+      "radius": 23.9625,
+      "thickness": 7.2911,
+      "material": "S-FPL53",
+      "comment": "patent r14",
+      "stop": false
+    },
+    {
+      "radius": -16.9256,
+      "thickness": 1.3618,
+      "material": "N-KZFS4",
+      "comment": "patent r15",
+      "stop": false
+    },
+    {
+      "radius": 21.6635,
+      "thickness": 2.9996,
+      "material": "",
+      "comment": "patent r16",
+      "stop": false
+    },
+    {
+      "radius": -11.8433,
+      "thickness": 10.1457,
+      "material": "S-LAL7",
+      "comment": "patent r17",
+      "stop": false
+    },
+    {
+      "radius": 112.9107,
+      "thickness": 11.0349,
+      "material": "S-FPL53",
+      "comment": "patent r18",
+      "stop": false
+    },
+    {
+      "radius": -29.2068,
+      "thickness": 0.1,
+      "material": "",
+      "comment": "patent r19",
+      "stop": false
+    },
+    {
+      "radius": 473.887,
+      "thickness": 7.9831,
+      "material": "S-FPL53",
+      "comment": "patent r20",
+      "stop": false
+    },
+    {
+      "radius": -37.523,
+      "thickness": 0.1,
+      "material": "",
+      "comment": "patent r21",
+      "stop": false
+    },
+    {
+      "radius": -344.2673,
+      "thickness": 2.9851,
+      "material": "S-NBH5",
+      "comment": "patent r22",
+      "stop": false
+    },
+    {
+      "radius": -66.2821,
+      "thickness": 7.965,
+      "material": "TAC6",
+      "comment": "patent r23",
+      "stop": false
+    },
+    {
+      "radius": -84.8721,
+      "thickness": -60.53153417753291,
+      "material": "",
+      "comment": "patent r24",
+      "stop": false
+    },
+    {
+      "radius": "inf",
+      "thickness": 0.0,
+      "comment": "zea:stop",
+      "stop": true
+    },
+    {
+      "type": "paraxial",
+      "focal_length": 200.0,
+      "opd_mode": 1,
+      "thickness": 200.0,
+      "comment": "zea:tube"
+    }
+  ]
+}

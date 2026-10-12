@@ -1,0 +1,29 @@
+spec_version: 1
+correction_class: achromat
+magnification: 4.444444444444445
+na: 0.13
+tube_lens_focal_length: 200.0
+objective_field_number: 29.444444444444443
+receiver: visual
+cover_glass: null
+limits:
+  magnification_tolerance: 0.05
+  working_distance_min: 15.47
+  optical_length_max: 55
+  max_clear_diameter: 16.0
+  glass:
+    catalogs:
+    - SCHOTT
+    - OHARA
+    - CDGM
+    allowed_status:
+    - Standard
+    - Preferred
+    - Obsolete
+    - Special
+    allow_model: false
+  min_center_thickness_glass: 0.5
+  min_edge_thickness_glass: 0.3
+  min_air_gap:
+    value: 0.0
+    scale: 0.01

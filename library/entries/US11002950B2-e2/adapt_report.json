@@ -1,0 +1,323 @@
+{
+  "scale": 1.0,
+  "focal_length_mm": 45.0,
+  "field_number": 33.333333333333336,
+  "paraxial": {
+    "wavelength": "d",
+    "efl_mm": 44.99995324974866,
+    "front_focal_distance_mm": 5.11166534597692,
+    "back_focal_distance_mm": -60.53153417753291
+  },
+  "stop": "rear_focal",
+  "cover_glass": {
+    "thickness": 0.17,
+    "n": 1.521,
+    "nu": 56.02
+  },
+  "cover_glass_assumed": false,
+  "printed_decimals": {
+    "r": 4,
+    "d": 4,
+    "n": 5,
+    "nu": 2
+  },
+  "rounding_envelope": {
+    "efl": [
+      44.99855203464421,
+      45.00146832016434
+    ],
+    "wd": [
+      4.998497645900982,
+      5.001120295668681
+    ]
+  },
+  "elements": 15,
+  "glasses": [
+    {
+      "n": 1.755,
+      "nu": 52.32,
+      "printed": null,
+      "material": "TAC6",
+      "catalog": "HOYA",
+      "status": "Special",
+      "how": "nd/νd 最近（距离 0.00）",
+      "candidates": [
+        {
+          "catalog": "HOYA",
+          "name": "TAC6",
+          "nd": 1.755,
+          "vd": 52.32,
+          "status": "Special",
+          "distance": 0.0
+        },
+        {
+          "catalog": "CDGM",
+          "name": "H-LAK53A",
+          "nd": 1.755,
+          "vd": 52.320574,
+          "status": "Standard",
+          "distance": 0.01
+        },
+        {
+          "catalog": "OHARA",
+          "name": "S-LAH97",
+          "nd": 1.755,
+          "vd": 52.318818,
+          "status": "Standard",
+          "distance": 0.02
+        }
+      ]
+    },
+    {
+      "n": 1.6516,
+      "nu": 58.55,
+      "printed": null,
+      "material": "S-LAL7",
+      "catalog": "OHARA",
+      "status": "Standard",
+      "how": "nd/νd 最近（距离 0.01）",
+      "candidates": [
+        {
+          "catalog": "OHARA",
+          "name": "S-LAL7",
+          "nd": 1.651597,
+          "vd": 58.550655,
+          "status": "Standard",
+          "distance": 0.01
+        },
+        {
+          "catalog": "NIKON-HIKARI",
+          "name": "LAK7",
+          "nd": 1.651599,
+          "vd": 58.55298,
+          "status": "Obsolete",
+          "distance": 0.06
+        },
+        {
+          "catalog": "OHARA",
+          "name": "S-LAL7Q",
+          "nd": 1.6516,
+          "vd": 58.544459,
+          "status": "Standard",
+          "distance": 0.11
+        }
+      ]
+    },
+    {
+      "n": 1.43875,
+      "nu": 94.93,
+      "printed": null,
+      "material": "S-FPL53",
+      "catalog": "OHARA",
+      "status": "Standard",
+      "how": "nd/νd 最近（距离 0.32）",
+      "candidates": [
+        {
+          "catalog": "OHARA",
+          "name": "S-FPL53",
+          "nd": 1.43875,
+          "vd": 94.946025,
+          "status": "Standard",
+          "distance": 0.32
+        },
+        {
+          "catalog": "OHARA",
+          "name": "FPL53",
+          "nd": 1.43875,
+          "vd": 94.960437,
+          "status": "Obsolete",
+          "distance": 0.61
+        },
+        {
+          "catalog": "HOYA",
+          "name": "FCD100",
+          "nd": 1.437,
+          "vd": 95.1,
+          "status": "Preferred",
+          "distance": 4.88
+        }
+      ]
+    },
+    {
+      "n": 1.6968,
+      "nu": 55.53,
+      "printed": null,
+      "material": "LAL14",
+      "catalog": "OHARA",
+      "status": "Obsolete",
+      "how": "nd/νd 最近（距离 0.04）",
+      "candidates": [
+        {
+          "catalog": "OHARA",
+          "name": "LAL14",
+          "nd": 1.696796,
+          "vd": 55.528037,
+          "status": "Obsolete",
+          "distance": 0.04
+        },
+        {
+          "catalog": "OHARA",
+          "name": "S-LAL14",
+          "nd": 1.696797,
+          "vd": 55.532241,
+          "status": "Standard",
+          "distance": 0.05
+        },
+        {
+          "catalog": "CDGM",
+          "name": "H-LAK51A",
+          "nd": 1.6968,
+          "vd": 55.526357,
+          "status": "Preferred",
+          "distance": 0.07
+        }
+      ]
+    },
+    {
+      "n": 1.52249,
+      "nu": 59.84,
+      "printed": null,
+      "material": "S-NSL5",
+      "catalog": "OHARA",
+      "status": "Special",
+      "how": "nd/νd 最近（距离 0.09）",
+      "candidates": [
+        {
+          "catalog": "OHARA",
+          "name": "S-NSL5",
+          "nd": 1.522494,
+          "vd": 59.835417,
+          "status": "Special",
+          "distance": 0.09
+        },
+        {
+          "catalog": "OHARA",
+          "name": "NSL5",
+          "nd": 1.522494,
+          "vd": 59.790926,
+          "status": "Obsolete",
+          "distance": 0.98
+        },
+        {
+          "catalog": "NIKON-HIKARI",
+          "name": "E-K5",
+          "nd": 1.52249,
+          "vd": 59.731259,
+          "status": "Obsolete",
+          "distance": 2.17
+        }
+      ]
+    },
+    {
+      "n": 1.497,
+      "nu": 81.54,
+      "printed": null,
+      "material": "S-FPL51",
+      "catalog": "OHARA",
+      "status": "Standard",
+      "how": "nd/νd 最近（距离 0.12）",
+      "candidates": [
+        {
+          "catalog": "OHARA",
+          "name": "S-FPL51",
+          "nd": 1.496999,
+          "vd": 81.545888,
+          "status": "Standard",
+          "distance": 0.12
+        },
+        {
+          "catalog": "HOYA",
+          "name": "FCD1B",
+          "nd": 1.4971,
+          "vd": 81.56,
+          "status": "Standard",
+          "distance": 0.45
+        },
+        {
+          "catalog": "HOYA",
+          "name": "M-FCD1",
+          "nd": 1.4971,
+          "vd": 81.56,
+          "status": "Preferred",
+          "distance": 0.45
+        }
+      ]
+    },
+    {
+      "n": 1.61336,
+      "nu": 44.49,
+      "printed": null,
+      "material": "N-KZFS4",
+      "catalog": "SCHOTT",
+      "status": "Preferred",
+      "how": "nd/νd 最近（距离 0.00）",
+      "candidates": [
+        {
+          "catalog": "SCHOTT",
+          "name": "N-KZFS4",
+          "nd": 1.61336,
+          "vd": 44.49,
+          "status": "Preferred",
+          "distance": 0.0
+        },
+        {
+          "catalog": "SCHOTT",
+          "name": "N-KZFS4HT",
+          "nd": 1.61336,
+          "vd": 44.49,
+          "status": "Obsolete",
+          "distance": 0.0
+        },
+        {
+          "catalog": "NIKON-HIKARI",
+          "name": "E-KZFH1",
+          "nd": 1.61266,
+          "vd": 44.461379,
+          "status": "Obsolete",
+          "distance": 1.51
+        }
+      ]
+    },
+    {
+      "n": 1.65412,
+      "nu": 39.68,
+      "printed": null,
+      "material": "S-NBH5",
+      "catalog": "OHARA",
+      "status": "Standard",
+      "how": "nd/νd 最近（距离 0.06）",
+      "candidates": [
+        {
+          "catalog": "OHARA",
+          "name": "S-NBH5",
+          "nd": 1.654115,
+          "vd": 39.682794,
+          "status": "Standard",
+          "distance": 0.06
+        },
+        {
+          "catalog": "OHARA",
+          "name": "BPH5",
+          "nd": 1.654115,
+          "vd": 39.687638,
+          "status": "Obsolete",
+          "distance": 0.15
+        },
+        {
+          "catalog": "SCHOTT",
+          "name": "N-KZFS5",
+          "nd": 1.65412,
+          "vd": 39.7,
+          "status": "Preferred",
+          "distance": 0.4
+        }
+      ]
+    }
+  ],
+  "assumptions": [
+    "专利折射率按 d 线处理",
+    "光阑放在物镜后焦面（物方远心）",
+    "焦距 45 mm（缩放 1），参考筒镜 200 mm",
+    "物镜视场数 33.3333"
+  ]
+}

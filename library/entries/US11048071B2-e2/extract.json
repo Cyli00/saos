@@ -1,0 +1,204 @@
+{
+  "schema": 2,
+  "source": {
+    "patent": "US 11048071 B2",
+    "assignee": "Olympus Corporation",
+    "priority_date": "2018-04-19",
+    "url": "https://patents.google.com/patent/US11048071B2/en"
+  },
+  "embodiment": "Second Embodiment",
+  "units": "mm",
+  "order": "object_to_image",
+  "wavelength": "d",
+  "header": {
+    "f": 18,
+    "NA": 0.4,
+    "WD": 3.71,
+    "beta": null,
+    "field_number": 26.5,
+    "image_height": null,
+    "tube_lens_f": 180,
+    "other": {
+      "abs_beta": 10,
+      "DOF_d_um": 1.83,
+      "F_G1_mm": 9.92,
+      "F_G2_mm": 88.91,
+      "H_mm": 46.8341,
+      "a_mm": 2.0941,
+      "b_mm": 4.4914
+    }
+  },
+  "cover_glass": {
+    "thickness": 0.17,
+    "n": 1.52397,
+    "nu": 54.41
+  },
+  "claimed_class": "flat field: high flatness for both visual and camera observation",
+  "surfaces": [
+    {
+      "i": 3,
+      "r": -8.3949,
+      "d": 4.2261,
+      "n": 1.61336,
+      "nu": 44.49,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 4,
+      "r": 12.2083,
+      "d": 3.4815,
+      "n": 1.497,
+      "nu": 81.54,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 5,
+      "r": -10.5622,
+      "d": 0.2018,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 6,
+      "r": 126.8294,
+      "d": 2.8128,
+      "n": 1.43875,
+      "nu": 94.66,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 7,
+      "r": -18.6394,
+      "d": 0.2048,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 8,
+      "r": 14.7711,
+      "d": 4.4917,
+      "n": 1.43875,
+      "nu": 94.66,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 9,
+      "r": -18.5105,
+      "d": 1.6875,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 10,
+      "r": 12.838,
+      "d": 4.8105,
+      "n": 1.43875,
+      "nu": 94.66,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 11,
+      "r": -9.1271,
+      "d": 4.4914,
+      "n": 1.51633,
+      "nu": 64.14,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 12,
+      "r": 7.2585,
+      "d": 5.7127,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 13,
+      "r": -5.2712,
+      "d": 2.9004,
+      "n": 1.51633,
+      "nu": 64.14,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 14,
+      "r": 71.5741,
+      "d": 4.1702,
+      "n": 1.43875,
+      "nu": 94.66,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 15,
+      "r": -10.1943,
+      "d": 0.2273,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 16,
+      "r": -195.0855,
+      "d": 3.5314,
+      "n": 1.43875,
+      "nu": 94.66,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 17,
+      "r": -13.7625,
+      "d": null,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    }
+  ],
+  "quotes": {
+    "aperture_stop": null,
+    "working_distance": {
+      "page": 15,
+      "text": "NA=0.4, FN=26.5 mm, f=18 mm, WD=3.71 mm, |β|=10, DOF_d=1.83 µm, F_G1=9.92 mm, F_G2=88.91 mm, H=46.8341 mm, a=2.0941 mm, b=4.4914 mm"
+    },
+    "field_number": {
+      "page": 15,
+      "text": "FN=26.5 mm"
+    },
+    "wavelength": {
+      "page": 14,
+      "text": "nd, a refractive index for a d line; vd, an Abbe number."
+    },
+    "tube_lens": "the objective is a dry objective that achieves a 20-fold magnification or lower when the objective is combined with a tube lens having a focal length of 180 mm",
+    "object_plane": {
+      "page": 14,
+      "text": "Surface numbers s1 and s2 respectively indicate an object surface (surface of cover glass CG on an object side) and a surface of the cover glass CG on an image side."
+    }
+  },
+  "doubts": [
+    "盖玻片：表中 s1（d=0.17, nd=1.52397, vd=54.41）与 s2（r=∞, d=3.714）为盖玻片两面，已移入 cover_glass，并从 surfaces 中去除。header.WD 取盖玻片上表面（s2）到第一透镜面的距离。原文 s1、s2 的定义位于第 14 页，并声明“These marks are also applicable to the embodiments described hereinafter”，因此适用于第二实施例。",
+    "WD 精度：原文文本为 WD=3.71 mm，表中 s2 的 d 印为 3.714。两者差异仅来自文本的四舍五入。header.WD 按 schema 写原文 WD 3.71，未采用 3.714。",
+    "放大率符号：原文仅给 |β|=10（绝对值），未注明正负号。header.beta 写 null，绝对值 10 存于 header.other.abs_beta。",
+    "印刷位数：s4 的 nd 印为 1.497（3 位小数，其余 nd 多为 5 位）。按印刷原样抄写，未补零。",
+    "主 agent 补充（入库时）：header.tube_lens_f 设为 180，依据原文 'combined with a tube lens having a focal length of 180 mm'，并且原文最大物高按 (FN/β)/2 计算，即 FN 26.5 是 180 mm 筒镜下的视场数；claimed_class 依据原文对目视与相机观察都达到 high flatness 的表述，按平场类处理。"
+  ]
+}

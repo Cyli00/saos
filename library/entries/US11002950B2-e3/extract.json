@@ -1,0 +1,290 @@
+{
+  "schema": 2,
+  "source": {
+    "patent": "US 11002950 B2",
+    "assignee": "OLYMPUS CORPORATION",
+    "priority_date": "2015-12-15",
+    "url": null
+  },
+  "embodiment": "Objective 3 (Example 3)",
+  "units": "mm",
+  "order": "object_to_image",
+  "wavelength": "d",
+  "header": {
+    "f": 45,
+    "NA": 0.4,
+    "WD": 9.9046,
+    "beta": 4,
+    "field_number": 30,
+    "image_height": null,
+    "tube_lens_f": 180,
+    "other": {
+      "epsilon_mm": 0.0017934,
+      "L_mm": 150,
+      "F1": 26.95,
+      "F2": -43.3513,
+      "F3": 157.9059,
+      "F12": 214.4439,
+      "F21": -57.76,
+      "F22": -139.94,
+      "Lob": 105.0782,
+      "Lim": 40.0333,
+      "EXPz": -43.9822,
+      "Ha": 15.15,
+      "Hc": 18,
+      "Hob": -3.75,
+      "Hs": 3.73759,
+      "v3a": 52.32,
+      "v3b": 420.41,
+      "n3a": 1.75504,
+      "n3b": 1.63779,
+      "R11": -21.4448,
+      "R12": -41.033,
+      "R21": 32.3362,
+      "R22": -20.7265,
+      "ER1": 42.39
+    }
+  },
+  "cover_glass": {
+    "thickness": 0.187,
+    "n": 1.52103,
+    "nu": 56.02
+  },
+  "claimed_class": null,
+  "surfaces": [
+    {
+      "i": 2,
+      "r": -21.4448,
+      "d": 18.2948,
+      "n": 1.75504,
+      "nu": 52.32,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 3,
+      "r": -41.033,
+      "d": 0.1,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 4,
+      "r": -144.2477,
+      "d": 7,
+      "n": 1.60303,
+      "nu": 65.44,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 5,
+      "r": -42.3993,
+      "d": 0.1,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 6,
+      "r": 90.581,
+      "d": 15.7484,
+      "n": 1.43876,
+      "nu": 94.93,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 7,
+      "r": -25.3911,
+      "d": 4,
+      "n": 1.51635,
+      "nu": 64.14,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 8,
+      "r": -55.2747,
+      "d": 0.1,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 9,
+      "r": 44.818,
+      "d": 13.4741,
+      "n": 1.43876,
+      "nu": 94.93,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 10,
+      "r": -66.4218,
+      "d": 12.8018,
+      "n": 1.63779,
+      "nu": 42.41,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 11,
+      "r": -62.1359,
+      "d": 0.1,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 12,
+      "r": 46.0232,
+      "d": 10.4675,
+      "n": 1.43876,
+      "nu": 94.93,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 13,
+      "r": -38.5172,
+      "d": 0.8,
+      "n": 1.63779,
+      "nu": 42.41,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 14,
+      "r": 20.616,
+      "d": 12,
+      "n": 1.43876,
+      "nu": 94.93,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 15,
+      "r": 32.3362,
+      "d": 4.8884,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 16,
+      "r": -20.7265,
+      "d": 7.1061,
+      "n": 1.61344,
+      "nu": 44.27,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 17,
+      "r": 77.2046,
+      "d": 16.6885,
+      "n": 1.73806,
+      "nu": 32.26,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 18,
+      "r": -49.9894,
+      "d": 0.1,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 19,
+      "r": -94.7933,
+      "d": 2,
+      "n": 1.63779,
+      "nu": 42.41,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 20,
+      "r": -228.7538,
+      "d": 3.9049,
+      "n": 1.75504,
+      "nu": 52.32,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 21,
+      "r": -47.6049,
+      "d": 1.9344,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 22,
+      "r": -33.833,
+      "d": 2,
+      "n": 1.63779,
+      "nu": 42.41,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 23,
+      "r": 294.7101,
+      "d": 6.2995,
+      "n": 1.75504,
+      "nu": 52.32,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    },
+    {
+      "i": 24,
+      "r": -50.0023,
+      "d": null,
+      "glass": null,
+      "aspheric": false,
+      "stop": false
+    }
+  ],
+  "quotes": {
+    "aperture_stop": null,
+    "working_distance": "page13.png 右栏（专利第6栏）：\"WD is the working distance of the objective.\" page18.png 左栏（专利第15页）：\"NA=0.4, FN=30 mm, ε=0.0017934 mm, β=4, L=150 mm, WD=9.9046 mm, F=45 mm, ...\" page18.png 右栏上部（专利第16页）表：s0（object plane）d = 0.187，s1 d = 9.9046 mm，与表头 WD=9.9046 mm 一致。",
+    "field_number": "page18.png 左栏（专利第15页）表头印刷：\"FN=30 mm\"。page11.png（文字层，未对图像核对）：\"FN is a field number of an objective.\"",
+    "tube_lens": {
+      "quote": "page16.png 右栏（专利第12页）：\"Note that field number FN and magnification β are values in a case when they are combined with a tube lens 10 shown in FIG. 2. This point applies also to the other examples.\"",
+      "f_mm": null
+    },
+    "wavelength": "page16.png 右栏（专利第12页）：\"nd represents a refractive index with respect to a d ray\"。page11.png（文字层，未对图像核对）：\"ε is an airy disc diameter on the axis with respect to a d ray of an objective.\""
+  },
+  "doubts": [
+    "v3b 印刷值可疑：表头 \"v3b=420.41\"（图像与文字层均为 420.41）。表中与 n3b = 1.63779 同值的玻璃（s10、s13、s19、s22）的 nu 为 42.41。两种读法：420.41（按印刷抄写，写入 other.v3b，采用）；42.41（与表中一致，未采用）。",
+    "盖玻片厚度与另两例不同：本例 s0 的 d 为 0.187，n 为 1.52103（图像与文字层一致）；Objective 1、2 为 0.17、1.521。两种读法：0.187（按图像采用）；0.17（另两例的值，仅作参照，未采用）。",
+    "光阑行缺失：表中所有面的 stop 均为 false，原文没有 aperture stop 或 diaphragm 字样。FIG. 6（本实施例的截面图）未读取，未核对其中是否标光阑。两种读法：(a) 原文未印光阑行，aperture_stop 写 null（采用）；(b) 光阑位置未在原文中印出，需要另行假设，本次不推断。",
+    "筒镜焦距未给出数值：原文只说 FN 与 β 是与 tube lens 10 组合时的值，tube lens 10 的数据表没有焦距。SUMMARY 段（page11 文字层）另有一般范围 \"a tube lens with a focal length from 160 mm through 200 mm\"，不是本实施例的值。两种读法：tube_lens_f = null（采用）；取 160–200 mm（不采用）。",
+    "校正等级无用语：原文没有 plan、flat field 或 achromatic 字样。最接近的句子是背景段对现有物镜的批评（page11 文字层）：\"do not provide sufficient correction of the field curvature and comatic aberrations\"。两种读法：claimed_class = null（采用）；把该句视为本实施例的校正目标（不采用，它描述的是现有技术）。",
+    "β 符号：印刷为正值 4，图像清楚。两种读法：+4（采用，原样抄写）；原文未给符号约定，无法确认是否应为 -4，本次不推断。",
+    "surfaces 的 i 沿用原表的 s 编号（s2–s24），s0–s1 为盖玻片，未放入 surfaces。两种读法：保留原编号（采用）；入库若要求从 1 连续编号，则 i = 原编号 - 1。",
+    "主 agent 补充（入库时）：原文说明 FN 与 β 是与 tube lens 10 组合时的值，但未印筒镜焦距。由 β × F = 4 × 45 mm 得筒镜焦距 180 mm；表头物高 Hob = -3.75 = FN / β / 2 = 30 / 4 / 2，与此一致。header.tube_lens_f 据此写 180，视场数按 200 mm 参考筒镜换算。原文没有平场说法，按消色差评估。"
+  ]
+}

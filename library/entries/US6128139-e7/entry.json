@@ -1,0 +1,191 @@
+{
+  "id": "US6128139-e7",
+  "status": "admitted",
+  "source": {
+    "patent": "US 6128139 A",
+    "assignee": "Nikon Corporation",
+    "priority_date": "1996-10-30",
+    "url": "https://patents.google.com/patent/US6128139A/en"
+  },
+  "embodiment": "Example 7",
+  "metrics": {
+    "focal_length_mm": 20.0,
+    "na": 0.25,
+    "field_number": 22.0,
+    "elements": 5,
+    "claimed_class": "achromat-class",
+    "cover_glass": {
+      "thickness_mm": 0.17,
+      "n": 1.523,
+      "nu": 55.0
+    },
+    "catalogs": [
+      "OHARA"
+    ],
+    "glasses": [
+      {
+        "material": {
+          "model": {
+            "nd": 1.86,
+            "vd": 23.0,
+            "dpgf": 0.0
+          }
+        },
+        "catalog": null,
+        "status": "Model",
+        "how": "原文折射率只印 2 位小数，用模型玻璃"
+      },
+      {
+        "material": {
+          "model": {
+            "nd": 1.62,
+            "vd": 60.1,
+            "dpgf": 0.0
+          }
+        },
+        "catalog": null,
+        "status": "Model",
+        "how": "原文折射率只印 2 位小数，用模型玻璃"
+      },
+      {
+        "material": {
+          "model": {
+            "nd": 1.79,
+            "vd": 47.5,
+            "dpgf": 0.0
+          }
+        },
+        "catalog": null,
+        "status": "Model",
+        "how": "原文折射率只印 2 位小数，用模型玻璃"
+      },
+      {
+        "material": {
+          "model": {
+            "nd": 1.8,
+            "vd": 40.9,
+            "dpgf": 0.0
+          }
+        },
+        "catalog": null,
+        "status": "Model",
+        "how": "原文折射率只印 2 位小数，用模型玻璃"
+      },
+      {
+        "material": {
+          "model": {
+            "nd": 1.55,
+            "vd": 49.7,
+            "dpgf": 0.0
+          }
+        },
+        "catalog": null,
+        "status": "Model",
+        "how": "原文折射率只印 2 位小数，用模型玻璃"
+      }
+    ],
+    "wd_vertex_mm": 6.49153130411358,
+    "wd_mech_mm": 6.451770985208884,
+    "optical_length_mm": 55.59097325087076,
+    "clear_diameter_mm": 12.073523470722687
+  },
+  "assumptions": [
+    "专利折射率按 d 线处理",
+    "光阑放在物镜后焦面（物方远心）",
+    "焦距 20 mm（缩放 1），参考筒镜 200 mm",
+    "物镜视场数 22（专利未给，按默认 22 假设）",
+    "原文工作距离从盖玻片量起但未给厚度：按 0.17 mm、nd 1.523、νd 55 假设"
+  ],
+  "doubts": [
+    "quotes.wavelength 原句中 Abbe 数符号印为 'μ'（'n and μ denote'），其他实施例为 'v'；读法A：排版误植，应为 ν（阿贝数）；读法B：原文确为 μ。数值不受影响，JSON 原样保留。",
+    "header.beta 原文印为 '10×'，无符号；按印刷值记为 10，未补负号（schema 示例为 -10），请确认符号约定。",
+    "原文全文未标注光阑面（无 stop / aperture stop 表述）；surfaces 全部 stop=false，quotes.aperture_stop 记为 null。"
+  ],
+  "repro": {
+    "pass": true,
+    "metrics": {
+      "efl": 0.006675,
+      "na": 0.0,
+      "wd": 0.014302
+    }
+  },
+  "probe": {
+    "class": "achromat",
+    "items": {
+      "magnification": {
+        "value": 0.006981258571126192,
+        "threshold": 0.05,
+        "pass": true
+      },
+      "working_distance": {
+        "value": 6.451770985208884,
+        "threshold": 0.01,
+        "pass": true
+      },
+      "optical_length": {
+        "value": 55.59097325087076,
+        "threshold": 1000000.0,
+        "pass": true
+      },
+      "clear_diameter": {
+        "value": 12.073523470722687,
+        "threshold": 1000000.0,
+        "pass": true
+      },
+      "glass_status": {
+        "value": 0.0,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "surface_types": {
+        "value": 0.0,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "center_thickness_glass": {
+        "value": 1.85,
+        "threshold": 0.001,
+        "pass": true
+      },
+      "edge_thickness_glass": {
+        "value": 1.734344981819651,
+        "threshold": 0.001,
+        "pass": true
+      },
+      "air_gap": {
+        "value": 2.11,
+        "threshold": 0.0,
+        "pass": true
+      },
+      "axial_rms_wfe": {
+        "value": 0.009611195903220786,
+        "threshold": 0.07142857142857142,
+        "pass": true
+      },
+      "axial_color": {
+        "value": 3.741061176628868,
+        "threshold": 8.73712,
+        "pass": true
+      },
+      "osc": {
+        "value": 0.00014223667003212178,
+        "threshold": 0.0025,
+        "pass": true
+      }
+    }
+  },
+  "benchmark": {
+    "eligible": true,
+    "class": "achromat",
+    "failed_fixed_items": {},
+    "calibration_evidence": [
+      {
+        "item": "optical_length_max",
+        "default": 45.0,
+        "measured": 55.59097325087076,
+        "benchmark_threshold": 62
+      }
+    ],
+    "baseline_shortfall": 0.0
+  }
+}

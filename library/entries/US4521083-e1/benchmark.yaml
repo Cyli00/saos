@@ -1,0 +1,34 @@
+spec_version: 1
+correction_class: plan_achromat
+magnification: 20.0
+na: 0.4
+tube_lens_focal_length: 200.0
+objective_field_number: 27.0
+receiver: visual
+cover_glass: null
+limits:
+  magnification_tolerance: 0.05
+  working_distance_min: 11.65
+  optical_length_max: 53
+  max_clear_diameter: 16.0
+  glass:
+    catalogs:
+    - OHARA
+    - SCHOTT
+    - CDGM
+    - SUMITA
+    allowed_status:
+    - Standard
+    - Preferred
+    - Obsolete
+    - Special
+    allow_model: false
+  min_center_thickness_glass: 0.5
+  min_edge_thickness_glass: 0.3
+  min_air_gap:
+    value: 0.0
+    scale: 0.01
+targets:
+  lateral_color:
+    threshold_um: 103.522
+    basis: 基准专用：复现值 86.27，格式默认值 16.66 不通过，取 ×1.2
