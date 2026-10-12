@@ -1,0 +1,87 @@
+"""命令行与后台进程之间的请求、响应格式和错误码。
+
+请求：{"op": str, "args": dict}
+响应：{"ok": true, "result": ...} 或 {"ok": false, "error": {"code", "message", "details"}}
+"""
+
+from __future__ import annotations
+
+import json
+import math
+from typing import Any
+
+
+class ErrorCode:
+    DAEMON_NOT_RUNNING = "DAEMON_NOT_RUNNING"
+    DAEMON_ALREADY_RUNNING = "DAEMON_ALREADY_RUNNING"
+    DAEMON_START_FAILED = "DAEMON_START_FAILED"
+    DAEMON_TIMEOUT = "DAEMON_TIMEOUT"
+    PROTOCOL_ERROR = "PROTOCOL_ERROR"
+    UNKNOWN_OP = "UNKNOWN_OP"
+    BAD_ARGS = "BAD_ARGS"
+    JOB_NOT_FOUND = "JOB_NOT_FOUND"
+    JOB_EXISTS = "JOB_EXISTS"
+    PATH_OUTSIDE_JOB = "PATH_OUTSIDE_JOB"
+    FILE_NOT_FOUND = "FILE_NOT_FOUND"
+    FILE_EXISTS = "FILE_EXISTS"
+    NO_LENS_LOADED = "NO_LENS_LOADED"
+    JOB_MISMATCH = "JOB_MISMATCH"
+    UNSAVED_CHANGES = "UNSAVED_CHANGES"
+    VALUE_NOT_APPLIED = "VALUE_NOT_APPLIED"
+    VERIFY_FAILED = "VERIFY_FAILED"
+    SPEC_CHANGED = "SPEC_CHANGED"
+    ZOS_ERROR = "ZOS_ERROR"
+    ZOS_LOAD_FAILED = "ZOS_LOAD_FAILED"
+    ZOS_SAVE_FAILED = "ZOS_SAVE_FAILED"
+    ZOS_LICENSE = "ZOS_LICENSE"
+    ZOS_VERSION_MISMATCH = "ZOS_VERSION_MISMATCH"
+    ZOS_CONNECTION_LOST = "ZOS_CONNECTION_LOST"
+    INTERNAL_ERROR = "INTERNAL_ERROR"
+
+
+class ZeaError(Exception):
+    def __init__(self, code: str, message: str, details: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.details = details or {}
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"code": self.code, "message": self.message, "details": self.details}
+
+
+def ok(result: Any) -> dict[str, Any]:
+    return {"ok": True, "result": result}
+
+
+def fail(err: ZeaError) -> dict[str, Any]:
+    return {"ok": False, "error": err.to_dict()}
+
+
+def jsonable(value: Any) -> Any:
+    """把 inf/nan 换成 JSON 能表示的值：±inf → "inf"/"-inf"，nan → None。"""
+    if isinstance(value, float):
+        if math.isnan(value):
+            return None
+        if math.isinf(value):
+            return "inf" if value > 0 else "-inf"
+        return value
+    if isinstance(value, dict):
+        return {k: jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [jsonable(v) for v in value]
+    return value
+
+
+def encode(message: dict[str, Any]) -> bytes:
+    return json.dumps(jsonable(message), ensure_ascii=False).encode("utf-8")
+
+
+def decode(raw: bytes) -> dict[str, Any]:
+    try:
+        message = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ZeaError(ErrorCode.PROTOCOL_ERROR, f"无法解析消息：{exc}") from exc
+    if not isinstance(message, dict):
+        raise ZeaError(ErrorCode.PROTOCOL_ERROR, "消息必须是 JSON 对象")
+    return message
