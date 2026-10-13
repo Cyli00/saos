@@ -33,13 +33,18 @@ agent 只通过 `uv run zea ...` 操作 Zemax。每条命令向标准输出打�
 | `zea opt vary --job J --param radius\|thickness\|conic --surfaces 1-16 [--off]` | 设变量或取消变量。物面只允许厚度（即无盖玻片时的工作距离间隔） |
 | `zea opt merit --job J clear\|wizard\|add\|show [--file JSON]` | 评价函数：清空；按向导生成默认评价函数（type、data、reference、rings、arms 等）；追加操作数列表；查看 |
 | `zea opt local --job J [--cycles auto\|1\|5\|10\|50]` | 局部优化（阻尼最小二乘） |
-| `zea round record --job J [--spec FILE] [--note TEXT]` | 记录一个调整轮次：存为 lenses/rounds/rNNN.zmx，做验收评估，返回停机判断（pass / stagnated / limit / continue）。第 0 轮时冻结光学规格，之后不能更换 |
+| `zea round record --job J [--spec FILE] [--note TEXT]` | 记录一个调整轮次：存为 lenses/rounds/rNNN.zmx，做验收评估，返回停机判断（pass / stagnated / limit / continue）。第 0 轮时冻结光学规格，之后不能更换。后台协议另有 `observe` 参数，供基准实验使用：照常冻结和核对，停机判断只记录不执行 |
 | `zea library check EXTRACT` | 入库前用近轴计算核对提取结果：焦距和工作距离的印刷值落在印刷精度的舍入包络内，或与计算值相差不超过 1%，即为一致（不经后台进程） |
 | `zea library add ID --extract FILE [--catalogs …] [--focal-length F] [--field-number N] [--stop rear_focal\|printed\|r<面号>]` | 把提取结果适配成处方，写入 `library/entries/ID/`，状态为 extracted（不经后台进程） |
 | `zea library verify ID --job J [--discard]` | 搭建、复现校验、探测验收、推导基准规格并确认原结构 G = 0，结果写回条目。当前镜头有未保存修改时返回 UNSAVED_CHANGES；显式加 `--discard` 才会丢弃，包括其他任务的修改。复现不通过的条目状态为 rejected |
 | `zea library list` | 列出条目：状态、焦距、NA、片数、能否作基准及原因 |
 | `zea library query --na A --magnification M [--class achromat\|plan_achromat] [--field-number N] [--working-distance W] [--limit K]` | 按光学规格从已收录条目中选初始结构 |
 | `zea bench split` | 把可作基准的条目分为调参组和验证组，写入 `library/benchmarks.json` |
+| `zea bench run ENTRY [--seed S] [--radius-rel A] [--thickness-rel B] [--no-amplify] [--stretch wd=F length=F] [--max-rounds N] [--cores K] [--job J] [--discard]` | 开发用基准任务：搭建条目、受控扰动（默认幅度按 ×1、×2、×4、×8 放大到 G0 ≥ 1）或拉伸规格，按参考策略逐轮优化，每轮用 observe 模式记录，不按停滞规则中途停机；轨迹写入任务的 `bench.jsonl`。`--job` 续跑；后台进程里有其他任务的未保存镜头时默认拒绝，`--discard` 才放弃 |
+| `zea bench plan --batch B` | 生成正式批次的实验清单 `library/calibration/B.json`，记录任务、分组、策略版本和代码哈希；已存在时拒绝覆盖 |
+| `zea bench run --batch B --task T [--cores K]` | 按清单运行正式任务；客户端或后台进程的代码版本与清单不同、或后台进程不是 standalone 时拒绝。本 ZEA_HOME 中已有该任务时续跑 |
+| `zea bench calibrate --batch B --homes DIR… [--validate N REL CAP]` | 按清单准入正式轨迹并列出排除原因、重复起点，在调参组主实验上按冻结规则选停机参数；给出 `--validate` 时在验证组主实验和两组压力测试上检验固定参数 |
+| `zea bench replay [--homes DIR…] [--policy P]` | 开发用：在已有轨迹上离线比较停机参数，不做正式准入 |
 
 结构库的收录规则、提取格式和基准规格的推导见 [library.md](./library.md)。
 
@@ -95,6 +100,7 @@ work/
     lenses/          镜头文件副本，所有读写都限制在这里；lenses/rounds/ 存各调整轮次
     eval/            验收评估结果（<镜头名>.accept.json）和验收模型（.accept.zmx）
     rounds.jsonl     调整轮次记录：轮次、规格差距、各项单项差距、评价函数值、说明
+    bench.jsonl      优化基准任务的完整轨迹：每轮的策略、规格差距、单项差距、耗时
     log.jsonl        执行记录：每条命令的参数、结果、错误码、耗时
 ```
 

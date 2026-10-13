@@ -80,6 +80,8 @@ class Daemon:
         self.backend = backend
         self.zos_info = zos_info
         self.mode = mode
+        # 启动时加载的代码版本；实验记录每轮核对，防止不同后台进程运行不同版本
+        self.code_sha256 = config.code_sha256()
         self.started_at = time.time()
         self.loaded: Loaded | None = None
         self.stopping = False
@@ -198,6 +200,7 @@ class Daemon:
         return {
             "pid": os.getpid(),
             "mode": self.mode,
+            "code_sha256": self.code_sha256,
             "started_at": datetime.fromtimestamp(self.started_at).astimezone().isoformat(timespec="seconds"),
             "uptime_s": round(time.time() - self.started_at, 1),
             "opticstudio": self.zos_info,
@@ -454,7 +457,10 @@ class Daemon:
         return {**loaded.describe(), **result}
 
     def op_round(self, args: dict[str, Any]) -> dict[str, Any]:
-        """记录一个调整轮次：把当前镜头存为 rounds/rNNN.zmx，做验收评估，给出是否停机。"""
+        """记录一个调整轮次：把当前镜头存为 rounds/rNNN.zmx，做验收评估，给出是否停机。
+
+        observe=True 用于校准停机规则（zea bench run）：照常冻结并核对验收配置，
+        但停机判断只记录、不执行，轨迹可以走到停机之后。"""
         job = self._job(args)
         loaded = self._require_loaded(job)
         log_path = job.root / "rounds.jsonl"
@@ -470,7 +476,7 @@ class Daemon:
             # 每轮都按当前规格文件重新补全，与第 0 轮冻结的完整验收配置逐项比较
             rounds.check_frozen(job, spec_name, config, digest)
             status = rounds.decide([float(h["spec_shortfall"]) for h in history])["status"]
-            if status != "continue":
+            if status != "continue" and not args.get("observe", False):
                 raise ZeaError(ErrorCode.BAD_ARGS, f"调整已停止（{status}），不能继续记录轮次", {"status": status})
         else:
             rounds.freeze(job, spec_name, config, digest)
@@ -489,6 +495,7 @@ class Daemon:
             "items": {i["id"]: i["shortfall"] for i in result["items"] if i["shortfall"] > 0},
             "merit": merit,
             "note": str(args.get("note", "")),
+            "observe": bool(args.get("observe", False)),
             "config_sha256": digest,
             "time": jobs.now_iso(),
         }

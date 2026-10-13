@@ -49,3 +49,14 @@ def opticstudio_dir() -> str:
 
 def backend_name() -> str:
     return os.environ.get("ZEA_BACKEND", "zos")
+
+
+def code_sha256() -> str:
+    """zea 包全部 .py 源文件（按相对路径排序）的 SHA-256，用来确认实验各进程运行的是同一版本代码。"""
+    import hashlib
+
+    pkg = Path(__file__).resolve().parent
+    h = hashlib.sha256()
+    for f in sorted(pkg.rglob("*.py")):
+        h.update(f.relative_to(pkg).as_posix().encode("utf-8") + b"\0" + f.read_bytes() + b"\0")
+    return h.hexdigest()
