@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -66,6 +67,11 @@ class Backend(ABC):
 
     @abstractmethod
     def operand(self, name: str, int1: int, int2: int, data: list[float]) -> float: ...
+
+    @contextmanager
+    def activity(self, label: str, quiet: bool):
+        """一次请求期间的界面提示与刷新控制；只在连接手动打开的窗口时起作用。"""
+        yield
 
     # ---- 第 3 步：搭建与验收用 ----
 

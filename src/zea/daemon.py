@@ -32,6 +32,8 @@ log = logging.getLogger("zea.daemon")
 REQUEST_READ_TIMEOUT_S = 30
 COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
 COMPARED_NUMBER_KEYS = ("radius", "thickness", "conic", "semi_diameter")
+# 连接手动打开的窗口时，这些操作期间暂停界面刷新，结束后窗口显示最终状态；ZEA_UI_LIVE=1 时全程刷新
+QUIET_OPS = frozenset({"eval.accept", "round.record", "lens.repro"})
 
 
 @dataclass
@@ -118,7 +120,9 @@ class Daemon:
                 raise ZeaError(ErrorCode.UNKNOWN_OP, f"未知操作 {op!r}", {"available": sorted(self.handlers)})
             if op not in ("ping", "shutdown") and not self.backend.healthy():
                 raise self._connection_lost({"detected": "操作前的连接检查"})
-            result = handler(args)
+            quiet = op in QUIET_OPS and os.environ.get("ZEA_UI_LIVE") != "1"
+            with self.backend.activity(f"zea {op}", quiet):
+                result = handler(args)
         except ZeaError as exc:
             error = exc
         except Exception as exc:  # noqa: BLE001 - 后台进程不能因单个请求崩溃

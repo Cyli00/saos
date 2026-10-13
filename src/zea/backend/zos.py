@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -62,9 +63,13 @@ class ZosBackend(Backend):
             app = conn.CreateNewApplication()
         else:
             app = conn.ConnectAsExtension(0)
+        hint = "在 OpticStudio 中点 Programming → Interactive Extension，使它处于等待连接状态" if self.mode == "extension" else ""
         if app is None:
-            hint = "OpticStudio 中需要先开启 Interactive Extension" if self.mode == "extension" else ""
             raise ZeaError(ErrorCode.ZOS_ERROR, f"无法连接 OpticStudio（{self.mode}）。{hint}")
+        if self.mode == "extension" and not self._extension_ready(app):
+            # 实测 2024 R1：上一个扩展客户端断开后，窗口退出扩展状态，ConnectAsExtension 仍返回对象，
+            # 但没有 PrimarySystem，许可检查为 False，ProgramDir 抛 ArgumentNullException
+            raise ZeaError(ErrorCode.ZOS_ERROR, f"OpticStudio 窗口没有处于 Interactive Extension 状态。{hint}；每次后台进程退出后都要重新点一次")
         self.app = app
         version = (int(app.ZOSMajorVersion), int(app.ZOSMinorVersion), int(app.ZOSSPVersion))
         info = {
@@ -81,6 +86,33 @@ class ZosBackend(Backend):
             expected = ".".join(map(str, config.EXPECTED_ZOS_VERSION))
             raise ZeaError(ErrorCode.ZOS_VERSION_MISMATCH, f"OpticStudio 版本为 {info['version']}，项目锁定 {expected}", info)
         return info
+
+    @contextmanager
+    def activity(self, label: str, quiet: bool):
+        app = self.app if self.mode == "extension" else None
+        if app is None:
+            yield
+            return
+        try:
+            app.ProgressMessage = label
+            app.ShowChangesInUI = not quiet
+        except Exception:
+            pass
+        try:
+            yield
+        finally:
+            try:
+                app.ShowChangesInUI = True
+                app.ProgressMessage = ""
+            except Exception:
+                pass
+
+    @staticmethod
+    def _extension_ready(app) -> bool:
+        try:
+            return app.PrimarySystem is not None and bool(app.IsValidLicenseForAPI)
+        except Exception:
+            return False
 
     def close(self) -> None:
         app, self.app = self.app, None

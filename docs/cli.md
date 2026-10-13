@@ -11,7 +11,7 @@ agent 只通过 `uv run zea ...` 操作 Zemax。每条命令向标准输出打�
 
 | 命令 | 作用 |
 |---|---|
-| `zea daemon start [--mode standalone\|extension]` | 启动后台进程并连接 OpticStudio 2024 R1，就绪后返回。本机实测约 6 s |
+| `zea daemon start [--mode standalone\|extension]` | 启动后台进程并连接 OpticStudio 2024 R1，就绪后返回。本机实测约 6 s。`extension` 连接手动打开、已点了 Interactive Extension 的窗口，见下文 |
 | `zea daemon status` | 是否在运行、连接是否正常、当前加载的镜头 |
 | `zea daemon stop [--discard] [--force]` | 正常退出，等后台进程和它的 OpticStudio 都退出后才返回。有未保存修改时拒绝退出，除非加 `--discard`；`--force` 在无法正常退出时强制结束 |
 | `zea job create --name N [--spec FILE]` | 新建设计任务，编号为 `时间-名字`，规格文件复制进任务目录 |
@@ -43,6 +43,20 @@ agent 只通过 `uv run zea ...` 操作 Zemax。每条命令向标准输出打�
 结构库的收录规则、提取格式和基准规格的推导见 [library.md](./library.md)。
 
 `--job` 必须与当前加载的镜头属于同一任务；镜头文件名一律相对该任务的 `lenses/`。
+
+## 后台窗口与执行记录
+
+`daemon start` 使用 Windows 无窗口方式启动后台 Python，标准输出和错误输出写入 `<ZEA_HOME>/daemon/daemon.log`。旧启动方式使用 `DETACHED_PROCESS`，虚拟环境启动器的解释器子进程仍可能弹出空白终端；改为 `CREATE_NO_WINDOW` 后，新启动的后台进程不再创建该控制台窗口。已运行的进程需等任务结束后正常停止，再启动才会采用新方式。
+
+在 Git Bash 中，用 `ZEA_HOME=work-verify uv run zea daemon status` 查询指定实例的连接状态和已加载任务。执行记录位于 `<ZEA_HOME>/jobs/<任务编号>/log.jsonl`，包含操作名、成功与否及耗时；可用 `tail -f` 跟随查看。每条记录在操作完成后写入，因此长时间计算中日志没有新增记录不代表进程已卡死。后台串行处理请求，忙碌时 `daemon status` 也可能等待并超时；目前没有独立的实时进度接口。
+
+## 连接手动打开的窗口（extension 模式）
+
+调试时可以让后台进程连接一个手动打开的 OpticStudio 窗口，在窗口里看到镜头的变化：先在 OpticStudio 中点 Programming → Interactive Extension，检查并取消勾选对话框中的 “Auto close on disconnect”，保持对话框打开，再 `zea daemon start --mode extension`。这是开启可见调试前的检查项；目前需要在界面确认，命令尚未自动检查该选项。
+
+- 之前实测后台进程退出后扩展对话框关闭，需要重新开启；用户随后在本机确认，取消勾选 “Auto close on disconnect” 即可避免该问题。重连前检查对话框仍处于等待连接状态，若已关闭则重新开启。没有开启交互扩展时启动返回 `ZOS_ERROR`。该设置不代替 OpticStudio 进程意外退出后的连接恢复处理。
+- 窗口实时刷新会拖慢运算：实测一次验收评估 98 s，standalone 下为 13 s。所以验收评估、轮次记录、复现校验期间暂停刷新，结束后窗口显示最终状态（暂停后验收评估为 22 s）。局部优化不暂停，实测 15.8 s，standalone 下为 13 s。设环境变量 `ZEA_UI_LIVE=1` 后全程刷新。
+- 后台进程退出时不关闭窗口。
 
 ## 错误码
 
@@ -91,6 +105,7 @@ work/
 | `ZEA_OPTICSTUDIO_DIR` | `C:\Program Files\Ansys Zemax OpticStudio 2024 R1.00` | 加载 ZOS-API DLL 的目录 |
 | `ZEA_BACKEND` | `zos` | 测试时设为 `fake`，不启动 Zemax |
 | `ZEA_LIBRARY` | `<仓库>/library` | 初始结构库的位置 |
+| `ZEA_UI_LIVE` | 未设置 | extension 模式下设为 1 时，验收评估等操作期间也实时刷新窗口 |
 
 ## 测试
 

@@ -18,7 +18,7 @@ DEFAULT_REQUEST_TIMEOUT_S = 600.0
 DEFAULT_START_TIMEOUT_S = 120.0
 STOP_WAIT_S = 60.0
 
-_DETACHED_PROCESS = 0x00000008
+_CREATE_NO_WINDOW = 0x08000000
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
 _CREATE_BREAKAWAY_FROM_JOB = 0x01000000
 
@@ -139,7 +139,9 @@ def _spawn(mode: str, token: str) -> subprocess.Popen:
     config.daemon_dir().mkdir(parents=True, exist_ok=True)
     cmd = [sys.executable, "-m", "zea", "daemon", "run", "--mode", mode, "--token", token]
     log_fh = config.daemon_log_file().open("ab")
-    base_flags = _DETACHED_PROCESS | _CREATE_NEW_PROCESS_GROUP
+    # DETACHED_PROCESS 只作用于 venv 启动器，其解释器子进程仍可能创建可见控制台。
+    # CREATE_NO_WINDOW 让整条启动链继承无窗口控制台，不能与 DETACHED_PROCESS 混用。
+    base_flags = _CREATE_NO_WINDOW | _CREATE_NEW_PROCESS_GROUP
     kwargs = dict(stdin=subprocess.DEVNULL, stdout=log_fh, stderr=log_fh, cwd=str(config.zea_home()), close_fds=True)
     try:
         # 脱离调用方的作业对象，避免命令行退出时后台进程被一起结束
