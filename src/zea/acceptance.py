@@ -101,6 +101,7 @@ def acceptance_config(spec: Spec) -> dict[str, Any]:
             "zern_fit_limit": ZERN_FIT_LIMIT,
             "focus_max_iter": FOCUS_MAX_ITER,
             "edge_rays": EDGE_RAYS,
+            "axis_precheck": True,
             "zone_rays": ZONE_RAYS,
             "tube_lens_opd_mode": 1,
             "ray_aiming": "real",
@@ -188,8 +189,10 @@ def _primary_index(backend: Backend) -> int:
 
 
 class Evaluator:
-    def __init__(self, backend: Backend, spec: Spec, design_catalogs: list[str], telecentric_object: bool = False):
+    def __init__(self, backend: Backend, spec: Spec, design_catalogs: list[str], telecentric_object: bool = False, precheck: bool = True):
         self.backend = backend
+        # precheck=False 只用于诊断对照（eval.accept --no-precheck）；轮次记录始终开启
+        self.precheck = precheck
         self.spec = spec
         self.design_catalogs = design_catalogs
         self.telecentric_object = telecentric_object
@@ -301,12 +304,38 @@ class Evaluator:
         try:
             self.build_model(design)
             self.m_act = self.spec.tube_lens_focal_length / self.op("EFLY", self.first, self.last)
+            if self.precheck:
+                self.precheck_axis()
             t_e = self.focus(WAVE_E)
             self.check_rays()
             measured, details = self.measure(t_e)
         except InvalidEvaluation as exc:
             return self.report(None, {}, {"reason": exc.reason, **exc.details}, started)
         return self.report(measured, details, None, started)
+
+    def precheck_axis(self) -> None:
+        """调焦前先追迹轴上主光线和一圈边缘光线。实测（第 5 步）边缘光线全部未击中面时，
+        每次 Zernike 拟合约 32 s、残差上百波，割线调焦 20 次后才判无效，一次评估约 700 s。"""
+        pupil = [(0.0, 0.0)] + [(math.cos(2 * math.pi * k / EDGE_RAYS), math.sin(2 * math.pi * k / EDGE_RAYS)) for k in range(EDGE_RAYS)]
+        failures = self.backend.trace_check([(WAVE_E, 0.0, 0.0, px, py) for px, py in pupil])
+        if failures:
+            raise InvalidEvaluation("轴上光线追迹失败，无法调焦", {"failures": failures[:20], "count": len(failures), "total": len(pupil)})
+
+    def run_precheck(self, design: list[dict[str, Any]]) -> dict[str, Any]:
+        """诊断：只搭验收模型并做调焦前的轴上光线检查，不调焦、不测量。"""
+        started = time.perf_counter()
+        try:
+            self.build_model(design)
+            self.m_act = self.spec.tube_lens_focal_length / self.op("EFLY", self.first, self.last)
+            self.precheck_axis()
+            out: dict[str, Any] = {"precheck": "pass"}
+        except InvalidEvaluation as exc:
+            rejected = exc.reason == "轴上光线追迹失败，无法调焦"
+            out = {"precheck": "reject" if rejected else "invalid", "reason": exc.reason, **{k: v for k, v in exc.details.items() if k != "failures"}}
+            if rejected:
+                out["first_failures"] = exc.details["failures"][:5]
+        out["elapsed_s"] = round(time.perf_counter() - started, 2)
+        return out
 
     def check_rays(self) -> None:
         pupil = [(0.0, 0.0)]
@@ -489,5 +518,6 @@ class Evaluator:
             "items": items,
             "diagnostics": {**self.diagnostics, **{k: v for k, v in details.items() if k not in {i.id for i in self.spec.items}}},
             "derived": self.spec.derived(),
+            "axis_precheck": self.precheck,
             "elapsed_s": round(time.perf_counter() - started, 2),
         }

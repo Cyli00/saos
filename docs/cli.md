@@ -28,7 +28,8 @@ agent 只通过 `uv run zea ...` 操作 Zemax。每条命令向标准输出打�
 | `zea lens build --job J PRESCRIPTION --as NAME [--overwrite]` | 按处方用 ZOS-API 搭建镜头，保存到 lenses/ 并加载 |
 | `zea lens repro --job J EXPECT` | 复现校验：焦距、物方 NA、顶点工作距离、f_TL/EFL 与期望值比较。每项允许的偏差取相对误差 1% 与 EXPECT 中 `tolerance_mm`（原文印刷精度的舍入包络半宽）的较大者。只临时调焦，结束后恢复 |
 | `zea lens perturb --job J --seed S --radius-rel A [--thickness-rel B]` | 受控扰动：物镜各面曲率、厚度按固定随机种子均匀改变 |
-| `zea eval accept --job J [--spec FILE]` | 按光学规格做验收评估，结果和验收模型存到任务的 eval/ |
+| `zea eval accept --job J [--spec FILE] [--no-precheck]` | 按光学规格做验收评估，结果和验收模型存到任务的 eval/。`--no-precheck` 仅供诊断：关闭调焦前的轴上光线预检，结果另存为 `.accept.noprecheck.json` |
+| `zea eval precheck --job J [--spec FILE]` | 诊断：只搭验收模型并做调焦前的轴上光线预检，不调焦、不测量 |
 | `zea opt vary --job J --param radius\|thickness\|conic --surfaces 1-16 [--off]` | 设变量或取消变量。物面只允许厚度（即无盖玻片时的工作距离间隔） |
 | `zea opt merit --job J clear\|wizard\|add\|show [--file JSON]` | 评价函数：清空；按向导生成默认评价函数（type、data、reference、rings、arms 等）；追加操作数列表；查看 |
 | `zea opt local --job J [--cycles auto\|1\|5\|10\|50]` | 局部优化（阻尼最小二乘） |

@@ -139,6 +139,10 @@ def cmd_eval(args: argparse.Namespace) -> Any:
     payload: dict[str, Any] = {"job": args.job}
     if args.spec:
         payload["spec"] = args.spec
+    if args.action == "precheck":
+        return client.request("eval.precheck", payload, timeout=args.timeout)
+    if args.no_precheck:
+        payload["precheck"] = False
     return client.request("eval.accept", payload, timeout=args.timeout)
 
 
@@ -254,7 +258,12 @@ def build_parser() -> argparse.ArgumentParser:
     acc = esub.add_parser("accept", help="按光学规格对当前已保存的镜头做验收评估")
     acc.add_argument("--job", required=True)
     acc.add_argument("--spec", help="任务目录内的规格文件，默认用 job.json 中的 spec")
+    acc.add_argument("--no-precheck", action="store_true", help="诊断用：关闭调焦前的轴上光线预检，结果另存为 .accept.noprecheck.json")
     acc.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
+    pre = esub.add_parser("precheck", help="诊断用：只做调焦前的轴上光线预检")
+    pre.add_argument("--job", required=True)
+    pre.add_argument("--spec", help="任务目录内的规格文件，默认用 job.json 中的 spec")
+    pre.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     ev.set_defaults(func=cmd_eval)
 
     op = sub.add_parser("opt", help="优化（转发给后台进程）")

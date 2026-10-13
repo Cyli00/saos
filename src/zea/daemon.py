@@ -33,7 +33,7 @@ REQUEST_READ_TIMEOUT_S = 30
 COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
 COMPARED_NUMBER_KEYS = ("radius", "thickness", "conic", "semi_diameter")
 # 连接手动打开的窗口时，这些操作期间暂停界面刷新，结束后窗口显示最终状态；ZEA_UI_LIVE=1 时全程刷新
-QUIET_OPS = frozenset({"eval.accept", "round.record", "lens.repro"})
+QUIET_OPS = frozenset({"eval.accept", "eval.precheck", "round.record", "lens.repro"})
 
 
 @dataclass
@@ -97,6 +97,7 @@ class Daemon:
             "lens.build": self.op_build,
             "lens.repro": self.op_repro,
             "eval.accept": self.op_accept,
+            "eval.precheck": self.op_precheck,
             "lens.perturb": self.op_perturb,
             "opt.vary": self.op_vary,
             "opt.merit": self.op_merit,
@@ -335,7 +336,27 @@ class Daemon:
         spec_name = _arg(args, "spec", str, default=None) or job.read_state().get("spec")
         if not spec_name:
             raise ZeaError(ErrorCode.BAD_ARGS, f"任务 {job.id} 没有光学规格，用 --spec 指定或在 job create 时给出")
-        return self._accept(job, loaded, spec_name, self._load_job_spec(job, spec_name))
+        precheck = bool(args.get("precheck", True))
+        return self._accept(job, loaded, spec_name, self._load_job_spec(job, spec_name), precheck=precheck)
+
+    def op_precheck(self, args: dict[str, Any]) -> dict[str, Any]:
+        """诊断：只做调焦前的轴上光线检查，用来廉价筛查新增预检会拒绝哪些镜头。"""
+        job = self._job(args)
+        loaded = self._require_loaded(job)
+        if loaded.dirty:
+            raise ZeaError(ErrorCode.UNSAVED_CHANGES, "预检针对已保存的镜头文件，先保存", loaded.describe())
+        spec_name = _arg(args, "spec", str, default=None) or job.read_state().get("spec")
+        if not spec_name:
+            raise ZeaError(ErrorCode.BAD_ARGS, f"任务 {job.id} 没有光学规格，用 spec 指定")
+        spec = self._load_job_spec(job, spec_name)
+        design = self.backend.snapshot()
+        info = self.backend.system_info()
+        evaluator = acceptance.Evaluator(self.backend, spec, info["material_catalogs"], telecentric_object=info["aperture"].get("telecentric_object", False))
+        try:
+            result = evaluator.run_precheck(design)
+        finally:
+            self.backend.load(loaded.path)
+        return {"job": job.id, "file": job.relative_lens(loaded.path), "spec": spec_name, **result}
 
     @staticmethod
     def _load_job_spec(job: jobs.Job, spec_name: str) -> Spec:
@@ -344,20 +365,21 @@ class Daemon:
             raise ZeaError(ErrorCode.PATH_OUTSIDE_JOB, f"规格文件必须在任务目录内：{spec_name}")
         return load_spec(spec_path)
 
-    def _accept(self, job: jobs.Job, loaded: Loaded, spec_name: str, spec: Spec) -> dict[str, Any]:
-
+    def _accept(self, job: jobs.Job, loaded: Loaded, spec_name: str, spec: Spec, precheck: bool = True) -> dict[str, Any]:
         design = self.backend.snapshot()
         info = self.backend.system_info()
         evaluator = acceptance.Evaluator(
-            self.backend, spec, info["material_catalogs"], telecentric_object=info["aperture"].get("telecentric_object", False)
+            self.backend, spec, info["material_catalogs"], telecentric_object=info["aperture"].get("telecentric_object", False), precheck=precheck
         )
+        # 关闭预检的诊断评估另存，不覆盖正式结果
+        suffix = "" if precheck else ".noprecheck"
         try:
             result = evaluator.run(design)
         finally:
             stem = loaded.path.stem
             eval_dir = job.root / "eval"
             eval_dir.mkdir(exist_ok=True)
-            model_path = eval_dir / f"{stem}.accept.zmx"
+            model_path = eval_dir / f"{stem}.accept{suffix}.zmx"
             try:
                 self.backend.save_as(model_path)
             except Exception:  # noqa: BLE001 - 搭建失败时可能没有可保存的模型
@@ -367,10 +389,11 @@ class Daemon:
         result = {"job": job.id, "file": rel, "spec": spec_name, **result}
         if model_path is not None:
             result["acceptance_model"] = model_path.relative_to(job.root).as_posix()
-        (job.root / "eval" / f"{loaded.path.stem}.accept.json").write_text(
+        (job.root / "eval" / f"{loaded.path.stem}.accept{suffix}.json").write_text(
             json.dumps(jsonable(result), ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        job.update_state(last_evaluation={"file": rel, "verdict": result["verdict"], "spec_shortfall": jsonable(result["spec_shortfall"])})
+        if precheck:
+            job.update_state(last_evaluation={"file": rel, "verdict": result["verdict"], "spec_shortfall": jsonable(result["spec_shortfall"])})
         return result
 
     # ---- 优化与调整轮次 ----

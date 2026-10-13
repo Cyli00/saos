@@ -272,3 +272,45 @@ def test_model_glass_counts_as_violation_unless_allowed():
     lenient = Evaluator(None, parse_spec(data), [])
     assert lenient.glass_violations(rows)[0] == 0.0
     assert acceptance_config(lenient.spec)["glass_allow_model"] is True
+
+
+class TraceFailBackend(NanBackend):
+    """轴上光线追迹失败的桩后端；记录 Zernike 调用次数，确认没有进入调焦。"""
+
+    def __init__(self):
+        super().__init__(operand_value=10.0)
+        self.zernike_calls = 0
+
+    def trace_check(self, rays):
+        return [{"ray": list(r), "error": 2, "vignette": 0} for r in rays if r[3] or r[4]]
+
+    def zernike(self, **kwargs):
+        self.zernike_calls += 1
+        return super().zernike(**kwargs)
+
+
+def test_axis_trace_failure_is_invalid_before_focusing(monkeypatch):
+    backend = TraceFailBackend()
+    evaluator = Evaluator(backend, spec_of("plan_achromat"), [])
+    monkeypatch.setattr(evaluator, "build_model", lambda design: setattr(evaluator, "first", 1) or setattr(evaluator, "last", 2) or setattr(evaluator, "gap", 0))
+    out = evaluator.run([])
+    assert out["verdict"] == "invalid" and out["invalid"]["reason"] == "轴上光线追迹失败，无法调焦"
+    assert out["invalid"]["count"] == 36 and backend.zernike_calls == 0
+
+
+def test_precheck_can_be_disabled_for_diagnosis(monkeypatch):
+    backend = TraceFailBackend()
+    evaluator = Evaluator(backend, spec_of("plan_achromat"), [], precheck=False)
+    monkeypatch.setattr(evaluator, "build_model", lambda design: setattr(evaluator, "first", 1) or setattr(evaluator, "last", 2) or setattr(evaluator, "gap", 0))
+    out = evaluator.run([])
+    # 关闭预检后进入调焦（桩后端 c4 恒为 0，调焦不收敛也会给出别的无效原因），不应再是预检的原因
+    assert out["axis_precheck"] is False and backend.zernike_calls > 0
+    assert (out["invalid"] or {}).get("reason") != "轴上光线追迹失败，无法调焦"
+
+
+def test_run_precheck_reports_reject_without_focusing(monkeypatch):
+    backend = TraceFailBackend()
+    evaluator = Evaluator(backend, spec_of("plan_achromat"), [])
+    monkeypatch.setattr(evaluator, "build_model", lambda design: setattr(evaluator, "first", 1) or setattr(evaluator, "last", 2) or setattr(evaluator, "gap", 0))
+    out = evaluator.run_precheck([])
+    assert out["precheck"] == "reject" and out["count"] == 36 and backend.zernike_calls == 0
