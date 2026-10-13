@@ -35,7 +35,7 @@ agent 只通过 `uv run zea ...` 操作 Zemax。每条命令向标准输出打�
 | `zea round record --job J [--spec FILE] [--note TEXT]` | 记录一个调整轮次：存为 lenses/rounds/rNNN.zmx，做验收评估，返回停机判断（pass / stagnated / limit / continue）。第 0 轮时冻结光学规格，之后不能更换 |
 | `zea library check EXTRACT` | 入库前用近轴计算核对提取结果：焦距和工作距离的印刷值落在印刷精度的舍入包络内，或与计算值相差不超过 1%，即为一致（不经后台进程） |
 | `zea library add ID --extract FILE [--catalogs …] [--focal-length F] [--field-number N] [--stop rear_focal\|printed\|r<面号>]` | 把提取结果适配成处方，写入 `library/entries/ID/`，状态为 extracted（不经后台进程） |
-| `zea library verify ID --job J` | 搭建、复现校验、探测验收、推导基准规格并确认原结构 G = 0，结果写回条目。复现不通过的条目状态为 rejected |
+| `zea library verify ID --job J [--discard]` | 搭建、复现校验、探测验收、推导基准规格并确认原结构 G = 0，结果写回条目。当前镜头有未保存修改时返回 UNSAVED_CHANGES；显式加 `--discard` 才会丢弃，包括其他任务的修改。复现不通过的条目状态为 rejected |
 | `zea library list` | 列出条目：状态、焦距、NA、片数、能否作基准及原因 |
 | `zea library query --na A --magnification M [--class achromat\|plan_achromat] [--field-number N] [--working-distance W] [--limit K]` | 按光学规格从已收录条目中选初始结构 |
 | `zea bench split` | 把可作基准的条目分为调参组和验证组，写入 `library/benchmarks.json` |

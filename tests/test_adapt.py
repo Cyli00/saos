@@ -70,6 +70,60 @@ def test_cover_glass_gap_uses_apparent_thickness():
     assert p["surfaces"][0]["thickness"] == pytest.approx(ffd - 0.17 / 1.5255)
 
 
+@pytest.mark.parametrize("focal_length", [10.0, 20.0])
+def test_assumed_cover_thickness_stays_in_millimeters(focal_length):
+    ex = adapt.upgrade(copy.deepcopy(FIXTURE))
+    ex["cover_glass"] = {"thickness": None, "n": None, "nu": None}
+    before = copy.deepcopy(ex)
+    out = adapt.from_extraction(ex, catalogs=CATALOGS, focal_length_mm=focal_length)
+    p, report = out["prescription"], out["report"]
+    assert p["object"]["thickness"] == pytest.approx(0.17)
+    assert report["cover_glass"]["thickness"] * report["scale"] == pytest.approx(0.17)
+    ffd = report["paraxial"]["front_focal_distance_mm"]
+    assert p["surfaces"][0]["thickness"] == pytest.approx(ffd - 0.17 / 1.523)
+    explicit = copy.deepcopy(ex)
+    explicit["cover_glass"] = {"thickness": 0.17 / report["scale"], "n": 1.523, "nu": 55.0}
+    reference = adapt.from_extraction(explicit, catalogs=CATALOGS, focal_length_mm=focal_length)
+    assert report["rounding_envelope"] == reference["report"]["rounding_envelope"]
+    assert ex == before
+
+
+@pytest.mark.parametrize("cover", [
+    {"thickness": 0.017, "n": None, "nu": 56.0},
+    {"thickness": 0.017, "n": 1.5255, "nu": None},
+])
+def test_partial_cover_defaults_preserve_printed_values(cover):
+    ex = adapt.upgrade(copy.deepcopy(FIXTURE))
+    ex["cover_glass"] = cover
+    out = adapt.from_extraction(ex, catalogs=CATALOGS, focal_length_mm=10)
+    obj = out["prescription"]["object"]
+    assert obj["thickness"] == pytest.approx(0.17)
+    assert obj["material"]["model"]["nd"] == (cover["n"] or 1.523)
+    assert obj["material"]["model"]["vd"] == (cover["nu"] or 55.0)
+
+
+def test_check_and_adapt_use_the_same_assumed_cover():
+    from zea.library_cli import check_extract
+
+    ex = adapt.upgrade(copy.deepcopy(FIXTURE))
+    ex["cover_glass"] = {"thickness": None, "n": 1.5255, "nu": 56.0}
+    out = adapt.from_extraction(ex, catalogs=CATALOGS)
+    check = next(c for c in check_extract(ex)["checks"] if c["quantity"] == "WD")
+    scale = out["report"]["scale"]
+    assert check["computed"] * scale == pytest.approx(out["prescription"]["surfaces"][0]["thickness"])
+    assert [v * scale for v in check["envelope"]] == pytest.approx(out["report"]["rounding_envelope"]["wd"])
+
+
+def test_check_printed_cover_does_not_require_native_scale():
+    from zea.library_cli import check_extract
+
+    ex = adapt.upgrade(copy.deepcopy(FIXTURE))
+    ex["cover_glass"] = {"thickness": 0.017, "n": 1.5255, "nu": 56.0}
+    with_beta = check_extract(ex)
+    ex["header"].pop("beta")
+    assert check_extract(ex) == with_beta
+
+
 def test_printed_glass_name_is_used_when_consistent():
     ex2 = adapt.upgrade(copy.deepcopy(FIXTURE))
     ex2["surfaces"][8]["glass"] = "SF1"  # 1.71736 / 29.51

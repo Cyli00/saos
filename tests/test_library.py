@@ -129,3 +129,61 @@ def test_every_subcommand_help_renders():
                     walk(child)
 
     walk(build_parser())
+
+
+@pytest.mark.parametrize("other_job", [False, True])
+@pytest.mark.parametrize("discard", [False, True])
+def test_verify_preserves_dirty_lens_unless_discard_is_explicit(lib, zea_home, fake_lens_file, monkeypatch, other_job, discard):
+    import json
+
+    from zea import jobs, library_cli
+    from zea.backend.fake import FakeBackend, fake_surface
+    from zea.cli import build_parser
+    from zea.daemon import Daemon
+    from zea.protocol import ErrorCode, ZeaError
+
+    backend = FakeBackend()
+    daemon = Daemon(backend, backend.start(), "standalone")
+    current = jobs.create_job("current")
+    target = jobs.create_job("verify") if other_job else current
+    daemon.op_import({"job": current.id, "src": str(fake_lens_file), "name": "original.zmx"})
+    daemon.op_load({"job": current.id, "file": "original.zmx"})
+    daemon.op_set({"job": current.id, "surface": 1, "param": "radius", "value": 48.5})
+    library.save_entry("X", make_entry("X", 0.4, status="extracted"))
+    library.write_file("X", "prescription.json", {
+        "title": "验证用镜头", "aperture": {"type": "object_na", "value": 0.4},
+        "fields": {"type": "object_height", "y": [0.0]},
+        "wavelengths": {"um": [0.546]}, "object": {"thickness": 10.0},
+        "surfaces": [{"radius": 100.0, "thickness": 1.0, "stop": True}],
+    })
+    library.write_file("X", "expect.json", {"efl": 10.0})
+    original_entry = (library.entry_dir("X") / "entry.json").read_bytes()
+
+    def build(p):
+        backend.lens = {"title": p["title"], "surfaces": [fake_surface(0), fake_surface(1, radius=100.0)]}
+
+    def request(op, args, **kwargs):
+        if op == "lens.build":
+            return daemon.op_build(args)
+        assert op == "lens.repro"
+        return {"pass": False, "metrics": []}
+
+    monkeypatch.setattr(backend, "build", build)
+    monkeypatch.setattr(library_cli.client, "request", request)
+    argv = ["library", "verify", "X", "--job", target.id] + (["--discard"] if discard else [])
+    args = build_parser().parse_args(argv)
+    if discard:
+        assert args.func(args)["status"] == "rejected"
+        assert daemon.loaded.job.id == target.id
+        assert daemon.loaded.dirty is False
+        assert backend.surfaces()[1]["radius"] == 100.0
+    else:
+        with pytest.raises(ZeaError) as exc:
+            args.func(args)
+        assert exc.value.code == ErrorCode.UNSAVED_CHANGES
+        assert daemon.loaded.job.id == current.id
+        assert daemon.loaded.dirty is True
+        assert backend.surfaces()[1]["radius"] == 48.5
+        assert not (target.lenses_dir / "X.zmx").exists()
+        assert (library.entry_dir("X") / "entry.json").read_bytes() == original_entry
+    assert json.loads((current.lenses_dir / "original.zmx").read_text())["surfaces"][1]["radius"] == 50.0

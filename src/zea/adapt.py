@@ -184,6 +184,22 @@ def native_focal_length(ex: dict[str, Any]) -> float:
     return tube / abs(float(beta))
 
 
+def resolve_cover_glass(cover: dict[str, Any] | None, *, scale: float) -> tuple[dict[str, Any] | None, list[str]]:
+    """补齐盖玻片，返回原文长度单位下的参数及缺省字段的说明。"""
+    if not cover:
+        return None, []
+    resolved = dict(cover)
+    assumptions = []
+    for key, default in DEFAULT_COVER.items():
+        if cover.get(key) is not None:
+            continue
+        # 后续处方、库指标和舍入包络都统一缩放，毫米制默认厚度需先换回原文单位。
+        resolved[key] = default / scale if key == "thickness" else default
+        label = {"thickness": "厚度 0.17 mm", "n": "nd 1.523", "nu": "νd 55"}[key]
+        assumptions.append(f"盖玻片原文缺少 {key}，按 {label} 假设")
+    return resolved, assumptions
+
+
 def from_extraction(
     extract: dict[str, Any],
     *,
@@ -235,11 +251,7 @@ def from_extraction(
         raise _bad(f"stop 必须是 rear_focal、printed 或 r<面号>，收到 {stop}")
     surfaces.append({"type": "paraxial", "focal_length": tube_lens_mm, "opd_mode": 1, "thickness": tube_lens_mm, "comment": prescription.TAG_TUBE})
 
-    cover = ex.get("cover_glass")
-    cover_assumed = False
-    if cover and (cover.get("thickness") is None or cover.get("n") is None):
-        cover = {**DEFAULT_COVER, **{k: v for k, v in cover.items() if v is not None and k in DEFAULT_COVER}}
-        cover_assumed = True
+    cover, cover_assumptions = resolve_cover_glass(ex.get("cover_glass"), scale=scale)
     if cover:
         t_c, n_c = float(cover["thickness"]) * scale, float(cover["n"])
         # 平行平板使物点的近轴像前移 t(1 - 1/n)，所以盖玻片上表面到第一面的间隔取 前焦距 - t/n
@@ -282,7 +294,7 @@ def from_extraction(
         "paraxial": {"wavelength": wave, "efl_mm": efl, "front_focal_distance_mm": ffd, "back_focal_distance_mm": bfd},
         "stop": stop,
         "cover_glass": cover,
-        "cover_glass_assumed": cover_assumed,
+        "cover_glass_assumed": bool(cover_assumptions),
         "printed_decimals": column_decimals(rows),
         "rounding_envelope": {k: [lo * scale, hi * scale] for k, (lo, hi) in envelope.items()},
         "elements": sum(1 for r in rows if "n" in r),
@@ -296,6 +308,6 @@ def from_extraction(
             f"焦距 {f_target:g} mm（缩放 {scale:g}），参考筒镜 {tube_lens_mm:g} mm",
             f"物镜视场数 {fn:g}" + ("" if (field_number or header.get("field_number") or header.get("image_height")) else "（专利未给，按默认 22 假设）"),
         ]
-        + (["原文工作距离从盖玻片量起但未给厚度：按 0.17 mm、nd 1.523、νd 55 假设"] if cover_assumed else []),
+        + cover_assumptions,
     }
     return {"prescription": presc, "expect": expect, "report": report}

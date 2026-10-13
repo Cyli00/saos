@@ -75,8 +75,9 @@ def check_extract(extract: dict[str, Any]) -> dict[str, Any]:
     ffd = paraxial.front_focal_distance(lens)
     header = ex["header"]
     cover = ex.get("cover_glass")
-    if cover and (cover.get("thickness") is None or cover.get("n") is None):
-        cover = dict(adapt.DEFAULT_COVER)
+    if cover:
+        scale = adapt.native_focal_length(ex) / float(header["f"]) if cover.get("thickness") is None else 1.0
+        cover, _ = adapt.resolve_cover_glass(cover, scale=scale)
     envelope = adapt.rounding_envelope(rows, cover)
     checks = [{"quantity": "f", "printed": header.get("f"), "computed": efl, "envelope": envelope["efl"]}]
     if header.get("WD") is not None:
@@ -117,7 +118,7 @@ def cmd_verify(args: argparse.Namespace) -> Any:
     t = args.timeout
     client.request(
         "lens.build",
-        {"job": job.id, "prescription": library.read_json(d / "prescription.json"), "file": lens_name, "overwrite": True, "discard": True},
+        {"job": job.id, "prescription": library.read_json(d / "prescription.json"), "file": lens_name, "overwrite": True, "discard": args.discard},
         timeout=t,
     )
     repro = client.request("lens.repro", {"job": job.id, "expect": library.read_json(d / "expect.json")}, timeout=t)
@@ -219,6 +220,7 @@ def register(sub, parser_class, default_timeout: float) -> None:
     p = lsub.add_parser("verify", help="复现校验并推导基准规格（需要后台进程）")
     p.add_argument("id")
     p.add_argument("--job", required=True, help="用来搭建和评估的设计任务")
+    p.add_argument("--discard", action="store_true", help="放弃当前镜头未保存的修改（包括其他任务的镜头）")
     p.add_argument("--timeout", type=float, default=default_timeout)
     p.set_defaults(func=cmd_verify)
     lsub.add_parser("list", help="列出条目").set_defaults(func=cmd_list)
