@@ -1,0 +1,20 @@
+schema: 1
+request: 我要一支 20 倍干物镜，用眼睛观察金属表面，没有盖玻片，前端至少留 2 mm，片数尽量少。
+scope: {medium: air, conjugate: infinity}
+spec:
+  magnification: 20
+  receiver: visual
+  cover_glass: null
+  limits:
+    working_distance_min: 2
+provenance:
+  magnification: {source: user, basis: 用户说“20 倍”。}
+  receiver: {source: user, basis: 用户说“用眼睛观察”。}
+  cover_glass: {source: user, basis: 用户说“没有盖玻片”。}
+  limits.working_distance_min: {source: user, basis: 用户说“前端至少留 2 mm”。}
+requirements:
+  - {text: 20 倍干物镜, kind: constraint, fields: [magnification]}
+  - {text: 目视观察金属表面，无盖玻片, kind: constraint, fields: [receiver, cover_glass]}
+  - {text: 前端至少留 2 mm, kind: constraint, fields: [limits.working_distance_min]}
+  - {text: 片数尽量少, kind: preference, fields: []}
+questions: []

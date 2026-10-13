@@ -296,9 +296,10 @@ def build_parser() -> argparse.ArgumentParser:
     rec.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     rd.set_defaults(func=cmd_round)
 
-    from zea import library_cli
+    from zea import library_cli, plan_cli
 
     library_cli.register(sub, _Parser, client.DEFAULT_REQUEST_TIMEOUT_S)
+    plan_cli.register(sub, _Parser)
 
     ad = sub.add_parser("adapt", help="把提取的面数据适配成标准设计布局的处方")
     asub = ad.add_subparsers(dest="action", required=True, parser_class=_Parser)

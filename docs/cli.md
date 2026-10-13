@@ -9,6 +9,8 @@ agent 只通过 `uv run zea ...` 操作 Zemax。每条命令向标准输出打�
 
 ## 命令
 
+需求访谈和只读设计计划新增 `interview check`、`plan create/show/confirm/handoff`，均不连接 Zemax。访谈记录格式、参数及用户确认流程见 [interview-and-plan.md](./interview-and-plan.md)。
+
 | 命令 | 作用 |
 |---|---|
 | `zea daemon start [--mode standalone\|extension]` | 启动后台进程并连接 OpticStudio 2024 R1，就绪后返回。本机实测约 6 s。`extension` 连接手动打开、已点了 Interactive Extension 的窗口，见下文 |
