@@ -177,38 +177,80 @@ class ZosBackend(Backend):
             if not (keep_open and self.mode == "extension"):
                 run.Close()
 
-    # 原生分析窗口；波前图和 PSF 只看轴上主波长，其余设为全部视场、全部波长
-    _ANALYSES = ("Draw3D", "StandardSpot", "RayFan", "WavefrontMap", "HuygensPsf", "HuygensMtf", "RMSField", "GeometricEncircledEnergy")
-    _AXIS_ONLY = ("WavefrontMap", "HuygensPsf")
+    # ---- 显性调试的观察窗口 ----
 
-    def show_analyses(self) -> dict[str, Any]:
+    # System Viewer 的几种：剖面图、3D 视图、实体模型；lde 表示 Lens Data 编辑器
+    VIEWERS = {"lde": None, "cross-section": "Draw2D", "3d": "Draw3D", "shaded": "ShadedModel"}
+    DEFAULT_WATCH = {"viewer": "lde", "analysis": "StandardSpot", "settings": {}}
+
+    def _require_extension(self) -> None:
         if self.mode != "extension":
-            return super().show_analyses()
+            raise SaosError(ErrorCode.BAD_ARGS, "explicit debugging windows need extension mode (saos daemon start --mode extension)")
+
+    def _open_analyses(self) -> dict[str, Any]:
+        system = self.system
+        found = {}
+        for i in range(1, system.Analyses.NumberOfAnalyses + 1):
+            analysis = system.Analyses.Get_AnalysisAtIndex(i)
+            found.setdefault(str(analysis.AnalysisType), analysis)
+        return found
+
+    def show_windows(self, viewer: str | None = None, analysis: str | None = None, settings: dict[str, Any] | None = None) -> dict[str, Any]:
+        """显性调试：打开 Lens Data 或一种 System Viewer，再打开一个像质分析；已打开的复用，并按当前镜头刷新。"""
+        from saos.backend import analysis as an
+
+        self._require_extension()
+        watch = getattr(self, "watch", dict(self.DEFAULT_WATCH))
+        if viewer is not None:
+            if viewer not in self.VIEWERS:
+                raise SaosError(ErrorCode.BAD_ARGS, f"viewer must be one of {list(self.VIEWERS)}")
+            watch["viewer"] = viewer
+        if analysis is not None:
+            watch["analysis"], watch["settings"] = analysis, dict(settings or {})
+        elif settings:
+            watch["settings"] = dict(settings)
+        self.watch = watch
         zosapi = _load_zosapi(self.root)
         system = self.system
         self.app.ShowChangesInUI = True
-        system.LDE.ShowLDE()
-        system.MFE.ShowMFE()
-        existing = {}
-        for i in range(1, system.Analyses.NumberOfAnalyses + 1):
-            analysis = system.Analyses.Get_AnalysisAtIndex(i)
-            existing[str(analysis.AnalysisType)] = analysis
-        opened = []
-        for name in self._ANALYSES:
-            self.app.ProgressMessage = f"saos：刷新 {name}"
-            analysis = existing.get(name) or system.Analyses.New_Analysis_SettingsFirst(getattr(zosapi.Analysis.AnalysisIDM, name))
-            settings = analysis.GetSettings()
-            number = 1 if name in self._AXIS_ONLY else 0
-            if hasattr(settings, "Field"):
-                settings.Field.SetFieldNumber(number)
-            if hasattr(settings, "Wavelength"):
-                settings.Wavelength.SetWavelengthNumber(number)
-            message = analysis.ApplyAndWaitForCompletion()
-            opened.append({"analysis": name, "message": None if message is None else str(message), "title": str(analysis.Title)})
+        opened = self._open_analyses()
+        if watch["viewer"] == "lde":
+            system.LDE.ShowLDE()
+        else:
+            name = self.VIEWERS[watch["viewer"]]
+            run = opened.get(name) or system.Analyses.New_Analysis(an.idm(zosapi, name))
+            run.ApplyAndWaitForCompletion()
+        run = opened.get(watch["analysis"]) or system.Analyses.New_Analysis(an.idm(zosapi, watch["analysis"]))
+        an.apply_settings(an.settings_of(run), watch["settings"])
+        message = run.ApplyAndWaitForCompletion()
         system.UpdateMode = zosapi.LensUpdateMode.AllWindows
-        status = str(system.UpdateStatus())
-        self.app.ProgressMessage = "saos：分析窗口已刷新"
-        return {"update_mode": str(system.UpdateMode), "system_status": status, "analyses": opened}
+        self.app.ProgressMessage = f"saos: {watch['viewer']} + {watch['analysis']}"
+        return {"watch": watch, "message": str(message) if message else None, "windows": self.window_list()}
+
+    def window_list(self) -> list[dict[str, str]]:
+        return [{"type": str(a.AnalysisType), "title": str(a.Title)} for a in self._open_analyses().values()]
+
+    def refresh_windows(self) -> dict[str, Any] | None:
+        """改动镜头后刷新已打开的分析窗口；用户关掉的窗口不重开，下次 lens view 时再打开。"""
+        if self.mode != "extension" or self.app is None:
+            return None
+        refreshed, failed = [], []
+        for name, run in self._open_analyses().items():
+            try:
+                run.ApplyAndWaitForCompletion()
+                refreshed.append(name)
+            except Exception as exc:  # noqa: BLE001 - 窗口可能刚被用户关闭
+                failed.append({"type": name, "error": str(exc)[:200]})
+        return {"refreshed": refreshed, "failed": failed}
+
+    def screenshots(self, folder: Path, prefix: str) -> list[str]:
+        from saos import native_ui
+
+        self._require_extension()
+        pid = (self.extension_ui or {}).get("pid")
+        if not pid:
+            raise SaosError(ErrorCode.ZOS_ERROR, "unknown OpticStudio window process")
+        return native_ui.capture_windows(int(pid), folder, prefix)
 
     # ---- 文件 ----
 

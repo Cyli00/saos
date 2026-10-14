@@ -23,6 +23,20 @@ def _lens_request(op: str, args: argparse.Namespace, payload: dict[str, Any]) ->
     return client.request(op, {"job": args.job, **payload}, timeout=args.timeout)
 
 
+def _key_values(items: list[str], flag: str) -> dict[str, Any]:
+    """KEY=VALUE 列表 → 字典；VALUE 按 JSON 解析，失败时当字符串。"""
+    out: dict[str, Any] = {}
+    for item in items:
+        key, sep, value = item.partition("=")
+        if not sep or not key:
+            raise SaosError(ErrorCode.BAD_ARGS, f"{flag} expects KEY=VALUE, got {item!r}")
+        try:
+            out[key] = json.loads(value)
+        except ValueError:
+            out[key] = value
+    return out
+
+
 def cmd_daemon(args: argparse.Namespace) -> Any:
     if args.action == "start":
         return client.start(args.mode, timeout=args.start_timeout)
@@ -71,17 +85,16 @@ def cmd_lens(args: argparse.Namespace) -> Any:
             return _lens_request("lens.analysis", args, {"list": True})
         if not args.type:
             raise SaosError(ErrorCode.BAD_ARGS, "analysis type is required unless --list is given")
-        settings: dict[str, Any] = {}
-        for item in args.set:
-            key, sep, value = item.partition("=")
-            if not sep:
-                raise SaosError(ErrorCode.BAD_ARGS, f"--set expects KEY=VALUE, got {item!r}")
-            try:
-                settings[key] = json.loads(value)
-            except ValueError:
-                settings[key] = value
+        settings = _key_values(args.set, "--set")
         return _lens_request("lens.analysis", args, {"type": args.type, "settings": settings, "keep_open": args.keep_open})
-    if action in ("info", "surfaces", "view"):
+    if action == "view":
+        payload = {"viewer": args.viewer, "analysis": args.analysis}
+        if args.set:
+            payload["settings"] = _key_values(args.set, "--set")
+        return _lens_request("lens.view", args, payload)
+    if action == "screenshot":
+        return _lens_request("lens.screenshot", args, {"label": args.label})
+    if action in ("info", "surfaces"):
         return _lens_request(f"lens.{action}", args, {})
     if action == "set":
         return _lens_request("lens.set", args, {"surface": args.surface, "param": args.param, "value": args.value})
@@ -142,14 +155,7 @@ def cmd_exec(args: argparse.Namespace) -> Any:
     script_args: dict[str, Any] = _read_json(args.args_file) if args.args_file else {}
     if not isinstance(script_args, dict):
         raise SaosError(ErrorCode.BAD_ARGS, "--args-file must contain a JSON object")
-    for item in args.arg:
-        key, sep, value = item.partition("=")
-        if not sep or not key:
-            raise SaosError(ErrorCode.BAD_ARGS, f"--arg expects KEY=VALUE, got {item!r}")
-        try:
-            script_args[key] = json.loads(value)
-        except ValueError:
-            script_args[key] = value
+    script_args.update(_key_values(args.arg, "--arg"))
     name = args.name or "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in script.stem)[:48] or "script"
     payload = {"job": args.job, "name": name, "source": source, "args": script_args, "quiet": args.quiet}
     return client.request("script.exec", payload, timeout=args.timeout)
@@ -207,7 +213,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--overwrite", action="store_true")
     p = lens_cmd("capture", "将当前窗口内容另存为任务副本，保留原文件")
     p.add_argument("--as", dest="as_name", required=True)
-    lens_cmd("view", "extension 模式下打开并刷新原生分析窗口")
+    p = lens_cmd("view", "显性调试：打开 Lens Data 或 System Viewer，加一个像质分析，并刷新")
+    p.add_argument("--viewer", choices=("lde", "cross-section", "3d", "shaded"), help="默认 lde")
+    p.add_argument("--analysis", help="像质分析的 AnalysisIDM 名称，默认 StandardSpot；按系统最看重的像质选")
+    p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE", help="该分析的设置")
+    p = lens_cmd("screenshot", "显性调试：截取 OpticStudio 窗口 PNG 到任务的 screens/")
+    p.add_argument("--label", default="window", help="文件名标签")
     p = lens_cmd("analysis", "运行 OpticStudio 分析并导出数值到任务的 analyses/")
     p.add_argument("type", nargs="?", help="AnalysisIDM 名称，例如 StandardSpot、FftMtf、RayFan、WavefrontMap")
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE", help="分析设置，例如 Field=all、Wavelength=1、SampleSize=S_64x64")

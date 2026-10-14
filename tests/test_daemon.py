@@ -178,3 +178,29 @@ def test_unmanaged_window_dirty_state_blocks_replacement(daemon, fake_lens_file,
     assert capture['file'] == 'window-copy.zmx'
     assert fake_lens_file.read_bytes() == original
     assert err_code(call(daemon, 'lens.capture', job=job.id, file='window-copy.zmx')) == ErrorCode.FILE_EXISTS
+
+
+def test_window_edits_are_told_apart_from_saos_side_effects(saos_home, fake_lens_file, monkeypatch):
+    # extension 模式：NeedsSave 置位但镜头内容与上次请求结束时相同，是 saos 自己的动作；内容变了才是用户修改
+    backend = FakeBackend()
+    daemon = Daemon(backend, {**backend.start(), "initial_needs_save": False}, "extension")
+    monkeypatch.setattr(backend, "has_unsaved_changes", lambda: True)
+    job = jobs.create_job("window")
+    ok_result(call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx"))
+    ok_result(call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="b.zmx"))
+    ok_result(call(daemon, "lens.load", job=job.id, file="a.zmx", discard=True))
+    ok_result(call(daemon, "lens.load", job=job.id, file="b.zmx"))
+    backend.lens["surfaces"][1]["thickness"] = 9.0  # 用户在窗口里手改
+    assert err_code(call(daemon, "lens.load", job=job.id, file="a.zmx")) == ErrorCode.UNSAVED_CHANGES
+    ok_result(call(daemon, "lens.load", job=job.id, file="a.zmx", discard=True))
+
+
+def test_unsaved_window_content_at_connect_is_protected(saos_home, fake_lens_file):
+    backend = FakeBackend()
+    daemon = Daemon(backend, {**backend.start(), "initial_needs_save": True}, "extension")
+    job = jobs.create_job("window")
+    ok_result(call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx"))
+    assert err_code(call(daemon, "lens.load", job=job.id, file="a.zmx")) == ErrorCode.UNSAVED_CHANGES
+    backend.load(fake_lens_file)
+    ok_result(call(daemon, "lens.capture", job=job.id, file="window.zmx"))
+    ok_result(call(daemon, "lens.load", job=job.id, file="a.zmx"))

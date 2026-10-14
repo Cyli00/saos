@@ -88,9 +88,17 @@ class Backend(ABC):
         """运行一个 OpticStudio 分析，返回导出的序列、网格、点列图数据和表头；完整文本写到 text_path。"""
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} has no analyses")
 
-    def show_analyses(self) -> dict[str, Any]:
-        """在连接的窗口中打开并刷新原生分析窗口（显性调试）。"""
-        raise SaosError(ErrorCode.BAD_ARGS, "原生窗口显示需要 extension 模式")
+    def show_windows(self, viewer: str | None = None, analysis: str | None = None, settings: dict[str, Any] | None = None) -> dict[str, Any]:
+        """显性调试：在连接的窗口中打开 Lens Data 或 System Viewer，以及一个像质分析。"""
+        raise SaosError(ErrorCode.BAD_ARGS, "explicit debugging windows need extension mode (saos daemon start --mode extension)")
+
+    def refresh_windows(self) -> dict[str, Any] | None:
+        """改动镜头后刷新显性调试的窗口；隐式运行时什么也不做。"""
+        return None
+
+    def screenshots(self, folder: Path, prefix: str) -> list[str]:
+        """把连接的 OpticStudio 的可见窗口截成 PNG，返回文件名。"""
+        raise SaosError(ErrorCode.BAD_ARGS, "screenshots need extension mode")
 
     # ---- 第 3 步：搭建与验收用 ----
 

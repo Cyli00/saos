@@ -54,7 +54,7 @@ OpticStudio 2024 R1 Premium 加 ZOS-API 能建模的系统都在范围内，包�
 - 必须通过 Interactive Extension 连接用户打开的 OpticStudio 窗口。连接前由程序用 UI Automation 打开 Interactive Extension 并取消勾选 "Auto close on disconnect"；有多个候选窗口时用环境变量指定，不接管已连接到其他扩展的窗口。
 - 连接后自动打开 Lens Data（或 System Viewer），以及 agent 按该系统最看重的像质选定的一个 Image Quality 分析，未指定时用 Spot Diagram。之后每条会改动镜头的命令执行完都刷新这些窗口。用户关掉窗口不阻断 agent，agent 下次显示时重新打开。
 - agent 看不到窗口：数值导出优先；显性调试下另外可以截取窗口 PNG，给有视觉能力的 agent 和用户对照。
-- 用户在窗口里有未保存的修改时，agent 不能覆盖。OpticStudio 的 NeedsSave 标志会被只读操作误置位（实测临时增删评价函数行的 Zernike 拟合、把参数写回相同的值都会置位），所以 agent 自己做的修改仍以后台进程的记录为准。
+- 用户在窗口里有未保存的修改时，agent 不能覆盖。OpticStudio 的 NeedsSave 标志会被 saos 自己的动作置位（实测 Zernike 拟合、把参数写回相同的值、打开分析窗口都会置位），所以后台进程在每次请求结束时记下镜头内容，NeedsSave 置位且内容变了才算用户修改；连接时窗口里已有的未保存内容一直受保护，直到保存、捕获副本或显式放弃。agent 自己做的修改以后台进程的记录为准。
 - 窗口实时刷新会拖慢计算：一次显微物镜验收评估从 22 s 变为 98 s。耗时操作期间可以暂停刷新，结束后再显示最终状态。
 
 ## 任务目录
@@ -86,7 +86,7 @@ OpticStudio 2024 R1 Premium 加 ZOS-API 能建模的系统都在范围内，包�
 2. ~~显微物镜的专用操作和命令移入 `saos.recipes.microscope`（命令为 `saos microscope …`），`bench/` 移到 `experiments/bench/`。~~ 已完成。
 3. ~~脚本执行入口 `saos exec`。~~ 已完成，用法见 docs/cli.md「脚本执行」。
 4. ~~分析数值导出 `saos lens analysis`。~~ 已完成；显性调试下的窗口截图并入第 5 项。
-5. 显性调试的窗口规则：连接后自动打开，改动后刷新。
+5. ~~显性调试的窗口规则（连接后自动打开，改动后刷新）和窗口截图。~~ 已完成。
 6. 入口技能 `saos` 和《配方编写规范》，全部用英文。
 7. 用光纤侧视系统作为第一个真实任务：不预设配方，用工具加脚本完成，找出工具缺口，做完后提炼配方。
 

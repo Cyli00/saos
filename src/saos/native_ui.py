@@ -152,3 +152,104 @@ def ensure_extension() -> dict[str, Any]:
         checkbox = _control(_element(dialog["hwnd"]), "Auto Close on Disconnect", uia.ControlType.CheckBox)
         checkbox.GetCurrentPattern(uia.TogglePattern.Pattern).Toggle()
     return require_ready([d for d in discover_dialogs() if d["pid"] == dialog["pid"]])
+
+
+# ---- 截图 ----
+
+
+class _BitmapInfoHeader(ctypes.Structure):
+    _fields_ = [
+        ("biSize", ctypes.c_uint32),
+        ("biWidth", ctypes.c_int32),
+        ("biHeight", ctypes.c_int32),
+        ("biPlanes", ctypes.c_uint16),
+        ("biBitCount", ctypes.c_uint16),
+        ("biCompression", ctypes.c_uint32),
+        ("biSizeImage", ctypes.c_uint32),
+        ("biXPelsPerMeter", ctypes.c_int32),
+        ("biYPelsPerMeter", ctypes.c_int32),
+        ("biClrUsed", ctypes.c_uint32),
+        ("biClrImportant", ctypes.c_uint32),
+    ]
+
+
+def encode_png(width: int, height: int, bgra: bytes) -> bytes:
+    """32 位 BGRA（自上而下）编码为 RGBA PNG。"""
+    import struct
+    import zlib
+
+    rgba = bytearray(bgra)
+    rgba[0::4], rgba[2::4] = bgra[2::4], bgra[0::4]
+    stride = width * 4
+    raw = b"".join(b"\x00" + bytes(rgba[y * stride : (y + 1) * stride]) for y in range(height))
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
+
+    header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b"")
+
+
+def capture_window(hwnd: int) -> tuple[int, int, bytes] | None:
+    """用 PrintWindow（PW_RENDERFULLCONTENT）截取窗口，窗口被遮挡时也能得到内容；最小化时返回 None。"""
+    user = ctypes.WinDLL("user32", use_last_error=True)
+    gdi = ctypes.WinDLL("gdi32", use_last_error=True)
+
+    class Rect(ctypes.Structure):
+        _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long), ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+    user.GetWindowRect.argtypes = [ctypes.c_void_p, ctypes.POINTER(Rect)]
+    user.GetWindowDC.argtypes = [ctypes.c_void_p]
+    user.GetWindowDC.restype = ctypes.c_void_p
+    user.ReleaseDC.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    user.PrintWindow.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint]
+    user.IsIconic.argtypes = [ctypes.c_void_p]
+    gdi.CreateCompatibleDC.argtypes = [ctypes.c_void_p]
+    gdi.CreateCompatibleDC.restype = ctypes.c_void_p
+    gdi.CreateCompatibleBitmap.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
+    gdi.CreateCompatibleBitmap.restype = ctypes.c_void_p
+    gdi.SelectObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+    gdi.SelectObject.restype = ctypes.c_void_p
+    gdi.GetDIBits.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint]
+    gdi.DeleteObject.argtypes = [ctypes.c_void_p]
+    gdi.DeleteDC.argtypes = [ctypes.c_void_p]
+
+    if user.IsIconic(hwnd):
+        return None
+    rect = Rect()
+    user.GetWindowRect(hwnd, ctypes.byref(rect))
+    width, height = rect.right - rect.left, rect.bottom - rect.top
+    if width <= 0 or height <= 0:
+        return None
+    window_dc = user.GetWindowDC(hwnd)
+    mem_dc = gdi.CreateCompatibleDC(window_dc)
+    bitmap = gdi.CreateCompatibleBitmap(window_dc, width, height)
+    old = gdi.SelectObject(mem_dc, bitmap)
+    try:
+        user.PrintWindow(hwnd, mem_dc, 2)
+        info = _BitmapInfoHeader(ctypes.sizeof(_BitmapInfoHeader), width, -height, 1, 32, 0, 0, 0, 0, 0, 0)
+        buffer = ctypes.create_string_buffer(width * height * 4)
+        lines = gdi.GetDIBits(mem_dc, bitmap, 0, height, buffer, ctypes.byref(info), 0)
+        if lines != height:
+            return None
+        return width, height, buffer.raw
+    finally:
+        gdi.SelectObject(mem_dc, old)
+        gdi.DeleteObject(bitmap)
+        gdi.DeleteDC(mem_dc)
+        user.ReleaseDC(hwnd, window_dc)
+
+
+def capture_windows(pid: int, folder: Path, prefix: str) -> list[str]:
+    """截取该进程所有有标题的可见顶层窗口（主窗口和浮动的分析窗口），存为 prefix-N.png。"""
+    folder.mkdir(parents=True, exist_ok=True)
+    saved = []
+    windows = [w for w in _top_windows(lambda title, visible: visible and bool(title.strip())) if w["pid"] == pid]
+    for k, w in enumerate(windows, 1):
+        shot = capture_window(w["hwnd"])
+        if shot is None:
+            continue
+        path = folder / f"{prefix}-{k}.png"
+        path.write_bytes(encode_png(*shot))
+        saved.append(path.name)
+    return saved

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import os
@@ -22,11 +23,13 @@ from typing import Any, Callable
 from saos import config, jobs, prescription, scripting
 from saos.backend import Backend, make_backend
 from saos.backend.base import same_number
-from saos.protocol import ErrorCode, SaosError, decode, encode, fail, ok, write_json
+from saos.protocol import ErrorCode, SaosError, decode, encode, fail, jsonable, ok, write_json
 
 log = logging.getLogger("saos.daemon")
 
 REQUEST_READ_TIMEOUT_S = 30
+# 显性调试：这些操作可能改变镜头，结束后刷新已打开的分析窗口
+REFRESH_AFTER = frozenset({"lens.load", "lens.set", "lens.save", "lens.build", "lens.capture", "opt.local", "script.exec"})
 COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
 COMPARED_NUMBER_KEYS = ("radius", "thickness", "conic", "semi_diameter")
 
@@ -80,6 +83,9 @@ class Daemon:
         self.started_at = time.time()
         self.loaded: Loaded | None = None
         self.stopping = False
+        # 显性调试：连接时窗口里已有的未保存内容要保护，直到保存、捕获副本或显式放弃
+        self.window_unsaved = bool(zos_info.get("initial_needs_save"))
+        self._window_baseline: str | None = None
         self.handlers: dict[str, Callable[[dict[str, Any]], Any]] = {
             "ping": self.op_ping,
             "shutdown": self.op_shutdown,
@@ -94,6 +100,7 @@ class Daemon:
             "lens.build": self.op_build,
             "lens.view": self.op_view,
             "lens.analysis": self.op_analysis,
+            "lens.screenshot": self.op_screenshot,
             "lens.capture": self.op_capture,
             "opt.vary": self.op_vary,
             "opt.merit": self.op_merit,
@@ -121,6 +128,10 @@ class Daemon:
             quiet = op == "script.exec" and bool(args.get("quiet")) and os.environ.get("SAOS_UI_LIVE") != "1"
             with self.backend.activity(f"saos {op}", quiet):
                 result = handler(args)
+            if op in REFRESH_AFTER:
+                self._refresh_windows()
+            if self.mode == "extension" and not self.stopping:
+                self.mark_window_baseline()
         except SaosError as exc:
             error = exc
         except Exception as exc:  # noqa: BLE001 - 后台进程不能因单个请求崩溃
@@ -129,6 +140,30 @@ class Daemon:
         duration_ms = round((time.perf_counter() - started) * 1000, 1)
         self._log_to_job(op, args, error, duration_ms)
         return fail(error) if error else ok(result)
+
+    def _fingerprint(self) -> str | None:
+        try:
+            return json.dumps(jsonable({"surfaces": self.backend.surfaces(), "system": self.backend.system_info()}), sort_keys=True, default=str)
+        except Exception:  # noqa: BLE001 - 没有可读的系统时无从比较
+            return None
+
+    def mark_window_baseline(self) -> None:
+        """记下 saos 一次请求结束时窗口里的镜头内容。之后 NeedsSave 置位但内容没变，就是 saos 自己的动作
+        （打开分析窗口、Zernike 拟合等实测都会置位），不是用户的修改。"""
+        self._window_baseline = self._fingerprint()
+
+    def _window_edited(self) -> bool:
+        if self.window_unsaved:
+            return True
+        if not self.backend.has_unsaved_changes():
+            return False
+        return self._window_baseline is None or self._fingerprint() != self._window_baseline
+
+    def _refresh_windows(self) -> None:
+        try:
+            self.backend.refresh_windows()
+        except Exception:  # noqa: BLE001 - 刷新失败不影响操作结果
+            log.exception("刷新显性调试窗口失败")
 
     def _unexpected(self, exc: Exception) -> SaosError:
         detail = {"exception": type(exc).__name__, "message": str(exc)[:2000]}
@@ -185,8 +220,10 @@ class Daemon:
         return self.loaded
 
     def _check_not_dirty(self, discard: bool, action: str) -> None:
-        if not discard and self.backend.has_unsaved_changes():
-            raise SaosError(ErrorCode.UNSAVED_CHANGES, f"OpticStudio 窗口有未保存修改，{action}前先保存或捕获副本")
+        if discard:
+            self.window_unsaved = False
+        elif self._window_edited():
+            raise SaosError(ErrorCode.UNSAVED_CHANGES, f"the OpticStudio window has unsaved edits; save or capture a copy before {action}, or pass discard")
         if self.loaded is not None and self.loaded.dirty and not discard:
             raise SaosError(
                 ErrorCode.UNSAVED_CHANGES,
@@ -327,6 +364,7 @@ class Daemon:
         self.backend.save_as(target)
         self.loaded = Loaded(job, target)
         rel = job.relative_lens(target)
+        self.window_unsaved = False
         job.update_state(current_lens=rel, last_saved=rel, captured_from=original)
         return {"file": rel, "captured_from": original}
 
@@ -350,8 +388,27 @@ class Daemon:
         return {"file": rel, "text": f"analyses/{stem}.txt" if data.get("text_file") else None, **brief}
 
     def op_view(self, args: dict[str, Any]) -> dict[str, Any]:
+        """显性调试：打开 Lens Data 或 System Viewer，以及一个像质分析，并按当前镜头刷新。"""
         loaded = self._require_loaded(self._job(args))
-        return {**loaded.describe(), **self.backend.show_analyses()}
+        shown = self.backend.show_windows(
+            _arg(args, "viewer", str, default=None), _arg(args, "analysis", str, default=None), _arg(args, "settings", dict, default=None)
+        )
+        return {**loaded.describe(), **shown}
+
+    def op_screenshot(self, args: dict[str, Any]) -> dict[str, Any]:
+        """显性调试：截取连接窗口的 PNG，存进任务的 screens/。"""
+        job = self._job(args)
+        if self.loaded is not None:
+            self._require_loaded(job)
+        folder = job.root / "screens"
+        folder.mkdir(exist_ok=True)
+        numbers = [int(p.name[:3]) for p in folder.glob("[0-9][0-9][0-9]-*.png")]
+        label = _arg(args, "label", str, default="window")
+        if not scripting.NAME_RE.match(label):
+            raise SaosError(ErrorCode.BAD_ARGS, "label: letters, digits, - and _, 1–48 chars")
+        prefix = f"{max(numbers, default=0) + 1:03d}-{label}"
+        files = self.backend.screenshots(folder, prefix)
+        return {"files": [f"screens/{name}" for name in files]}
 
     # ---- 优化与调整轮次 ----
 
@@ -458,6 +515,12 @@ def serve(mode: str, token: str = "") -> int:
 
     config.daemon_authkey_file().write_bytes(authkey)
     daemon = Daemon(backend, zos_info, mode)
+    if mode == "extension":
+        try:
+            zos_info["windows"] = backend.show_windows()
+        except Exception as exc:  # noqa: BLE001 - 窗口打不开不阻止连接，agent 可以再用 lens view
+            log.warning("打开显性调试窗口失败：%s", exc)
+        daemon.mark_window_baseline()
     write_json(
         config.daemon_state_file(),
         {
