@@ -52,6 +52,7 @@ class ZosBackend(Backend):
         self.mode = mode
         self.root = config.opticstudio_dir()
         self.app = None
+        self.extension_ui: dict[str, Any] | None = None
         self._material_cache: dict[tuple[str, ...], set[str]] = {}
 
     # ---- 连接 ----
@@ -62,7 +63,10 @@ class ZosBackend(Backend):
         if self.mode == "standalone":
             app = conn.CreateNewApplication()
         else:
-            app = conn.ConnectAsExtension(0)
+            from zea.native_ui import ensure_extension
+
+            self.extension_ui = ensure_extension()
+            app = conn.ConnectAsExtension(self.extension_ui["instance"])
         hint = "在 OpticStudio 中点 Programming → Interactive Extension，使它处于等待连接状态" if self.mode == "extension" else ""
         if app is None:
             raise ZeaError(ErrorCode.ZOS_ERROR, f"无法连接 OpticStudio（{self.mode}）。{hint}")
@@ -78,6 +82,8 @@ class ZosBackend(Backend):
             "license": str(app.LicenseStatus),
             "program_dir": str(app.ProgramDir),
         }
+        if self.mode == "extension":
+            info.update(extension_ui=self.extension_ui, initial_file=str(app.PrimarySystem.SystemFile), initial_needs_save=bool(app.PrimarySystem.NeedsSave))
         if not app.IsValidLicenseForAPI:
             self.close()
             raise ZeaError(ErrorCode.ZOS_LICENSE, "许可证不支持 ZOS-API", info)
@@ -133,6 +139,42 @@ class ZosBackend(Backend):
         if self.app is None:
             raise ZeaError(ErrorCode.ZOS_CONNECTION_LOST, "未连接 OpticStudio")
         return self.app.PrimarySystem
+
+    def has_unsaved_changes(self) -> bool:
+        return self.mode == "extension" and bool(self.system.NeedsSave)
+
+    # 原生分析窗口；波前图和 PSF 只看轴上主波长，其余设为全部视场、全部波长
+    _ANALYSES = ("Draw3D", "StandardSpot", "RayFan", "WavefrontMap", "HuygensPsf", "HuygensMtf", "RMSField", "GeometricEncircledEnergy")
+    _AXIS_ONLY = ("WavefrontMap", "HuygensPsf")
+
+    def show_analyses(self) -> dict[str, Any]:
+        if self.mode != "extension":
+            return super().show_analyses()
+        zosapi = _load_zosapi(self.root)
+        system = self.system
+        self.app.ShowChangesInUI = True
+        system.LDE.ShowLDE()
+        system.MFE.ShowMFE()
+        existing = {}
+        for i in range(1, system.Analyses.NumberOfAnalyses + 1):
+            analysis = system.Analyses.Get_AnalysisAtIndex(i)
+            existing[str(analysis.AnalysisType)] = analysis
+        opened = []
+        for name in self._ANALYSES:
+            self.app.ProgressMessage = f"zea：刷新 {name}"
+            analysis = existing.get(name) or system.Analyses.New_Analysis_SettingsFirst(getattr(zosapi.Analysis.AnalysisIDM, name))
+            settings = analysis.GetSettings()
+            number = 1 if name in self._AXIS_ONLY else 0
+            if hasattr(settings, "Field"):
+                settings.Field.SetFieldNumber(number)
+            if hasattr(settings, "Wavelength"):
+                settings.Wavelength.SetWavelengthNumber(number)
+            message = analysis.ApplyAndWaitForCompletion()
+            opened.append({"analysis": name, "message": None if message is None else str(message), "title": str(analysis.Title)})
+        system.UpdateMode = zosapi.LensUpdateMode.AllWindows
+        status = str(system.UpdateStatus())
+        self.app.ProgressMessage = "zea：分析窗口已刷新"
+        return {"update_mode": str(system.UpdateMode), "system_status": status, "analyses": opened}
 
     # ---- 文件 ----
 

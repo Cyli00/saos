@@ -24,7 +24,7 @@ from typing import Any, Callable
 from zea import acceptance, config, jobs, prescription, rounds
 from zea.backend import Backend, make_backend
 from zea.backend.base import same_number
-from zea.protocol import ErrorCode, ZeaError, decode, encode, fail, jsonable, ok
+from zea.protocol import ErrorCode, ZeaError, decode, encode, fail, jsonable, ok, write_json
 from zea.spec import Spec, load_spec
 
 log = logging.getLogger("zea.daemon")
@@ -33,7 +33,7 @@ REQUEST_READ_TIMEOUT_S = 30
 COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
 COMPARED_NUMBER_KEYS = ("radius", "thickness", "conic", "semi_diameter")
 # 连接手动打开的窗口时，这些操作期间暂停界面刷新，结束后窗口显示最终状态；ZEA_UI_LIVE=1 时全程刷新
-QUIET_OPS = frozenset({"eval.accept", "eval.precheck", "round.record", "lens.repro"})
+QUIET_OPS = frozenset({"eval.accept", "round.record", "lens.repro"})
 
 
 @dataclass
@@ -97,9 +97,10 @@ class Daemon:
             "lens.save": self.op_save,
             "lens.operand": self.op_operand,
             "lens.build": self.op_build,
+            "lens.view": self.op_view,
+            "lens.capture": self.op_capture,
             "lens.repro": self.op_repro,
             "eval.accept": self.op_accept,
-            "eval.precheck": self.op_precheck,
             "lens.perturb": self.op_perturb,
             "opt.vary": self.op_vary,
             "opt.merit": self.op_merit,
@@ -187,6 +188,8 @@ class Daemon:
         return self.loaded
 
     def _check_not_dirty(self, discard: bool, action: str) -> None:
+        if not discard and self.backend.has_unsaved_changes():
+            raise ZeaError(ErrorCode.UNSAVED_CHANGES, f"OpticStudio 窗口有未保存修改，{action}前先保存或捕获副本")
         if self.loaded is not None and self.loaded.dirty and not discard:
             raise ZeaError(
                 ErrorCode.UNSAVED_CHANGES,
@@ -315,6 +318,25 @@ class Daemon:
         job.update_state(status="active", current_lens=rel, last_saved=rel)
         return {"job": job.id, "file": rel, "num_surfaces": len(self.backend.surfaces())}
 
+    def op_capture(self, args: dict[str, Any]) -> dict[str, Any]:
+        job = self._job(args)
+        if self.loaded is not None:
+            self._require_loaded(job)
+        target = job.resolve_lens(_arg(args, "file", str), must_exist=False)
+        if target.exists():
+            raise ZeaError(ErrorCode.FILE_EXISTS, "捕获副本不能覆盖已有文件")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        original = self.backend.system_info()["file"]
+        self.backend.save_as(target)
+        self.loaded = Loaded(job, target)
+        rel = job.relative_lens(target)
+        job.update_state(current_lens=rel, last_saved=rel, captured_from=original)
+        return {"file": rel, "captured_from": original}
+
+    def op_view(self, args: dict[str, Any]) -> dict[str, Any]:
+        loaded = self._require_loaded(self._job(args))
+        return {**loaded.describe(), **self.backend.show_analyses()}
+
     def op_repro(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))
         expect = _arg(args, "expect", dict)
@@ -327,8 +349,12 @@ class Daemon:
         except acceptance.InvalidEvaluation as exc:
             raise ZeaError(ErrorCode.ZOS_ERROR, f"复现校验无法完成：{exc.reason}", exc.details) from exc
         finally:
-            # 复现校验只临时调焦，结束后恢复，不改变已加载的镜头
-            self.backend.set_surface(gap, "thickness", original)
+            # 复现校验只临时调焦，结束后恢复，不改变已加载的镜头。未修改的镜头直接重新加载文件：
+            # 实测调焦用的 ZERN 和写回原厚度都会让 OpticStudio 的 NeedsSave 置位，extension 模式下会误报未保存修改
+            if loaded.dirty:
+                self.backend.set_surface(gap, "thickness", original)
+            else:
+                self.backend.load(loaded.path)
         return {**loaded.describe(), **result}
 
     def op_accept(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -339,27 +365,7 @@ class Daemon:
         spec_name = _arg(args, "spec", str, default=None) or job.read_state().get("spec")
         if not spec_name:
             raise ZeaError(ErrorCode.BAD_ARGS, f"任务 {job.id} 没有光学规格，用 --spec 指定或在 job create 时给出")
-        precheck = bool(args.get("precheck", True))
-        return self._accept(job, loaded, spec_name, self._load_job_spec(job, spec_name), precheck=precheck)
-
-    def op_precheck(self, args: dict[str, Any]) -> dict[str, Any]:
-        """诊断：只做调焦前的轴上光线检查，用来廉价筛查新增预检会拒绝哪些镜头。"""
-        job = self._job(args)
-        loaded = self._require_loaded(job)
-        if loaded.dirty:
-            raise ZeaError(ErrorCode.UNSAVED_CHANGES, "预检针对已保存的镜头文件，先保存", loaded.describe())
-        spec_name = _arg(args, "spec", str, default=None) or job.read_state().get("spec")
-        if not spec_name:
-            raise ZeaError(ErrorCode.BAD_ARGS, f"任务 {job.id} 没有光学规格，用 spec 指定")
-        spec = self._load_job_spec(job, spec_name)
-        design = self.backend.snapshot()
-        info = self.backend.system_info()
-        evaluator = acceptance.Evaluator(self.backend, spec, info["material_catalogs"], telecentric_object=info["aperture"].get("telecentric_object", False))
-        try:
-            result = evaluator.run_precheck(design)
-        finally:
-            self.backend.load(loaded.path)
-        return {"job": job.id, "file": job.relative_lens(loaded.path), "spec": spec_name, **result}
+        return self._accept(job, loaded, spec_name, self._load_job_spec(job, spec_name))
 
     @staticmethod
     def _load_job_spec(job: jobs.Job, spec_name: str) -> Spec:
@@ -368,21 +374,19 @@ class Daemon:
             raise ZeaError(ErrorCode.PATH_OUTSIDE_JOB, f"规格文件必须在任务目录内：{spec_name}")
         return load_spec(spec_path)
 
-    def _accept(self, job: jobs.Job, loaded: Loaded, spec_name: str, spec: Spec, precheck: bool = True) -> dict[str, Any]:
+    def _accept(self, job: jobs.Job, loaded: Loaded, spec_name: str, spec: Spec) -> dict[str, Any]:
         design = self.backend.snapshot()
         info = self.backend.system_info()
         evaluator = acceptance.Evaluator(
-            self.backend, spec, info["material_catalogs"], telecentric_object=info["aperture"].get("telecentric_object", False), precheck=precheck
+            self.backend, spec, info["material_catalogs"], telecentric_object=info["aperture"].get("telecentric_object", False)
         )
-        # 关闭预检的诊断评估另存，不覆盖正式结果
-        suffix = "" if precheck else ".noprecheck"
         try:
             result = evaluator.run(design)
         finally:
             stem = loaded.path.stem
             eval_dir = job.root / "eval"
             eval_dir.mkdir(exist_ok=True)
-            model_path = eval_dir / f"{stem}.accept{suffix}.zmx"
+            model_path = eval_dir / f"{stem}.accept.zmx"
             try:
                 self.backend.save_as(model_path)
             except Exception:  # noqa: BLE001 - 搭建失败时可能没有可保存的模型
@@ -392,11 +396,8 @@ class Daemon:
         result = {"job": job.id, "file": rel, "spec": spec_name, **result}
         if model_path is not None:
             result["acceptance_model"] = model_path.relative_to(job.root).as_posix()
-        (job.root / "eval" / f"{loaded.path.stem}.accept{suffix}.json").write_text(
-            json.dumps(jsonable(result), ensure_ascii=False, indent=2), encoding="utf-8"
-        )
-        if precheck:
-            job.update_state(last_evaluation={"file": rel, "verdict": result["verdict"], "spec_shortfall": jsonable(result["spec_shortfall"])})
+        write_json(job.root / "eval" / f"{loaded.path.stem}.accept.json", result)
+        job.update_state(last_evaluation={"file": rel, "verdict": result["verdict"], "spec_shortfall": jsonable(result["spec_shortfall"])})
         return result
 
     # ---- 优化与调整轮次 ----
@@ -518,12 +519,6 @@ class Daemon:
 # ---- 进程生命周期 ----
 
 
-def _write_json(path: Path, data: dict[str, Any]) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
-
-
 def _serve_one(daemon: Daemon, conn: Connection) -> None:
     if not conn.poll(REQUEST_READ_TIMEOUT_S):
         return
@@ -553,11 +548,11 @@ def serve(mode: str, token: str = "") -> int:
         zos_info = backend.start()
     except ZeaError as exc:
         log.error("启动失败：%s", exc.message)
-        _write_json(error_file, exc.to_dict())
+        write_json(error_file, exc.to_dict())
         return 1
     except Exception as exc:  # noqa: BLE001
         log.exception("启动失败")
-        _write_json(error_file, ZeaError(ErrorCode.DAEMON_START_FAILED, str(exc)).to_dict())
+        write_json(error_file, ZeaError(ErrorCode.DAEMON_START_FAILED, str(exc)).to_dict())
         return 1
 
     authkey = secrets.token_bytes(32)
@@ -566,12 +561,12 @@ def serve(mode: str, token: str = "") -> int:
         listener = Listener(config.pipe_address(), family="AF_PIPE", authkey=authkey)
     except OSError as exc:
         backend.close()
-        _write_json(error_file, ZeaError(ErrorCode.DAEMON_ALREADY_RUNNING, f"命名管道已被占用：{exc}").to_dict())
+        write_json(error_file, ZeaError(ErrorCode.DAEMON_ALREADY_RUNNING, f"命名管道已被占用：{exc}").to_dict())
         return 1
 
     config.daemon_authkey_file().write_bytes(authkey)
     daemon = Daemon(backend, zos_info, mode)
-    _write_json(
+    write_json(
         config.daemon_state_file(),
         {
             "pid": os.getpid(),

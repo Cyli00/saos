@@ -165,3 +165,16 @@ def test_compare_surfaces_detects_changes():
     fields = {d["field"] for d in compare_surfaces(a, c)}
     assert fields == {"radius", "material"}
     assert compare_surfaces(a, a + a)[0]["field"] == "num_surfaces"
+
+
+def test_unmanaged_window_dirty_state_blocks_replacement(daemon, fake_lens_file, monkeypatch):
+    job = jobs.create_job('protect-window')
+    daemon.backend.load(fake_lens_file)
+    monkeypatch.setattr(daemon.backend, 'has_unsaved_changes', lambda: True)
+    ok_result(call(daemon, 'lens.import', job=job.id, src=str(fake_lens_file), name='copy.zmx'))
+    assert err_code(call(daemon, 'lens.load', job=job.id, file='copy.zmx')) == ErrorCode.UNSAVED_CHANGES
+    original = fake_lens_file.read_bytes()
+    capture = ok_result(call(daemon, 'lens.capture', job=job.id, file='window-copy.zmx'))
+    assert capture['file'] == 'window-copy.zmx'
+    assert fake_lens_file.read_bytes() == original
+    assert err_code(call(daemon, 'lens.capture', job=job.id, file='window-copy.zmx')) == ErrorCode.FILE_EXISTS

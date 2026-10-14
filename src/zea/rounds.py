@@ -11,21 +11,25 @@ from typing import Any
 
 from zea.protocol import ErrorCode, ZeaError
 
+# 停机参数为初始值，未校准：第 5 步正式批次的调参组样本全部 1–2 轮通过，无法区分候选（docs/step5-calibration.md）
 STAGNATION_ROUNDS = 3
 STAGNATION_REL = 0.01
 MAX_ROUNDS = 20
 
 
-def significant(g_best: float, g_k: float) -> bool:
+def significant(g_best: float, g_k: float, rel: float = STAGNATION_REL) -> bool:
+    """g_k 相对此前最好值 g_best 是否明显缩小（至少 rel）。"""
     if math.isinf(g_k):
         return False
     if math.isinf(g_best):
         return True
-    return (g_best - g_k) / g_best >= STAGNATION_REL
+    return (g_best - g_k) / g_best >= rel
 
 
-def decide(history: list[float]) -> dict[str, Any]:
-    """history 是第 0 轮起各轮的规格差距 G。返回当前状态：pass / stagnated / limit / continue。"""
+def decide(history: list[float], n: int = STAGNATION_ROUNDS, rel: float = STAGNATION_REL, cap: int = MAX_ROUNDS) -> dict[str, Any]:
+    """history 是第 0 轮起各轮的规格差距 G。返回当前状态：pass / stagnated / limit / continue。
+
+    n、rel、cap 只在离线回放比较停机参数时改，实际任务用模块常量。"""
     if not history:
         raise ValueError("至少需要第 0 轮")
     g_best = history[0]
@@ -33,15 +37,15 @@ def decide(history: list[float]) -> dict[str, Any]:
     for g in history[1:]:
         if g == 0:
             break
-        flat = 0 if significant(g_best, g) else flat + 1
+        flat = 0 if significant(g_best, g, rel) else flat + 1
         g_best = min(g_best, g)
     rounds = len(history) - 1
     current = history[-1]
     if current == 0:
         status = "pass"
-    elif flat >= STAGNATION_ROUNDS:
+    elif flat >= n:
         status = "stagnated"
-    elif rounds >= MAX_ROUNDS:
+    elif rounds >= cap:
         status = "limit"
     else:
         status = "continue"

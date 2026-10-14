@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from zea import acceptance
-from zea import calibration as cal
+from zea.bench import calibration as cal
 from zea.spec import parse_spec
 
 CODE = "c0de"
@@ -189,7 +189,8 @@ def test_validation_requires_complete_manifest_and_no_false_stop():
     assert cal.validate([], 3, 0.01, 20, READY)["passed"] is None
     partial = cal.validate([sample("quick", [10.0, 0.0])], 3, 0.01, 20, {"complete": False})
     assert partial["passed"] is None and partial["status"].startswith("阶段性统计")
-    assert cal.validate([sample("quick", [10.0, 0.0])], 3, 0.01, 20, READY)["passed"] is True
+    ok = cal.validate([sample("quick", [10.0, 0.0])], 3, 0.01, 20, READY)
+    assert ok["passed"] is True and ok["status"] == "本验证集未发现误停"
     failed = cal.validate([sample("late", [10.0, 10.0, 10.0, 10.0, 0.0])], 3, 0.01, 20, {"complete": False})
     assert failed["passed"] is False and failed["status"].startswith("所选规则未通过验证")
 
@@ -228,7 +229,8 @@ def test_plan_counts_task_ids_and_binds_inputs(tmp_path, monkeypatch):
 
 
 def test_run_task_refuses_when_inputs_changed(tmp_path, monkeypatch):
-    from zea import bench, config
+    from zea import config
+    from zea.bench import runner as bench
     from zea.protocol import ZeaError
 
     library = _library(tmp_path, monkeypatch)
@@ -250,3 +252,11 @@ def test_audit_rederives_config_from_archived_spec(tmp_path):
     assert "任务规格生成的验收配置与冻结值不同" in reasons and "任务规格生成的验收配置与清单记录的不同" in reasons
     (d / "spec" / "benchmark.yaml").write_text("spec_version: 1\n", encoding="utf-8")
     assert any("无法解析" in r for r in cal.audit(d, MANIFEST, t)["reasons"])
+
+
+def test_overall_status_says_uncalibrated_when_tuning_evidence_is_insufficient():
+    tuning = cal.select([sample(f"s{k}", [10.0, 0.0], entry=f"E{k}") for k in range(3)], READY)
+    validation = cal.validate([sample("v", [10.0, 0.0])], 3, 0.01, 20, READY)
+    text = cal.overall_status(tuning, validation)
+    assert text.startswith("校准证据不足，停机参数未校准") and "本验证集未发现误停" in text
+    assert "通过" not in text.replace("本验证集未发现误停", "")

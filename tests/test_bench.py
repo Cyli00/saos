@@ -2,28 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from zea import bench, rounds
+from zea.bench import runner as bench
 
 
 @pytest.fixture
 def lib(tmp_path, monkeypatch):
     monkeypatch.setenv("ZEA_LIBRARY", str(tmp_path / "library"))
     return tmp_path / "library"
-
-
-def test_replay_matches_decide_and_restores_parameters():
-    traj = [10.0, 5.0, 4.98, 4.97, 4.96, 1.0]
-    out = bench.replay(traj, stagnation_rounds=3, stagnation_rel=0.01, max_rounds=20)
-    assert out == {"stop_round": 4, "status": "stagnated", "g_best": 4.96}
-    # 放宽停滞轮数后能走到第 5 轮
-    assert bench.replay(traj, 4, 0.01, 20)["stop_round"] is None
-    assert (rounds.STAGNATION_ROUNDS, rounds.STAGNATION_REL, rounds.MAX_ROUNDS) == (3, 0.01, 20)
-
-
-def test_replay_pass_and_limit():
-    assert bench.replay([3.0, 1.0, 0.0], 3, 0.01, 20) == {"stop_round": 2, "status": "pass", "g_best": 0.0}
-    assert bench.replay([3.0, 2.0, 1.0, 0.5], 3, 0.01, 2)["status"] == "limit"
-    assert bench.first_pass([3.0, 1.0, 0.0]) == 2 and bench.first_pass([3.0]) is None
 
 
 def test_oplt_references_tthi_row_after_reverse_insert(tmp_path, monkeypatch):
@@ -50,28 +35,6 @@ def test_oplt_references_tthi_row_after_reverse_insert(tmp_path, monkeypatch):
 @pytest.mark.parametrize("g0, expect", [(0.0, False), (0.5, False), (1.0, True), (float("inf"), True)])
 def test_clearly_failing_start(g0, expect):
     assert bench.clearly_failing(g0) is expect
-
-
-def test_calibrate_counts_false_stops_and_idle_rounds():
-    trajs = {
-        "late_pass": [10.0, 9.0, 8.99, 8.98, 8.97, 0.0],  # 3 轮停滞后第 5 轮通过
-        "never": [10.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0],
-        "quick": [10.0, 0.0],
-    }
-    rows = bench.calibrate(trajs, (3, 5), (0.01,), (20,))
-    by_n = {r["stagnation_rounds"]: r for r in rows}
-    assert by_n[3]["false_stops"] == ["late_pass"] and by_n[3]["passed"] == 1
-    assert by_n[5]["false_stops"] == [] and by_n[5]["passed"] == 2
-    # late_pass 停在第 4 轮、最后进步在第 1 轮；never 同样，各 3 轮
-    assert by_n[3]["idle_rounds"] == 6
-
-
-def test_idle_rounds_never_negative_and_later_gain_is_reported():
-    # 审阅反例：停在第 4 轮，第 5 轮又有进步。旧算法用完整轨迹的最后进步（第 5 轮）相减得 −1
-    traj = [10.0, 5.0, 5.0, 5.0, 5.0, 4.0, 4.0, 4.0, 4.0, 4.0]
-    row = bench.calibrate({"x": traj}, (3,), (0.01,), (20,))[0]
-    assert row["rounds_used"] == 4 and row["idle_rounds"] == 3
-    assert row["missed"] == [{"case": "x", "stop_round": 4, "g_at_stop": 5.0, "g_later": 4.0}]
 
 
 def test_stretched_spec_scales_measured_values():
@@ -198,23 +161,6 @@ def test_reconcile_recovers_round_recorded_before_crash(tmp_path):
     # 运行信息来自中断前保存的 pending，不是续跑时的后台进程；验收耗时未知，不写成 0
     assert history[1]["mode"] == "standalone" and history[1]["daemon_code"] == "abc" and "eval_s" not in history[1]
     assert [h["round"] for h in bench.load_history(case.log_path)] == [0, 1]  # 补齐的记录已写回
-
-
-def test_completeness_and_interruption(tmp_path):
-    import json
-
-    def write(lines):
-        (tmp_path / "bench.jsonl").write_text("".join(json.dumps(l) + "\n" for l in lines), encoding="utf-8")
-
-    base = {"policy": bench.POLICY, "items": {}, "file": "f"}
-    write([{**base, "round": 0, "spec_shortfall": 3.0}, {**base, "round": 1, "spec_shortfall": 0.0}])
-    assert bench.completeness(tmp_path, {"max_rounds": 20}) == "complete"
-    write([{**base, "round": 0, "spec_shortfall": 3.0}, {**base, "round": 1, "spec_shortfall": 2.0}])
-    assert bench.completeness(tmp_path, {"max_rounds": 1}) == "complete"
-    assert bench.completeness(tmp_path, {"max_rounds": 20}) == "incomplete"
-    write([{**base, "round": 0, "spec_shortfall": 3.0}, {"event": "interrupted", "round": 1, "error": "DAEMON_TIMEOUT"}])
-    assert bench.completeness(tmp_path, {"max_rounds": 20}) == "interrupted"
-    assert bench.load_trajectory(tmp_path) == [3.0]
 
 
 class StubDaemon:

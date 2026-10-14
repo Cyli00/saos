@@ -207,6 +207,9 @@ class NanBackend:
     def set_surface(self, index, param, value):
         return {}
 
+    def trace_check(self, rays):
+        return []
+
 
 @pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
 def test_operand_values_are_checked(value):
@@ -274,43 +277,137 @@ def test_model_glass_counts_as_violation_unless_allowed():
     assert acceptance_config(lenient.spec)["glass_allow_model"] is True
 
 
-class TraceFailBackend(NanBackend):
-    """轴上光线追迹失败的桩后端；记录 Zernike 调用次数，确认没有进入调焦。"""
+class FocusBackend:
+    """调焦桩后端：c4 = k·(t − focus) + q·(t − focus)³，PARY = t − paraxial；
+    间隔厚度落在 fail(t) 为真的区域时边缘光线追迹失败。记录每次 Zernike 拟合时的厚度。"""
 
-    def __init__(self):
-        super().__init__(operand_value=10.0)
-        self.zernike_calls = 0
+    def __init__(self, t, focus, paraxial, fail=lambda t: False, k=50.0, q=0.0):
+        self.t, self.focus, self.paraxial, self.fail, self.k, self.q = t, focus, paraxial, fail, k, q
+        self.zernike_at: list[float] = []
+        self.pary_calls = 0
+
+    def surfaces(self):
+        return [{"thickness": self.t}, {"thickness": 0.0}]
+
+    def set_surface(self, index, param, value):
+        self.t = value
 
     def trace_check(self, rays):
-        return [{"ray": list(r), "error": 2, "vignette": 0} for r in rays if r[3] or r[4]]
+        return [{"ray": list(r), "error": 2, "vignette": 0} for r in rays if (r[3] or r[4]) and self.fail(self.t)]
 
-    def zernike(self, **kwargs):
-        self.zernike_calls += 1
-        return super().zernike(**kwargs)
+    def zernike(self, *, wave, field, samp, max_term, terms):
+        self.zernike_at.append(self.t)
+        d = self.t - self.focus
+        return {t: (self.k * d + self.q * d**3 if t == 4 else 0.001) for t in terms}
+
+    def operand(self, name, int1, int2, data):
+        assert name == "PARY" and int1 == 1
+        self.pary_calls += 1
+        return self.t - self.paraxial
 
 
-def test_axis_trace_failure_is_invalid_before_focusing(monkeypatch):
-    backend = TraceFailBackend()
+FOCUS_ARGS = {"gap": 0, "wave": 2, "field": 1, "lam_um": 0.546, "na_image": 0.025, "magnification": 10, "tol_mm": 4e-5}
+
+
+def unguarded_focus_positions(backend):
+    """不加光线保护的割线调焦（改动前的算法），返回每次拟合时的厚度，用来核对正常镜头的试探序列不变。"""
+    from zea.acceptance import FOCUS_MAX_ITER
+
+    def c4():
+        return backend.zernike(wave=2, field=1, samp=3, max_term=66, terms=(4,))[4]
+
+    a = FOCUS_ARGS
+    t0 = backend.surfaces()[0]["thickness"]
+    c0 = c4()
+    step = 4 * math.sqrt(3) * c0 * a["lam_um"] / a["na_image"] ** 2 / a["magnification"] ** 2 / 1000
+    t1 = t0 + (step if abs(step) > a["tol_mm"] else 10 * a["tol_mm"])
+    for _ in range(FOCUS_MAX_ITER):
+        backend.set_surface(0, "thickness", t1)
+        c1 = c4()
+        if abs(t1 - t0) < a["tol_mm"] and abs(c1) < 1e-4:
+            break
+        t0, c0, t1 = t1, c1, t1 - c1 * (t1 - t0) / (c1 - c0)
+    return backend.zernike_at
+
+
+def test_focus_path_unchanged_when_all_rays_trace():
+    guarded = FocusBackend(t=13.0, focus=12.24, paraxial=12.0, q=30.0)
+    log: list = []
+    t = focus_on_axis(guarded, **FOCUS_ARGS, log=log)
+    reference = unguarded_focus_positions(FocusBackend(t=13.0, focus=12.24, paraxial=12.0, q=30.0))
+    assert guarded.zernike_at == reference and t == reference[-1]
+    assert guarded.pary_calls == 0 and all(e["ray_failures"] == 0 for e in log)
+
+
+def test_focus_restarts_from_paraxial_focus_when_start_rays_fail():
+    # 任务 100 的形态：起点 10.19 光线失败，近轴焦点 12.02 有效，真实焦点 12.24
+    backend = FocusBackend(t=10.19, focus=12.24, paraxial=12.02, fail=lambda t: t < 10.9)
+    log: list = []
+    t = focus_on_axis(backend, **FOCUS_ARGS, log=log)
+    assert t == pytest.approx(12.24, abs=1e-6)
+    assert backend.pary_calls > 0 and backend.zernike_at[0] == pytest.approx(12.02, abs=1e-6)
+    assert not any(backend.fail(x) for x in backend.zernike_at)
+    assert [e["kind"] for e in log[:2]] == ["start", "paraxial"]
+
+
+def test_focus_invalid_when_start_and_paraxial_focus_both_fail():
+    backend = FocusBackend(t=10.19, focus=12.24, paraxial=12.02, fail=lambda t: t < 12.5)
+    with pytest.raises(InvalidEvaluation) as exc:
+        focus_on_axis(backend, **FOCUS_ARGS)
+    assert exc.value.reason == "轴上光线追迹失败，起点和近轴焦点处都无法调焦"
+    assert backend.zernike_at == []
+
+
+@pytest.mark.parametrize("pary, t_start", [
+    (lambda t: 1.998, 10.19),  # 恒为正：割线斜率为零
+    # 恒为正的陡峭抛物线：只看步长时会在 t ≈ 11.99997、PARY ≈ 1.999 处返回"焦点"
+    (lambda t: 1.998 + 1e6 * (t - 12.0) ** 2, 12.0),
+])
+def test_paraxial_focus_requires_pary_near_zero(pary, t_start):
+    from zea.acceptance import paraxial_focus
+
+    backend = FocusBackend(t=t_start, focus=12.24, paraxial=12.02)
+    backend.operand = lambda name, int1, int2, data: pary(backend.t)
+    with pytest.raises(InvalidEvaluation) as exc:
+        paraxial_focus(backend, gap=0, wave=2, t_start=t_start, tol_mm=4e-5, na_image=0.025, magnification=10)
+    assert exc.value.reason == "近轴焦点没有收敛"
+
+
+def test_paraxial_focus_converges_with_small_residual():
+    from zea.acceptance import paraxial_focus
+
+    backend = FocusBackend(t=10.19, focus=12.24, paraxial=12.02)
+    t = paraxial_focus(backend, gap=0, wave=2, t_start=10.19, tol_mm=4e-5, na_image=0.025, magnification=10)
+    assert abs(t - 12.02) <= 4e-5 and abs(backend.t - backend.paraxial) <= 0.025 * 100 * 4e-5
+
+
+def test_focus_backs_off_from_failed_secant_step_and_still_converges():
+    # 首步按近轴估计、符号未知，从 13.35 走到 16.7，落进失败区（t > 15）；焦点 12.24 本身有效
+    backend = FocusBackend(t=13.35, focus=12.24, paraxial=12.0, fail=lambda t: t > 15.0)
+    log: list = []
+    t = focus_on_axis(backend, **FOCUS_ARGS, log=log)
+    assert t == pytest.approx(12.24, abs=1e-6)
+    assert any(e["kind"] == "backoff" for e in log)
+    assert not any(backend.fail(x) for x in backend.zernike_at)
+
+
+def test_focus_invalid_when_target_lies_in_failure_region():
+    # 慢案例的形态：起点有效，c4 = 0 的位置（12.87）在光线失败区（t < 12.93）内
+    backend = FocusBackend(t=13.35, focus=12.87, paraxial=15.37, fail=lambda t: t < 12.93)
+    with pytest.raises(InvalidEvaluation) as exc:
+        focus_on_axis(backend, **FOCUS_ARGS)
+    assert exc.value.reason == "调焦时轴上光线追迹失败，回退后仍无有效位置"
+    assert exc.value.details["last_valid_thickness"] >= 12.93 > exc.value.details["nearest_failed_thickness"]
+    assert not any(backend.fail(x) for x in backend.zernike_at)
+    assert len(backend.zernike_at) <= 20
+
+
+def test_evaluator_reports_focus_trace_and_has_no_precheck(monkeypatch):
+    backend = FocusBackend(t=10.19, focus=12.24, paraxial=12.02, fail=lambda t: t < 12.5)
+    backend.operand = lambda name, int1, int2, data: 10.0 if name == "EFLY" else backend.t - backend.paraxial
     evaluator = Evaluator(backend, spec_of("plan_achromat"), [])
     monkeypatch.setattr(evaluator, "build_model", lambda design: setattr(evaluator, "first", 1) or setattr(evaluator, "last", 2) or setattr(evaluator, "gap", 0))
     out = evaluator.run([])
-    assert out["verdict"] == "invalid" and out["invalid"]["reason"] == "轴上光线追迹失败，无法调焦"
-    assert out["invalid"]["count"] == 36 and backend.zernike_calls == 0
-
-
-def test_precheck_can_be_disabled_for_diagnosis(monkeypatch):
-    backend = TraceFailBackend()
-    evaluator = Evaluator(backend, spec_of("plan_achromat"), [], precheck=False)
-    monkeypatch.setattr(evaluator, "build_model", lambda design: setattr(evaluator, "first", 1) or setattr(evaluator, "last", 2) or setattr(evaluator, "gap", 0))
-    out = evaluator.run([])
-    # 关闭预检后进入调焦（桩后端 c4 恒为 0，调焦不收敛也会给出别的无效原因），不应再是预检的原因
-    assert out["axis_precheck"] is False and backend.zernike_calls > 0
-    assert (out["invalid"] or {}).get("reason") != "轴上光线追迹失败，无法调焦"
-
-
-def test_run_precheck_reports_reject_without_focusing(monkeypatch):
-    backend = TraceFailBackend()
-    evaluator = Evaluator(backend, spec_of("plan_achromat"), [])
-    monkeypatch.setattr(evaluator, "build_model", lambda design: setattr(evaluator, "first", 1) or setattr(evaluator, "last", 2) or setattr(evaluator, "gap", 0))
-    out = evaluator.run_precheck([])
-    assert out["precheck"] == "reject" and out["count"] == 36 and backend.zernike_calls == 0
+    assert out["verdict"] == "invalid" and out["invalid"]["reason"] == "轴上光线追迹失败，起点和近轴焦点处都无法调焦"
+    assert [e["kind"] for e in out["focus_trace"]] == ["start", "paraxial"] and backend.zernike_at == []
+    assert "axis_precheck" not in out and "axis_precheck" not in acceptance_config(evaluator.spec)["evaluator"]

@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 
 from zea.protocol import ErrorCode, ZeaError
-from zea.spec import WAVELENGTHS_UM, parse_spec
+from zea.spec import REFERENCE_TUBE_MM, WAVELENGTHS_UM, parse_spec
 
 
 FIELDS = {
@@ -58,7 +58,7 @@ ITEM_NAMES = {
 }
 
 BASE_DEFAULTS = {
-    "spec_version": 1, "tube_lens_focal_length": 200.0,
+    "spec_version": 1, "tube_lens_focal_length": REFERENCE_TUBE_MM,
     "wavelengths": {"um": list(WAVELENGTHS_UM), "weights": [1.0, 1.0, 1.0]},
     "limits": {"magnification_tolerance": 0.05, "optical_length_max": 45.0, "max_clear_diameter": 16.0,
                "min_center_thickness_glass": 0.5, "min_edge_thickness_glass": 0.3,

@@ -73,6 +73,14 @@ class Backend(ABC):
         """一次请求期间的界面提示与刷新控制；只在连接手动打开的窗口时起作用。"""
         yield
 
+    def has_unsaved_changes(self) -> bool:
+        """连接的窗口里有 zea 之外的未保存修改。只在 extension 模式下有意义。"""
+        return False
+
+    def show_analyses(self) -> dict[str, Any]:
+        """在连接的窗口中打开并刷新原生分析窗口（显性调试）。"""
+        raise ZeaError(ErrorCode.BAD_ARGS, "原生窗口显示需要 extension 模式")
+
     # ---- 第 3 步：搭建与验收用 ----
 
     def build(self, prescription: dict[str, Any]) -> None:

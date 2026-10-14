@@ -1,0 +1,1973 @@
+{
+ "batch": "step5-20261013",
+ "created": "2026-10-13T20:58:34+08:00",
+ "policy": "reference-v3",
+ "code_sha256": "c86b62253402d349a402a5876d34adf90b96505712730441b65543a096c67dc0",
+ "observe_rounds": 20,
+ "mode": "standalone",
+ "tasks": [
+  {
+   "group": "tuning",
+   "entry": "US12493165B2-e3",
+   "patent": "US 12493165 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 1,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "000-US12493165B2-e3-default-s1",
+   "inputs": {
+    "prescription_sha256": "42c17dd5d2a195ba4053d84fcf80bd8016beafa7e5ca3c587693c68c74cfb213",
+    "benchmark_sha256": "efe36ca88e4b388cfa8f739128f776b041cad9e13595741d50120182d882dd1d",
+    "acceptance_config_sha256": "515500aff54c24b7498aca47b9ba1772846771c15cfe9b001cfa4ddcf4e52e5d"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US12493165B2-e3",
+   "patent": "US 12493165 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 2,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "001-US12493165B2-e3-default-s2",
+   "inputs": {
+    "prescription_sha256": "42c17dd5d2a195ba4053d84fcf80bd8016beafa7e5ca3c587693c68c74cfb213",
+    "benchmark_sha256": "efe36ca88e4b388cfa8f739128f776b041cad9e13595741d50120182d882dd1d",
+    "acceptance_config_sha256": "515500aff54c24b7498aca47b9ba1772846771c15cfe9b001cfa4ddcf4e52e5d"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US12493165B2-e3",
+   "patent": "US 12493165 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 3,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "002-US12493165B2-e3-default-s3",
+   "inputs": {
+    "prescription_sha256": "42c17dd5d2a195ba4053d84fcf80bd8016beafa7e5ca3c587693c68c74cfb213",
+    "benchmark_sha256": "efe36ca88e4b388cfa8f739128f776b041cad9e13595741d50120182d882dd1d",
+    "acceptance_config_sha256": "515500aff54c24b7498aca47b9ba1772846771c15cfe9b001cfa4ddcf4e52e5d"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US12493165B2-e3",
+   "patent": "US 12493165 B2",
+   "class": "main",
+   "tier": "hard",
+   "seed": 1,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "003-US12493165B2-e3-hard-s1",
+   "inputs": {
+    "prescription_sha256": "42c17dd5d2a195ba4053d84fcf80bd8016beafa7e5ca3c587693c68c74cfb213",
+    "benchmark_sha256": "efe36ca88e4b388cfa8f739128f776b041cad9e13595741d50120182d882dd1d",
+    "acceptance_config_sha256": "515500aff54c24b7498aca47b9ba1772846771c15cfe9b001cfa4ddcf4e52e5d"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US12493165B2-e3",
+   "patent": "US 12493165 B2",
+   "class": "main",
+   "tier": "hard",
+   "seed": 2,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "004-US12493165B2-e3-hard-s2",
+   "inputs": {
+    "prescription_sha256": "42c17dd5d2a195ba4053d84fcf80bd8016beafa7e5ca3c587693c68c74cfb213",
+    "benchmark_sha256": "efe36ca88e4b388cfa8f739128f776b041cad9e13595741d50120182d882dd1d",
+    "acceptance_config_sha256": "515500aff54c24b7498aca47b9ba1772846771c15cfe9b001cfa4ddcf4e52e5d"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US12493165B2-e3",
+   "patent": "US 12493165 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.15,
+    "length": 0.9
+   },
+   "task": "005-US12493165B2-e3-stretch-length90-wd115-s1",
+   "inputs": {
+    "prescription_sha256": "42c17dd5d2a195ba4053d84fcf80bd8016beafa7e5ca3c587693c68c74cfb213",
+    "benchmark_sha256": "efe36ca88e4b388cfa8f739128f776b041cad9e13595741d50120182d882dd1d",
+    "acceptance_config_sha256": "040874fb8f7740841d8721f1ba833316867f827b4e53ffd1d39d9a6be829ed99"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US12493165B2-e3",
+   "patent": "US 12493165 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.25
+   },
+   "task": "006-US12493165B2-e3-stretch-wd125-s1",
+   "inputs": {
+    "prescription_sha256": "42c17dd5d2a195ba4053d84fcf80bd8016beafa7e5ca3c587693c68c74cfb213",
+    "benchmark_sha256": "efe36ca88e4b388cfa8f739128f776b041cad9e13595741d50120182d882dd1d",
+    "acceptance_config_sha256": "d32616cba0fa40d4856d4dd25272a5ee27e3eced4e2eace02889ef81b119671c"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US12493165B2-e3",
+   "patent": "US 12493165 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "length": 0.85
+   },
+   "task": "007-US12493165B2-e3-stretch-length85-s1",
+   "inputs": {
+    "prescription_sha256": "42c17dd5d2a195ba4053d84fcf80bd8016beafa7e5ca3c587693c68c74cfb213",
+    "benchmark_sha256": "efe36ca88e4b388cfa8f739128f776b041cad9e13595741d50120182d882dd1d",
+    "acceptance_config_sha256": "5e3fb1597db5f5629051ac2a43d7d1ec5ac3e9bcfe4719726111a30264c71631"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US12493165B2-e4",
+   "patent": "US 12493165 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 1,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "008-US12493165B2-e4-default-s1",
+   "inputs": {
+    "prescription_sha256": "b470ad1f283751e99cb99ce8ff4b826ead38dfda23497207020a6be9901eef89",
+    "benchmark_sha256": "cc67e34342418259db8f16edb2f67dc1e0db3fbbc2f2c4391caa702d9d4bb8de",
+    "acceptance_config_sha256": "f50acc4a345c73d6188e3d03661101cf65cc96f399dca4a4e6e684196c649834"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US12493165B2-e4",
+   "patent": "US 12493165 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 2,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "009-US12493165B2-e4-default-s2",
+   "inputs": {
+    "prescription_sha256": "b470ad1f283751e99cb99ce8ff4b826ead38dfda23497207020a6be9901eef89",
+    "benchmark_sha256": "cc67e34342418259db8f16edb2f67dc1e0db3fbbc2f2c4391caa702d9d4bb8de",
+    "acceptance_config_sha256": "f50acc4a345c73d6188e3d03661101cf65cc96f399dca4a4e6e684196c649834"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US12493165B2-e4",
+   "patent": "US 12493165 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 3,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "010-US12493165B2-e4-default-s3",
+   "inputs": {
+    "prescription_sha256": "b470ad1f283751e99cb99ce8ff4b826ead38dfda23497207020a6be9901eef89",
+    "benchmark_sha256": "cc67e34342418259db8f16edb2f67dc1e0db3fbbc2f2c4391caa702d9d4bb8de",
+    "acceptance_config_sha256": "f50acc4a345c73d6188e3d03661101cf65cc96f399dca4a4e6e684196c649834"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US12493165B2-e4",
+   "patent": "US 12493165 B2",
+   "class": "main",
+   "tier": "hard",
+   "seed": 1,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "011-US12493165B2-e4-hard-s1",
+   "inputs": {
+    "prescription_sha256": "b470ad1f283751e99cb99ce8ff4b826ead38dfda23497207020a6be9901eef89",
+    "benchmark_sha256": "cc67e34342418259db8f16edb2f67dc1e0db3fbbc2f2c4391caa702d9d4bb8de",
+    "acceptance_config_sha256": "f50acc4a345c73d6188e3d03661101cf65cc96f399dca4a4e6e684196c649834"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US12493165B2-e4",
+   "patent": "US 12493165 B2",
+   "class": "main",
+   "tier": "hard",
+   "seed": 2,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "012-US12493165B2-e4-hard-s2",
+   "inputs": {
+    "prescription_sha256": "b470ad1f283751e99cb99ce8ff4b826ead38dfda23497207020a6be9901eef89",
+    "benchmark_sha256": "cc67e34342418259db8f16edb2f67dc1e0db3fbbc2f2c4391caa702d9d4bb8de",
+    "acceptance_config_sha256": "f50acc4a345c73d6188e3d03661101cf65cc96f399dca4a4e6e684196c649834"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US12493165B2-e4",
+   "patent": "US 12493165 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.15,
+    "length": 0.9
+   },
+   "task": "013-US12493165B2-e4-stretch-length90-wd115-s1",
+   "inputs": {
+    "prescription_sha256": "b470ad1f283751e99cb99ce8ff4b826ead38dfda23497207020a6be9901eef89",
+    "benchmark_sha256": "cc67e34342418259db8f16edb2f67dc1e0db3fbbc2f2c4391caa702d9d4bb8de",
+    "acceptance_config_sha256": "ec14fa3897561825a11591c03ffcb660073157efd1c0f59009ef0998cad4d834"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US12493165B2-e4",
+   "patent": "US 12493165 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.25
+   },
+   "task": "014-US12493165B2-e4-stretch-wd125-s1",
+   "inputs": {
+    "prescription_sha256": "b470ad1f283751e99cb99ce8ff4b826ead38dfda23497207020a6be9901eef89",
+    "benchmark_sha256": "cc67e34342418259db8f16edb2f67dc1e0db3fbbc2f2c4391caa702d9d4bb8de",
+    "acceptance_config_sha256": "cd24afc2ed6082d2078a7765e9b27d5ef261ed30f1a39917395a569447d8c252"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US12493165B2-e4",
+   "patent": "US 12493165 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "length": 0.85
+   },
+   "task": "015-US12493165B2-e4-stretch-length85-s1",
+   "inputs": {
+    "prescription_sha256": "b470ad1f283751e99cb99ce8ff4b826ead38dfda23497207020a6be9901eef89",
+    "benchmark_sha256": "cc67e34342418259db8f16edb2f67dc1e0db3fbbc2f2c4391caa702d9d4bb8de",
+    "acceptance_config_sha256": "38306d49995a84ccac069110b43ce390e736bca6ee590a0bb62d360f51d44038"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11048071B2-e1",
+   "patent": "US 11048071 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 1,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "016-US11048071B2-e1-default-s1",
+   "inputs": {
+    "prescription_sha256": "80b2a234a5aca803ed859877cb18343fb679f668f7f14f309071ba904609de98",
+    "benchmark_sha256": "ed9244931a9bc6ca047d79a8236732e60ba34f8929de4a21fe3ec813025c6392",
+    "acceptance_config_sha256": "43e8f045bb283d3a5d45548e339c082dad70a516d6ce6f7fd6ed3330a490869c"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11048071B2-e1",
+   "patent": "US 11048071 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 2,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "017-US11048071B2-e1-default-s2",
+   "inputs": {
+    "prescription_sha256": "80b2a234a5aca803ed859877cb18343fb679f668f7f14f309071ba904609de98",
+    "benchmark_sha256": "ed9244931a9bc6ca047d79a8236732e60ba34f8929de4a21fe3ec813025c6392",
+    "acceptance_config_sha256": "43e8f045bb283d3a5d45548e339c082dad70a516d6ce6f7fd6ed3330a490869c"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11048071B2-e1",
+   "patent": "US 11048071 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 3,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "018-US11048071B2-e1-default-s3",
+   "inputs": {
+    "prescription_sha256": "80b2a234a5aca803ed859877cb18343fb679f668f7f14f309071ba904609de98",
+    "benchmark_sha256": "ed9244931a9bc6ca047d79a8236732e60ba34f8929de4a21fe3ec813025c6392",
+    "acceptance_config_sha256": "43e8f045bb283d3a5d45548e339c082dad70a516d6ce6f7fd6ed3330a490869c"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11048071B2-e1",
+   "patent": "US 11048071 B2",
+   "class": "main",
+   "tier": "hard",
+   "seed": 1,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "019-US11048071B2-e1-hard-s1",
+   "inputs": {
+    "prescription_sha256": "80b2a234a5aca803ed859877cb18343fb679f668f7f14f309071ba904609de98",
+    "benchmark_sha256": "ed9244931a9bc6ca047d79a8236732e60ba34f8929de4a21fe3ec813025c6392",
+    "acceptance_config_sha256": "43e8f045bb283d3a5d45548e339c082dad70a516d6ce6f7fd6ed3330a490869c"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11048071B2-e1",
+   "patent": "US 11048071 B2",
+   "class": "main",
+   "tier": "hard",
+   "seed": 2,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "020-US11048071B2-e1-hard-s2",
+   "inputs": {
+    "prescription_sha256": "80b2a234a5aca803ed859877cb18343fb679f668f7f14f309071ba904609de98",
+    "benchmark_sha256": "ed9244931a9bc6ca047d79a8236732e60ba34f8929de4a21fe3ec813025c6392",
+    "acceptance_config_sha256": "43e8f045bb283d3a5d45548e339c082dad70a516d6ce6f7fd6ed3330a490869c"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11048071B2-e1",
+   "patent": "US 11048071 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.15,
+    "length": 0.9
+   },
+   "task": "021-US11048071B2-e1-stretch-length90-wd115-s1",
+   "inputs": {
+    "prescription_sha256": "80b2a234a5aca803ed859877cb18343fb679f668f7f14f309071ba904609de98",
+    "benchmark_sha256": "ed9244931a9bc6ca047d79a8236732e60ba34f8929de4a21fe3ec813025c6392",
+    "acceptance_config_sha256": "d12015718f7bf8fbd50977bc9ef6e98361df3c33619342cdc0bc195f33859257"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11048071B2-e1",
+   "patent": "US 11048071 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.25
+   },
+   "task": "022-US11048071B2-e1-stretch-wd125-s1",
+   "inputs": {
+    "prescription_sha256": "80b2a234a5aca803ed859877cb18343fb679f668f7f14f309071ba904609de98",
+    "benchmark_sha256": "ed9244931a9bc6ca047d79a8236732e60ba34f8929de4a21fe3ec813025c6392",
+    "acceptance_config_sha256": "27830c2dba1c7b6539e9001bc71b1337f8aa5d8e6b6130d2e667770185e20f90"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11048071B2-e1",
+   "patent": "US 11048071 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "length": 0.85
+   },
+   "task": "023-US11048071B2-e1-stretch-length85-s1",
+   "inputs": {
+    "prescription_sha256": "80b2a234a5aca803ed859877cb18343fb679f668f7f14f309071ba904609de98",
+    "benchmark_sha256": "ed9244931a9bc6ca047d79a8236732e60ba34f8929de4a21fe3ec813025c6392",
+    "acceptance_config_sha256": "8a590a089b0ddea7d0a5ac75f9d58f1ab748592d5f45044990211ae1b869ec8b"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11048071B2-e2",
+   "patent": "US 11048071 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 1,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "024-US11048071B2-e2-default-s1",
+   "inputs": {
+    "prescription_sha256": "04ee1ec716bb8b5b4e8e9b98aa5205e3a70e41c976bb986bfde81c91fbbcc93b",
+    "benchmark_sha256": "8fd9d024fa74152e97472e117867bc8f8f0b6a0190cebfabfac9605ecf563ec7",
+    "acceptance_config_sha256": "d0bc6ca0369da484bd848789c440da669a9e1886bcb9ed46cb03587a7112e86a"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11048071B2-e2",
+   "patent": "US 11048071 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 2,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "025-US11048071B2-e2-default-s2",
+   "inputs": {
+    "prescription_sha256": "04ee1ec716bb8b5b4e8e9b98aa5205e3a70e41c976bb986bfde81c91fbbcc93b",
+    "benchmark_sha256": "8fd9d024fa74152e97472e117867bc8f8f0b6a0190cebfabfac9605ecf563ec7",
+    "acceptance_config_sha256": "d0bc6ca0369da484bd848789c440da669a9e1886bcb9ed46cb03587a7112e86a"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11048071B2-e2",
+   "patent": "US 11048071 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 3,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "026-US11048071B2-e2-default-s3",
+   "inputs": {
+    "prescription_sha256": "04ee1ec716bb8b5b4e8e9b98aa5205e3a70e41c976bb986bfde81c91fbbcc93b",
+    "benchmark_sha256": "8fd9d024fa74152e97472e117867bc8f8f0b6a0190cebfabfac9605ecf563ec7",
+    "acceptance_config_sha256": "d0bc6ca0369da484bd848789c440da669a9e1886bcb9ed46cb03587a7112e86a"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11048071B2-e2",
+   "patent": "US 11048071 B2",
+   "class": "main",
+   "tier": "hard",
+   "seed": 1,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "027-US11048071B2-e2-hard-s1",
+   "inputs": {
+    "prescription_sha256": "04ee1ec716bb8b5b4e8e9b98aa5205e3a70e41c976bb986bfde81c91fbbcc93b",
+    "benchmark_sha256": "8fd9d024fa74152e97472e117867bc8f8f0b6a0190cebfabfac9605ecf563ec7",
+    "acceptance_config_sha256": "d0bc6ca0369da484bd848789c440da669a9e1886bcb9ed46cb03587a7112e86a"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11048071B2-e2",
+   "patent": "US 11048071 B2",
+   "class": "main",
+   "tier": "hard",
+   "seed": 2,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "028-US11048071B2-e2-hard-s2",
+   "inputs": {
+    "prescription_sha256": "04ee1ec716bb8b5b4e8e9b98aa5205e3a70e41c976bb986bfde81c91fbbcc93b",
+    "benchmark_sha256": "8fd9d024fa74152e97472e117867bc8f8f0b6a0190cebfabfac9605ecf563ec7",
+    "acceptance_config_sha256": "d0bc6ca0369da484bd848789c440da669a9e1886bcb9ed46cb03587a7112e86a"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11048071B2-e2",
+   "patent": "US 11048071 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.15,
+    "length": 0.9
+   },
+   "task": "029-US11048071B2-e2-stretch-length90-wd115-s1",
+   "inputs": {
+    "prescription_sha256": "04ee1ec716bb8b5b4e8e9b98aa5205e3a70e41c976bb986bfde81c91fbbcc93b",
+    "benchmark_sha256": "8fd9d024fa74152e97472e117867bc8f8f0b6a0190cebfabfac9605ecf563ec7",
+    "acceptance_config_sha256": "4a49531de64a157ccbac3fa6ba9e4972b8ce7d9c8e74c0205bad97265810ad18"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11048071B2-e2",
+   "patent": "US 11048071 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.25
+   },
+   "task": "030-US11048071B2-e2-stretch-wd125-s1",
+   "inputs": {
+    "prescription_sha256": "04ee1ec716bb8b5b4e8e9b98aa5205e3a70e41c976bb986bfde81c91fbbcc93b",
+    "benchmark_sha256": "8fd9d024fa74152e97472e117867bc8f8f0b6a0190cebfabfac9605ecf563ec7",
+    "acceptance_config_sha256": "a442c43405c7f7116e11781a4afaed37e9ad1509e52105cec2c15cf90bc6a1db"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11048071B2-e2",
+   "patent": "US 11048071 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "length": 0.85
+   },
+   "task": "031-US11048071B2-e2-stretch-length85-s1",
+   "inputs": {
+    "prescription_sha256": "04ee1ec716bb8b5b4e8e9b98aa5205e3a70e41c976bb986bfde81c91fbbcc93b",
+    "benchmark_sha256": "8fd9d024fa74152e97472e117867bc8f8f0b6a0190cebfabfac9605ecf563ec7",
+    "acceptance_config_sha256": "cb10c432020bdd773175ee72dc92137c953f0f71b014039972e0a9330db51a43"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US4521083-e1",
+   "patent": "US 4521083 A",
+   "class": "main",
+   "tier": "default",
+   "seed": 1,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "032-US4521083-e1-default-s1",
+   "inputs": {
+    "prescription_sha256": "5789fd90c34591bad5d7aecb9fef110d3b1cc44d282a4762e5cfc85c8e83e645",
+    "benchmark_sha256": "1fed8170c43defa6e4f06d8d233d59e170bac965eed8d14a5eb4f6ba40b92623",
+    "acceptance_config_sha256": "0cd00be5b5508e74c9bbb6faf7b0190e68a5db78c78cb9d975a63f0b9898f8cb"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US4521083-e1",
+   "patent": "US 4521083 A",
+   "class": "main",
+   "tier": "default",
+   "seed": 2,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "033-US4521083-e1-default-s2",
+   "inputs": {
+    "prescription_sha256": "5789fd90c34591bad5d7aecb9fef110d3b1cc44d282a4762e5cfc85c8e83e645",
+    "benchmark_sha256": "1fed8170c43defa6e4f06d8d233d59e170bac965eed8d14a5eb4f6ba40b92623",
+    "acceptance_config_sha256": "0cd00be5b5508e74c9bbb6faf7b0190e68a5db78c78cb9d975a63f0b9898f8cb"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US4521083-e1",
+   "patent": "US 4521083 A",
+   "class": "main",
+   "tier": "default",
+   "seed": 3,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "034-US4521083-e1-default-s3",
+   "inputs": {
+    "prescription_sha256": "5789fd90c34591bad5d7aecb9fef110d3b1cc44d282a4762e5cfc85c8e83e645",
+    "benchmark_sha256": "1fed8170c43defa6e4f06d8d233d59e170bac965eed8d14a5eb4f6ba40b92623",
+    "acceptance_config_sha256": "0cd00be5b5508e74c9bbb6faf7b0190e68a5db78c78cb9d975a63f0b9898f8cb"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US4521083-e1",
+   "patent": "US 4521083 A",
+   "class": "main",
+   "tier": "hard",
+   "seed": 1,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "035-US4521083-e1-hard-s1",
+   "inputs": {
+    "prescription_sha256": "5789fd90c34591bad5d7aecb9fef110d3b1cc44d282a4762e5cfc85c8e83e645",
+    "benchmark_sha256": "1fed8170c43defa6e4f06d8d233d59e170bac965eed8d14a5eb4f6ba40b92623",
+    "acceptance_config_sha256": "0cd00be5b5508e74c9bbb6faf7b0190e68a5db78c78cb9d975a63f0b9898f8cb"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US4521083-e1",
+   "patent": "US 4521083 A",
+   "class": "main",
+   "tier": "hard",
+   "seed": 2,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "036-US4521083-e1-hard-s2",
+   "inputs": {
+    "prescription_sha256": "5789fd90c34591bad5d7aecb9fef110d3b1cc44d282a4762e5cfc85c8e83e645",
+    "benchmark_sha256": "1fed8170c43defa6e4f06d8d233d59e170bac965eed8d14a5eb4f6ba40b92623",
+    "acceptance_config_sha256": "0cd00be5b5508e74c9bbb6faf7b0190e68a5db78c78cb9d975a63f0b9898f8cb"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US4521083-e1",
+   "patent": "US 4521083 A",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.15,
+    "length": 0.9
+   },
+   "task": "037-US4521083-e1-stretch-length90-wd115-s1",
+   "inputs": {
+    "prescription_sha256": "5789fd90c34591bad5d7aecb9fef110d3b1cc44d282a4762e5cfc85c8e83e645",
+    "benchmark_sha256": "1fed8170c43defa6e4f06d8d233d59e170bac965eed8d14a5eb4f6ba40b92623",
+    "acceptance_config_sha256": "5ef3c792a16cc76e17f9ea4267543dfdd2c9b7d70bc99264c5f3edb7bda525eb"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US4521083-e1",
+   "patent": "US 4521083 A",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.25
+   },
+   "task": "038-US4521083-e1-stretch-wd125-s1",
+   "inputs": {
+    "prescription_sha256": "5789fd90c34591bad5d7aecb9fef110d3b1cc44d282a4762e5cfc85c8e83e645",
+    "benchmark_sha256": "1fed8170c43defa6e4f06d8d233d59e170bac965eed8d14a5eb4f6ba40b92623",
+    "acceptance_config_sha256": "7e4cf47cb312869f92cd3418353ea1d9e72f8b9cfcb124497ee5a8726735e9aa"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US4521083-e1",
+   "patent": "US 4521083 A",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "length": 0.85
+   },
+   "task": "039-US4521083-e1-stretch-length85-s1",
+   "inputs": {
+    "prescription_sha256": "5789fd90c34591bad5d7aecb9fef110d3b1cc44d282a4762e5cfc85c8e83e645",
+    "benchmark_sha256": "1fed8170c43defa6e4f06d8d233d59e170bac965eed8d14a5eb4f6ba40b92623",
+    "acceptance_config_sha256": "9525142087935a21f6cc523afb52b1aab0b0973df0643c9d05845f82cf084497"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11067782B2-e1",
+   "patent": "US 11067782 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 1,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "040-US11067782B2-e1-default-s1",
+   "inputs": {
+    "prescription_sha256": "1b1f94cd4234a3608e3d08499554d50dfe1de3a0edf928279f976bf453fab1d0",
+    "benchmark_sha256": "d6cb208ad3f2c304b48bbcd855d04c06bc92eb22c9200e50391a00562ccb95ef",
+    "acceptance_config_sha256": "36877a994028daa25e816b3403686ffc1ebb9a5bfcdde02e60b1a732d35b233b"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11067782B2-e1",
+   "patent": "US 11067782 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 2,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "041-US11067782B2-e1-default-s2",
+   "inputs": {
+    "prescription_sha256": "1b1f94cd4234a3608e3d08499554d50dfe1de3a0edf928279f976bf453fab1d0",
+    "benchmark_sha256": "d6cb208ad3f2c304b48bbcd855d04c06bc92eb22c9200e50391a00562ccb95ef",
+    "acceptance_config_sha256": "36877a994028daa25e816b3403686ffc1ebb9a5bfcdde02e60b1a732d35b233b"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11067782B2-e1",
+   "patent": "US 11067782 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 3,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "042-US11067782B2-e1-default-s3",
+   "inputs": {
+    "prescription_sha256": "1b1f94cd4234a3608e3d08499554d50dfe1de3a0edf928279f976bf453fab1d0",
+    "benchmark_sha256": "d6cb208ad3f2c304b48bbcd855d04c06bc92eb22c9200e50391a00562ccb95ef",
+    "acceptance_config_sha256": "36877a994028daa25e816b3403686ffc1ebb9a5bfcdde02e60b1a732d35b233b"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11067782B2-e1",
+   "patent": "US 11067782 B2",
+   "class": "main",
+   "tier": "hard",
+   "seed": 1,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "043-US11067782B2-e1-hard-s1",
+   "inputs": {
+    "prescription_sha256": "1b1f94cd4234a3608e3d08499554d50dfe1de3a0edf928279f976bf453fab1d0",
+    "benchmark_sha256": "d6cb208ad3f2c304b48bbcd855d04c06bc92eb22c9200e50391a00562ccb95ef",
+    "acceptance_config_sha256": "36877a994028daa25e816b3403686ffc1ebb9a5bfcdde02e60b1a732d35b233b"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11067782B2-e1",
+   "patent": "US 11067782 B2",
+   "class": "main",
+   "tier": "hard",
+   "seed": 2,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "044-US11067782B2-e1-hard-s2",
+   "inputs": {
+    "prescription_sha256": "1b1f94cd4234a3608e3d08499554d50dfe1de3a0edf928279f976bf453fab1d0",
+    "benchmark_sha256": "d6cb208ad3f2c304b48bbcd855d04c06bc92eb22c9200e50391a00562ccb95ef",
+    "acceptance_config_sha256": "36877a994028daa25e816b3403686ffc1ebb9a5bfcdde02e60b1a732d35b233b"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11067782B2-e1",
+   "patent": "US 11067782 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.15,
+    "length": 0.9
+   },
+   "task": "045-US11067782B2-e1-stretch-length90-wd115-s1",
+   "inputs": {
+    "prescription_sha256": "1b1f94cd4234a3608e3d08499554d50dfe1de3a0edf928279f976bf453fab1d0",
+    "benchmark_sha256": "d6cb208ad3f2c304b48bbcd855d04c06bc92eb22c9200e50391a00562ccb95ef",
+    "acceptance_config_sha256": "9160bda938a3c945e41e86e5651b9fd10d2c56abf9e1d328d852f3b65bc54e91"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11067782B2-e1",
+   "patent": "US 11067782 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.25
+   },
+   "task": "046-US11067782B2-e1-stretch-wd125-s1",
+   "inputs": {
+    "prescription_sha256": "1b1f94cd4234a3608e3d08499554d50dfe1de3a0edf928279f976bf453fab1d0",
+    "benchmark_sha256": "d6cb208ad3f2c304b48bbcd855d04c06bc92eb22c9200e50391a00562ccb95ef",
+    "acceptance_config_sha256": "0cf089f99d3b654035f4599375e842e0b5465844309dbed665f4201bdf053957"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11067782B2-e1",
+   "patent": "US 11067782 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "length": 0.85
+   },
+   "task": "047-US11067782B2-e1-stretch-length85-s1",
+   "inputs": {
+    "prescription_sha256": "1b1f94cd4234a3608e3d08499554d50dfe1de3a0edf928279f976bf453fab1d0",
+    "benchmark_sha256": "d6cb208ad3f2c304b48bbcd855d04c06bc92eb22c9200e50391a00562ccb95ef",
+    "acceptance_config_sha256": "223ed0879b5d2f0023817774809759903da53b7e7249e20cbcb44f0108110f4a"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11067782B2-e3",
+   "patent": "US 11067782 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 1,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "048-US11067782B2-e3-default-s1",
+   "inputs": {
+    "prescription_sha256": "e9d4837c65c60a72b15134e1128e53c025d8230763aa8c6852aa7b5c78ad76dc",
+    "benchmark_sha256": "f12d9fa263ce55f826cb1851a82abb511ab730c144b7eae04cb474adc6a1ea64",
+    "acceptance_config_sha256": "98075385d96585d73b8d5fc633cc30d92e4bb85ee36582205e545e5d141cc388"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11067782B2-e3",
+   "patent": "US 11067782 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 2,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "049-US11067782B2-e3-default-s2",
+   "inputs": {
+    "prescription_sha256": "e9d4837c65c60a72b15134e1128e53c025d8230763aa8c6852aa7b5c78ad76dc",
+    "benchmark_sha256": "f12d9fa263ce55f826cb1851a82abb511ab730c144b7eae04cb474adc6a1ea64",
+    "acceptance_config_sha256": "98075385d96585d73b8d5fc633cc30d92e4bb85ee36582205e545e5d141cc388"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11067782B2-e3",
+   "patent": "US 11067782 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 3,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "050-US11067782B2-e3-default-s3",
+   "inputs": {
+    "prescription_sha256": "e9d4837c65c60a72b15134e1128e53c025d8230763aa8c6852aa7b5c78ad76dc",
+    "benchmark_sha256": "f12d9fa263ce55f826cb1851a82abb511ab730c144b7eae04cb474adc6a1ea64",
+    "acceptance_config_sha256": "98075385d96585d73b8d5fc633cc30d92e4bb85ee36582205e545e5d141cc388"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11067782B2-e3",
+   "patent": "US 11067782 B2",
+   "class": "main",
+   "tier": "hard",
+   "seed": 1,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "051-US11067782B2-e3-hard-s1",
+   "inputs": {
+    "prescription_sha256": "e9d4837c65c60a72b15134e1128e53c025d8230763aa8c6852aa7b5c78ad76dc",
+    "benchmark_sha256": "f12d9fa263ce55f826cb1851a82abb511ab730c144b7eae04cb474adc6a1ea64",
+    "acceptance_config_sha256": "98075385d96585d73b8d5fc633cc30d92e4bb85ee36582205e545e5d141cc388"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11067782B2-e3",
+   "patent": "US 11067782 B2",
+   "class": "main",
+   "tier": "hard",
+   "seed": 2,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "052-US11067782B2-e3-hard-s2",
+   "inputs": {
+    "prescription_sha256": "e9d4837c65c60a72b15134e1128e53c025d8230763aa8c6852aa7b5c78ad76dc",
+    "benchmark_sha256": "f12d9fa263ce55f826cb1851a82abb511ab730c144b7eae04cb474adc6a1ea64",
+    "acceptance_config_sha256": "98075385d96585d73b8d5fc633cc30d92e4bb85ee36582205e545e5d141cc388"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11067782B2-e3",
+   "patent": "US 11067782 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.15,
+    "length": 0.9
+   },
+   "task": "053-US11067782B2-e3-stretch-length90-wd115-s1",
+   "inputs": {
+    "prescription_sha256": "e9d4837c65c60a72b15134e1128e53c025d8230763aa8c6852aa7b5c78ad76dc",
+    "benchmark_sha256": "f12d9fa263ce55f826cb1851a82abb511ab730c144b7eae04cb474adc6a1ea64",
+    "acceptance_config_sha256": "b42a9a6663e8aad96697ae14b286aaf5183fafbda3097c2d975c5d58c62fd9ec"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11067782B2-e3",
+   "patent": "US 11067782 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.25
+   },
+   "task": "054-US11067782B2-e3-stretch-wd125-s1",
+   "inputs": {
+    "prescription_sha256": "e9d4837c65c60a72b15134e1128e53c025d8230763aa8c6852aa7b5c78ad76dc",
+    "benchmark_sha256": "f12d9fa263ce55f826cb1851a82abb511ab730c144b7eae04cb474adc6a1ea64",
+    "acceptance_config_sha256": "911892977c86867b2814f5e299ccb00bf4c361e2f8f0d0f93212b414d6a3d336"
+   }
+  },
+  {
+   "group": "tuning",
+   "entry": "US11067782B2-e3",
+   "patent": "US 11067782 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "length": 0.85
+   },
+   "task": "055-US11067782B2-e3-stretch-length85-s1",
+   "inputs": {
+    "prescription_sha256": "e9d4837c65c60a72b15134e1128e53c025d8230763aa8c6852aa7b5c78ad76dc",
+    "benchmark_sha256": "f12d9fa263ce55f826cb1851a82abb511ab730c144b7eae04cb474adc6a1ea64",
+    "acceptance_config_sha256": "c599ad14e1d7b4756209069fcbfda0e5d67e3ae624f153bdd2371a8f2541c7af"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US6128139-e1",
+   "patent": "US 6128139 A",
+   "class": "main",
+   "tier": "default",
+   "seed": 1,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "056-US6128139-e1-default-s1",
+   "inputs": {
+    "prescription_sha256": "4172247d1875008c5da99ecf1ef664c2e30f57c3dfebaa1f642947882ab291ee",
+    "benchmark_sha256": "23486264660034625e92f8213edf10c860ac9b500981942e35d88714cc5a81c7",
+    "acceptance_config_sha256": "98e7e0b71c17c6f59ea4f2b8e7345b1f3bd7bf827427bf7123a52bae7b79fab6"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US6128139-e1",
+   "patent": "US 6128139 A",
+   "class": "main",
+   "tier": "default",
+   "seed": 2,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "057-US6128139-e1-default-s2",
+   "inputs": {
+    "prescription_sha256": "4172247d1875008c5da99ecf1ef664c2e30f57c3dfebaa1f642947882ab291ee",
+    "benchmark_sha256": "23486264660034625e92f8213edf10c860ac9b500981942e35d88714cc5a81c7",
+    "acceptance_config_sha256": "98e7e0b71c17c6f59ea4f2b8e7345b1f3bd7bf827427bf7123a52bae7b79fab6"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US6128139-e1",
+   "patent": "US 6128139 A",
+   "class": "main",
+   "tier": "default",
+   "seed": 3,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "058-US6128139-e1-default-s3",
+   "inputs": {
+    "prescription_sha256": "4172247d1875008c5da99ecf1ef664c2e30f57c3dfebaa1f642947882ab291ee",
+    "benchmark_sha256": "23486264660034625e92f8213edf10c860ac9b500981942e35d88714cc5a81c7",
+    "acceptance_config_sha256": "98e7e0b71c17c6f59ea4f2b8e7345b1f3bd7bf827427bf7123a52bae7b79fab6"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US6128139-e1",
+   "patent": "US 6128139 A",
+   "class": "main",
+   "tier": "hard",
+   "seed": 1,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "059-US6128139-e1-hard-s1",
+   "inputs": {
+    "prescription_sha256": "4172247d1875008c5da99ecf1ef664c2e30f57c3dfebaa1f642947882ab291ee",
+    "benchmark_sha256": "23486264660034625e92f8213edf10c860ac9b500981942e35d88714cc5a81c7",
+    "acceptance_config_sha256": "98e7e0b71c17c6f59ea4f2b8e7345b1f3bd7bf827427bf7123a52bae7b79fab6"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US6128139-e1",
+   "patent": "US 6128139 A",
+   "class": "main",
+   "tier": "hard",
+   "seed": 2,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "060-US6128139-e1-hard-s2",
+   "inputs": {
+    "prescription_sha256": "4172247d1875008c5da99ecf1ef664c2e30f57c3dfebaa1f642947882ab291ee",
+    "benchmark_sha256": "23486264660034625e92f8213edf10c860ac9b500981942e35d88714cc5a81c7",
+    "acceptance_config_sha256": "98e7e0b71c17c6f59ea4f2b8e7345b1f3bd7bf827427bf7123a52bae7b79fab6"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US6128139-e1",
+   "patent": "US 6128139 A",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.15,
+    "length": 0.9
+   },
+   "task": "061-US6128139-e1-stretch-length90-wd115-s1",
+   "inputs": {
+    "prescription_sha256": "4172247d1875008c5da99ecf1ef664c2e30f57c3dfebaa1f642947882ab291ee",
+    "benchmark_sha256": "23486264660034625e92f8213edf10c860ac9b500981942e35d88714cc5a81c7",
+    "acceptance_config_sha256": "56c1c9eb0d0175cfef04539118453d3ea601676b33a21e1033ea8a6386c7a304"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US6128139-e1",
+   "patent": "US 6128139 A",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.25
+   },
+   "task": "062-US6128139-e1-stretch-wd125-s1",
+   "inputs": {
+    "prescription_sha256": "4172247d1875008c5da99ecf1ef664c2e30f57c3dfebaa1f642947882ab291ee",
+    "benchmark_sha256": "23486264660034625e92f8213edf10c860ac9b500981942e35d88714cc5a81c7",
+    "acceptance_config_sha256": "2398239cefeda5f5a69aa5abc10fd00038e564abf65e2e42f7cd633ba5c9ca5c"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US6128139-e1",
+   "patent": "US 6128139 A",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "length": 0.85
+   },
+   "task": "063-US6128139-e1-stretch-length85-s1",
+   "inputs": {
+    "prescription_sha256": "4172247d1875008c5da99ecf1ef664c2e30f57c3dfebaa1f642947882ab291ee",
+    "benchmark_sha256": "23486264660034625e92f8213edf10c860ac9b500981942e35d88714cc5a81c7",
+    "acceptance_config_sha256": "5bbc2e3f84833ab00d315dce257eef1d4a3dc196de2dad3c529482a5c7843c4d"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US6128139-e2",
+   "patent": "US 6128139 A",
+   "class": "main",
+   "tier": "default",
+   "seed": 1,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "064-US6128139-e2-default-s1",
+   "inputs": {
+    "prescription_sha256": "66c031cb77eeeb12452c048b53304c854a593cadfe09441d010b72766737a5d2",
+    "benchmark_sha256": "f8db7fce8a4c270edac48cfb7253c472f669d5656c3fb3f6beb4c7f973de002d",
+    "acceptance_config_sha256": "1afb975cf1d0a2c5b32aa501676eae4dcbcc62b2b3069eec15b423633de232d6"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US6128139-e2",
+   "patent": "US 6128139 A",
+   "class": "main",
+   "tier": "default",
+   "seed": 2,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "065-US6128139-e2-default-s2",
+   "inputs": {
+    "prescription_sha256": "66c031cb77eeeb12452c048b53304c854a593cadfe09441d010b72766737a5d2",
+    "benchmark_sha256": "f8db7fce8a4c270edac48cfb7253c472f669d5656c3fb3f6beb4c7f973de002d",
+    "acceptance_config_sha256": "1afb975cf1d0a2c5b32aa501676eae4dcbcc62b2b3069eec15b423633de232d6"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US6128139-e2",
+   "patent": "US 6128139 A",
+   "class": "main",
+   "tier": "default",
+   "seed": 3,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "066-US6128139-e2-default-s3",
+   "inputs": {
+    "prescription_sha256": "66c031cb77eeeb12452c048b53304c854a593cadfe09441d010b72766737a5d2",
+    "benchmark_sha256": "f8db7fce8a4c270edac48cfb7253c472f669d5656c3fb3f6beb4c7f973de002d",
+    "acceptance_config_sha256": "1afb975cf1d0a2c5b32aa501676eae4dcbcc62b2b3069eec15b423633de232d6"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US6128139-e2",
+   "patent": "US 6128139 A",
+   "class": "main",
+   "tier": "hard",
+   "seed": 1,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "067-US6128139-e2-hard-s1",
+   "inputs": {
+    "prescription_sha256": "66c031cb77eeeb12452c048b53304c854a593cadfe09441d010b72766737a5d2",
+    "benchmark_sha256": "f8db7fce8a4c270edac48cfb7253c472f669d5656c3fb3f6beb4c7f973de002d",
+    "acceptance_config_sha256": "1afb975cf1d0a2c5b32aa501676eae4dcbcc62b2b3069eec15b423633de232d6"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US6128139-e2",
+   "patent": "US 6128139 A",
+   "class": "main",
+   "tier": "hard",
+   "seed": 2,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "068-US6128139-e2-hard-s2",
+   "inputs": {
+    "prescription_sha256": "66c031cb77eeeb12452c048b53304c854a593cadfe09441d010b72766737a5d2",
+    "benchmark_sha256": "f8db7fce8a4c270edac48cfb7253c472f669d5656c3fb3f6beb4c7f973de002d",
+    "acceptance_config_sha256": "1afb975cf1d0a2c5b32aa501676eae4dcbcc62b2b3069eec15b423633de232d6"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US6128139-e2",
+   "patent": "US 6128139 A",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.15,
+    "length": 0.9
+   },
+   "task": "069-US6128139-e2-stretch-length90-wd115-s1",
+   "inputs": {
+    "prescription_sha256": "66c031cb77eeeb12452c048b53304c854a593cadfe09441d010b72766737a5d2",
+    "benchmark_sha256": "f8db7fce8a4c270edac48cfb7253c472f669d5656c3fb3f6beb4c7f973de002d",
+    "acceptance_config_sha256": "9c295621a2d140e1b77b5b6cb468d327ed90fbb5a2be00962131aa7713375015"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US6128139-e2",
+   "patent": "US 6128139 A",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.25
+   },
+   "task": "070-US6128139-e2-stretch-wd125-s1",
+   "inputs": {
+    "prescription_sha256": "66c031cb77eeeb12452c048b53304c854a593cadfe09441d010b72766737a5d2",
+    "benchmark_sha256": "f8db7fce8a4c270edac48cfb7253c472f669d5656c3fb3f6beb4c7f973de002d",
+    "acceptance_config_sha256": "d861d83325f828036ede843481eef5a8919274c1798c8e1734a9d61539fde35c"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US6128139-e2",
+   "patent": "US 6128139 A",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "length": 0.85
+   },
+   "task": "071-US6128139-e2-stretch-length85-s1",
+   "inputs": {
+    "prescription_sha256": "66c031cb77eeeb12452c048b53304c854a593cadfe09441d010b72766737a5d2",
+    "benchmark_sha256": "f8db7fce8a4c270edac48cfb7253c472f669d5656c3fb3f6beb4c7f973de002d",
+    "acceptance_config_sha256": "7fba4605039714cca989e6c472df893e87424ffcfdd6bfbee5d3bdbbf2d1c8b0"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US11002950B2-e1",
+   "patent": "US 11002950 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 1,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "072-US11002950B2-e1-default-s1",
+   "inputs": {
+    "prescription_sha256": "3dbe1f6887f0f265f52f1b30fb109a31947eb59201a8eaf6333b862989be8cf8",
+    "benchmark_sha256": "6534a349e38d3a7c4cf75313fc4cd01d7abd7c6edf7d6c1eca3563654595b6cd",
+    "acceptance_config_sha256": "ee802749822dcaedcca1657bb25de33739cf83553e351e4995132abb1f545e0e"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US11002950B2-e1",
+   "patent": "US 11002950 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 2,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "073-US11002950B2-e1-default-s2",
+   "inputs": {
+    "prescription_sha256": "3dbe1f6887f0f265f52f1b30fb109a31947eb59201a8eaf6333b862989be8cf8",
+    "benchmark_sha256": "6534a349e38d3a7c4cf75313fc4cd01d7abd7c6edf7d6c1eca3563654595b6cd",
+    "acceptance_config_sha256": "ee802749822dcaedcca1657bb25de33739cf83553e351e4995132abb1f545e0e"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US11002950B2-e1",
+   "patent": "US 11002950 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 3,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "074-US11002950B2-e1-default-s3",
+   "inputs": {
+    "prescription_sha256": "3dbe1f6887f0f265f52f1b30fb109a31947eb59201a8eaf6333b862989be8cf8",
+    "benchmark_sha256": "6534a349e38d3a7c4cf75313fc4cd01d7abd7c6edf7d6c1eca3563654595b6cd",
+    "acceptance_config_sha256": "ee802749822dcaedcca1657bb25de33739cf83553e351e4995132abb1f545e0e"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US11002950B2-e1",
+   "patent": "US 11002950 B2",
+   "class": "main",
+   "tier": "hard",
+   "seed": 1,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "075-US11002950B2-e1-hard-s1",
+   "inputs": {
+    "prescription_sha256": "3dbe1f6887f0f265f52f1b30fb109a31947eb59201a8eaf6333b862989be8cf8",
+    "benchmark_sha256": "6534a349e38d3a7c4cf75313fc4cd01d7abd7c6edf7d6c1eca3563654595b6cd",
+    "acceptance_config_sha256": "ee802749822dcaedcca1657bb25de33739cf83553e351e4995132abb1f545e0e"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US11002950B2-e1",
+   "patent": "US 11002950 B2",
+   "class": "main",
+   "tier": "hard",
+   "seed": 2,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "076-US11002950B2-e1-hard-s2",
+   "inputs": {
+    "prescription_sha256": "3dbe1f6887f0f265f52f1b30fb109a31947eb59201a8eaf6333b862989be8cf8",
+    "benchmark_sha256": "6534a349e38d3a7c4cf75313fc4cd01d7abd7c6edf7d6c1eca3563654595b6cd",
+    "acceptance_config_sha256": "ee802749822dcaedcca1657bb25de33739cf83553e351e4995132abb1f545e0e"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US11002950B2-e1",
+   "patent": "US 11002950 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.15,
+    "length": 0.9
+   },
+   "task": "077-US11002950B2-e1-stretch-length90-wd115-s1",
+   "inputs": {
+    "prescription_sha256": "3dbe1f6887f0f265f52f1b30fb109a31947eb59201a8eaf6333b862989be8cf8",
+    "benchmark_sha256": "6534a349e38d3a7c4cf75313fc4cd01d7abd7c6edf7d6c1eca3563654595b6cd",
+    "acceptance_config_sha256": "dae06a8f442a7af1691d2a54b56c9402498bd28607af5130d5d7effb86c70830"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US11002950B2-e1",
+   "patent": "US 11002950 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.25
+   },
+   "task": "078-US11002950B2-e1-stretch-wd125-s1",
+   "inputs": {
+    "prescription_sha256": "3dbe1f6887f0f265f52f1b30fb109a31947eb59201a8eaf6333b862989be8cf8",
+    "benchmark_sha256": "6534a349e38d3a7c4cf75313fc4cd01d7abd7c6edf7d6c1eca3563654595b6cd",
+    "acceptance_config_sha256": "92abde22f72ec8e1d8222cc002a22f6d2e4498d46abf95171deda6232da2bce7"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US11002950B2-e1",
+   "patent": "US 11002950 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "length": 0.85
+   },
+   "task": "079-US11002950B2-e1-stretch-length85-s1",
+   "inputs": {
+    "prescription_sha256": "3dbe1f6887f0f265f52f1b30fb109a31947eb59201a8eaf6333b862989be8cf8",
+    "benchmark_sha256": "6534a349e38d3a7c4cf75313fc4cd01d7abd7c6edf7d6c1eca3563654595b6cd",
+    "acceptance_config_sha256": "31df03ce5478028a9b1f16bbb22db21aff149e7f0b0046cbfa80aba4defbd924"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US11002950B2-e3",
+   "patent": "US 11002950 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 1,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "080-US11002950B2-e3-default-s1",
+   "inputs": {
+    "prescription_sha256": "e95a7aa6e73b66684f5aaa69dc192cb7d1ad55a5ad10595352fd4de763e648cb",
+    "benchmark_sha256": "dbb5f07d71cfe073b8000e6f95a36f42b8c6c88bf57ce20c26afab87a0138b15",
+    "acceptance_config_sha256": "24df0ac9a374051313ccd47650e3575fcbe1184a3eda51dc6e7ce7eae2122168"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US11002950B2-e3",
+   "patent": "US 11002950 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 2,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "081-US11002950B2-e3-default-s2",
+   "inputs": {
+    "prescription_sha256": "e95a7aa6e73b66684f5aaa69dc192cb7d1ad55a5ad10595352fd4de763e648cb",
+    "benchmark_sha256": "dbb5f07d71cfe073b8000e6f95a36f42b8c6c88bf57ce20c26afab87a0138b15",
+    "acceptance_config_sha256": "24df0ac9a374051313ccd47650e3575fcbe1184a3eda51dc6e7ce7eae2122168"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US11002950B2-e3",
+   "patent": "US 11002950 B2",
+   "class": "main",
+   "tier": "default",
+   "seed": 3,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "082-US11002950B2-e3-default-s3",
+   "inputs": {
+    "prescription_sha256": "e95a7aa6e73b66684f5aaa69dc192cb7d1ad55a5ad10595352fd4de763e648cb",
+    "benchmark_sha256": "dbb5f07d71cfe073b8000e6f95a36f42b8c6c88bf57ce20c26afab87a0138b15",
+    "acceptance_config_sha256": "24df0ac9a374051313ccd47650e3575fcbe1184a3eda51dc6e7ce7eae2122168"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US11002950B2-e3",
+   "patent": "US 11002950 B2",
+   "class": "main",
+   "tier": "hard",
+   "seed": 1,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "083-US11002950B2-e3-hard-s1",
+   "inputs": {
+    "prescription_sha256": "e95a7aa6e73b66684f5aaa69dc192cb7d1ad55a5ad10595352fd4de763e648cb",
+    "benchmark_sha256": "dbb5f07d71cfe073b8000e6f95a36f42b8c6c88bf57ce20c26afab87a0138b15",
+    "acceptance_config_sha256": "24df0ac9a374051313ccd47650e3575fcbe1184a3eda51dc6e7ce7eae2122168"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US11002950B2-e3",
+   "patent": "US 11002950 B2",
+   "class": "main",
+   "tier": "hard",
+   "seed": 2,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "084-US11002950B2-e3-hard-s2",
+   "inputs": {
+    "prescription_sha256": "e95a7aa6e73b66684f5aaa69dc192cb7d1ad55a5ad10595352fd4de763e648cb",
+    "benchmark_sha256": "dbb5f07d71cfe073b8000e6f95a36f42b8c6c88bf57ce20c26afab87a0138b15",
+    "acceptance_config_sha256": "24df0ac9a374051313ccd47650e3575fcbe1184a3eda51dc6e7ce7eae2122168"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US11002950B2-e3",
+   "patent": "US 11002950 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.15,
+    "length": 0.9
+   },
+   "task": "085-US11002950B2-e3-stretch-length90-wd115-s1",
+   "inputs": {
+    "prescription_sha256": "e95a7aa6e73b66684f5aaa69dc192cb7d1ad55a5ad10595352fd4de763e648cb",
+    "benchmark_sha256": "dbb5f07d71cfe073b8000e6f95a36f42b8c6c88bf57ce20c26afab87a0138b15",
+    "acceptance_config_sha256": "91c942d2b2a27ee2f71881395d01f85ceb4cb3a1064372b937666f0ed0cf82dc"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US11002950B2-e3",
+   "patent": "US 11002950 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.25
+   },
+   "task": "086-US11002950B2-e3-stretch-wd125-s1",
+   "inputs": {
+    "prescription_sha256": "e95a7aa6e73b66684f5aaa69dc192cb7d1ad55a5ad10595352fd4de763e648cb",
+    "benchmark_sha256": "dbb5f07d71cfe073b8000e6f95a36f42b8c6c88bf57ce20c26afab87a0138b15",
+    "acceptance_config_sha256": "7380f1b3257089f0a392dac96c7408906ab65e8edbd78068252b09e77508df59"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US11002950B2-e3",
+   "patent": "US 11002950 B2",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "length": 0.85
+   },
+   "task": "087-US11002950B2-e3-stretch-length85-s1",
+   "inputs": {
+    "prescription_sha256": "e95a7aa6e73b66684f5aaa69dc192cb7d1ad55a5ad10595352fd4de763e648cb",
+    "benchmark_sha256": "dbb5f07d71cfe073b8000e6f95a36f42b8c6c88bf57ce20c26afab87a0138b15",
+    "acceptance_config_sha256": "ada0d0011030f9b6107b41e7e8cf2c0e0a879df99908f547e619c4ca63dc28f0"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US4540248A-e1",
+   "patent": "US 4540248 A",
+   "class": "main",
+   "tier": "default",
+   "seed": 1,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "088-US4540248A-e1-default-s1",
+   "inputs": {
+    "prescription_sha256": "38b35460afe2b306b8fc2b9be36ce729da09a351b3a3169a4a118a9c0e6cd567",
+    "benchmark_sha256": "9d618c829b89340fad388275c0f10f3d86b7fd4137d26eb8ffbbc9ca6b3f78cf",
+    "acceptance_config_sha256": "4a402483e2d277e691f6665a87e41e849db0cf5242446f326ba82d394d10696e"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US4540248A-e1",
+   "patent": "US 4540248 A",
+   "class": "main",
+   "tier": "default",
+   "seed": 2,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "089-US4540248A-e1-default-s2",
+   "inputs": {
+    "prescription_sha256": "38b35460afe2b306b8fc2b9be36ce729da09a351b3a3169a4a118a9c0e6cd567",
+    "benchmark_sha256": "9d618c829b89340fad388275c0f10f3d86b7fd4137d26eb8ffbbc9ca6b3f78cf",
+    "acceptance_config_sha256": "4a402483e2d277e691f6665a87e41e849db0cf5242446f326ba82d394d10696e"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US4540248A-e1",
+   "patent": "US 4540248 A",
+   "class": "main",
+   "tier": "default",
+   "seed": 3,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "090-US4540248A-e1-default-s3",
+   "inputs": {
+    "prescription_sha256": "38b35460afe2b306b8fc2b9be36ce729da09a351b3a3169a4a118a9c0e6cd567",
+    "benchmark_sha256": "9d618c829b89340fad388275c0f10f3d86b7fd4137d26eb8ffbbc9ca6b3f78cf",
+    "acceptance_config_sha256": "4a402483e2d277e691f6665a87e41e849db0cf5242446f326ba82d394d10696e"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US4540248A-e1",
+   "patent": "US 4540248 A",
+   "class": "main",
+   "tier": "hard",
+   "seed": 1,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "091-US4540248A-e1-hard-s1",
+   "inputs": {
+    "prescription_sha256": "38b35460afe2b306b8fc2b9be36ce729da09a351b3a3169a4a118a9c0e6cd567",
+    "benchmark_sha256": "9d618c829b89340fad388275c0f10f3d86b7fd4137d26eb8ffbbc9ca6b3f78cf",
+    "acceptance_config_sha256": "4a402483e2d277e691f6665a87e41e849db0cf5242446f326ba82d394d10696e"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US4540248A-e1",
+   "patent": "US 4540248 A",
+   "class": "main",
+   "tier": "hard",
+   "seed": 2,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "092-US4540248A-e1-hard-s2",
+   "inputs": {
+    "prescription_sha256": "38b35460afe2b306b8fc2b9be36ce729da09a351b3a3169a4a118a9c0e6cd567",
+    "benchmark_sha256": "9d618c829b89340fad388275c0f10f3d86b7fd4137d26eb8ffbbc9ca6b3f78cf",
+    "acceptance_config_sha256": "4a402483e2d277e691f6665a87e41e849db0cf5242446f326ba82d394d10696e"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US4540248A-e1",
+   "patent": "US 4540248 A",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.15,
+    "length": 0.9
+   },
+   "task": "093-US4540248A-e1-stretch-length90-wd115-s1",
+   "inputs": {
+    "prescription_sha256": "38b35460afe2b306b8fc2b9be36ce729da09a351b3a3169a4a118a9c0e6cd567",
+    "benchmark_sha256": "9d618c829b89340fad388275c0f10f3d86b7fd4137d26eb8ffbbc9ca6b3f78cf",
+    "acceptance_config_sha256": "0bec0a291c7b32f5877d1a4d9babf6d81ade4e9f29e30c47d34190b5c9b9a3f2"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US4540248A-e1",
+   "patent": "US 4540248 A",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.25
+   },
+   "task": "094-US4540248A-e1-stretch-wd125-s1",
+   "inputs": {
+    "prescription_sha256": "38b35460afe2b306b8fc2b9be36ce729da09a351b3a3169a4a118a9c0e6cd567",
+    "benchmark_sha256": "9d618c829b89340fad388275c0f10f3d86b7fd4137d26eb8ffbbc9ca6b3f78cf",
+    "acceptance_config_sha256": "02973e6bee783a814b9556eb998c850b56ef8bd1ba2d98414cad6b7a6a872fa0"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US4540248A-e1",
+   "patent": "US 4540248 A",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "length": 0.85
+   },
+   "task": "095-US4540248A-e1-stretch-length85-s1",
+   "inputs": {
+    "prescription_sha256": "38b35460afe2b306b8fc2b9be36ce729da09a351b3a3169a4a118a9c0e6cd567",
+    "benchmark_sha256": "9d618c829b89340fad388275c0f10f3d86b7fd4137d26eb8ffbbc9ca6b3f78cf",
+    "acceptance_config_sha256": "ee6f17363541a323cef27f542c8f57898488e23f8f7fa96ab77b4e86ec8fedf8"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US4540248A-e2",
+   "patent": "US 4540248 A",
+   "class": "main",
+   "tier": "default",
+   "seed": 1,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "096-US4540248A-e2-default-s1",
+   "inputs": {
+    "prescription_sha256": "b41d6e796bb8924c0dbf82e2c5d6fb9058c4ad795bc74550152b18b1b3b84486",
+    "benchmark_sha256": "e4d679bb3f9a64007a606c71af27a9cdd95d55d391c0fcff68d8b42022dc8a30",
+    "acceptance_config_sha256": "accbde7ca7e105aa9c68bf896feaf56f65be502caeba17da84e134e36b329b49"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US4540248A-e2",
+   "patent": "US 4540248 A",
+   "class": "main",
+   "tier": "default",
+   "seed": 2,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "097-US4540248A-e2-default-s2",
+   "inputs": {
+    "prescription_sha256": "b41d6e796bb8924c0dbf82e2c5d6fb9058c4ad795bc74550152b18b1b3b84486",
+    "benchmark_sha256": "e4d679bb3f9a64007a606c71af27a9cdd95d55d391c0fcff68d8b42022dc8a30",
+    "acceptance_config_sha256": "accbde7ca7e105aa9c68bf896feaf56f65be502caeba17da84e134e36b329b49"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US4540248A-e2",
+   "patent": "US 4540248 A",
+   "class": "main",
+   "tier": "default",
+   "seed": 3,
+   "radius_rel": 0.01,
+   "thickness_rel": 0.03,
+   "amplify": true,
+   "stretch": {},
+   "task": "098-US4540248A-e2-default-s3",
+   "inputs": {
+    "prescription_sha256": "b41d6e796bb8924c0dbf82e2c5d6fb9058c4ad795bc74550152b18b1b3b84486",
+    "benchmark_sha256": "e4d679bb3f9a64007a606c71af27a9cdd95d55d391c0fcff68d8b42022dc8a30",
+    "acceptance_config_sha256": "accbde7ca7e105aa9c68bf896feaf56f65be502caeba17da84e134e36b329b49"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US4540248A-e2",
+   "patent": "US 4540248 A",
+   "class": "main",
+   "tier": "hard",
+   "seed": 1,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "099-US4540248A-e2-hard-s1",
+   "inputs": {
+    "prescription_sha256": "b41d6e796bb8924c0dbf82e2c5d6fb9058c4ad795bc74550152b18b1b3b84486",
+    "benchmark_sha256": "e4d679bb3f9a64007a606c71af27a9cdd95d55d391c0fcff68d8b42022dc8a30",
+    "acceptance_config_sha256": "accbde7ca7e105aa9c68bf896feaf56f65be502caeba17da84e134e36b329b49"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US4540248A-e2",
+   "patent": "US 4540248 A",
+   "class": "main",
+   "tier": "hard",
+   "seed": 2,
+   "radius_rel": 0.08,
+   "thickness_rel": 0.24,
+   "amplify": false,
+   "stretch": {},
+   "task": "100-US4540248A-e2-hard-s2",
+   "inputs": {
+    "prescription_sha256": "b41d6e796bb8924c0dbf82e2c5d6fb9058c4ad795bc74550152b18b1b3b84486",
+    "benchmark_sha256": "e4d679bb3f9a64007a606c71af27a9cdd95d55d391c0fcff68d8b42022dc8a30",
+    "acceptance_config_sha256": "accbde7ca7e105aa9c68bf896feaf56f65be502caeba17da84e134e36b329b49"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US4540248A-e2",
+   "patent": "US 4540248 A",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.15,
+    "length": 0.9
+   },
+   "task": "101-US4540248A-e2-stretch-length90-wd115-s1",
+   "inputs": {
+    "prescription_sha256": "b41d6e796bb8924c0dbf82e2c5d6fb9058c4ad795bc74550152b18b1b3b84486",
+    "benchmark_sha256": "e4d679bb3f9a64007a606c71af27a9cdd95d55d391c0fcff68d8b42022dc8a30",
+    "acceptance_config_sha256": "c5765827168dda894365e9daa46f60ded156ebf437e65ab15ac78a9681c43b3f"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US4540248A-e2",
+   "patent": "US 4540248 A",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "wd": 1.25
+   },
+   "task": "102-US4540248A-e2-stretch-wd125-s1",
+   "inputs": {
+    "prescription_sha256": "b41d6e796bb8924c0dbf82e2c5d6fb9058c4ad795bc74550152b18b1b3b84486",
+    "benchmark_sha256": "e4d679bb3f9a64007a606c71af27a9cdd95d55d391c0fcff68d8b42022dc8a30",
+    "acceptance_config_sha256": "7999d0e419a69443e35f44c8d985e354737517cd1359e23e96cd6e9a5ab7d041"
+   }
+  },
+  {
+   "group": "validation",
+   "entry": "US4540248A-e2",
+   "patent": "US 4540248 A",
+   "class": "stress",
+   "tier": "stretch",
+   "seed": 1,
+   "radius_rel": 0.0,
+   "thickness_rel": 0.0,
+   "amplify": false,
+   "stretch": {
+    "length": 0.85
+   },
+   "task": "103-US4540248A-e2-stretch-length85-s1",
+   "inputs": {
+    "prescription_sha256": "b41d6e796bb8924c0dbf82e2c5d6fb9058c4ad795bc74550152b18b1b3b84486",
+    "benchmark_sha256": "e4d679bb3f9a64007a606c71af27a9cdd95d55d391c0fcff68d8b42022dc8a30",
+    "acceptance_config_sha256": "4f51b2a923a38430d6f643684b5d0eeb9b3ab429bdc81c334b625b29c9d75fd6"
+   }
+  }
+ ]
+}

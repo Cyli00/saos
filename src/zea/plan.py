@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from pathlib import Path
 from typing import Any
 
 from zea import acceptance, interview, jobs, library
-from zea.protocol import ErrorCode, ZeaError
-from zea.spec import parse_spec
+from zea import protocol
+from zea.protocol import ErrorCode, ZeaError, read_json
+from zea.spec import Spec, parse_spec
 
 
 def digest(data: Any) -> str:
@@ -18,16 +18,7 @@ def digest(data: Any) -> str:
 
 
 def write_json(path: Path, data: Any) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
-    os.replace(tmp, path)
-
-
-def read_json(path: Path) -> Any:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        raise ZeaError(ErrorCode.BAD_ARGS, f"无法读取设计计划 {path}：{exc}") from exc
+    protocol.write_json(path, data, strict=True)
 
 
 def _draft_job(job: jobs.Job) -> None:
@@ -38,11 +29,14 @@ def _draft_job(job: jobs.Job) -> None:
         raise ZeaError(ErrorCode.BAD_ARGS, "此任务的设计计划已确认，修改要求请新建任务")
 
 
-def candidates(result: dict[str, Any]) -> list[dict[str, Any]]:
-    spec = parse_spec(result["spec"])
+def _query(spec: Spec, limit: int) -> list[dict[str, Any]]:
     return library.query(na=spec.na, magnification=spec.magnification, correction_class=spec.correction_class,
                          objective_field_number=spec.objective_field_number, working_distance_min=spec.item("working_distance").threshold,
-                         tube_lens_mm=spec.tube_lens_focal_length, limit=5)
+                         tube_lens_mm=spec.tube_lens_focal_length, limit=limit)
+
+
+def candidates(result: dict[str, Any]) -> list[dict[str, Any]]:
+    return _query(parse_spec(result["spec"]), 5)
 
 
 def starting_design(entry_id: str, result: dict[str, Any], rationale: str) -> dict[str, Any]:
@@ -52,10 +46,7 @@ def starting_design(entry_id: str, result: dict[str, Any], rationale: str) -> di
     if entry.get("status") != "admitted" or not entry.get("repro", {}).get("pass"):
         interview.bad("初始结构必须已经收录并通过复现校验")
     spec = parse_spec(result["spec"])
-    ranked = library.query(na=spec.na, magnification=spec.magnification, correction_class=spec.correction_class,
-                           objective_field_number=spec.objective_field_number, working_distance_min=spec.item("working_distance").threshold,
-                           tube_lens_mm=spec.tube_lens_focal_length, limit=100000)
-    match = next(r for r in ranked if r["id"] == entry_id)
+    match = next(r for r in _query(spec, len(library.all_entries())) if r["id"] == entry_id)
     notes = list(match["notes"])
     if match["scaled"]["optical_length_mm"] > spec.item("optical_length").threshold:
         notes.append("按焦距缩放的光学长度估计超过规格上限，需要优化；该估计尚未重新追迹。")

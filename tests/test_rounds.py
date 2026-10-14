@@ -36,3 +36,14 @@ def test_infinite_rounds_count_as_no_progress():
 def test_round_limit():
     history = [10.0 * 0.9**k for k in range(21)]
     assert decide(history)["status"] == "limit"
+
+
+def test_explicit_parameters_do_not_touch_defaults():
+    from zea import rounds
+
+    traj = [10.0, 5.0, 4.98, 4.97, 4.96]
+    assert decide(traj)["status"] == "stagnated"
+    assert decide(traj, n=4)["status"] == "continue"
+    assert decide([3.0, 2.0, 1.0], cap=2)["status"] == "limit"
+    assert significant(1.0, 0.995, rel=0.005) is True
+    assert (rounds.STAGNATION_ROUNDS, rounds.STAGNATION_REL, rounds.MAX_ROUNDS) == (3, 0.01, 20)

@@ -13,7 +13,7 @@ agent 只通过 `uv run zea ...` 操作 Zemax。每条命令向标准输出打�
 
 | 命令 | 作用 |
 |---|---|
-| `zea daemon start [--mode standalone\|extension]` | 启动后台进程并连接 OpticStudio 2024 R1，就绪后返回。本机实测约 6 s。`extension` 连接手动打开、已点了 Interactive Extension 的窗口，见下文 |
+| `zea daemon start [--mode standalone\|extension]` | 启动后台进程并连接 OpticStudio 2024 R1，就绪后返回。本机实测约 6 s。`extension` 自动准备已打开窗口的 Interactive Extension 并连接，见下文 |
 | `zea daemon status` | 是否在运行、连接是否正常、当前加载的镜头 |
 | `zea daemon stop [--discard] [--force]` | 正常退出，等后台进程和它的 OpticStudio 都退出后才返回。有未保存修改时拒绝退出，除非加 `--discard`；`--force` 在无法正常退出时强制结束 |
 | `zea job create --name N [--spec FILE]` | 新建设计任务，编号为 `时间-名字`，规格文件复制进任务目录 |
@@ -30,8 +30,7 @@ agent 只通过 `uv run zea ...` 操作 Zemax。每条命令向标准输出打�
 | `zea lens build --job J PRESCRIPTION --as NAME [--overwrite]` | 按处方用 ZOS-API 搭建镜头，保存到 lenses/ 并加载 |
 | `zea lens repro --job J EXPECT` | 复现校验：焦距、物方 NA、顶点工作距离、f_TL/EFL 与期望值比较。每项允许的偏差取相对误差 1% 与 EXPECT 中 `tolerance_mm`（原文印刷精度的舍入包络半宽）的较大者。只临时调焦，结束后恢复 |
 | `zea lens perturb --job J --seed S --radius-rel A [--thickness-rel B]` | 受控扰动：物镜各面曲率、厚度按固定随机种子均匀改变 |
-| `zea eval accept --job J [--spec FILE] [--no-precheck]` | 按光学规格做验收评估，结果和验收模型存到任务的 eval/。`--no-precheck` 仅供诊断：关闭调焦前的轴上光线预检，结果另存为 `.accept.noprecheck.json` |
-| `zea eval precheck --job J [--spec FILE]` | 诊断：只搭验收模型并做调焦前的轴上光线预检，不调焦、不测量 |
+| `zea eval accept --job J [--spec FILE]` | 按光学规格做验收评估，结果和验收模型存到任务的 eval/。结果的 `focus_trace` 列出调焦的每个试探位置（波长、厚度、轴上光线失败数、c4、拟合残差） |
 | `zea opt vary --job J --param radius\|thickness\|conic --surfaces 1-16 [--off]` | 设变量或取消变量。物面只允许厚度（即无盖玻片时的工作距离间隔） |
 | `zea opt merit --job J clear\|wizard\|add\|show [--file JSON]` | 评价函数：清空；按向导生成默认评价函数（type、data、reference、rings、arms 等）；追加操作数列表；查看 |
 | `zea opt local --job J [--cycles auto\|1\|5\|10\|50]` | 局部优化（阻尼最小二乘） |
@@ -46,7 +45,6 @@ agent 只通过 `uv run zea ...` 操作 Zemax。每条命令向标准输出打�
 | `zea bench plan --batch B` | 生成正式批次的实验清单 `library/calibration/B.json`，记录任务、分组、策略版本和代码哈希；已存在时拒绝覆盖 |
 | `zea bench run --batch B --task T [--cores K]` | 按清单运行正式任务；客户端或后台进程的代码版本与清单不同、或后台进程不是 standalone 时拒绝。本 ZEA_HOME 中已有该任务时续跑 |
 | `zea bench calibrate --batch B --homes DIR… [--validate N REL CAP]` | 按清单准入正式轨迹并列出排除原因、重复起点，在调参组主实验上按冻结规则选停机参数；给出 `--validate` 时在验证组主实验和两组压力测试上检验固定参数 |
-| `zea bench replay [--homes DIR…] [--policy P]` | 开发用：在已有轨迹上离线比较停机参数，不做正式准入 |
 
 结构库的收录规则、提取格式和基准规格的推导见 [library.md](./library.md)。
 
@@ -56,13 +54,14 @@ agent 只通过 `uv run zea ...` 操作 Zemax。每条命令向标准输出打�
 
 `daemon start` 使用 Windows 无窗口方式启动后台 Python，标准输出和错误输出写入 `<ZEA_HOME>/daemon/daemon.log`。旧启动方式使用 `DETACHED_PROCESS`，虚拟环境启动器的解释器子进程仍可能弹出空白终端；改为 `CREATE_NO_WINDOW` 后，新启动的后台进程不再创建该控制台窗口。已运行的进程需等任务结束后正常停止，再启动才会采用新方式。
 
-在 Git Bash 中，用 `ZEA_HOME=work-verify uv run zea daemon status` 查询指定实例的连接状态和已加载任务。执行记录位于 `<ZEA_HOME>/jobs/<任务编号>/log.jsonl`，包含操作名、成功与否及耗时；可用 `tail -f` 跟随查看。每条记录在操作完成后写入，因此长时间计算中日志没有新增记录不代表进程已卡死。后台串行处理请求，忙碌时 `daemon status` 也可能等待并超时；目前没有独立的实时进度接口。
+在 Git Bash 中，用 `ZEA_INSTANCE=verify uv run zea daemon status` 查询指定实例的连接状态和已加载任务。执行记录位于 `<ZEA_HOME>/jobs/<任务编号>/log.jsonl`，包含操作名、成功与否及耗时；可用 `tail -f` 跟随查看。每条记录在操作完成后写入，因此长时间计算中日志没有新增记录不代表进程已卡死。后台串行处理请求，忙碌时 `daemon status` 也可能等待并超时；目前没有独立的实时进度接口。
 
 ## 连接手动打开的窗口（extension 模式）
 
-调试时可以让后台进程连接一个手动打开的 OpticStudio 窗口，在窗口里看到镜头的变化：先在 OpticStudio 中点 Programming → Interactive Extension，检查并取消勾选对话框中的 “Auto close on disconnect”，保持对话框打开，再 `zea daemon start --mode extension`。这是开启可见调试前的检查项；目前需要在界面确认，命令尚未自动检查该选项。
+调试时可以让后台进程连接一个手动打开的 OpticStudio 窗口，在窗口里看到镜头的变化：打开 OpticStudio 后执行 `zea daemon start --mode extension`。启动流程通过 Windows UI Automation 选择 Programming、打开 Interactive Extension，将 Auto Close on Disconnect 设为 Off，核对等待连接状态并读取实际实例编号。已有等待对话框会直接复用；窗口已连接到其他扩展时拒绝接管。存在多个窗口时用 `ZEA_UI_PID` 指定进程编号，否则拒绝猜选。控件不可用或窗口被模态对话框阻塞时返回明确错误。
 
 - 之前实测后台进程退出后扩展对话框关闭，需要重新开启；用户随后在本机确认，取消勾选 “Auto close on disconnect” 即可避免该问题。重连前检查对话框仍处于等待连接状态，若已关闭则重新开启。没有开启交互扩展时启动返回 `ZOS_ERROR`。该设置不代替 OpticStudio 进程意外退出后的连接恢复处理。
+- 窗口实例与后台实例的验收结果在数值上相差约 10⁻⁵（相对），拟合残差贴近界限时结论可能翻转（docs/step5-calibration.md 3.2 节）。正式实验只用 standalone 实例。
 - 窗口实时刷新会拖慢运算：实测一次验收评估 98 s，standalone 下为 13 s。所以验收评估、轮次记录、复现校验期间暂停刷新，结束后窗口显示最终状态（暂停后验收评估为 22 s）。局部优化不暂停，实测 15.8 s，standalone 下为 13 s。设环境变量 `ZEA_UI_LIVE=1` 后全程刷新。
 - 后台进程退出时不关闭窗口。
 
@@ -86,19 +85,24 @@ agent 只通过 `uv run zea ...` 操作 Zemax。每条命令向标准输出打�
 | `JOB_NOT_FOUND` / `JOB_EXISTS` / `FILE_NOT_FOUND` / `FILE_EXISTS` | 任务或文件不存在、已存在 |
 | `BAD_ARGS` / `UNKNOWN_OP` | 参数错误，包括不在当前玻璃目录中的材料名、未知的操作数 |
 
-验收评估无法完成时（检查光线失败或被截断、调焦不收敛、Zernike 拟合残差超限），命令本身成功返回，结果中 `verdict` 为 `invalid`、`spec_shortfall` 为 `inf`，`invalid` 字段说明原因。
+验收评估无法完成时（检查光线失败或被截断、调焦时轴上光线失败且回退后仍无有效位置、调焦不收敛、Zernike 拟合残差超限），命令本身成功返回，结果中 `verdict` 为 `invalid`、`spec_shortfall` 为 `inf`，`invalid` 字段说明原因。
+
+`DAEMON_TIMEOUT` 只表示客户端没有及时收到响应，后台可能仍在计算，或随后保存完整结果。先检查对应任务的 `eval/<镜头名>.accept.json`，核对输入、规格及运行版本后再决定是否重试；不要直接将超时当作 `invalid` 或自动终止实例。`focus_trace` 随完整结果保存，不保证进程被强制结束前的每一步都已落盘。第 5 步曾在客户端 120 s 超时后取得后台耗时 173.85 s 的完整结果。
 
 ## 目录
 
-默认在仓库下的 `work/`（已加入 .gitignore），可用环境变量 `ZEA_HOME` 改到别处。
+运行产物全部在仓库下的 `work/`（已加入 .gitignore）。一个后台进程对应一个实例目录 `work/<实例名>/`，默认实例是 `main`；并行批次、专项探索各用独立实例，用 `ZEA_INSTANCE=<实例名>` 选择，不要在仓库根目录另建 `work-*`。`ZEA_HOME` 仍可指向任意路径，优先级最高，主要供测试隔离。
+
+用户需求和访谈记录属于具体设计任务，保存在该任务的 `sources/` 下，不放进仓库的 `docs/`。`docs/` 只放跨任务的方法、规则和命令说明。
 
 ```
-work/
+work/<实例名>/
   daemon/            state.json、authkey、daemon.log（后台进程运行时存在）
   jobs/<job_id>/
     job.json         任务状态：status、current_lens、last_saved 等
     spec/            光学规格文件
-    sources/         提取结果、处方、复现期望值、评价函数设置等输入材料
+    sources/         输入材料：用户需求访谈（interview.md、interview.yaml）、提取结果、处方、复现期望值、评价函数设置等
+    notes/           agent 对该任务的设计记录（框架搭建、检查结论等）
     lenses/          镜头文件副本，所有读写都限制在这里；lenses/rounds/ 存各调整轮次
     eval/            验收评估结果（<镜头名>.accept.json）和验收模型（.accept.zmx）
     rounds.jsonl     调整轮次记录：轮次、规格差距、各项单项差距、评价函数值、说明
@@ -110,7 +114,8 @@ work/
 
 | 变量 | 默认值 | 用途 |
 |---|---|---|
-| `ZEA_HOME` | `<仓库>/work` | 任务目录和后台进程状态的位置；命名管道名也由它推出 |
+| `ZEA_INSTANCE` | `main` | 实例名，运行目录为 `<仓库>/work/<实例名>`；只允许字母、数字、`-`、`_` |
+| `ZEA_HOME` | 未设置 | 直接指定运行目录，优先于 `ZEA_INSTANCE`；任务目录、后台进程状态和命名管道名都由最终目录推出 |
 | `ZEA_OPTICSTUDIO_DIR` | `C:\Program Files\Ansys Zemax OpticStudio 2024 R1.00` | 加载 ZOS-API DLL 的目录 |
 | `ZEA_BACKEND` | `zos` | 测试时设为 `fake`，不启动 Zemax |
 | `ZEA_LIBRARY` | `<仓库>/library` | 初始结构库的位置 |
@@ -120,3 +125,12 @@ work/
 
 - `uv run pytest`：不启动 Zemax 的单元测试，以及用假后端启动真实后台子进程的生命周期测试。
 - `ZEA_RUN_ZEMAX=1 uv run pytest -m zemax -s`：在本机 OpticStudio 上跑第 2 步的命令流程（`test_zemax_e2e.py`）和第 3 步的最小闭环（`test_zemax_loop.py`），共约 80 s。
+
+## 显性调试命令
+
+- `zea lens capture --job J --as backup.zmx`：将窗口当前内容另存到任务，不覆盖源文件或已有副本；可保留连接前尚未保存的修改。
+- `zea lens view --job J`：extension 模式下显示 Lens Data、评价函数编辑器和 8 种原生分析，设为 AllWindows 并刷新。standalone 模式下返回 BAD_ARGS。
+
+extension 模式下，窗口有 zea 之外的未保存修改（OpticStudio 的 NeedsSave）时禁止换镜头。实测（2024 R1）临时增删评价函数行的 Zernike 拟合、把面参数写回相同的值都会让 NeedsSave 置位，所以 zea 自己的修改仍以后台进程记录的 dirty 为准；复现校验结束时对未修改的镜头直接重新加载文件，不留下 NeedsSave。分析窗口刷新是否会置位尚未实测；遇到误报时，确认要保存当前任务内容后用 `lens save --no-verify` 保存再切换。
+
+光纤侧视框架的搭建脚本已移出命令行，见 `experiments/fiber/` 和 TODO。

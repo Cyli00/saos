@@ -1,6 +1,6 @@
 """停机参数校准的正式实验：实验清单、样本准入、参数选择与验证（DESIGN.md 实现顺序第 5 步）。
 
-与 bench.py 分开：bench.py 负责按参考策略跑出完整轨迹；本模块决定哪些轨迹算正式样本，
+与 runner.py 分开：runner.py 负责按参考策略跑出完整轨迹；本模块决定哪些轨迹算正式样本，
 以及按事先冻结的规则从候选参数中选择、在独立验证组上检验。规则见 docs/step5-calibration.md 第 2 节。
 """
 
@@ -77,10 +77,10 @@ def effective_spec(entry: str, stretch: dict[str, float]) -> dict[str, Any]:
     """任务实际使用的光学规格：库中基准规格，拉伸规格时按原结构实测值改界限。"""
     import yaml
 
-    from zea import bench
+    from zea.bench import runner
 
     spec = yaml.safe_load((library.entry_dir(entry) / "benchmark.yaml").read_text(encoding="utf-8"))
-    return bench.stretched_spec(spec, library.load_entry(entry)["metrics"], stretch) if stretch else spec
+    return runner.stretched_spec(spec, library.load_entry(entry)["metrics"], stretch) if stretch else spec
 
 
 def task_inputs(entry: str, stretch: dict[str, float]) -> dict[str, str]:
@@ -298,20 +298,11 @@ def readiness(manifest: dict[str, Any], got: dict[str, Any], group: str, cls: st
 
 def stop_round(traj: list[float], n: int, rel: float, cap: int) -> tuple[int, str]:
     """按停机参数回放：返回停在第几轮及原因（pass / stagnated / limit）。轨迹已完整观察到 OBSERVE_ROUNDS。"""
-    saved = (rounds.STAGNATION_ROUNDS, rounds.STAGNATION_REL, rounds.MAX_ROUNDS)
-    rounds.STAGNATION_ROUNDS, rounds.STAGNATION_REL, rounds.MAX_ROUNDS = n, rel, cap
-    try:
-        for k in range(1, len(traj) + 1):
-            d = rounds.decide(traj[:k])
-            if d["status"] != "continue":
-                return d["rounds"], d["status"]
-    finally:
-        rounds.STAGNATION_ROUNDS, rounds.STAGNATION_REL, rounds.MAX_ROUNDS = saved
+    for k in range(1, len(traj) + 1):
+        d = rounds.decide(traj[:k], n, rel, cap)
+        if d["status"] != "continue":
+            return d["rounds"], d["status"]
     raise ValueError("轨迹未观察到停机或通过")
-
-
-def significant(best: float, g: float, rel: float) -> bool:
-    return math.isfinite(g) and (math.isinf(best) or (best - g) / best >= rel)
 
 
 def evaluate(samples: list[dict[str, Any]], n: int, rel: float, cap: int) -> dict[str, Any]:
@@ -328,7 +319,7 @@ def evaluate(samples: list[dict[str, Any]], n: int, rel: float, cap: int) -> dic
             out["false_stops"].append(s["task"])
         if status != "pass":
             g_stop, g_later = min(traj[: k + 1]), min(traj[k + 1 :], default=math.inf)
-            if significant(g_stop, g_later, REPORT_REL):
+            if rounds.significant(g_stop, g_later, REPORT_REL):
                 out["missed"].append({"task": s["task"], "stop": k, "g_at_stop": g_stop, "g_later_best": g_later})
     out["time_s"] = round(out["time_s"], 1)
     return out
@@ -349,7 +340,7 @@ def categorize(s: dict[str, Any], false_stopped_by_any: bool) -> str:
         return "快速成功" if s["passed_at"] <= QUICK_ROUNDS else "其他成功"
     best, last = traj[0], 0
     for k, g in enumerate(traj[1:], start=1):
-        if significant(best, g, REPORT_REL):
+        if rounds.significant(best, g, REPORT_REL):
             last = k
         best = min(best, g)
     if last == 0:
@@ -401,7 +392,8 @@ def select(samples: list[dict[str, Any]], ready: dict[str, Any]) -> dict[str, An
 
 
 def validate(samples: list[dict[str, Any]], n: int, rel: float, cap: int, ready: dict[str, Any]) -> dict[str, Any]:
-    """只有清单中该组任务全部合格完成、且没有误停时，才是"独立验证通过"。"""
+    """清单中该组任务全部合格完成、且没有误停时，passed 为 True，状态写"本验证集未发现误停"：
+    它只说明这组样本上没有误停，不说明参数已经校准（是否校准看 overall_status）。"""
     out: dict[str, Any] = {"params": (n, rel, cap), "coverage": coverage(samples), "readiness": ready}
     if not samples:
         return {**out, "passed": None, "status": "无验证结论：没有合格样本"}
@@ -412,4 +404,13 @@ def validate(samples: list[dict[str, Any]], n: int, rel: float, cap: int, ready:
         return {**out, "passed": False, "status": "所选规则未通过验证（出现误停）"}
     if not ready["complete"]:
         return {**out, "passed": None, "status": "阶段性统计：清单任务未全部合格完成，暂无验证结论"}
-    return {**out, "passed": True, "status": "独立验证通过"}
+    return {**out, "passed": True, "status": "本验证集未发现误停"}
+
+
+def overall_status(tuning: dict[str, Any], validation: dict[str, Any] | None) -> str:
+    """一句话的总体状态，避免只看验证结果就误以为参数已经校准。"""
+    calibrated = tuning.get("chosen") is not None and tuning["status"].startswith("找到满足调参准则的候选")
+    head = "停机参数已按调参准则选出" if calibrated else "校准证据不足，停机参数未校准"
+    if validation is None:
+        return f"{head}；尚未运行验证"
+    return f"{head}；验证：{validation['status']}"

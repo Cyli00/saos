@@ -18,7 +18,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import math
 import os
 from pathlib import Path
@@ -27,10 +26,10 @@ from typing import Any
 import yaml
 
 from zea import config
-from zea.protocol import ErrorCode, ZeaError
+from zea.protocol import ErrorCode, ZeaError, read_json, write_json
+from zea.spec import REFERENCE_TUBE_MM
 
 ENTRY_ID_CHARS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.")
-REFERENCE_TUBE_MM = 200.0
 # 第 1 步格式默认值；基准规格从测量值推导时的出发点
 DEFAULT_LENGTH_MM = 45.0
 DEFAULT_DIAMETER_MM = 16.0
@@ -53,17 +52,6 @@ def entry_dir(entry_id: str) -> Path:
     return library_dir() / "entries" / entry_id
 
 
-def _write_json(path: Path, data: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    from zea.protocol import jsonable
-
-    path.write_text(json.dumps(jsonable(data), ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def read_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
 def load_entry(entry_id: str) -> dict[str, Any]:
     path = entry_dir(entry_id) / "entry.json"
     if not path.is_file():
@@ -72,7 +60,7 @@ def load_entry(entry_id: str) -> dict[str, Any]:
 
 
 def save_entry(entry_id: str, entry: dict[str, Any]) -> None:
-    _write_json(entry_dir(entry_id) / "entry.json", entry)
+    write_json(entry_dir(entry_id) / "entry.json", entry)
 
 
 def write_file(entry_id: str, name: str, data: Any) -> Path:
@@ -81,7 +69,7 @@ def write_file(entry_id: str, name: str, data: Any) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(data if isinstance(data, str) else yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
     else:
-        _write_json(path, data)
+        write_json(path, data)
     return path
 
 

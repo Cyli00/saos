@@ -24,6 +24,7 @@ BEREK_OMEGA = 0.0014
 FIELD_POINTS = (0.0, 0.3, 0.5, 0.7, 0.85, 1.0)
 PFR_GRID = tuple(j / 20 for j in range(21))
 MARECHAL_WFE = 1 / 14
+REFERENCE_TUBE_MM = 200.0  # 参考筒镜默认焦距
 
 
 def _value(raw: Any) -> Any:
@@ -177,7 +178,7 @@ def parse_spec(data: dict[str, Any]) -> Spec:
     na = _need(data, "na", float)
     if not 0 < na <= 0.65:
         raise ZeaError(ErrorCode.BAD_ARGS, f"第一版只支持干物镜 NA ≤ 0.65，收到 {na}")
-    f_tl = float(_opt(data, "tube_lens_focal_length", 200.0))
+    f_tl = float(_opt(data, "tube_lens_focal_length", REFERENCE_TUBE_MM))
     ofn = float(_opt(data, "objective_field_number", 22.0 if cls == "plan_achromat" else 18.0))
     for name, value in (("magnification", m), ("tube_lens_focal_length", f_tl), ("objective_field_number", ofn)):
         if not (math.isfinite(value) and value > 0):

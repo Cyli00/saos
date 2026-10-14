@@ -16,6 +16,7 @@ from typing import Any
 
 from zea import client, jobs
 from zea.protocol import ErrorCode, ZeaError, fail, jsonable, ok
+from zea.protocol import read_json as _read_json
 
 
 def _lens_request(op: str, args: argparse.Namespace, payload: dict[str, Any]) -> Any:
@@ -54,6 +55,8 @@ def cmd_job(args: argparse.Namespace) -> Any:
 
 def cmd_lens(args: argparse.Namespace) -> Any:
     action = args.action
+    if action == "capture":
+        return _lens_request("lens.capture", args, {"file": args.as_name})
     if action == "import":
         payload: dict[str, Any] = {"src": str(Path(args.src).resolve()), "overwrite": args.overwrite}
         if args.as_name:
@@ -63,10 +66,8 @@ def cmd_lens(args: argparse.Namespace) -> Any:
         return _lens_request("lens.load", args, {"file": args.file, "discard": args.discard})
     if action == "unload":
         return _lens_request("lens.unload", args, {"discard": args.discard})
-    if action == "info":
-        return _lens_request("lens.info", args, {})
-    if action == "surfaces":
-        return _lens_request("lens.surfaces", args, {})
+    if action in ("info", "surfaces", "view"):
+        return _lens_request(f"lens.{action}", args, {})
     if action == "set":
         return _lens_request("lens.set", args, {"surface": args.surface, "param": args.param, "value": args.value})
     if action == "save":
@@ -89,13 +90,6 @@ def cmd_lens(args: argparse.Namespace) -> Any:
     if action == "perturb":
         return _lens_request("lens.perturb", args, {"seed": args.seed, "radius_rel": args.radius_rel, "thickness_rel": args.thickness_rel})
     raise AssertionError(action)
-
-
-def _read_json(path: str) -> Any:
-    try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        raise ZeaError(ErrorCode.BAD_ARGS, f"无法读取 JSON 文件 {path}：{exc}") from exc
 
 
 def _surface_list(text: str) -> list[int]:
@@ -139,10 +133,6 @@ def cmd_eval(args: argparse.Namespace) -> Any:
     payload: dict[str, Any] = {"job": args.job}
     if args.spec:
         payload["spec"] = args.spec
-    if args.action == "precheck":
-        return client.request("eval.precheck", payload, timeout=args.timeout)
-    if args.no_precheck:
-        payload["precheck"] = False
     return client.request("eval.accept", payload, timeout=args.timeout)
 
 
@@ -219,6 +209,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("src")
     p.add_argument("--as", dest="as_name", help="在 lenses/ 中的文件名")
     p.add_argument("--overwrite", action="store_true")
+    p = lens_cmd("capture", "将当前窗口内容另存为任务副本，保留原文件")
+    p.add_argument("--as", dest="as_name", required=True)
+    lens_cmd("view", "extension 模式下打开并刷新原生分析窗口")
     p = lens_cmd("load", "加载任务中的镜头文件")
     p.add_argument("file", help="相对 lenses/ 的文件名")
     p.add_argument("--discard", action="store_true", help="放弃当前镜头未保存的修改")
@@ -258,12 +251,7 @@ def build_parser() -> argparse.ArgumentParser:
     acc = esub.add_parser("accept", help="按光学规格对当前已保存的镜头做验收评估")
     acc.add_argument("--job", required=True)
     acc.add_argument("--spec", help="任务目录内的规格文件，默认用 job.json 中的 spec")
-    acc.add_argument("--no-precheck", action="store_true", help="诊断用：关闭调焦前的轴上光线预检，结果另存为 .accept.noprecheck.json")
     acc.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
-    pre = esub.add_parser("precheck", help="诊断用：只做调焦前的轴上光线预检")
-    pre.add_argument("--job", required=True)
-    pre.add_argument("--spec", help="任务目录内的规格文件，默认用 job.json 中的 spec")
-    pre.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     ev.set_defaults(func=cmd_eval)
 
     op = sub.add_parser("opt", help="优化（转发给后台进程）")
@@ -297,8 +285,10 @@ def build_parser() -> argparse.ArgumentParser:
     rd.set_defaults(func=cmd_round)
 
     from zea import library_cli, plan_cli
+    from zea.bench import cli as bench_cli
 
     library_cli.register(sub, _Parser, client.DEFAULT_REQUEST_TIMEOUT_S)
+    bench_cli.register(sub, _Parser, client.DEFAULT_REQUEST_TIMEOUT_S)
     plan_cli.register(sub, _Parser)
 
     ad = sub.add_parser("adapt", help="把提取的面数据适配成标准设计布局的处方")

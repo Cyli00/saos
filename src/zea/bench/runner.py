@@ -3,8 +3,8 @@
 对一个基准案例：搭建收录结构 → 受控扰动 → 第 0 轮验收 → 按参考策略逐轮优化并验收，
 记录每轮的规格差距，写入任务目录的 bench.jsonl。
 
-这里不调用 round.record，也不在中途按停滞规则停机：校准要看到完整的轨迹，
-停滞阈值和轮次上限由 replay() 在记录好的轨迹上离线回放比较。
+每轮用 round.record（observe）记录，但不在中途按停滞规则停机：校准要看到完整的轨迹，
+停滞阈值和轮次上限由 calibration 在记录好的轨迹上离线回放比较。
 
 参考策略（reference-v1）模拟一个按固定顺序放开变量、再针对未通过项加权的 agent：
   第 1 轮   变量：物镜各面曲率 + 工作距离间隔；评价函数：RMS 波前（质心，6 环 6 臂）+ 焦距 + 结构界限
@@ -386,25 +386,7 @@ def run_case(
     }
 
 
-# ---- 离线回放 ----
-
-
-def replay(trajectory: list[float], stagnation_rounds: int, stagnation_rel: float, max_rounds: int) -> dict[str, Any]:
-    """按给定停机参数回放一条完整轨迹：返回停在第几轮、停机原因、停机时的最好规格差距。"""
-    saved = (rounds.STAGNATION_ROUNDS, rounds.STAGNATION_REL, rounds.MAX_ROUNDS)
-    rounds.STAGNATION_ROUNDS, rounds.STAGNATION_REL, rounds.MAX_ROUNDS = stagnation_rounds, stagnation_rel, max_rounds
-    try:
-        for k in range(1, len(trajectory) + 1):
-            d = rounds.decide(trajectory[:k])
-            if d["status"] != "continue":
-                return {"stop_round": d["rounds"], "status": d["status"], "g_best": d["g_best"]}
-        return {"stop_round": None, "status": "unfinished", "g_best": min(trajectory)}
-    finally:
-        rounds.STAGNATION_ROUNDS, rounds.STAGNATION_REL, rounds.MAX_ROUNDS = saved
-
-
-def first_pass(trajectory: list[float]) -> int | None:
-    return next((k for k, g in enumerate(trajectory) if g == 0), None)
+# ---- 轨迹文件 ----
 
 
 def load_history(path: Path) -> list[dict[str, Any]]:
@@ -420,83 +402,11 @@ def last_event(path: Path, kind: str) -> dict[str, Any] | None:
     return events[-1] if events else None
 
 
-def completeness(job_dir: Path, bench_state: dict[str, Any]) -> str:
-    """complete：通过，或走满 max_rounds；interrupted：最后一条事件是实验中断；否则 incomplete。"""
-    path = Path(job_dir) / "bench.jsonl"
-    history = load_history(path)
-    entries = rounds.load(path)
-    if not history:
-        return "incomplete"
-    if history[-1]["spec_shortfall"] == 0 or len(history) - 1 >= int(bench_state.get("max_rounds", 10**9)):
-        return "complete"
-    return "interrupted" if entries and entries[-1].get("event") == "interrupted" else "incomplete"
-
-
-def load_trajectory(job_dir: Path) -> list[float]:
-    return [h["spec_shortfall"] for h in load_history(Path(job_dir) / "bench.jsonl")]
-
-
-def write_summary(path: Path, data: Any) -> None:
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
-
-
-def calibrate(trajectories: dict[str, list[float]], grid_rounds: tuple[int, ...], grid_rel: tuple[float, ...], grid_max: tuple[int, ...]) -> list[dict[str, Any]]:
-    """在完整轨迹上比较各组停机参数。只用停机时已经看到的轮次计算代价，不与停机后的轨迹相减。
-
-    rounds_used：各案例停机（或通过）时的轮次之和；轨迹没走到停机的按其长度计。
-    false_stops：停机时还没通过、但完整轨迹之后通过了的案例。
-    idle_rounds：未通过而停机的案例，停机轮次减去停机前最后一次明显进步的轮次（≥ 0）。
-    missed：停机之后最好规格差距又缩小至少 stagnation_rel 的案例（含 false_stops），记停机时与之后的最好值。
-    """
-    rows = []
-    for n in grid_rounds:
-        for rel in grid_rel:
-            for cap in grid_max:
-                out = {"stagnation_rounds": n, "stagnation_rel": rel, "max_rounds": cap, "passed": 0, "false_stops": [], "rounds_used": 0, "idle_rounds": 0, "missed": []}
-                for name, traj in trajectories.items():
-                    r = replay(traj, n, rel, cap)
-                    stop = r["stop_round"] if r["stop_round"] is not None else len(traj) - 1
-                    out["rounds_used"] += stop
-                    if r["status"] == "pass":
-                        out["passed"] += 1
-                        continue
-                    seen, after = traj[: stop + 1], traj[stop + 1 :]
-                    if first_pass(after) is not None:
-                        out["false_stops"].append(name)
-                    out["idle_rounds"] += stop - last_progress(seen, rel)
-                    g_stop, g_later = min(seen), min(after, default=math.inf)
-                    if g_later < g_stop and (math.isinf(g_stop) or (g_stop - g_later) / g_stop >= rel):
-                        out["missed"].append({"case": name, "stop_round": stop, "g_at_stop": g_stop, "g_later": g_later})
-                rows.append(out)
-    return rows
-
-
-def last_progress(trajectory: list[float], rel: float) -> int:
-    """规格差距最后一次相对此前最好值缩小至少 rel 的轮次（没有则为 0）。"""
-    best, last = trajectory[0], 0
-    for k, g in enumerate(trajectory[1:], start=1):
-        if math.isfinite(g) and (math.isinf(best) or (best - g) / best >= rel):
-            last = k
-        best = min(best, g)
-    return last
-
-
-def bench_jobs(homes: list[Path] | None = None) -> dict[Path, dict[str, Any]]:
-    """各 ZEA_HOME 下的全部基准任务：任务目录 → 扰动与条目信息。并行运行时每个后台进程有自己的 ZEA_HOME。"""
-    out = {}
-    for home in homes or [config.zea_home()]:
-        for state_file in sorted((Path(home) / "jobs").glob("*/job.json")):
-            state = json.loads(state_file.read_text(encoding="utf-8"))
-            if state.get("bench") and (state_file.parent / "bench.jsonl").is_file():
-                out[state_file.parent] = state["bench"]
-    return out
-
-
 def run_task(batch: str, task_id: str, timeout: float, cores: int | None = None, discard: bool = False) -> dict[str, Any]:
     """按实验清单运行一个正式任务；本 ZEA_HOME 中已有该任务时续跑最早的那个。
 
     运行前核对：客户端与后台进程的代码版本都等于清单记录的版本，后台进程为清单要求的模式。"""
-    from zea import calibration
+    from zea.bench import calibration
 
     manifest = calibration.load_plan(batch)
     task = calibration.task_of(manifest, task_id)

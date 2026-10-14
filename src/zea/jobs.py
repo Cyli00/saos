@@ -2,9 +2,10 @@
 
 每个设计任务一个目录：
 
-    <ZEA_HOME>/jobs/<job_id>/
+    <ZEA_HOME>/jobs/<job_id>/        （ZEA_HOME 默认 work/main，其他实例为 work/<实例名>）
         job.json     任务状态（原子写入）
         spec/        光学规格文件
+        sources/     输入材料，含用户需求访谈（interview.md、interview.yaml）
         lenses/      镜头文件副本，所有 .zmx 读写都限制在这里
         log.jsonl    执行记录，每行一条
 """
@@ -12,7 +13,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 from dataclasses import dataclass
@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from zea import config
-from zea.protocol import ErrorCode, ZeaError
+from zea.protocol import ErrorCode, ZeaError, write_json
 
 JOB_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$")
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$")
@@ -60,7 +60,7 @@ class Job:
         state = self.read_state()
         state.update(fields)
         state["updated_at"] = now_iso()
-        _atomic_write_json(self.state_file, state)
+        write_json(self.state_file, state)
         return state
 
     def append_log(self, record: dict[str, Any]) -> None:
@@ -88,12 +88,6 @@ class Job:
 
     def relative_lens(self, path: Path) -> str:
         return path.resolve().relative_to(self.lenses_dir.resolve()).as_posix()
-
-
-def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, path)
 
 
 def get_job(job_id: str) -> Job:
@@ -132,7 +126,7 @@ def create_job(name: str, spec_path: str | None = None) -> Job:
         spec_rel = target.relative_to(root).as_posix()
 
     created = now_iso()
-    _atomic_write_json(
+    write_json(
         job.state_file,
         {
             "id": job_id,

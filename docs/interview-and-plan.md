@@ -30,7 +30,7 @@ uv run zea plan handoff --job <任务编号>
 
 ## 访谈记录格式
 
-可运行的例子见 [目视情景](../tests/fixtures/interview/visual.yaml)。用户记录保存在任务的 `sources/`，不把临时页面放进仓库根目录。
+可运行的例子见 [目视情景](../tests/fixtures/interview/visual.yaml)。访谈从 `zea job create` 开始，叙述记录存为任务的 `sources/interview.md`，结构化记录存为 `sources/interview.yaml`；需求文档不放进仓库的 `docs/`，也不把临时页面放进仓库根目录。
 
 | 字段 | 含义 |
 |---|---|
@@ -62,4 +62,6 @@ uv run zea plan handoff --job <任务编号>
 
 ## 验证边界
 
-离线测试覆盖来源与漏项、相机频率换算、超范围需求、特殊字符、初始结构差异提示、版本替换、确认与交接、规格和评估器变化失效。情景测试不冒充独立模型的多轮模拟用户测试；模型是否能根据自然语言正确提问、是否遗漏用户条件，仍需要真实对话或独立模拟用户检验。
+离线测试覆盖来源与漏项、相机频率换算、超范围需求、特殊字符、初始结构差异提示、版本替换、确认与交接、规格和评估器变化失效。另有 6 类受控模拟访谈回放，见 `tests/fixtures/interview/conversations.json`：模拟由当前模型编写，显式给出事实映射，不冒充独立模型盲测或自然语言解析准确率。本次真实光纤访谈记录在 `work/native-fiber/jobs/20261014-100420-fiber-hemiellipsoid/sources/interview.md`；收尾边界见 `docs/step6-interview-and-plan.md`。
+
+用户明确授权在规格未定标时探索，可另立任务，通过 Interactive Extension 在原生 Zemax 窗口中搭建和检查。该授权不等于确认正式设计计划；见该任务的 `notes/native-framework.md`。

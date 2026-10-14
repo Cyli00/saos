@@ -1,0 +1,43 @@
+[
+  {
+    "id": "novice_visual", "persona": "不熟悉光学的金属观察用户",
+    "turns": [
+      {"user": "我想看金属表面，用眼睛看，没有盖玻片。", "facts": {"receiver":"visual","cover_glass":null}, "ready":false,"question_contains":"多少倍"},
+      {"agent":"需要多少倍？物镜前端需要留多远？", "user":"20 倍，至少留 2 mm，片数尽量少。", "facts":{"magnification":20,"limits.working_distance_min":2},"ready":true}
+    ], "expected": {"na":0.4,"correction_class":"achromat","limits.working_distance_min":2}
+  },
+  {
+    "id":"camera_measurement", "persona":"需要测量尺寸的相机用户",
+    "turns":[
+      {"user":"20 倍，相机拍，无盖玻片，要测量，畸变最多 0.5%。", "facts":{"magnification":20,"receiver":"camera","cover_glass":null,"targets.distortion.threshold_pct":0.5},"ready":false,"question_contains":"像素尺寸"},
+      {"agent":"像素尺寸是多少？", "user":"3.45 微米。", "facts":{"pixel_size":3.45},"ready":true}
+    ], "expected":{"correction_class":"plan_achromat","pixel_size":3.45,"targets.distortion.threshold_pct":0.5}
+  },
+  {
+    "id":"four_times", "persona":"只知道倍率的低倍物镜用户",
+    "turns":[
+      {"user":"4 倍，目视，没有盖玻片。", "facts":{"magnification":4,"receiver":"visual","cover_glass":null},"ready":false,"question_contains":"离标本"},
+      {"agent":"前端至少离标本多远？4 倍没有已核实默认值。", "user":"至少 15 mm。", "facts":{"limits.working_distance_min":15},"ready":true}
+    ], "expected":{"na":0.1,"limits.working_distance_min":15}
+  },
+  {
+    "id":"corrected_requirement", "persona":"访谈中纠正工作距离的用户",
+    "turns":[
+      {"user":"20 倍目视，无盖玻片，工作距离 2 mm。", "facts":{"magnification":20,"receiver":"visual","cover_glass":null,"limits.working_distance_min":2},"ready":true},
+      {"user":"刚才说错了，必须留 3 mm。", "facts":{"limits.working_distance_min":3},"ready":true}
+    ], "expected":{"limits.working_distance_min":3}
+  },
+  {
+    "id":"unsupported_immersion", "persona":"高 NA 浸液物镜用户",
+    "turns":[
+      {"user":"40 倍油镜，NA 1.3，目视，盖玻片另说。", "facts":{"magnification":40,"receiver":"visual","na":1.3},"scope":{"medium":"oil","conjugate":"infinity"},"ready":false,"question_contains":"第一版"}
+    ], "expected":{"na":1.3}
+  },
+  {
+    "id":"fiber_exploration", "persona":"本次光纤侧视需求的受控模拟",
+    "turns":[
+      {"user":"488 激发、532 收集，光纤束经棱镜侧视，sCMOS，管外脑组织。", "facts":{"receiver":"camera"},"scope":{"medium":"tissue","conjugate":"finite"},"unresolved":"侧视光纤系统超出第一版显微物镜验收范围", "ready":false,"question_contains":"第一版"},
+      {"agent":"可以另立探索任务，使用原生 Interactive Extension；不把旧物镜规格当成此任务验收。", "user":"分辨率可动态调整，先尝试仿真。", "facts":{},"ready":false,"question_contains":"侧视光纤"}
+    ], "expected":{"receiver":"camera"}
+  }
+]

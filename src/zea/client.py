@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import os
 import secrets
 import subprocess
 import sys
@@ -142,7 +143,7 @@ def _spawn(mode: str, token: str) -> subprocess.Popen:
     # DETACHED_PROCESS 只作用于 venv 启动器，其解释器子进程仍可能创建可见控制台。
     # CREATE_NO_WINDOW 让整条启动链继承无窗口控制台，不能与 DETACHED_PROCESS 混用。
     base_flags = _CREATE_NO_WINDOW | _CREATE_NEW_PROCESS_GROUP
-    kwargs = dict(stdin=subprocess.DEVNULL, stdout=log_fh, stderr=log_fh, cwd=str(config.zea_home()), close_fds=True)
+    kwargs = dict(stdin=subprocess.DEVNULL, stdout=log_fh, stderr=log_fh, cwd=str(config.zea_home()), close_fds=True, env={**os.environ, "ZEA_HOME": str(config.zea_home())})
     try:
         # 脱离调用方的作业对象，避免命令行退出时后台进程被一起结束
         return subprocess.Popen(cmd, creationflags=base_flags | _CREATE_BREAKAWAY_FROM_JOB, **kwargs)

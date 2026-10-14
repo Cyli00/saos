@@ -45,3 +45,19 @@ print("stderr-ok", file=sys.stderr, flush=True)
     assert json.loads(lines[0])["console_window"] is None
     assert lines[1] == "stderr-ok"
     assert attempts == (2 if deny_breakaway else 1)
+
+
+def test_spawn_resolves_relative_home_before_changing_cwd(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv('ZEA_HOME', 'relative-work')
+    captured = {}
+
+    def launch(cmd, **kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(client.subprocess, 'Popen', launch)
+    client._spawn('standalone', 'relative-home-test')
+    expected = str((tmp_path / 'relative-work').resolve())
+    assert captured['cwd'] == expected
+    assert captured['env']['ZEA_HOME'] == expected

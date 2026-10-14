@@ -3,5 +3,4 @@ ref/
 __pycache__/
 *.pyc
 work/
-work-*/
 .pytest_cache/

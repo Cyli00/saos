@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -13,8 +14,22 @@ DEFAULT_OPTICSTUDIO_DIR = r"C:\Program Files\Ansys Zemax OpticStudio 2024 R1.00"
 EXPECTED_ZOS_VERSION = (24, 1, 0)
 
 
+WORK_ROOT = REPO_ROOT / "work"
+DEFAULT_INSTANCE = "main"
+INSTANCE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$")
+
+
 def zea_home() -> Path:
-    return Path(os.environ.get("ZEA_HOME", REPO_ROOT / "work")).resolve()
+    """运行目录的优先级：ZEA_HOME（任意路径，测试用）> ZEA_INSTANCE（落在 work/<实例名>/）> work/main/。"""
+    explicit = os.environ.get("ZEA_HOME")
+    if explicit:
+        return Path(explicit).resolve()
+    instance = os.environ.get("ZEA_INSTANCE") or DEFAULT_INSTANCE
+    if not INSTANCE_RE.match(instance):
+        from zea.protocol import ErrorCode, ZeaError
+
+        raise ZeaError(ErrorCode.BAD_ARGS, f"ZEA_INSTANCE 只能包含字母、数字、- 和 _，长度 1–48，且以字母或数字开头：{instance!r}")
+    return (WORK_ROOT / instance).resolve()
 
 
 def jobs_dir() -> Path:

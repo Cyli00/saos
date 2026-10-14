@@ -21,9 +21,13 @@ ZERN_SAMP = 3  # 128×128
 ZERN_MAX_TERM = 66  # 含 ρ¹⁰ 球差项；37 项时离轴点残差约 0.005λ，见第 3 步记录
 ZERN_FIT_LIMIT = 0.005  # 波
 FOCUS_MAX_ITER = 20
+FOCUS_BACKOFF = 6  # 割线步落到光线失败位置时的二分回退次数
 WAVE_F, WAVE_E, WAVE_C = 1, 2, 3
 EDGE_RAYS = 36
 ZONE_RAYS = 12
+# 验收焦面上轴上波像差、平场比、视场波像差共用的 Zernike 项。同一波长、视场、工作距离只拟合一次：
+# 拟合占一次验收评估耗时的约 9 成（实测每次 0.34–0.41 s），这些检查的视场点都在平场比网格内
+FOCUS_PLANE_TERMS = (-1, -4, -8, 4, 5, 6)
 
 
 class InvalidEvaluation(Exception):
@@ -31,6 +35,11 @@ class InvalidEvaluation(Exception):
         super().__init__(reason)
         self.reason = reason
         self.details = details or {}
+
+
+def axis_pupil() -> list[tuple[float, float]]:
+    """轴上主光线和一圈边缘光线的归一化光瞳坐标。"""
+    return [(0.0, 0.0)] + [(math.cos(2 * math.pi * k / EDGE_RAYS), math.sin(2 * math.pi * k / EDGE_RAYS)) for k in range(EDGE_RAYS)]
 
 
 def focus_on_axis(
@@ -43,31 +52,101 @@ def focus_on_axis(
     na_image: float,
     magnification: float,
     tol_mm: float,
+    log: list[dict[str, Any]] | None = None,
 ) -> float:
     """只改面 gap 的厚度（工作距离间隔），使轴上视场 field、波长 wave 的 Zernike 离焦 c4 = 0。
 
     c4 随物距近似线性变化，用割线法求根。首步按近轴关系估计：像方离焦 4√3·c4·λ/NA′²，
     除以 M² 得物方位移；符号不确定，由割线法自行修正。
-    """
 
-    def c4() -> float:
-        value = backend.zernike(wave=wave, field=field, samp=ZERN_SAMP, max_term=ZERN_MAX_TERM, terms=(4,))[4]
-        return finite(value, "c4（调焦）", wave=wave)
+    光线保护（第 5 步）：每个试探位置先追迹轴上主光线和 EDGE_RAYS 条边缘光线，有失败的位置不做
+    Zernike 拟合（实测这类位置每次拟合约 31 s、残差上百波，c4 不可用）。
+    - 起点失败：用近轴边缘光线高度 PARY = 0 求近轴焦点，从那里重新开始；仍失败则无法调焦。
+    - 割线步落到失败位置：向上一个有效位置二分回退，最多 FOCUS_BACKOFF 次；都失败则无法调焦。
+    所有位置都有效时，试探序列与不加保护时相同。log 记录每个试探位置，供诊断。
+    """
+    trail = log if log is not None else []
+    pupil = axis_pupil()
+    restarted = False
+
+    def rays_ok(t: float, kind: str) -> bool:
+        failures = backend.trace_check([(wave, 0.0, 0.0, px, py) for px, py in pupil])
+        if failures:
+            trail.append({"wave": wave, "kind": kind, "thickness": t, "ray_failures": len(failures)})
+        return not failures
+
+    def c4(t: float, kind: str) -> float:
+        raw = backend.zernike(wave=wave, field=field, samp=ZERN_SAMP, max_term=ZERN_MAX_TERM, terms=(-1, 4))
+        value = finite(raw[4], "c4（调焦）", wave=wave)
+        trail.append({"wave": wave, "kind": kind, "thickness": t, "ray_failures": 0, "c4": value, "fit_error": raw.get(-1)})
+        return value
+
+    def move(t: float) -> None:
+        backend.set_surface(gap, "thickness", t)
 
     t0 = finite(backend.surfaces()[gap]["thickness"], "工作距离间隔")
-    c0 = c4()
+    if not rays_ok(t0, "start"):
+        start = t0
+        t0 = paraxial_focus(backend, gap=gap, wave=wave, t_start=t0, tol_mm=tol_mm, na_image=na_image, magnification=magnification)
+        move(t0)
+        restarted = True
+        if not rays_ok(t0, "paraxial"):
+            raise InvalidEvaluation("轴上光线追迹失败，起点和近轴焦点处都无法调焦", {"wave": wave, "start_thickness": start, "paraxial_thickness": t0})
+    c0 = c4(t0, "paraxial" if restarted else "start")
     step = 4 * math.sqrt(3) * c0 * lam_um / na_image**2 / magnification**2 / 1000
     t1 = t0 + (step if abs(step) > tol_mm else 10 * tol_mm)
     c1 = c0
     for _ in range(FOCUS_MAX_ITER):
-        backend.set_surface(gap, "thickness", t1)
-        c1 = c4()
+        move(t1)
+        if not rays_ok(t1, "secant"):
+            # 二分回退：在上一个有效位置 t0 与失败位置之间找有效位置；只追迹，不拟合
+            bad = t1
+            for _ in range(FOCUS_BACKOFF):
+                t1 = (t0 + bad) / 2
+                move(t1)
+                if rays_ok(t1, "backoff"):
+                    break
+                bad = t1
+            else:
+                move(t0)
+                raise InvalidEvaluation(
+                    "调焦时轴上光线追迹失败，回退后仍无有效位置",
+                    {"wave": wave, "last_valid_thickness": t0, "last_valid_c4": c0, "nearest_failed_thickness": bad, "backoff": FOCUS_BACKOFF},
+                )
+        c1 = c4(t1, "secant")
         if abs(t1 - t0) < tol_mm and abs(c1) < 1e-4:
             return t1
         if c1 == c0:
             break
         t0, c0, t1 = t1, c1, t1 - c1 * (t1 - t0) / (c1 - c0)
     raise InvalidEvaluation("调焦没有收敛", {"wave": wave, "last_thickness": t1, "last_c4": c1})
+
+
+def paraxial_focus(
+    backend: Backend, *, gap: int, wave: int, t_start: float, tol_mm: float, na_image: float, magnification: float
+) -> float:
+    """割线法求像面上近轴边缘光线高度 PARY = 0 的工作距离间隔。近轴量不受实际光线失败影响；
+    实测（第 5 步两个起点）PARY 随间隔近似线性，2 次迭代收敛。
+
+    收敛要求步长小于 tol_mm，且 PARY 不超过物方位移 tol_mm 在像面上造成的光线高度 NA′·M²·tol_mm；
+    只看步长时，PARY 恒不为零的函数也可能因步长变小被误判为收敛。"""
+    image = len(backend.surfaces()) - 1
+    residual_limit = na_image * magnification**2 * tol_mm
+
+    def pary(t: float) -> float:
+        backend.set_surface(gap, "thickness", t)
+        return finite(backend.operand("PARY", image, wave, [0.0, 0.0, 0.0, 1.0]), "PARY（近轴调焦）", wave=wave, thickness=t)
+
+    t0, t1 = t_start, t_start + 0.01 * max(abs(t_start), 1.0)
+    p0 = pary(t0)
+    for _ in range(FOCUS_MAX_ITER):
+        p1 = pary(t1)
+        if abs(t1 - t0) < tol_mm and abs(p1) <= residual_limit:
+            return t1
+        if p1 == p0:
+            break
+        t0, p0, t1 = t1, p1, t1 - p1 * (t1 - t0) / (p1 - p0)
+    raise InvalidEvaluation("近轴焦点没有收敛", {"wave": wave, "last_thickness": t1, "last_pary": p1, "residual_limit": residual_limit})
 
 
 def acceptance_config(spec: Spec) -> dict[str, Any]:
@@ -101,7 +180,7 @@ def acceptance_config(spec: Spec) -> dict[str, Any]:
             "zern_fit_limit": ZERN_FIT_LIMIT,
             "focus_max_iter": FOCUS_MAX_ITER,
             "edge_rays": EDGE_RAYS,
-            "axis_precheck": True,
+            "focus_ray_guard": {"axis_rays": EDGE_RAYS + 1, "backoff": FOCUS_BACKOFF, "paraxial_restart": "PARY"},
             "zone_rays": ZONE_RAYS,
             "tube_lens_opd_mode": 1,
             "ray_aiming": "real",
@@ -151,11 +230,9 @@ def reproduction_check(backend: Backend, design: list[dict[str, Any]], expect: d
     efl = backend.operand("EFLY", first, last, [])
     na = backend.operand("OBSN", 0, 0, [])
     m = f_tl / efl
-    wd_gap = focus_on_axis(
-        backend, gap=gap, wave=_primary_index(backend), field=1, lam_um=primary_um, na_image=na / m, magnification=m, tol_mm=1e-5
-    )
-    sag = backend.operand("SAGY", first, 0, [])
     primary = _primary_index(backend)
+    wd_gap = focus_on_axis(backend, gap=gap, wave=primary, field=1, lam_um=primary_um, na_image=na / m, magnification=m, tol_mm=1e-5)
+    sag = backend.operand("SAGY", first, 0, [])
     # 专利的工作距离按顶点距离给出；按 ISO 10934 计入前表面边缘凸出的机械工作距离另行报告
     # 放大率按 f_TL / f_obj 计。PMAG 在近轴像面上取值：物面偏离近轴前焦点 δ 时，中间像落在 f²/δ 处，
     # 筒镜后的像距随之缩短，PMAG 约小 f_TL·δ/f²（本例 δ = 1.5 µm 即 0.3%），只作诊断
@@ -189,17 +266,18 @@ def _primary_index(backend: Backend) -> int:
 
 
 class Evaluator:
-    def __init__(self, backend: Backend, spec: Spec, design_catalogs: list[str], telecentric_object: bool = False, precheck: bool = True):
+    def __init__(self, backend: Backend, spec: Spec, design_catalogs: list[str], telecentric_object: bool = False):
         self.backend = backend
-        # precheck=False 只用于诊断对照（eval.accept --no-precheck）；轮次记录始终开启
-        self.precheck = precheck
         self.spec = spec
         self.design_catalogs = design_catalogs
         self.telecentric_object = telecentric_object
         self.fields: list[float] = spec.field_samples()
         self.field_index = {round(r, 6): i + 1 for i, r in enumerate(self.fields)}
         self.diagnostics: dict[str, Any] = {}
+        self.focus_log: list[dict[str, Any]] = []
         self.m_act = spec.magnification
+        self.t_gap = math.nan  # 当前工作距离间隔；只经 build_model、focus、set_thickness 改变
+        self._zern: dict[tuple[int, float, float], dict[int, float]] = {}
 
     # ---- 验收模型 ----
 
@@ -250,6 +328,7 @@ class Evaluator:
             }
         )
         self.backend.build(acc)
+        self.t_gap = design[gap]["thickness"]
         self.gap = 1 if spec.cover_glass else 0
         self.first = self.gap + 1
         self.last = self.first + len(self.objective) - 1
@@ -262,17 +341,20 @@ class Evaluator:
         return finite(self.backend.operand(name, int1, int2, list(data)), name, int1=int1, int2=int2, data=list(data))
 
     def checked_zern(self, wave: int, r: float, terms: tuple[int, ...]) -> dict[int, float]:
-        raw = self.backend.zernike(wave=wave, field=self.field_index[round(r, 6)], samp=ZERN_SAMP, max_term=ZERN_MAX_TERM, terms=(-1, *terms))
-        z = {t: finite(c, f"ZERN {t}", wave=wave, field=r) for t, c in raw.items()}
-        if z[-1] > ZERN_FIT_LIMIT:
-            raise InvalidEvaluation("Zernike 拟合残差超限", {"wave": wave, "field": r, "fit_error": z[-1], "max_term": ZERN_MAX_TERM})
-        return z
-
-    def thickness(self, surface: int) -> float:
-        return float(self.backend.surfaces()[surface]["thickness"])
+        key = (wave, round(r, 6), self.t_gap)
+        if key not in self._zern:
+            wanted = tuple(dict.fromkeys((*FOCUS_PLANE_TERMS, *terms)))
+            raw = self.backend.zernike(wave=wave, field=self.field_index[key[1]], samp=ZERN_SAMP, max_term=ZERN_MAX_TERM, terms=wanted)
+            z = {t: finite(c, f"ZERN {t}", wave=wave, field=r) for t, c in raw.items()}
+            if z[-1] > ZERN_FIT_LIMIT:
+                raise InvalidEvaluation("Zernike 拟合残差超限", {"wave": wave, "field": r, "fit_error": z[-1], "max_term": ZERN_MAX_TERM})
+            self._zern[key] = z
+        return {t: self._zern[key][t] for t in (-1, *terms)}
 
     def set_thickness(self, surface: int, value: float) -> None:
         self.backend.set_surface(surface, "thickness", value)
+        if surface == self.gap:
+            self.t_gap = value
 
     def na_image(self) -> float:
         return self.spec.na / self.m_act
@@ -284,7 +366,9 @@ class Evaluator:
 
     def focus(self, wave: int) -> float:
         """只改工作距离间隔，使轴上该波长 c4 = 0；返回间隔厚度（mm）。"""
-        return focus_on_axis(
+        # 调焦中途失败时位置未知，先作废当前位置，不复用拟合结果
+        self.t_gap = math.nan
+        self.t_gap = focus_on_axis(
             self.backend,
             gap=self.gap,
             wave=wave,
@@ -293,7 +377,9 @@ class Evaluator:
             na_image=self.na_image(),
             magnification=self.m_act,
             tol_mm=0.01 * self.spec.delta_ob_um / 1000,
+            log=self.focus_log,
         )
+        return self.t_gap
 
     # ---- 主流程 ----
 
@@ -304,8 +390,6 @@ class Evaluator:
         try:
             self.build_model(design)
             self.m_act = self.spec.tube_lens_focal_length / self.op("EFLY", self.first, self.last)
-            if self.precheck:
-                self.precheck_axis()
             t_e = self.focus(WAVE_E)
             self.check_rays()
             measured, details = self.measure(t_e)
@@ -313,33 +397,8 @@ class Evaluator:
             return self.report(None, {}, {"reason": exc.reason, **exc.details}, started)
         return self.report(measured, details, None, started)
 
-    def precheck_axis(self) -> None:
-        """调焦前先追迹轴上主光线和一圈边缘光线。实测（第 5 步）边缘光线全部未击中面时，
-        每次 Zernike 拟合约 32 s、残差上百波，割线调焦 20 次后才判无效，一次评估约 700 s。"""
-        pupil = [(0.0, 0.0)] + [(math.cos(2 * math.pi * k / EDGE_RAYS), math.sin(2 * math.pi * k / EDGE_RAYS)) for k in range(EDGE_RAYS)]
-        failures = self.backend.trace_check([(WAVE_E, 0.0, 0.0, px, py) for px, py in pupil])
-        if failures:
-            raise InvalidEvaluation("轴上光线追迹失败，无法调焦", {"failures": failures[:20], "count": len(failures), "total": len(pupil)})
-
-    def run_precheck(self, design: list[dict[str, Any]]) -> dict[str, Any]:
-        """诊断：只搭验收模型并做调焦前的轴上光线检查，不调焦、不测量。"""
-        started = time.perf_counter()
-        try:
-            self.build_model(design)
-            self.m_act = self.spec.tube_lens_focal_length / self.op("EFLY", self.first, self.last)
-            self.precheck_axis()
-            out: dict[str, Any] = {"precheck": "pass"}
-        except InvalidEvaluation as exc:
-            rejected = exc.reason == "轴上光线追迹失败，无法调焦"
-            out = {"precheck": "reject" if rejected else "invalid", "reason": exc.reason, **{k: v for k, v in exc.details.items() if k != "failures"}}
-            if rejected:
-                out["first_failures"] = exc.details["failures"][:5]
-        out["elapsed_s"] = round(time.perf_counter() - started, 2)
-        return out
-
     def check_rays(self) -> None:
-        pupil = [(0.0, 0.0)]
-        pupil += [(math.cos(2 * math.pi * k / EDGE_RAYS), math.sin(2 * math.pi * k / EDGE_RAYS)) for k in range(EDGE_RAYS)]
+        pupil = axis_pupil()
         pupil += [(0.7 * math.cos(2 * math.pi * k / ZONE_RAYS), 0.7 * math.sin(2 * math.pi * k / ZONE_RAYS)) for k in range(ZONE_RAYS)]
         rays = [(w, 0.0, r, px, py) for r in self.fields for w in (WAVE_F, WAVE_E, WAVE_C) for px, py in pupil]
         failures = self.backend.trace_check(rays)
@@ -518,6 +577,6 @@ class Evaluator:
             "items": items,
             "diagnostics": {**self.diagnostics, **{k: v for k, v in details.items() if k not in {i.id for i in self.spec.items}}},
             "derived": self.spec.derived(),
-            "axis_precheck": self.precheck,
+            "focus_trace": self.focus_log,
             "elapsed_s": round(time.perf_counter() - started, 2),
         }

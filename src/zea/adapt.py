@@ -11,12 +11,12 @@ from typing import Any
 from zea import glasscat, prescription
 from zea.paraxial import Surface, back_focal_distance, effective_focal_length, front_focal_distance
 from zea.protocol import ErrorCode, ZeaError
+from zea.spec import REFERENCE_TUBE_MM
 
 WAVES = {
     "d": [0.4861327, 0.5875618, 0.6562725],  # F、d、C，主波长 d
     "e": [0.4799914, 0.5460740, 0.6438469],  # F′、e、C′，主波长 e
 }
-REFERENCE_TUBE_MM = 200.0
 MODEL_GLASS_DISTANCE = 3.0
 NAME_ND_TOLERANCE = 0.002
 # 原文印出的折射率不超过 3 位小数时，目录中 ±半个末位内常有多种玻璃，按 nd/νd 选最近牌号没有意义，改用模型玻璃
