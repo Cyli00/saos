@@ -101,6 +101,12 @@ def test_explicit_debugging_tools(ui_pid, tmp_path):
         types = {w["type"] for w in view["windows"]}
         assert {"Draw2D", "FftMtf"} <= types and view["watch"]["viewer"] == "cross-section"
         assert view["update_mode"] == "EditorsOnly"
+        # 浮动窗口平铺开，互不遮挡
+        assert len(view["tiled"]) >= 2 and all("error" not in w for w in view["tiled"]), view["tiled"]
+        rects = [w["rect"] for w in view["tiled"]]
+        for i, (x1, y1, w1, h1) in enumerate(rects):
+            for x2, y2, w2, h2 in rects[i + 1:]:
+                assert x1 + w1 <= x2 or x2 + w2 <= x1 or y1 + h1 <= y2 or y2 + h2 <= y1
         assert ok(saos("lens", "view", "--job", job, env=env))["watch"]["analysis"] == "FftMtf"  # 不指定时沿用上次的选择
         assert saos("lens", "view", "--job", job, "--analysis", "NoSuch", env=env)["error"]["code"] == ErrorCode.BAD_ARGS
 

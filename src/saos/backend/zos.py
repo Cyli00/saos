@@ -227,7 +227,19 @@ class ZosBackend(Backend):
         # 实测 AllWindows 会在改动后异步重算分析窗口，与 API 读取竞争：读到 None，或与等待循环互相卡住
         system.UpdateMode = zosapi.LensUpdateMode.EditorsOnly
         self.app.ProgressMessage = f"saos: {watch['viewer']} + {watch['analysis']}"
-        return {"watch": watch, "message": str(message) if message else None, "update_mode": str(system.UpdateMode), "windows": self.window_list()}
+        return {"watch": watch, "message": str(message) if message else None, "update_mode": str(system.UpdateMode), "windows": self.window_list(),
+                "tiled": self.tile_windows()}
+
+    def tile_windows(self) -> list[dict[str, Any]]:
+        from saos import native_ui
+
+        pid = (self.extension_ui or {}).get("pid") if self.mode == "extension" else None
+        if not pid:
+            return []
+        try:
+            return native_ui.tile_windows(int(pid))
+        except Exception as exc:  # noqa: BLE001 - 排布失败不影响计算
+            return [{"error": str(exc)[:200]}]
 
     def window_list(self) -> list[dict[str, str]]:
         return [{"type": str(a.AnalysisType), "title": str(a.Title)} for a in self._open_analyses().values()]
