@@ -48,7 +48,7 @@ def load_catalogs(names: list[str], directory: Path = DEFAULT_GLASSCAT_DIR) -> l
     glasses = []
     for name in names:
         if name.upper() not in found:
-            raise FileNotFoundError(f"{directory} 中没有玻璃目录 {name}")
+            raise FileNotFoundError(f"glass catalog {name} not found in {directory}")
         glasses.extend(load_catalog(found[name.upper()]))
     return glasses
 

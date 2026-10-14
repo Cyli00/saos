@@ -204,3 +204,10 @@ def test_unsaved_window_content_at_connect_is_protected(saos_home, fake_lens_fil
     backend.load(fake_lens_file)
     ok_result(call(daemon, "lens.capture", job=job.id, file="window.zmx"))
     ok_result(call(daemon, "lens.load", job=job.id, file="a.zmx"))
+
+
+def test_blocking_dialog_fails_fast(daemon, loaded, monkeypatch):
+    monkeypatch.setattr(daemon.backend, "blocking_dialogs", lambda: ["Zemax Error Message"])
+    out = call(daemon, "lens.info", job=loaded.id)
+    assert err_code(out) == ErrorCode.UI_BLOCKED and out["error"]["details"]["dialogs"] == ["Zemax Error Message"]
+    assert call(daemon, "ping")["ok"]

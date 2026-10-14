@@ -1,0 +1,136 @@
+"""通用工作流的真实回归：改镜头数据 → 取光学指标 → 分析 → 下一轮 → 达成或无法再优化 → HTML 报告。
+
+默认跳过。运行：SAOS_RUN_ZEMAX=1 uv run pytest tests/test_zemax_workflow.py -s
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+import yaml
+
+pytestmark = [
+    pytest.mark.zemax,
+    pytest.mark.skipif(os.environ.get("SAOS_RUN_ZEMAX") != "1", reason="需要真实 OpticStudio，设置 SAOS_RUN_ZEMAX=1"),
+]
+
+SAMPLE = Path.home() / "Documents/Zemax/Samples/Sequential/Objectives/Cooke 40 degree field.zmx"
+
+HAMMER = """
+def run(ctx):
+    # 全局层级：Hammer 优化跑几秒后中断（它本身会一直运行到人为中断）
+    tool = ctx.system.Tools.OpenHammerOptimization()
+    try:
+        before = float(tool.InitialMeritFunction)
+        tool.RunAndWaitWithTimeout(float(ctx.args.get("seconds", 5)))
+        tool.Cancel()
+        tool.WaitForCompletion()
+        after = float(tool.CurrentMeritFunction)
+    finally:
+        tool.Close()
+    ctx.mark_dirty()
+    return {"initial_merit": before, "final_merit": after}
+"""
+
+
+def saos(*args, env):
+    proc = subprocess.run([sys.executable, "-m", "saos", *map(str, args)], capture_output=True, env=env, timeout=600)
+    out = json.loads(proc.stdout.decode("utf-8"))
+    print(f"saos {' '.join(map(str, args))[:110]} -> {'ok' if out['ok'] else out['error']['code']}")
+    return out
+
+
+def ok(out):
+    assert out["ok"], out
+    return out["result"]
+
+
+def write_harness(home, job, data):
+    (home / "jobs" / job / "sources" / "harness.yaml").write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+
+
+def test_workflow_until_achieved_or_exhausted_with_reports(saos_home, tmp_path):
+    env = {**os.environ, "SAOS_HOME": str(saos_home), "SAOS_BACKEND": "zos"}
+    ok(saos("daemon", "start", env=env))
+    try:
+        job = ok(saos("job", "create", "--name", "cooke", env=env))["job"]
+        ok(saos("lens", "import", "--job", job, SAMPLE, "--as", "sample.zmx", env=env))
+        ok(saos("lens", "load", "--job", job, "sample.zmx", env=env))
+        f0 = ok(saos("lens", "operand", "--job", job, "EFFL", env=env))["value"]
+        spot0 = ok(saos("lens", "analysis", "--job", job, "StandardSpot", env=env))["spot"]["rms_radius"][0][1]
+
+        # 改镜头数据：扰动两个曲率，存为起点
+        surfaces = ok(saos("lens", "surfaces", "--job", job, env=env))["surfaces"]
+        ok(saos("lens", "set", "--job", job, "--surface", 1, "--param", "radius", "--value", surfaces[1]["radius"] * 1.04, env=env))
+        ok(saos("lens", "set", "--job", job, "--surface", 4, "--param", "radius", "--value", surfaces[4]["radius"] * 0.96, env=env))
+        ok(saos("lens", "save", "--job", job, "--as", "start.zmx", env=env))
+
+        write_harness(saos_home, job, {
+            "schema": 1,
+            "request": "焦距保持原样（±1%），轴上像点尽量小，不比原设计差 50% 以上",
+            "targets": [
+                {"id": "efl", "kind": "constraint", "description": "effective focal length", "check": {"operand": {"type": "EFFL"}}, "goal": {"equals": f0, "tol": 0.01 * f0}},
+                {"id": "spot_axis", "kind": "target", "description": "on-axis RMS spot radius (um), primary wave",
+                 "check": {"analysis": {"type": "StandardSpot", "path": "spot.rms_radius[0][1]"}}, "goal": {"max": 1.5 * spot0}},
+                {"id": "track", "kind": "preference", "description": "total track", "check": {"operand": {"type": "TOTR"}}},
+            ],
+            "assumptions": ["the sample's field and wavelengths are kept"],
+            "stop": {"rel": 0.01, "max_rounds": 8, "tiers": ["local", "variables", "global"]},
+            "confirmed": {"quote": "可以，按这个做"},
+        })
+        r0 = ok(saos("round", "--job", job, "--note", "perturbed start", env=env))
+        assert r0["record"]["tier"] == "baseline" and not r0["record"]["achieved"]
+
+        # 下一轮调试：放开曲率，评价函数为 RMS 光斑并约束焦距，局部优化
+        ok(saos("opt", "vary", "--job", job, "--param", "radius", "--surfaces", "1-6", env=env))
+        settings = tmp_path / "wizard.json"
+        settings.write_text(json.dumps({"type": "RMS", "data": "Spot Radius", "reference": "Centroid"}), encoding="utf-8")
+        ok(saos("opt", "merit", "--job", job, "wizard", "--file", settings, env=env))
+        rows = tmp_path / "rows.json"
+        rows.write_text(json.dumps([{"type": "EFFL", "int2": 2, "target": f0, "weight": 10}]), encoding="utf-8")
+        ok(saos("opt", "merit", "--job", job, "add", "--file", rows, env=env))
+        ok(saos("opt", "local", "--job", job, env=env))
+        decision = ok(saos("round", "--job", job, "--tier", "local", "--note", "radii + DLS", env=env))["decision"]
+        if decision["status"] != "achieved":
+            ok(saos("opt", "vary", "--job", job, "--param", "thickness", "--surfaces", "1-5", env=env))
+            ok(saos("opt", "local", "--job", job, env=env))
+            decision = ok(saos("round", "--job", job, "--tier", "variables", "--note", "+ thickness", env=env))["decision"]
+        assert decision["status"] == "achieved", decision
+        rep = ok(saos("report", "--job", job, env=env))
+        html = Path(rep["report"]).read_text(encoding="utf-8")
+        assert rep["status"] == "achieved" and "达成" in html and "StandardSpot" in html and "EFFL" in html
+
+        # 无法再优化：只放开曲率，总长 ≤ 1 mm 永远改变不了；逐级用完允许的手段后判停
+        job2 = ok(saos("job", "create", "--name", "impossible", env=env))["job"]
+        ok(saos("lens", "import", "--job", job2, saos_home / "jobs" / job / "lenses" / rep["deliver"], "--as", "start.zmx", env=env))
+        ok(saos("lens", "load", "--job", job2, "start.zmx", "--discard", env=env))
+        write_harness(saos_home, job2, {
+            "schema": 1,
+            "request": "总长做到 1 mm 以内",
+            "targets": [{"id": "track", "kind": "constraint", "check": {"operand": {"type": "TOTR"}}, "goal": {"max": 1.0}}],
+            "stop": {"rel": 0.01, "max_rounds": 10, "tiers": ["local", "global"]},
+            "confirmed": {"quote": "试试看"},
+        })
+        ok(saos("round", "--job", job2, env=env))
+        ok(saos("opt", "vary", "--job", job2, "--param", "radius", "--surfaces", "1-6", env=env))
+        ok(saos("opt", "merit", "--job", job2, "wizard", "--file", settings, env=env))
+        ok(saos("opt", "local", "--job", job2, env=env))
+        d1 = ok(saos("round", "--job", job2, "--tier", "local", env=env))["decision"]
+        assert d1["status"] == "continue" and d1["next_tier"] == "global"
+        script = tmp_path / "hammer.py"
+        script.write_text(HAMMER, encoding="utf-8")
+        hammer = ok(saos("exec", script, "--job", job2, "--name", "hammer", "--arg", "seconds=5", env=env))["result"]
+        assert hammer["final_merit"] <= hammer["initial_merit"] + 1e-12
+        d2 = ok(saos("round", "--job", job2, "--tier", "global", "--note", "Hammer 5 s", env=env))["decision"]
+        assert d2["status"] == "exhausted", d2
+        assert saos("round", "--job", job2, "--tier", "local", env=env)["error"]["code"] == "BAD_ARGS"
+        rep2 = ok(saos("report", "--job", job2, env=env))
+        html2 = Path(rep2["report"]).read_text(encoding="utf-8")
+        assert rep2["status"] == "exhausted" and "无法再优化" in html2 and "超出" in html2 and "scripts/" in html2
+    finally:
+        ok(saos("daemon", "stop", "--discard", env=env))

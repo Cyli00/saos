@@ -16,7 +16,7 @@ def make_backend(mode: str) -> Backend:
         from saos.backend.zos import ZosBackend
 
         return ZosBackend(mode=mode)
-    raise ValueError(f"未知的后端：{name}")
+    raise ValueError(f"unknown backend: {name}")
 
 
 __all__ = ["Backend", "SURFACE_PARAMS", "make_backend"]

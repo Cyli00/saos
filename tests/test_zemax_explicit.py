@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+import zemax_ui
 from saos import config, native_ui
 from saos.protocol import ErrorCode
 
@@ -42,7 +43,7 @@ def ok(out):
 
 
 @pytest.fixture
-def ui_pid():
+def ui_pid(tmp_path):
     exe = Path(config.opticstudio_dir()) / "OpticStudio.exe"
     proc = subprocess.Popen([str(exe)])
     suffix = native_ui._main_title_suffix()
@@ -54,9 +55,20 @@ def ui_pid():
     else:
         proc.kill()
         pytest.fail("OpticStudio 界面没有在 90 s 内出现")
-    time.sleep(5)  # 启动画面关闭、功能区可用
+    # 自动保存恢复提示会在启动后几秒才弹出，有时还跟着错误消息框，都会挡住分析计算。
+    # 观察到连续 8 s 没有阻塞对话框再开始（不删除用户的恢复文件）
+    quiet_since = time.monotonic()
+    deadline = time.monotonic() + 60
+    while time.monotonic() - quiet_since < 8 and time.monotonic() < deadline:
+        for w in native_ui._top_windows(lambda t, v: v and bool(t.strip())):
+            if w["pid"] == proc.pid and w["title"] in native_ui.blocking_dialogs(proc.pid):
+                zemax_ui.close_dialog(w["hwnd"])
+                quiet_since = time.monotonic()
+        time.sleep(0.5)
     yield proc.pid
-    subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True)
+    # 强制结束会留下自动保存的恢复文件，下次启动弹出模态框；先温和关闭，失败时只清理本测试的恢复记录
+    zemax_ui.close_opticstudio(proc.pid)
+    zemax_ui.clean_recovered(tmp_path)
 
 
 PROBE = """
@@ -88,6 +100,7 @@ def test_explicit_debugging_tools(ui_pid, tmp_path):
         view = ok(saos("lens", "view", "--job", job, "--viewer", "cross-section", "--analysis", "FftMtf", "--set", "MaximumFrequency=50", env=env))
         types = {w["type"] for w in view["windows"]}
         assert {"Draw2D", "FftMtf"} <= types and view["watch"]["viewer"] == "cross-section"
+        assert view["update_mode"] == "EditorsOnly"
         assert ok(saos("lens", "view", "--job", job, env=env))["watch"]["analysis"] == "FftMtf"  # 不指定时沿用上次的选择
         assert saos("lens", "view", "--job", job, "--analysis", "NoSuch", env=env)["error"]["code"] == ErrorCode.BAD_ARGS
 
@@ -110,5 +123,6 @@ def test_explicit_debugging_tools(ui_pid, tmp_path):
         assert saos("lens", "load", "--job", job, "start.zmx", env=env)["error"]["code"] == ErrorCode.UNSAVED_CHANGES
         ok(saos("lens", "save", "--job", job, "--as", "r001.zmx", env=env))
         ok(saos("lens", "load", "--job", job, "start.zmx", env=env))
+        ok(saos("lens", "save", "--job", job, "--no-verify", env=env))
     finally:
         ok(saos("daemon", "stop", "--discard", env=env))

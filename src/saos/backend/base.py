@@ -21,9 +21,9 @@ def parse_numeric(param: str, value: Any) -> float:
     try:
         number = float(value)
     except (TypeError, ValueError) as exc:
-        raise SaosError(ErrorCode.BAD_ARGS, f"{param} 需要数值，收到 {value!r}") from exc
+        raise SaosError(ErrorCode.BAD_ARGS, f"{param} needs a number, got {value!r}") from exc
     if math.isnan(number):
-        raise SaosError(ErrorCode.BAD_ARGS, f"{param} 不能为 NaN")
+        raise SaosError(ErrorCode.BAD_ARGS, f"{param} cannot be NaN")
     return number
 
 
@@ -96,6 +96,10 @@ class Backend(ABC):
         """改动镜头后刷新显性调试的窗口；隐式运行时什么也不做。"""
         return None
 
+    def blocking_dialogs(self) -> list[str]:
+        """显性调试：当前挡住窗口的模态对话框标题；隐式运行时为空。"""
+        return []
+
     def screenshots(self, folder: Path, prefix: str) -> list[str]:
         """把连接的 OpticStudio 的可见窗口截成 PNG，返回文件名。"""
         raise SaosError(ErrorCode.BAD_ARGS, "screenshots need extension mode")
@@ -104,16 +108,16 @@ class Backend(ABC):
 
     def build(self, prescription: dict[str, Any]) -> None:
         """按已规范化的处方（saos.prescription.normalize）从零搭建当前系统。"""
-        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} 不支持 build")
+        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support build")
 
     def snapshot(self) -> list[dict[str, Any]]:
         """当前系统所有面的完整数据，用于从设计文件重建验收模型。"""
-        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} 不支持 snapshot")
+        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support snapshot")
 
     def zernike(self, *, wave: int, field: int, samp: int, max_term: int, terms: tuple[int, ...]) -> dict[int, float]:
         """一次拟合到 max_term 项（Zernike Standard，参考主光线），返回所需各项；负项号含义同 ZERN。"""
-        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} 不支持 zernike")
+        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support zernike")
 
     def trace_check(self, rays: list[tuple[int, float, float, float, float]]) -> list[dict[str, Any]]:
         """追迹到像面，返回失败或被截断的光线：(wave, hx, hy, px, py) 及 error/vignette 码。"""
-        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} 不支持 trace_check")
+        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support trace_check")

@@ -29,6 +29,9 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `saos lens analysis --job J TYPE [--set KEY=VALUE …] [--keep-open]` / `--list` | 运行一个 OpticStudio 分析（AnalysisIDM 名称，如 StandardSpot、FftMtf、RayFan、WavefrontMap、FieldCurvatureAndDistortion），导出数据序列、网格（超过 256×256 时降采样）、点列图 RMS/GEO 半径和表头，存为任务的 `analyses/NNN-TYPE.json`，并保存 OpticStudio 的文本全文 `.txt`。设置名取自分析的设置对象，Field、Wavelength、Surface 用编号或 `all`；枚举按成员名。返回值省略网格本体，只给统计量 |
 | `saos lens view --job J [--viewer lde\|cross-section\|3d\|shaded] [--analysis TYPE] [--set KEY=VALUE …]` | 显性调试：打开 Lens Data 或一种 System Viewer，加一个像质分析（默认 StandardSpot，按系统最看重的像质选），按当前镜头刷新。选择会被记住；之后 load、set、save、build、capture、opt local、exec 结束时自动刷新已打开的分析窗口。连接 extension 后自动按默认选择打开 |
 | `saos lens screenshot --job J [--label L]` | 显性调试：把 OpticStudio 的可见窗口截成 PNG，存为任务的 `screens/NNN-L-K.png`（PrintWindow，被遮挡也能截；最小化的窗口跳过） |
+| `saos check --job J` | 按任务的需求框定 `sources/harness.yaml` 对当前镜头逐项实测和判定，不记录。需求框定未确认时也能用，便于框定阶段先看数值 |
+| `saos round --job J [--tier local\|variables\|materials\|global\|structure] [--note TEXT]` | 记录一个调试轮次：存为 `lenses/rounds/rNNN.zmx`，逐项实测判定（全文存为 `rounds/rNNN.json`），写入 `ledger.jsonl`，返回终止判断（continue / achieved / exhausted / limit）及还没试过的层级。第 0 轮不填 tier。需求框定未确认、改动后没有新的确认原话、或已经终止时拒绝 |
+| `saos report --job J` | 由需求框定和 ledger 生成交付报告 `report/index.html`，不连接 OpticStudio |
 | `saos exec SCRIPT --job J [--arg K=V …] [--args-file JSON] [--name N] [--quiet]` | 在后台进程内执行脚本（ADR-0007），见下文「脚本执行」 |
 | `saos microscope adapt EXTRACT --focal-length F --field-number N [--tube-lens 200] [--catalogs …] [--stop rear_focal\|r<面号>] --out DIR` | 把子 agent 提取的面数据适配成标准设计布局的处方，输出 prescription.json、expect.json、adapt_report.json（不经后台进程） |
 | `saos lens build --job J PRESCRIPTION --as NAME [--overwrite]` | 按处方用 ZOS-API 搭建镜头，保存到 lenses/ 并加载 |
@@ -53,6 +56,35 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 结构库的收录规则、提取格式和基准规格的推导见 [library.md](./library.md)。
 
 `--job` 必须与当前加载的镜头属于同一任务；镜头文件名一律相对该任务的 `lenses/`。
+
+## 需求框定
+
+`sources/harness.yaml`，字段用英文：
+
+```yaml
+schema: 1
+request: 用户原话
+targets:
+  - id: efl
+    kind: constraint            # constraint | target | preference
+    description: effective focal length
+    check: {operand: {type: EFFL, int1: 0, int2: 0, data: []}}
+    goal: {equals: 50.0, tol: 0.5}   # 或 {max: v}、{min: v}，可同时给 min 和 max
+    scale: 0.5                  # 单项差距的尺度；默认取 tol 或界限的绝对值，界限为 0 时必须给出
+  - id: spot_axis
+    kind: target
+    check: {analysis: {type: StandardSpot, settings: {}, path: "spot.rms_radius[0][1]"}}
+    goal: {max: 10.0}
+  - id: custom
+    kind: preference            # 期望项只报告数值，可以没有 goal
+    check: {script: checks/custom.py}   # 任务内的脚本，run(ctx) 返回一个数
+assumptions: [agent 补全的条件]
+recipes: []
+stop: {rel: 0.01, max_rounds: 30, tiers: [local, variables, materials, global, structure]}
+confirmed: {quote: 用户确认的原话}
+```
+
+`analysis` 的 `path` 指向 `saos lens analysis` 导出结构中的一个数，例如 `series[0].y.Tangential[20]`、`grids[0].stats.max`；键里有点号时写成 `['0.48']`。终止规则见 DESIGN.md「终止规则」。
 
 ## 脚本执行
 
@@ -91,6 +123,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `ZOS_ERROR` | OpticStudio 操作抛出异常，连接仍正常，后台进程继续运行 |
 | `ZOS_LOAD_FAILED` / `ZOS_SAVE_FAILED` | OpticStudio 无法加载或保存文件 |
 | `VERIFY_FAILED` | 保存后重新加载与保存前不一致，`details.diffs` 列出差异 |
+| `UI_BLOCKED` | extension 模式下 OpticStudio 窗口被模态对话框挡住（如自动保存恢复提示、错误消息框），`details.dialogs` 列出标题；在窗口中关闭后重试 |
 | `SCRIPT_ERROR` | `exec` 的脚本抛出异常，`details` 给出脚本存档路径和 traceback；后台进程继续运行 |
 | `SPEC_CHANGED` | 调整轮次中，规格路径或补全后的验收配置与第 0 轮冻结的不一致；需要新建任务 |
 | `VALUE_NOT_APPLIED` | 修改没有生效（例如被求解覆盖），`details` 给出目标值、实际值和求解类型 |
@@ -144,7 +177,8 @@ work/<实例名>/
 ## 显性调试命令
 
 - `saos lens capture --job J --as backup.zmx`：将窗口当前内容另存到任务，不覆盖源文件或已有副本；可保留连接前尚未保存的修改。
-- `saos lens view --job J`：extension 模式下显示 Lens Data、评价函数编辑器和 8 种原生分析，设为 AllWindows 并刷新。standalone 模式下返回 BAD_ARGS。
+- `saos lens view --job J [--viewer …] [--analysis TYPE]`：extension 模式下打开 Lens Data 或一种 System Viewer，加一个像质分析，并刷新；UpdateMode 设为 EditorsOnly，分析窗口由 saos 在改动后刷新。standalone 模式下返回 BAD_ARGS。
+- `saos lens screenshot --job J [--label L]`：截取 OpticStudio 窗口 PNG。
 
 extension 模式下，窗口有 saos 之外的未保存修改（OpticStudio 的 NeedsSave）时禁止换镜头。实测（2024 R1）临时增删评价函数行的 Zernike 拟合、把面参数写回相同的值都会让 NeedsSave 置位，所以 saos 自己的修改仍以后台进程记录的 dirty 为准；复现校验结束时对未修改的镜头直接重新加载文件，不留下 NeedsSave。分析窗口刷新是否会置位尚未实测；遇到误报时，确认要保存当前任务内容后用 `lens save --no-verify` 保存再切换。
 

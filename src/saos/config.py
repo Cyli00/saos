@@ -28,7 +28,7 @@ def saos_home() -> Path:
     if not INSTANCE_RE.match(instance):
         from saos.protocol import ErrorCode, SaosError
 
-        raise SaosError(ErrorCode.BAD_ARGS, f"SAOS_INSTANCE 只能包含字母、数字、- 和 _，长度 1–48，且以字母或数字开头：{instance!r}")
+        raise SaosError(ErrorCode.BAD_ARGS, f"SAOS_INSTANCE: letters, digits, - and _, 1–48 chars, starting with a letter or digit: {instance!r}")
     return (WORK_ROOT / instance).resolve()
 
 

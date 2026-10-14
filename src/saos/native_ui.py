@@ -26,12 +26,12 @@ def _waiting(item: dict[str, Any]) -> bool:
 
 def require_ready(dialogs: list[dict[str, Any]]) -> dict[str, Any]:
     if len(dialogs) != 1:
-        raise SaosError(ErrorCode.ZOS_ERROR, "需要且只能有一个等待连接的 Interactive Extension 对话框", {"dialogs": dialogs})
+        raise SaosError(ErrorCode.ZOS_ERROR, "exactly one waiting Interactive Extension dialog is required", {"dialogs": dialogs})
     item = dialogs[0]
     if item.get("auto_close") != "Off":
-        raise SaosError(ErrorCode.ZOS_ERROR, "请取消 Auto Close on Disconnect 后再连接", item)
+        raise SaosError(ErrorCode.ZOS_ERROR, "turn off Auto Close on Disconnect before connecting", item)
     if not _waiting(item) or not isinstance(item.get("instance"), int):
-        raise SaosError(ErrorCode.ZOS_ERROR, "Interactive Extension 未处于可识别的等待连接状态", item)
+        raise SaosError(ErrorCode.ZOS_ERROR, "Interactive Extension is not in a recognizable waiting state", item)
     return item
 
 
@@ -40,7 +40,7 @@ def choose_window(windows: list[dict[str, Any]], pid: int | None = None) -> dict
     if len(candidates) != 1:
         raise SaosError(
             ErrorCode.ZOS_ERROR,
-            "无法唯一确定显示窗口；可用 SAOS_UI_PID 指定 OpticStudio 进程",
+            "cannot tell which OpticStudio window to use; set SAOS_UI_PID to its process id",
             {"windows": windows, "requested_pid": pid},
         )
     return candidates[0]
@@ -113,7 +113,7 @@ def _control(root, name: str, kind):
     condition = uia.PropertyCondition(uia.AutomationElement.NameProperty, name)
     items = [e for e in root.FindAll(uia.TreeScope.Descendants, condition) if e.Current.ControlType == kind]
     if len(items) != 1 or not items[0].Current.IsEnabled:
-        raise SaosError(ErrorCode.ZOS_ERROR, f"无法操作原生控件 {name}，窗口可能被其他对话框阻塞")
+        raise SaosError(ErrorCode.ZOS_ERROR, f"cannot operate the native control {name}; the window may be blocked by another dialog")
     return items[0]
 
 
@@ -122,7 +122,7 @@ def _requested_pid() -> int | None:
     try:
         return int(requested) if requested else None
     except ValueError as exc:
-        raise SaosError(ErrorCode.BAD_ARGS, "SAOS_UI_PID 必须是进程编号") from exc
+        raise SaosError(ErrorCode.BAD_ARGS, "SAOS_UI_PID must be a process id") from exc
 
 
 def ensure_extension() -> dict[str, Any]:
@@ -141,13 +141,13 @@ def ensure_extension() -> dict[str, Any]:
         deadline = time.monotonic() + OPEN_TIMEOUT_S
         while not (dialogs := [d for d in discover_dialogs() if d["pid"] == target["pid"]]):
             if time.monotonic() >= deadline:
-                raise SaosError(ErrorCode.ZOS_ERROR, "打开 Interactive Extension 后未检测到对话框")
+                raise SaosError(ErrorCode.ZOS_ERROR, "no Interactive Extension dialog appeared after opening it")
             time.sleep(0.2)
         dialog = choose_window(dialogs, target["pid"])
 
     # 先确认处于等待状态再切换复选框，不接管已连接到其他扩展的窗口
     if not _waiting(dialog):
-        raise SaosError(ErrorCode.ZOS_ERROR, "该窗口已连接或状态未知，不接管其他扩展连接", dialog)
+        raise SaosError(ErrorCode.ZOS_ERROR, "the window is already connected or in an unknown state; saos does not take over another extension", dialog)
     if dialog["auto_close"] == "On":
         checkbox = _control(_element(dialog["hwnd"]), "Auto Close on Disconnect", uia.ControlType.CheckBox)
         checkbox.GetCurrentPattern(uia.TogglePattern.Pattern).Toggle()
@@ -253,3 +253,24 @@ def capture_windows(pid: int, folder: Path, prefix: str) -> list[str]:
         path.write_bytes(encode_png(*shot))
         saved.append(path.name)
     return saved
+
+
+# ---- 阻塞对话框 ----
+
+# 实测会挡住分析计算的模态框：异常退出后的自动保存恢复提示、OpticStudio 的错误消息框
+KNOWN_BLOCKERS = ("Autosave Recovery Notification", "Zemax Error Message")
+
+
+def blocking_dialogs(pid: int) -> list[str]:
+    """该进程当前可见的模态对话框标题（标准对话框类 #32770 或已知的阻塞窗口），Interactive Extension 除外。"""
+    user = ctypes.WinDLL("user32", use_last_error=True)
+    user.GetClassNameW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_int]
+    found = []
+    for w in _top_windows(lambda title, visible: visible and bool(title.strip())):
+        if w["pid"] != pid or w["title"] == DIALOG_TITLE:
+            continue
+        name = ctypes.create_unicode_buffer(256)
+        user.GetClassNameW(w["hwnd"], name, 256)
+        if w["title"] in KNOWN_BLOCKERS or name.value == "#32770":
+            found.append(w["title"])
+    return found

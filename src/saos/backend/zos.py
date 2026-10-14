@@ -29,14 +29,14 @@ def _load_zosapi(root: str):
         return _ZOSAPI
     for dll in ("ZOSAPI_NetHelper.dll", "ZOSAPI.dll", "ZOSAPI_Interfaces.dll"):
         if not os.path.isfile(os.path.join(root, dll)):
-            raise SaosError(ErrorCode.ZOS_ERROR, f"在 {root} 中找不到 {dll}", {"opticstudio_dir": root})
+            raise SaosError(ErrorCode.ZOS_ERROR, f"{dll} not found in {root}", {"opticstudio_dir": root})
     import clr  # pythonnet
 
     clr.AddReference(os.path.join(root, "ZOSAPI_NetHelper.dll"))
     import ZOSAPI_NetHelper
 
     if not ZOSAPI_NetHelper.ZOSAPI_Initializer.Initialize(root):
-        raise SaosError(ErrorCode.ZOS_ERROR, f"ZOSAPI_Initializer 初始化失败：{root}")
+        raise SaosError(ErrorCode.ZOS_ERROR, f"ZOSAPI_Initializer failed: {root}")
     clr.AddReference(os.path.join(root, "ZOSAPI.dll"))
     clr.AddReference(os.path.join(root, "ZOSAPI_Interfaces.dll"))
     import ZOSAPI
@@ -48,7 +48,7 @@ def _load_zosapi(root: str):
 class ZosBackend(Backend):
     def __init__(self, mode: str = "standalone"):
         if mode not in ("standalone", "extension"):
-            raise SaosError(ErrorCode.BAD_ARGS, f"未知的连接方式：{mode}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"unknown connection mode: {mode}")
         self.mode = mode
         self.root = config.opticstudio_dir()
         self.app = None
@@ -67,13 +67,13 @@ class ZosBackend(Backend):
 
             self.extension_ui = ensure_extension()
             app = conn.ConnectAsExtension(self.extension_ui["instance"])
-        hint = "在 OpticStudio 中点 Programming → Interactive Extension，使它处于等待连接状态" if self.mode == "extension" else ""
+        hint = "in OpticStudio click Programming → Interactive Extension so that it waits for a connection" if self.mode == "extension" else ""
         if app is None:
-            raise SaosError(ErrorCode.ZOS_ERROR, f"无法连接 OpticStudio（{self.mode}）。{hint}")
+            raise SaosError(ErrorCode.ZOS_ERROR, f"cannot connect to OpticStudio ({self.mode}). {hint}")
         if self.mode == "extension" and not self._extension_ready(app):
             # 实测 2024 R1：上一个扩展客户端断开后，窗口退出扩展状态，ConnectAsExtension 仍返回对象，
             # 但没有 PrimarySystem，许可检查为 False，ProgramDir 抛 ArgumentNullException
-            raise SaosError(ErrorCode.ZOS_ERROR, f"OpticStudio 窗口没有处于 Interactive Extension 状态。{hint}；每次后台进程退出后都要重新点一次")
+            raise SaosError(ErrorCode.ZOS_ERROR, f"the OpticStudio window is not in Interactive Extension mode. {hint}; this is needed again after every daemon exit")
         self.app = app
         version = (int(app.ZOSMajorVersion), int(app.ZOSMinorVersion), int(app.ZOSSPVersion))
         info = {
@@ -86,11 +86,11 @@ class ZosBackend(Backend):
             info.update(extension_ui=self.extension_ui, initial_file=str(app.PrimarySystem.SystemFile), initial_needs_save=bool(app.PrimarySystem.NeedsSave))
         if not app.IsValidLicenseForAPI:
             self.close()
-            raise SaosError(ErrorCode.ZOS_LICENSE, "许可证不支持 ZOS-API", info)
+            raise SaosError(ErrorCode.ZOS_LICENSE, "the license does not allow ZOS-API", info)
         if version != config.EXPECTED_ZOS_VERSION:
             self.close()
             expected = ".".join(map(str, config.EXPECTED_ZOS_VERSION))
-            raise SaosError(ErrorCode.ZOS_VERSION_MISMATCH, f"OpticStudio 版本为 {info['version']}，项目锁定 {expected}", info)
+            raise SaosError(ErrorCode.ZOS_VERSION_MISMATCH, f"OpticStudio version is {info['version']}; the project is locked to {expected}", info)
         return info
 
     @contextmanager
@@ -137,7 +137,7 @@ class ZosBackend(Backend):
     @property
     def system(self):
         if self.app is None:
-            raise SaosError(ErrorCode.ZOS_CONNECTION_LOST, "未连接 OpticStudio")
+            raise SaosError(ErrorCode.ZOS_CONNECTION_LOST, "not connected to OpticStudio")
         return self.app.PrimarySystem
 
     def needs_save(self) -> bool:
@@ -223,9 +223,11 @@ class ZosBackend(Backend):
         run = opened.get(watch["analysis"]) or system.Analyses.New_Analysis(an.idm(zosapi, watch["analysis"]))
         an.apply_settings(an.settings_of(run), watch["settings"])
         message = run.ApplyAndWaitForCompletion()
-        system.UpdateMode = zosapi.LensUpdateMode.AllWindows
+        # 只让 OpticStudio 自动更新编辑器；分析窗口由 saos 在每次改动后显式刷新。
+        # 实测 AllWindows 会在改动后异步重算分析窗口，与 API 读取竞争：读到 None，或与等待循环互相卡住
+        system.UpdateMode = zosapi.LensUpdateMode.EditorsOnly
         self.app.ProgressMessage = f"saos: {watch['viewer']} + {watch['analysis']}"
-        return {"watch": watch, "message": str(message) if message else None, "windows": self.window_list()}
+        return {"watch": watch, "message": str(message) if message else None, "update_mode": str(system.UpdateMode), "windows": self.window_list()}
 
     def window_list(self) -> list[dict[str, str]]:
         return [{"type": str(a.AnalysisType), "title": str(a.Title)} for a in self._open_analyses().values()]
@@ -243,6 +245,14 @@ class ZosBackend(Backend):
                 failed.append({"type": name, "error": str(exc)[:200]})
         return {"refreshed": refreshed, "failed": failed}
 
+    def blocking_dialogs(self) -> list[str]:
+        """显性调试：挡住 OpticStudio 的模态对话框。被挡住时分析会停在 Working 0%，请求会一直挂起。"""
+        if self.mode != "extension" or not (self.extension_ui or {}).get("pid"):
+            return []
+        from saos import native_ui
+
+        return native_ui.blocking_dialogs(int(self.extension_ui["pid"]))
+
     def screenshots(self, folder: Path, prefix: str) -> list[str]:
         from saos import native_ui
 
@@ -257,14 +267,14 @@ class ZosBackend(Backend):
     def load(self, path: Path) -> None:
         path = Path(path).resolve()
         if not self.system.LoadFile(str(path), False):
-            raise SaosError(ErrorCode.ZOS_LOAD_FAILED, f"OpticStudio 无法加载 {path}")
+            raise SaosError(ErrorCode.ZOS_LOAD_FAILED, f"OpticStudio cannot load {path}")
         self._material_cache.clear()
 
     def save_as(self, path: Path) -> None:
         path = Path(path).resolve()
         self.system.SaveAs(str(path))
         if not path.is_file():
-            raise SaosError(ErrorCode.ZOS_SAVE_FAILED, f"保存后找不到文件 {path}")
+            raise SaosError(ErrorCode.ZOS_SAVE_FAILED, f"file not found after saving: {path}")
 
     def new_system(self) -> None:
         self.system.New(False)
@@ -341,10 +351,10 @@ class ZosBackend(Backend):
 
     def set_surface(self, index: int, param: str, value: Any) -> dict[str, Any]:
         if param not in SURFACE_PARAMS:
-            raise SaosError(ErrorCode.BAD_ARGS, f"不支持的面参数 {param!r}，可用：{', '.join(SURFACE_PARAMS)}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"unsupported surface parameter {param!r}; use one of {', '.join(SURFACE_PARAMS)}")
         lde = self.system.LDE
         if not isinstance(index, int) or not 0 <= index < lde.NumberOfSurfaces:
-            raise SaosError(ErrorCode.BAD_ARGS, f"面序号 {index!r} 超出范围 0–{lde.NumberOfSurfaces - 1}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"surface {index!r} out of range 0–{lde.NumberOfSurfaces - 1}")
         surf = lde.GetSurfaceAt(index)
         attr = self._ATTR[param]
 
@@ -362,7 +372,7 @@ class ZosBackend(Backend):
             cell = getattr(surf, f"{attr}Cell")
             raise SaosError(
                 ErrorCode.VALUE_NOT_APPLIED,
-                f"面 {index} 的 {param} 没有变成目标值，可能被求解或自动设置覆盖",
+                f"surface {index} {param} did not take the requested value; a solve or automatic setting may override it",
                 {"requested": target, "actual": actual, "solve": str(cell.GetSolveData().Type)},
             )
         return self._surface_dict(surf, index)
@@ -385,7 +395,7 @@ class ZosBackend(Backend):
         if upper not in self._material_cache[catalogs]:
             raise SaosError(
                 ErrorCode.BAD_ARGS,
-                f"当前使用的玻璃目录中没有 {name!r}",
+                f"{name!r} is not in the catalogs in use",
                 {"catalogs": list(catalogs)},
             )
         return upper
@@ -427,7 +437,7 @@ class ZosBackend(Backend):
                 mc.RemoveCatalog(cat)
         missing = [c for c in wanted if c not in [str(x).upper() for x in mc.GetCatalogsInUse()]]
         if missing:
-            raise SaosError(ErrorCode.BAD_ARGS, f"无法加载玻璃目录 {missing}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"cannot load glass catalogs {missing}")
 
         sd.Aperture.ApertureType = zosapi.SystemData.ZemaxApertureType.ObjectSpaceNA
         sd.Aperture.ApertureValue = p["aperture"]["value"]
@@ -466,7 +476,7 @@ class ZosBackend(Backend):
         obj.Thickness = p["object"]["thickness"]
         obj.Comment = p["object"]["comment"]
         if p["object"]["material"]:
-            self._set_material(obj, p["object"]["material"], "物面")
+            self._set_material(obj, p["object"]["material"], "object surface")
         columns = zosapi.Editors.LDE.SurfaceColumn
         for k, s in enumerate(surfaces, start=1):
             row = lde.GetSurfaceAt(k)
@@ -478,7 +488,7 @@ class ZosBackend(Backend):
                 row.Radius = s["radius"]
                 row.Conic = s["conic"]
                 if s["material"]:
-                    self._set_material(row, s["material"], f"面 {k}")
+                    self._set_material(row, s["material"], f"surface {k}")
             row.Thickness = s["thickness"]
             row.Comment = s["comment"]
         for k, s in enumerate(surfaces, start=1):
@@ -571,12 +581,12 @@ class ZosBackend(Backend):
 
     def vary(self, surface: int, param: str, on: bool) -> str:
         if param not in self._CELLS:
-            raise SaosError(ErrorCode.BAD_ARGS, f"只能把 {', '.join(self._CELLS)} 设为变量")
+            raise SaosError(ErrorCode.BAD_ARGS, f"only {', '.join(self._CELLS)} can be variables")
         lde = self.system.LDE
         # 物面只允许厚度（无盖玻片时即工作距离间隔）设为变量
         allowed = 0 < surface < lde.NumberOfSurfaces - 1 or (surface == 0 and param == "thickness")
         if not allowed:
-            raise SaosError(ErrorCode.BAD_ARGS, f"面 {surface} 的 {param} 不能设变量")
+            raise SaosError(ErrorCode.BAD_ARGS, f"surface {surface} {param} cannot be a variable")
         cell = getattr(lde.GetSurfaceAt(surface), self._CELLS[param])
         cell.MakeSolveVariable() if on else cell.MakeSolveFixed()
         return str(cell.GetSolveData().Type)
@@ -589,7 +599,7 @@ class ZosBackend(Backend):
             for i, n in enumerate(names):
                 if n.replace(" ", "").lower() == wanted.replace(" ", "").lower():
                     return i
-            raise SaosError(ErrorCode.BAD_ARGS, f"优化向导的 {name} 只能是 {names}，收到 {wanted!r}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"optimization wizard {name} must be one of {names}, got {wanted!r}")
 
         wiz.Type = pick("type", "NumberOfTypes", "GetTypeAt", settings.get("type", "RMS"))
         wiz.Data = pick("data", "NumberOfDataTypes", "GetDataTypeAt", settings.get("data", "Wavefront"))
@@ -617,7 +627,7 @@ class ZosBackend(Backend):
         for spec in rows:
             op_type = getattr(zosapi.Editors.MFE.MeritOperandType, str(spec["type"]).upper(), None)
             if op_type is None:
-                raise SaosError(ErrorCode.BAD_ARGS, f"未知的操作数 {spec['type']!r}")
+                raise SaosError(ErrorCode.BAD_ARGS, f"unknown operand {spec['type']!r}")
             # 新行插在开头，避免被默认评价函数（从 DMFS 起）重建时覆盖
             row = mfe.InsertNewOperandAt(1)
             row.ChangeType(op_type)
@@ -654,7 +664,7 @@ class ZosBackend(Backend):
         zosapi = _load_zosapi(self.root)
         names = {"auto": "Automatic", "1": "Fixed_1_Cycle", "5": "Fixed_5_Cycles", "10": "Fixed_10_Cycles", "50": "Fixed_50_Cycles"}
         if cycles not in names:
-            raise SaosError(ErrorCode.BAD_ARGS, f"cycles 只能是 {list(names)}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"cycles must be one of {list(names)}")
         tool = self.system.Tools.OpenLocalOptimization()
         try:
             tool.Algorithm = zosapi.Tools.Optimization.OptimizationAlgorithm.DampedLeastSquares
@@ -701,8 +711,8 @@ class ZosBackend(Backend):
         zosapi = _load_zosapi(self.root)
         op_type = getattr(zosapi.Editors.MFE.MeritOperandType, name.upper(), None)
         if op_type is None:
-            raise SaosError(ErrorCode.BAD_ARGS, f"未知的操作数 {name!r}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"unknown operand {name!r}")
         if len(data) > 6:
-            raise SaosError(ErrorCode.BAD_ARGS, "操作数最多 6 个浮点参数")
+            raise SaosError(ErrorCode.BAD_ARGS, "an operand takes at most 6 float parameters")
         padded = [float(x) for x in data] + [0.0] * (6 - len(data))
         return float(self.system.MFE.GetOperandValue(op_type, int(int1), int(int2), *padded))

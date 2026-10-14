@@ -15,14 +15,14 @@ RAY_AIMING = ("off", "paraxial", "real")
 
 
 def _bad(message: str) -> SaosError:
-    return SaosError(ErrorCode.BAD_ARGS, f"处方错误：{message}")
+    return SaosError(ErrorCode.BAD_ARGS, f"prescription: {message}")
 
 
 def _number(value: Any, name: str) -> float:
     if isinstance(value, str) and value.lower() in ("inf", "infinity"):
         return math.inf
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise _bad(f"{name} 需要数值，收到 {value!r}")
+        raise _bad(f"{name} needs a number, got {value!r}")
     return float(value)
 
 
@@ -35,32 +35,32 @@ def normalize_material(value: Any, name: str) -> Any:
     if isinstance(value, dict) and isinstance(value.get("model"), dict):
         model = value["model"]
         return {"model": {"nd": _number(model.get("nd"), f"{name}.nd"), "vd": _number(model.get("vd"), f"{name}.vd"), "dpgf": float(model.get("dpgf", 0.0))}}
-    raise _bad(f"{name} 的材料格式不对：{value!r}")
+    raise _bad(f"{name} has a malformed material: {value!r}")
 
 
 def normalize(p: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(p, dict):
-        raise _bad("处方必须是 JSON 对象")
+        raise _bad("the prescription must be a JSON object")
     aperture = p.get("aperture") or {}
     if aperture.get("type") != "object_na":
-        raise _bad("aperture.type 目前只支持 object_na")
+        raise _bad("aperture.type supports only object_na for now")
     fields = p.get("fields") or {}
     if fields.get("type") != "object_height":
-        raise _bad("fields.type 目前只支持 object_height")
+        raise _bad("fields.type supports only object_height for now")
     ys = [_number(y, "fields.y") for y in fields.get("y") or []]
     if not ys:
-        raise _bad("至少需要一个视场")
+        raise _bad("at least one field is required")
     waves = p.get("wavelengths") or {}
     um = [_number(w, "wavelengths.um") for w in waves.get("um") or []]
     if not um:
-        raise _bad("至少需要一个波长")
+        raise _bad("at least one wavelength is required")
     weights = [_number(w, "wavelengths.weights") for w in waves.get("weights") or [1.0] * len(um)]
     primary = waves.get("primary", 1)
     if len(weights) != len(um) or not isinstance(primary, int) or not 1 <= primary <= len(um):
-        raise _bad("wavelengths 的权重个数或主波长序号不对")
+        raise _bad("wavelengths: wrong number of weights or primary index")
     aiming = p.get("ray_aiming", "real")
     if aiming not in RAY_AIMING:
-        raise _bad(f"ray_aiming 只能是 {RAY_AIMING}")
+        raise _bad(f"ray_aiming must be one of {RAY_AIMING}")
 
     obj = p.get("object") or {}
     out_obj = {
@@ -75,7 +75,7 @@ def normalize(p: dict[str, Any]) -> dict[str, Any]:
         name = f"surfaces[{k}]"
         kind = s.get("type", "standard")
         if kind not in ("standard", "paraxial"):
-            raise _bad(f"{name}.type 只能是 standard / paraxial")
+            raise _bad(f"{name}.type must be standard or paraxial")
         item: dict[str, Any] = {
             "type": kind,
             "thickness": _number(s.get("thickness", 0.0), f"{name}.thickness"),
@@ -92,9 +92,9 @@ def normalize(p: dict[str, Any]) -> dict[str, Any]:
         stops += item["stop"]
         surfaces.append(item)
     if not surfaces:
-        raise _bad("至少需要一个面")
+        raise _bad("at least one surface is required")
     if stops > 1:
-        raise _bad("只能有一个光阑面")
+        raise _bad("only one stop surface is allowed")
 
     return {
         "title": str(p.get("title", "")),

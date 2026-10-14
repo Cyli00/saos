@@ -32,6 +32,7 @@ class ErrorCode:
     VALUE_NOT_APPLIED = "VALUE_NOT_APPLIED"
     VERIFY_FAILED = "VERIFY_FAILED"
     SCRIPT_ERROR = "SCRIPT_ERROR"
+    UI_BLOCKED = "UI_BLOCKED"
     SPEC_CHANGED = "SPEC_CHANGED"
     ZOS_ERROR = "ZOS_ERROR"
     ZOS_LOAD_FAILED = "ZOS_LOAD_FAILED"
@@ -89,7 +90,7 @@ def read_json(path: Path | str) -> Any:
     try:
         return json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        raise SaosError(ErrorCode.BAD_ARGS, f"无法读取 JSON 文件 {path}：{exc}") from exc
+        raise SaosError(ErrorCode.BAD_ARGS, f"cannot read JSON file {path}: {exc}") from exc
 
 
 def encode(message: dict[str, Any]) -> bytes:
@@ -100,7 +101,7 @@ def decode(raw: bytes) -> dict[str, Any]:
     try:
         message = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise SaosError(ErrorCode.PROTOCOL_ERROR, f"无法解析消息：{exc}") from exc
+        raise SaosError(ErrorCode.PROTOCOL_ERROR, f"cannot parse message: {exc}") from exc
     if not isinstance(message, dict):
-        raise SaosError(ErrorCode.PROTOCOL_ERROR, "消息必须是 JSON 对象")
+        raise SaosError(ErrorCode.PROTOCOL_ERROR, "messages must be JSON objects")
     return message

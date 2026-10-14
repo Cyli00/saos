@@ -20,7 +20,7 @@ from multiprocessing.connection import Connection, Listener
 from pathlib import Path
 from typing import Any, Callable
 
-from saos import config, jobs, prescription, scripting
+from saos import config, jobs, prescription, scripting, workflow
 from saos.backend import Backend, make_backend
 from saos.backend.base import same_number
 from saos.protocol import ErrorCode, SaosError, decode, encode, fail, jsonable, ok, write_json
@@ -29,7 +29,7 @@ log = logging.getLogger("saos.daemon")
 
 REQUEST_READ_TIMEOUT_S = 30
 # 显性调试：这些操作可能改变镜头，结束后刷新已打开的分析窗口
-REFRESH_AFTER = frozenset({"lens.load", "lens.set", "lens.save", "lens.build", "lens.capture", "opt.local", "script.exec"})
+REFRESH_AFTER = frozenset({"lens.load", "lens.set", "lens.save", "lens.build", "lens.capture", "opt.local", "script.exec", "round.record"})
 COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
 COMPARED_NUMBER_KEYS = ("radius", "thickness", "conic", "semi_diameter")
 
@@ -47,13 +47,13 @@ class Loaded:
 def _arg(args: dict[str, Any], name: str, kind: type | tuple[type, ...], *, default: Any = ..., allow_none=False):
     if name not in args or (args[name] is None and not allow_none):
         if default is ...:
-            raise SaosError(ErrorCode.BAD_ARGS, f"缺少参数 {name}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"missing argument {name}")
         return default
     value = args[name]
     if value is None and allow_none:
         return None
     if kind is int and isinstance(value, bool) or not isinstance(value, kind):
-        raise SaosError(ErrorCode.BAD_ARGS, f"参数 {name} 类型错误：{value!r}")
+        raise SaosError(ErrorCode.BAD_ARGS, f"argument {name} has the wrong type: {value!r}")
     return value
 
 
@@ -106,6 +106,8 @@ class Daemon:
             "opt.merit": self.op_merit,
             "opt.local": self.op_optimize,
             "script.exec": self.op_exec,
+            "harness.check": self.op_check,
+            "round.record": self.op_round,
         }
 
     # ---- 请求分发 ----
@@ -118,12 +120,20 @@ class Daemon:
         result: Any = None
         try:
             if not isinstance(args, dict):
-                raise SaosError(ErrorCode.BAD_ARGS, "args 必须是对象")
+                raise SaosError(ErrorCode.BAD_ARGS, "args must be an object")
             handler = self.handlers.get(op)  # type: ignore[arg-type]
             if handler is None:
-                raise SaosError(ErrorCode.UNKNOWN_OP, f"未知操作 {op!r}", {"available": sorted(self.handlers)})
+                raise SaosError(ErrorCode.UNKNOWN_OP, f"unknown operation {op!r}", {"available": sorted(self.handlers)})
             if op not in ("ping", "shutdown") and not self.backend.healthy():
-                raise self._connection_lost({"detected": "操作前的连接检查"})
+                raise self._connection_lost({"detected": "connection check before the operation"})
+            if op not in ("ping", "shutdown"):
+                blockers = self.backend.blocking_dialogs()
+                if blockers:
+                    raise SaosError(
+                        ErrorCode.UI_BLOCKED,
+                        f"the OpticStudio window is blocked by a dialog ({', '.join(blockers)}); close it in the window and retry",
+                        {"dialogs": blockers},
+                    )
             # 连接手动打开的窗口时，带 quiet 的脚本执行期间暂停界面刷新，结束后窗口显示最终状态；SAOS_UI_LIVE=1 时全程刷新
             quiet = op == "script.exec" and bool(args.get("quiet")) and os.environ.get("SAOS_UI_LIVE") != "1"
             with self.backend.activity(f"saos {op}", quiet):
@@ -168,7 +178,7 @@ class Daemon:
     def _unexpected(self, exc: Exception) -> SaosError:
         detail = {"exception": type(exc).__name__, "message": str(exc)[:2000]}
         if self.backend.healthy():
-            return SaosError(ErrorCode.ZOS_ERROR, f"后端操作失败：{exc}", detail)
+            return SaosError(ErrorCode.ZOS_ERROR, f"backend operation failed: {exc}", detail)
         return self._connection_lost(detail)
 
     def _connection_lost(self, detail: dict[str, Any]) -> SaosError:
@@ -180,7 +190,7 @@ class Daemon:
         self.stopping = True
         return SaosError(
             ErrorCode.ZOS_CONNECTION_LOST,
-            "OpticStudio 连接已中断，后台进程随即退出；未保存的修改已丢失。执行 saos daemon start 重新启动后再加载镜头",
+            "the OpticStudio connection is lost and the daemon is exiting; unsaved changes are gone. Run saos daemon start and load the lens again",
             detail,
         )
 
@@ -210,11 +220,11 @@ class Daemon:
 
     def _require_loaded(self, job: jobs.Job) -> Loaded:
         if self.loaded is None:
-            raise SaosError(ErrorCode.NO_LENS_LOADED, f"任务 {job.id} 没有加载镜头，先执行 lens load")
+            raise SaosError(ErrorCode.NO_LENS_LOADED, f"job {job.id} has no lens loaded; run lens load first")
         if self.loaded.job.id != job.id:
             raise SaosError(
                 ErrorCode.JOB_MISMATCH,
-                f"当前加载的是任务 {self.loaded.job.id} 的镜头，不能用任务 {job.id} 的名义操作",
+                f"the loaded lens belongs to job {self.loaded.job.id}; job {job.id} cannot act on it",
                 self.loaded.describe(),
             )
         return self.loaded
@@ -227,7 +237,7 @@ class Daemon:
         if self.loaded is not None and self.loaded.dirty and not discard:
             raise SaosError(
                 ErrorCode.UNSAVED_CHANGES,
-                f"任务 {self.loaded.job.id} 的镜头有未保存的修改，{action}前先保存，或加 discard 放弃修改",
+                f"the lens of job {self.loaded.job.id} has unsaved changes; save before {action}, or pass discard",
                 self.loaded.describe(),
             )
 
@@ -247,7 +257,7 @@ class Daemon:
         }
 
     def op_shutdown(self, args: dict[str, Any]) -> dict[str, Any]:
-        self._check_not_dirty(bool(args.get("discard", False)), "退出")
+        self._check_not_dirty(bool(args.get("discard", False)), "exiting")
         self.stopping = True
         return {"stopping": True, "discarded": self.loaded.describe() if self.loaded and self.loaded.dirty else None}
 
@@ -255,17 +265,17 @@ class Daemon:
         job = self._job(args)
         src = Path(_arg(args, "src", str))
         if not src.is_absolute():
-            raise SaosError(ErrorCode.BAD_ARGS, "src 必须是绝对路径")
+            raise SaosError(ErrorCode.BAD_ARGS, "src must be an absolute path")
         if not src.is_file():
-            raise SaosError(ErrorCode.FILE_NOT_FOUND, f"源镜头文件不存在：{src}")
+            raise SaosError(ErrorCode.FILE_NOT_FOUND, f"source lens file does not exist: {src}")
         if src.suffix.lower() != jobs.LENS_SUFFIX:
-            raise SaosError(ErrorCode.BAD_ARGS, f"只支持导入 {jobs.LENS_SUFFIX} 文件")
+            raise SaosError(ErrorCode.BAD_ARGS, f"only {jobs.LENS_SUFFIX} files can be imported")
         name = _arg(args, "name", str, default=src.name)
         dest = job.resolve_lens(name, must_exist=False)
         if self.loaded is not None and self.loaded.path == dest:
-            raise SaosError(ErrorCode.BAD_ARGS, f"{name} 正在加载中，不能用导入覆盖")
+            raise SaosError(ErrorCode.BAD_ARGS, f"{name} is loaded; an import cannot overwrite it")
         if dest.exists() and not args.get("overwrite", False):
-            raise SaosError(ErrorCode.FILE_EXISTS, f"任务 {job.id} 中已有 {name}，需要覆盖时加 overwrite")
+            raise SaosError(ErrorCode.FILE_EXISTS, f"job {job.id} already has {name}; pass overwrite to replace it")
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
         return {"job": job.id, "file": job.relative_lens(dest), "source": str(src)}
@@ -273,7 +283,7 @@ class Daemon:
     def op_load(self, args: dict[str, Any]) -> dict[str, Any]:
         job = self._job(args)
         path = job.resolve_lens(_arg(args, "file", str), must_exist=True)
-        self._check_not_dirty(bool(args.get("discard", False)), "加载其他镜头")
+        self._check_not_dirty(bool(args.get("discard", False)), "loading another lens")
         self.loaded = None
         self.backend.load(path)
         self.loaded = Loaded(job, path)
@@ -286,7 +296,7 @@ class Daemon:
         if self.loaded is None:
             return {"job": job.id, "unloaded": None}
         loaded = self._require_loaded(job)
-        self._check_not_dirty(bool(args.get("discard", False)), "卸载")
+        self._check_not_dirty(bool(args.get("discard", False)), "unloading")
         self.backend.new_system()
         self.loaded = None
         return {"job": job.id, "unloaded": loaded.describe()}
@@ -304,7 +314,7 @@ class Daemon:
         surface = _arg(args, "surface", int)
         param = _arg(args, "param", str)
         if "value" not in args:
-            raise SaosError(ErrorCode.BAD_ARGS, "缺少参数 value")
+            raise SaosError(ErrorCode.BAD_ARGS, "missing argument value")
         current = self.backend.surfaces()
         before = current[surface].get(param) if 0 <= surface < len(current) else None
         after = self.backend.set_surface(surface, param, args["value"])
@@ -317,7 +327,7 @@ class Daemon:
         name = _arg(args, "file", str, default=None)
         target = loaded.path if name is None else job.resolve_lens(name, must_exist=False)
         if target != loaded.path and target.exists() and not args.get("overwrite", False):
-            raise SaosError(ErrorCode.FILE_EXISTS, f"任务 {job.id} 中已有 {name}，需要覆盖时加 overwrite")
+            raise SaosError(ErrorCode.FILE_EXISTS, f"job {job.id} already has {name}; pass overwrite to replace it")
         verify = bool(args.get("verify", True))
         snapshot = self.backend.surfaces() if verify else None
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -332,7 +342,7 @@ class Daemon:
             self.backend.load(target)
             diffs = compare_surfaces(snapshot or [], self.backend.surfaces())
             if diffs:
-                raise SaosError(ErrorCode.VERIFY_FAILED, f"{rel} 重新加载后与保存前不一致", {"diffs": diffs[:50]})
+                raise SaosError(ErrorCode.VERIFY_FAILED, f"{rel} differs after reloading from the state before saving", {"diffs": diffs[:50]})
             result.update(verified=True, surfaces_checked=len(snapshot or []))
         return result
 
@@ -341,8 +351,8 @@ class Daemon:
         presc = prescription.normalize(_arg(args, "prescription", dict))
         target = job.resolve_lens(_arg(args, "file", str), must_exist=False)
         if target.exists() and not args.get("overwrite", False):
-            raise SaosError(ErrorCode.FILE_EXISTS, f"任务 {job.id} 中已有 {job.relative_lens(target)}，需要覆盖时加 overwrite")
-        self._check_not_dirty(bool(args.get("discard", False)), "搭建新镜头")
+            raise SaosError(ErrorCode.FILE_EXISTS, f"job {job.id} already has {job.relative_lens(target)}; pass overwrite to replace it")
+        self._check_not_dirty(bool(args.get("discard", False)), "building a new lens")
         self.loaded = None
         self.backend.build(presc)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -358,7 +368,7 @@ class Daemon:
             self._require_loaded(job)
         target = job.resolve_lens(_arg(args, "file", str), must_exist=False)
         if target.exists():
-            raise SaosError(ErrorCode.FILE_EXISTS, "捕获副本不能覆盖已有文件")
+            raise SaosError(ErrorCode.FILE_EXISTS, "a captured copy cannot overwrite an existing file")
         target.parent.mkdir(parents=True, exist_ok=True)
         original = self.backend.system_info()["file"]
         self.backend.save_as(target)
@@ -431,7 +441,7 @@ class Daemon:
         elif action == "add":
             self.backend.merit_add(_arg(args, "rows", list))
         elif action != "show":
-            raise SaosError(ErrorCode.BAD_ARGS, f"未知的评价函数操作 {action}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"unknown merit action {action}")
         if action != "show":
             loaded.dirty = True
         return {**loaded.describe(), "merit": self.backend.merit_value(), "rows": self.backend.merit_rows()}
@@ -454,6 +464,19 @@ class Daemon:
             # 实测只读的 Zernike 拟合也会让 NeedsSave 置位，所以这样做偏保守
             if self.loaded is not None and self.backend.healthy() and self.backend.needs_save():
                 self.loaded.dirty = True
+
+    def op_check(self, args: dict[str, Any]) -> dict[str, Any]:
+        """按需求框定对当前镜头逐项取值判定，不记录轮次。"""
+        job = self._job(args)
+        self._require_loaded(job)
+        return workflow.check(scripting.ScriptContext(self, job, {}))
+
+    def op_round(self, args: dict[str, Any]) -> dict[str, Any]:
+        """记录一个调试轮次并给出终止判断（DESIGN.md「终止规则」）。"""
+        job = self._job(args)
+        self._require_loaded(job)
+        ctx = scripting.ScriptContext(self, job, {})
+        return workflow.record_round(ctx, _arg(args, "tier", str, default=None), str(args.get("note", "")))
 
     def op_operand(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))
@@ -510,7 +533,7 @@ def serve(mode: str, token: str = "") -> int:
         listener = Listener(config.pipe_address(), family="AF_PIPE", authkey=authkey)
     except OSError as exc:
         backend.close()
-        write_json(error_file, SaosError(ErrorCode.DAEMON_ALREADY_RUNNING, f"命名管道已被占用：{exc}").to_dict())
+        write_json(error_file, SaosError(ErrorCode.DAEMON_ALREADY_RUNNING, f"the named pipe is in use: {exc}").to_dict())
         return 1
 
     config.daemon_authkey_file().write_bytes(authkey)

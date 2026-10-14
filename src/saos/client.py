@@ -103,25 +103,25 @@ def request(op: str, args: dict[str, Any] | None = None, timeout: float = DEFAUL
     """发送一个请求，成功时返回 result，失败时抛出 SaosError。"""
     state = read_state()
     if state is None or not pid_alive(int(state.get("pid", 0))):
-        raise SaosError(ErrorCode.DAEMON_NOT_RUNNING, "后台进程没有运行，先执行 saos daemon start")
+        raise SaosError(ErrorCode.DAEMON_NOT_RUNNING, "the daemon is not running; run saos daemon start first")
     try:
         authkey = config.daemon_authkey_file().read_bytes()
         conn = Client(state["address"], family="AF_PIPE", authkey=authkey)
     except (OSError, KeyError) as exc:
-        raise SaosError(ErrorCode.DAEMON_NOT_RUNNING, f"无法连接后台进程：{exc}") from exc
+        raise SaosError(ErrorCode.DAEMON_NOT_RUNNING, f"cannot connect to the daemon: {exc}") from exc
     try:
         conn.send_bytes(encode({"op": op, "args": args or {}}))
         if not conn.poll(timeout):
-            raise SaosError(ErrorCode.DAEMON_TIMEOUT, f"{timeout:.0f} 秒内没有收到响应", {"op": op})
+            raise SaosError(ErrorCode.DAEMON_TIMEOUT, f"no response within {timeout:.0f} s", {"op": op})
         response = decode(conn.recv_bytes())
     except (EOFError, OSError) as exc:
-        raise SaosError(ErrorCode.DAEMON_NOT_RUNNING, f"与后台进程的连接中断：{exc}") from exc
+        raise SaosError(ErrorCode.DAEMON_NOT_RUNNING, f"connection to the daemon broke: {exc}") from exc
     finally:
         conn.close()
     if response.get("ok"):
         return response.get("result")
     err = response.get("error") or {}
-    raise SaosError(err.get("code", ErrorCode.PROTOCOL_ERROR), err.get("message", "未知错误"), err.get("details"))
+    raise SaosError(err.get("code", ErrorCode.PROTOCOL_ERROR), err.get("message", "unknown error"), err.get("details"))
 
 
 def _log_tail(lines: int = 20) -> list[str]:
@@ -169,7 +169,7 @@ def status() -> dict[str, Any]:
 def start(mode: str, timeout: float = DEFAULT_START_TIMEOUT_S) -> dict[str, Any]:
     current = status()
     if current.get("running"):
-        raise SaosError(ErrorCode.DAEMON_ALREADY_RUNNING, "后台进程已在运行", current)
+        raise SaosError(ErrorCode.DAEMON_ALREADY_RUNNING, "the daemon is already running", current)
 
     error_file = config.daemon_dir() / "start_error.json"
     error_file.unlink(missing_ok=True)
@@ -182,7 +182,7 @@ def start(mode: str, timeout: float = DEFAULT_START_TIMEOUT_S) -> dict[str, Any]
             if error_file.is_file():
                 err = json.loads(error_file.read_text(encoding="utf-8"))
                 raise SaosError(err["code"], err["message"], {**(err.get("details") or {}), "log_tail": _log_tail()})
-            raise SaosError(ErrorCode.DAEMON_START_FAILED, f"后台进程退出，退出码 {proc.returncode}", {"log_tail": _log_tail()})
+            raise SaosError(ErrorCode.DAEMON_START_FAILED, f"the daemon exited with code {proc.returncode}", {"log_tail": _log_tail()})
         state = read_state()
         if state is not None and state.get("token") == token:
             info = request("ping", timeout=10)
@@ -190,14 +190,14 @@ def start(mode: str, timeout: float = DEFAULT_START_TIMEOUT_S) -> dict[str, Any]
         time.sleep(0.25)
     _kill_tree(proc.pid)
     _clear_stale_state()
-    raise SaosError(ErrorCode.DAEMON_TIMEOUT, f"{timeout:.0f} 秒内后台进程没有就绪，已结束该进程", {"log_tail": _log_tail()})
+    raise SaosError(ErrorCode.DAEMON_TIMEOUT, f"the daemon was not ready within {timeout:.0f} s and was killed", {"log_tail": _log_tail()})
 
 
 def stop(discard: bool = False, force: bool = False) -> dict[str, Any]:
     state = read_state()
     if state is None or not pid_alive(int(state.get("pid", 0))):
         _clear_stale_state()
-        raise SaosError(ErrorCode.DAEMON_NOT_RUNNING, "后台进程没有运行")
+        raise SaosError(ErrorCode.DAEMON_NOT_RUNNING, "the daemon is not running")
     pid = int(state["pid"])
     # OpticStudio 在后台进程退出后才异步关闭，要等它也退出，避免紧接着重启时两个实例同时占用许可证
     opticstudio = child_pids(pid, "OpticStudio.exe")
@@ -220,9 +220,9 @@ def stop(discard: bool = False, force: bool = False) -> dict[str, Any]:
             if pid_alive(p):
                 _kill_tree(p)
         _clear_stale_state()
-        return {"stopped": True, "pid": pid, "forced": True, "reason": "退出超时", "opticstudio_pids": opticstudio}
+        return {"stopped": True, "pid": pid, "forced": True, "reason": "exit timed out", "opticstudio_pids": opticstudio}
     raise SaosError(
         ErrorCode.DAEMON_TIMEOUT,
-        f"后台进程或其 OpticStudio {STOP_WAIT_S:.0f} 秒内没有退出，可加 --force 强制结束",
+        f"the daemon or its OpticStudio did not exit within {STOP_WAIT_S:.0f} s; use --force to kill it",
         {"pid": pid, "opticstudio_pids": [p for p in opticstudio if pid_alive(p)]},
     )

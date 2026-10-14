@@ -1,34 +1,43 @@
 ---
-name: saos-interview
-description: 在 Claude Code 或 Codex 对话中访谈显微物镜用户，整理可追溯的光学规格，选择已收录初始结构并生成 HTML 设计计划，记录用户确认。用于 saos 新设计任务的需求访谈和计划审阅。
+name: saos-recipe-microscope
+description: Recipe for dry, infinity-corrected microscope objectives (NA ≤ 0.65, achromat or plan achromat, about 4x–40x) evaluated with an ideal reference tube lens. Load after the saos harness is confirmed when the user needs such an objective.
 ---
 
-# 需求访谈与设计计划
+# Recipe: microscope objective
 
-在 saos 仓库内使用。先读 `DESIGN.md`、`GLOSSARY.md` 和 `docs/interview-and-plan.md`；专业字段的补全依据在 `docs/optical-spec-and-acceptance.md`。文件路径相对仓库根目录。工具命令通过 `uv run saos` 执行。
+Distilled from the original zea workflow (steps 1–6, see `docs/step3-minimal-loop.md` … `docs/step6-interview-and-plan.md`). Commands live under `uv run saos microscope …`; helpers under `saos.recipes.microscope`.
 
-## 访谈
+## 1. Scope
 
-访谈直接在现有对话中进行，HTML 页面只供审阅，用户回到对话中确认。开始访谈时就执行 `uv run saos job create --name <名>`，之后所有需求文档都写入这个任务，不写进仓库的 `docs/` 或根目录。根据用户的背景组织问题，不要求按字段顺序问完一张表；用户已经说明的条件不要重复询问。
+Dry objectives, infinity corrected, all-spherical, NA ≤ 0.65, achromat or plan achromat, evaluated with an ideal paraxial reference tube lens (default f = 200 mm). Not covered: immersion, apochromats, finite conjugate (160 mm tube length), aspheres, the real tube lens, parfocal mechanics.
 
-先理解观察什么、目视还是相机、倍率或所需观察范围、盖玻片和安装空间。用户不熟悉 NA、MTF 时先解释实际含义，再提出有依据的假设。标称倍率必须问出；相机需要像素尺寸。4× 工作距离没有已核实的默认值，必须澄清。测量用途要落实畸变要求；“整个视场都清楚”要明确范围与性能要求，不能只填写物镜视场数。
+## 2. Framing questions
 
-把用户的每项条件保留在 `requirements` 中：约束、性能指标对应实际规格字段，期望项保留为说明。无法支持或存在冲突的要求写为 `unresolved`，继续澄清，不能静默丢弃，也不能擅自改成期望项。机械齐焦兼容性目前不能验收；不能拿光学长度冒充。
+- Nominal magnification — must come from the user. NA has agreed defaults only for 4x/10x/20x/40x (0.10/0.25/0.40/0.65); otherwise ask.
+- Visual or camera; a camera needs the pixel size (enables an MTF check at 500/pixel lp/mm on the intermediate image).
+- Cover glass (thickness, nd, νd) or none.
+- Minimum working distance; 4x has no verified default — ask.
+- "The whole field should be sharp" means plan achromat and a field range; measurement use needs a distortion limit.
+- Glass catalogs (default CDGM, status Standard/Preferred).
 
-`spec` 使用现有解析器的字段和单位。每个显式填写的字段在 `provenance` 中标注 `user` 或 `assumption` 及原话或依据。数值换算要在依据里写明原值、单位和换算关系。不能把 agent 推测标成用户给出。程序会补出约定默认值并逐项标为假设；不要从基准规格复制更宽松的要求来替代用户规格。
+`saos microscope interview check FILE` lists missing items; `saos microscope plan create/confirm/handoff` renders and binds an HTML review page if the user wants one.
 
-调用 `microscope interview check`，根据 `questions` 继续访谈。程序只能检查已结构化的条件，不能证明 agent 没有漏读原话；生成计划前自己逐条对照用户对话。
+## 3. Checks
 
-## 初始结构与页面
+The recipe's own acceptance (`ops.accept`, via `saos microscope accept`) builds an acceptance model (objective + cover glass + reference tube lens, apertures and vignetting cleared), focuses by working distance only (on-axis e-line c4 = 0) and judges: magnification, working distance, optical length, clear diameter, glass status, surface types, centre/edge thickness, air gaps, axial RMS WFE ≤ λ/14, axial colour ≤ 2·δob, OSC ≤ 0.0025, plan field ratio ≥ 0.85 (plan achromat), field RMS WFE, lateral colour, MTF, distortion. Details and sources: `docs/optical-spec-and-acceptance.md`. To use it inside a saos harness, add a `script` check whose `run(ctx)` calls `ops.accept(ctx, spec=...)` and returns `spec_shortfall`.
 
-用 `microscope library query` 查询已收录结构。排序靠前不表示符合全部规格；比较玻璃目录、NA、盖玻片、视场、长度及工作距离，说明为什么选它、哪些地方需要调整。库中原结构的验收不能代替新任务验收。
+## 4. Starting designs
 
-叙述性记录存为任务的 `sources/interview.md`（用户原话、已确认条件、假设、待定项），结构化记录存为 `sources/interview.yaml`。设计过程中的框架搭建、检查结论等放任务的 `notes/`。调用 `microscope plan create`，提供选定条目和选择理由。若库中没有适合的结构，省略 `--entry`，在对话中说明缺口；按 DESIGN.md 的候选专利流程处理，先离线入库再继续。不要为此自行启动正在被其他任务使用的 Zemax。
+`saos microscope library query --na A --magnification M` ranks 25 admitted patent embodiments (`library/entries/`). The library prescription is at the patent's own scale: scale radii and thicknesses to the target focal length, set the cover glass and swap glasses into the allowed catalogs before round 0. New patents: `docs/library.md` (extract → `library check` → `library add` → `library verify`).
 
-给用户页面链接，简述需确认的假设和结构差异。当前页面中的剖面由原始处方绘制，半口径是示意值，不能称为光线追迹图。页面版本会绑定规格、验收配置与初始结构快照。
+## 5. Modelling notes
 
-## 确认和交接
+Standard layout surface comments `saos:object`, `saos:cover_top`, `saos:stop`, `saos:tube` (see `saos.recipes.microscope.layout`). Rear-focal stop = object-space telecentric. Focusing uses the paraxial restart and secant back-off of `acceptance.focus_on_axis`; a slow input once took 174 s, so give long timeouts.
 
-只有用户明确确认当前展示的版本后，才调用 `microscope plan confirm`，`--evidence` 原样记录确认原话。提问、打开页面、沉默或“继续修改”都不是确认。用户有修改时重新生成页面；旧版本不能代替新版本确认。
+## 6. Optimisation
 
-进入自动阶段前调用 `microscope plan handoff`，核对确认和规格一致性。使用返回的任务规格路径，不从基准 YAML 替换它。先按用户规格适配初始镜头、完成第 0 轮验收，再进入设计阶段的优化流程；`microscope plan confirm` 本身不启动优化。确认后的需求变化另建任务，保留原任务记录。
+Reference policy that recovered all 65 perturbed benchmark tasks (most in 1–2 rounds): local — radii + working distance with an RMS wavefront (centroid, 6 rings × 6 arms) merit plus EFL and structural limits (`CTGT`, `MNCG`, `MNEG`, `MNCA`, `MNEA`, `OPLT`, `MXSD`); variables — free all objective thicknesses; then weight the failing items ×3 per round (up to ×3⁵) with `AXCL`, `LACL`, `OSCD`, `FCGS/FCGT`. Code: `experiments/bench/runner.py`.
+
+## 7. Verified
+
+Reproduction of 25 library entries; real-OpticStudio minimal loop (`tests/test_zemax_loop.py`); 65 benchmark tasks (`docs/step5-calibration.md`). The stop parameters of the old round rule (3 rounds, 1 %, 20) were never calibrated.
