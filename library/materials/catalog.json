@@ -1,0 +1,1863 @@
+{
+  "schema_version": 1,
+  "revision": "2026-10-14",
+  "wavelength_input_unit": "nm",
+  "scope": "12 种光学胶、8 种 2PP 打印候选树脂、2 种微光学复制树脂；不是完整市场清单。",
+  "sources": {
+    "darus-6471-v1": {
+      "url": "https://doi.org/10.18419/DARUS-6471",
+      "title": "Siegle, Guimaraes, Giessen (2026), Optical characterization of photoresists for two-photon polymerization 3D-printing",
+      "retrieved": "2026-10-14",
+      "license": "CC BY 4.0",
+      "version": "1.0",
+      "published": "2026-09-28",
+      "manifest": "sources/darus-6471/manifest.json"
+    },
+    "nanoscribe-n162": {
+      "url": "https://www.nanoscribe.com/en/products/2pp-printing-materials/photoresin-ip-n162/",
+      "title": "IP-n162 厂商产品页",
+      "retrieved": "2026-10-14"
+    },
+    "nanoscribe-printing": {
+      "url": "https://www.nanoscribe.com/en/products/high-resolution-3d-2pp-printing-materials/",
+      "title": "Nanoscribe 打印树脂及第三方 OrmoComp",
+      "retrieved": "2026-10-14"
+    },
+    "nanoscribe-folder": {
+      "url": "https://www.nanoscribe.com/fileadmin/Nanoscribe/PDF/Product_Folder/Folder-Printing-Materials-2025.pdf",
+      "title": "Nanoscribe 2025 材料手册",
+      "retrieved": "2026-10-14"
+    },
+    "ormoclear": {
+      "url": "https://microresist.de/en/produkt/ormoclear-series/",
+      "title": "OrmoClear 系列厂商数据",
+      "retrieved": "2026-10-14"
+    },
+    "epotek-tip18": {
+      "url": "https://www.epotek.com/docs/en/Related/Tech%20Tip%2018%20Understanding%20Optical%20Properties%20of%20Epoxy%20Applications.pdf",
+      "title": "EPO-TEK 光学性质说明：折射率采用液体测量，不可直接视作固化值",
+      "retrieved": "2026-10-14"
+    },
+    "agf-format": {
+      "url": "https://optics.ansys.com/hc/en-us/articles/46891219767827-Zemax-AGF-material-catalog-file-format",
+      "title": "Ansys AGF 格式",
+      "retrieved": "2026-10-14"
+    },
+    "agf-install": {
+      "url": "https://optics.ansys.com/hc/en-us/articles/42661706968211-How-to-add-new-materials-and-glasses-in-OpticStudio",
+      "title": "Ansys 自定义材料目录",
+      "retrieved": "2026-10-14"
+    },
+    "noa-61-tds": {
+      "url": "https://norlandproducts.com/wp-content/uploads/2025/02/Norland-Products-NOA-61-TDS.pdf",
+      "title": "NOA 61 TDS，REV. 0",
+      "retrieved": "2026-10-14",
+      "download_sha256": "26f0f3dfe507114f67bbf8304ff4dbda5c791d2369d70182b4a21072248d186e"
+    },
+    "noa-63-tds": {
+      "url": "https://norlandproducts.com/wp-content/uploads/2025/02/NOA-63-TDS.pdf",
+      "title": "NOA 63 TDS，REV. 0",
+      "retrieved": "2026-10-14",
+      "download_sha256": "210a25157122982b300973a99bc35cfb2a0df4b5389a32b0ac2d8c340f8227b2"
+    },
+    "noa-65-tds": {
+      "url": "https://norlandproducts.com/wp-content/uploads/2025/02/NOA-65-TDS.pdf",
+      "title": "NOA 65 TDS，REV. 0",
+      "retrieved": "2026-10-14",
+      "download_sha256": "96e80d69d156a2611bb8948f5b0771f11340e589ed2488f791d12d084d688d0c"
+    },
+    "noa-68-tds": {
+      "url": "https://norlandproducts.com/wp-content/uploads/2025/02/NOA-68-TDS.pdf",
+      "title": "NOA 68 TDS，REV. 0",
+      "retrieved": "2026-10-14",
+      "download_sha256": "f59c1d0f4df99b293aec25357488e232fdf495b78f1656a0efd069daa645eaf9"
+    },
+    "noa-81-tds": {
+      "url": "https://norlandproducts.com/wp-content/uploads/2025/03/NOA-81-TDS.pdf",
+      "title": "NOA 81 TDS，REV. 0",
+      "retrieved": "2026-10-14",
+      "download_sha256": "58e26d1fd22d124fd8a4dc59555e5bd43a709e842590a184e79c2b9e93ca5c3c"
+    },
+    "noa-84-tds": {
+      "url": "https://norlandproducts.com/wp-content/uploads/2025/03/NOA-84-TDS.pdf",
+      "title": "NOA 84 TDS，REV. 0",
+      "retrieved": "2026-10-14",
+      "download_sha256": "01010421650ea2b071bed33c2ee7e8269775b528a70cb5b2031212b54f37d6be"
+    },
+    "noa-1375-tds": {
+      "url": "https://norlandproducts.com/wp-content/uploads/2025/03/NOA-1375-TDS.pdf",
+      "title": "NOA 1375 TDS，REV. 0",
+      "retrieved": "2026-10-14",
+      "download_sha256": "5818e23bdd2b8c35565c30f4bead60b1dd4397dc30f4d1b5bdcbb23ea588cb20"
+    },
+    "noa-147-tds": {
+      "url": "https://norlandproducts.com/wp-content/uploads/2025/03/NOA-147-TDS.pdf",
+      "title": "NOA 147 TDS，REV. 0",
+      "retrieved": "2026-10-14",
+      "download_sha256": "002093890ec4dcfdaf99e8e1e3fe323dafa1bc11596a24331500c0eec23ef383"
+    },
+    "noa-148-tds": {
+      "url": "https://norlandproducts.com/wp-content/uploads/2025/03/NOA-148-TDS.pdf",
+      "title": "NOA 148 TDS，REV. 0",
+      "retrieved": "2026-10-14",
+      "download_sha256": "90f86275bfc7efa248d9bcb92395f34bf2cc4b44997d91b4e9af0b1c63012a75"
+    },
+    "noa-160-tds": {
+      "url": "https://norlandproducts.com/wp-content/uploads/2025/03/NOA-160-TDS.pdf",
+      "title": "NOA 160 TDS，REV. 0",
+      "retrieved": "2026-10-14",
+      "download_sha256": "a093000f3d19215efdc193c26c79108805fe573148b1cd29c19e3c657664b1b7"
+    },
+    "noa-170-tds": {
+      "url": "https://norlandproducts.com/wp-content/uploads/2025/03/NOA-170-TDS.pdf",
+      "title": "NOA 170 TDS，REV. 1",
+      "retrieved": "2026-10-14",
+      "download_sha256": "da3b5f2e985d2c07735449922d10136efabfdf323dec36cd00bec0f6ca5785a9"
+    },
+    "dymax-op32-pds": {
+      "url": "https://dymax.com/content/download/4396/file_archived/OP-32%20PDS.pdf",
+      "title": "Dymax OP-32 PDS，OTHER CURED PROPERTIES",
+      "retrieved": "2026-10-14",
+      "downloaded_from": "https://media.focenter.com/CMP1007/files/1/DymaxOP32UVOpticalAdhesive30ml_OP-32-30ML_fiberopticcenter.pdf",
+      "download_sha256": "f8ffdcbf6daad9128ae2dc6a47da3b0c6530d288436510d3123e28aacef883ef"
+    }
+  },
+  "materials": [
+    {
+      "id": "noa-61",
+      "name": "NOA 61",
+      "manufacturer": "Norland Products",
+      "category": "adhesive",
+      "state": "cured",
+      "process": "UV 光固化胶合",
+      "source_ids": [
+        "noa-61-tds"
+      ],
+      "reported_index": {
+        "value": 1.56,
+        "wavelength_nm": null,
+        "temperature_C": null,
+        "source_id": "noa-61-tds",
+        "basis": "TDS 固化典型值；此栏未指定测量波长及温度，不等同于 nd"
+      },
+      "liquid_index_reference": 1.52,
+      "abbe_vd": null,
+      "dispersion": {
+        "formula": "cauchy_nm",
+        "coefficients": [
+          1.5375,
+          8290.45,
+          -211046000.0
+        ],
+        "valid_range_nm": [
+          435.8,
+          1500
+        ],
+        "temperature_C": 25,
+        "source_id": "noa-61-tds",
+        "range_basis": "库使用范围限制：下限为 TDS 表格最短波长，上限在第 5 页色散图 400–1600 nm 内；不是厂商保证范围。",
+        "basis": "厂商公式，第 5 页；n=A+B/λ²+C/λ⁴，λ 单位 nm"
+      },
+      "cure": {
+        "band_nm": [
+          350,
+          380
+        ],
+        "dose_J_cm2": 3.0
+      },
+      "liquid_viscosity_cP_at_25C": [
+        300,
+        300
+      ],
+      "notes": [
+        "玻璃、棱镜和光纤粘合；具有厂商色散公式。"
+      ],
+      "uncertainty_n": null,
+      "index_samples": [
+        [
+          435.8,
+          1.5754
+        ],
+        [
+          480,
+          1.5691
+        ],
+        [
+          546.1,
+          1.5634
+        ],
+        [
+          589.6,
+          1.5594
+        ],
+        [
+          643.8,
+          1.5562
+        ]
+      ],
+      "shrinkage": {
+        "linear_percent": 1.5,
+        "volume_percent": 4,
+        "source_id": "noa-61-tds"
+      },
+      "agf_name": "SAOS_NOA61_20261014"
+    },
+    {
+      "id": "noa-63",
+      "name": "NOA 63",
+      "manufacturer": "Norland Products",
+      "category": "adhesive",
+      "state": "cured",
+      "process": "UV 光固化胶合",
+      "source_ids": [
+        "noa-63-tds"
+      ],
+      "reported_index": {
+        "value": 1.56,
+        "wavelength_nm": null,
+        "temperature_C": null,
+        "source_id": "noa-63-tds",
+        "basis": "TDS 固化典型值；此栏未指定测量波长及温度，不等同于 nd"
+      },
+      "liquid_index_reference": 1.52,
+      "abbe_vd": null,
+      "dispersion": null,
+      "cure": {
+        "band_nm": [
+          350,
+          380
+        ],
+        "dose_J_cm2": 4.5
+      },
+      "liquid_viscosity_cP_at_25C": [
+        2500,
+        2500
+      ],
+      "notes": [
+        "厂商称低荧光、固化后在 320–3000 nm 有良好透射；未给该表述的样品厚度和定量荧光谱。"
+      ],
+      "uncertainty_n": null
+    },
+    {
+      "id": "noa-65",
+      "name": "NOA 65",
+      "manufacturer": "Norland Products",
+      "category": "adhesive",
+      "state": "cured",
+      "process": "UV 光固化胶合",
+      "source_ids": [
+        "noa-65-tds"
+      ],
+      "reported_index": {
+        "value": 1.52,
+        "wavelength_nm": null,
+        "temperature_C": null,
+        "source_id": "noa-65-tds",
+        "basis": "TDS 固化典型值；此栏未指定测量波长及温度，不等同于 nd"
+      },
+      "liquid_index_reference": 1.49,
+      "abbe_vd": null,
+      "dispersion": null,
+      "cure": {
+        "band_nm": [
+          350,
+          380
+        ],
+        "dose_J_cm2": 4.5
+      },
+      "liquid_viscosity_cP_at_25C": [
+        900,
+        1000
+      ],
+      "notes": [
+        "柔性、低应力胶合候选。"
+      ],
+      "uncertainty_n": null
+    },
+    {
+      "id": "noa-68",
+      "name": "NOA 68",
+      "manufacturer": "Norland Products",
+      "category": "adhesive",
+      "state": "cured",
+      "process": "UV 光固化胶合",
+      "source_ids": [
+        "noa-68-tds"
+      ],
+      "reported_index": {
+        "value": 1.54,
+        "wavelength_nm": null,
+        "temperature_C": null,
+        "source_id": "noa-68-tds",
+        "basis": "TDS 固化典型值；此栏未指定测量波长及温度，不等同于 nd"
+      },
+      "liquid_index_reference": 1.51,
+      "abbe_vd": null,
+      "dispersion": null,
+      "cure": {
+        "band_nm": [
+          350,
+          380
+        ],
+        "dose_J_cm2": 4.5
+      },
+      "liquid_viscosity_cP_at_25C": [
+        5000,
+        5000
+      ],
+      "notes": [
+        "塑料与玻璃粘合候选；不能据此认定与任一打印树脂兼容。"
+      ],
+      "uncertainty_n": null
+    },
+    {
+      "id": "noa-81",
+      "name": "NOA 81",
+      "manufacturer": "Norland Products",
+      "category": "adhesive",
+      "state": "cured",
+      "process": "UV 光固化胶合",
+      "source_ids": [
+        "noa-81-tds"
+      ],
+      "reported_index": {
+        "value": 1.56,
+        "wavelength_nm": null,
+        "temperature_C": null,
+        "source_id": "noa-81-tds",
+        "basis": "TDS 固化典型值；此栏未指定测量波长及温度，不等同于 nd"
+      },
+      "liquid_index_reference": 1.52,
+      "abbe_vd": null,
+      "dispersion": null,
+      "cure": {
+        "band_nm": [
+          320,
+          380
+        ],
+        "dose_J_cm2": 2.0
+      },
+      "liquid_viscosity_cP_at_25C": [
+        300,
+        300
+      ],
+      "notes": [
+        "快速 UV 固化，适用于光学元件和光纤粘合。"
+      ],
+      "uncertainty_n": null
+    },
+    {
+      "id": "noa-84",
+      "name": "NOA 84",
+      "manufacturer": "Norland Products",
+      "category": "adhesive",
+      "state": "cured",
+      "process": "UV 光固化胶合",
+      "source_ids": [
+        "noa-84-tds"
+      ],
+      "reported_index": {
+        "value": 1.476,
+        "wavelength_nm": null,
+        "temperature_C": null,
+        "source_id": "noa-84-tds",
+        "basis": "TDS 固化典型值；此栏未指定测量波长及温度，不等同于 nd"
+      },
+      "liquid_index_reference": 1.436,
+      "abbe_vd": null,
+      "dispersion": null,
+      "cure": {
+        "band_nm": [
+          320,
+          400
+        ],
+        "dose_J_cm2": 3.5
+      },
+      "liquid_viscosity_cP_at_25C": [
+        40,
+        40
+      ],
+      "notes": [
+        "塑料与玻璃粘合；可见光 400–450 nm 固化剂量为 7 J/cm²。"
+      ],
+      "uncertainty_n": null
+    },
+    {
+      "id": "noa-1375",
+      "name": "NOA 1375",
+      "manufacturer": "Norland Products",
+      "category": "adhesive",
+      "state": "cured",
+      "process": "UV 光固化胶合",
+      "source_ids": [
+        "noa-1375-tds"
+      ],
+      "reported_index": {
+        "value": 1.43,
+        "wavelength_nm": null,
+        "temperature_C": null,
+        "source_id": "noa-1375-tds",
+        "basis": "TDS 固化典型值；此栏未指定测量波长及温度，不等同于 nd"
+      },
+      "liquid_index_reference": 1.38,
+      "abbe_vd": null,
+      "dispersion": null,
+      "cure": {
+        "band_nm": [
+          315,
+          395
+        ],
+        "dose_J_cm2": 6.0
+      },
+      "liquid_viscosity_cP_at_25C": [
+        45,
+        60
+      ],
+      "notes": [
+        "当前 TDS 固化值为 1.43，不能按型号当成 1.375；暴露表面有氧阻聚。"
+      ],
+      "uncertainty_n": null
+    },
+    {
+      "id": "noa-147",
+      "name": "NOA 147",
+      "manufacturer": "Norland Products",
+      "category": "adhesive",
+      "state": "cured",
+      "process": "UV 光固化胶合",
+      "source_ids": [
+        "noa-147-tds"
+      ],
+      "reported_index": {
+        "value": 1.474,
+        "wavelength_nm": null,
+        "temperature_C": null,
+        "source_id": "noa-147-tds",
+        "basis": "TDS 固化典型值；此栏未指定测量波长及温度，不等同于 nd"
+      },
+      "liquid_index_reference": 1.436,
+      "abbe_vd": null,
+      "dispersion": null,
+      "cure": {
+        "band_nm": [
+          315,
+          395
+        ],
+        "dose_J_cm2": 6.0
+      },
+      "liquid_viscosity_cP_at_25C": [
+        200,
+        200
+      ],
+      "notes": [
+        "玻璃粘合，暴露表面有氧阻聚。"
+      ],
+      "uncertainty_n": null
+    },
+    {
+      "id": "noa-148",
+      "name": "NOA 148",
+      "manufacturer": "Norland Products",
+      "category": "adhesive",
+      "state": "cured",
+      "process": "UV 光固化胶合",
+      "source_ids": [
+        "noa-148-tds"
+      ],
+      "reported_index": {
+        "value": 1.474,
+        "wavelength_nm": null,
+        "temperature_C": null,
+        "source_id": "noa-148-tds",
+        "basis": "TDS 固化典型值；此栏未指定测量波长及温度，不等同于 nd"
+      },
+      "liquid_index_reference": 1.441,
+      "abbe_vd": null,
+      "dispersion": null,
+      "cure": {
+        "band_nm": [
+          315,
+          395
+        ],
+        "dose_J_cm2": 6.0
+      },
+      "liquid_viscosity_cP_at_25C": [
+        300,
+        300
+      ],
+      "notes": [
+        "按当前厂家 TDS 记录为 1.474；不从型号推断 1.48；暴露表面有氧阻聚。"
+      ],
+      "uncertainty_n": null
+    },
+    {
+      "id": "noa-160",
+      "name": "NOA 160",
+      "manufacturer": "Norland Products",
+      "category": "adhesive",
+      "state": "cured",
+      "process": "UV 光固化胶合",
+      "source_ids": [
+        "noa-160-tds"
+      ],
+      "reported_index": {
+        "value": 1.6,
+        "wavelength_nm": null,
+        "temperature_C": null,
+        "source_id": "noa-160-tds",
+        "basis": "TDS 固化典型值；此栏未指定测量波长及温度，不等同于 nd"
+      },
+      "liquid_index_reference": 1.58,
+      "abbe_vd": null,
+      "dispersion": null,
+      "cure": {
+        "band_nm": [
+          315,
+          395
+        ],
+        "dose_J_cm2": 6.0
+      },
+      "liquid_viscosity_cP_at_25C": [
+        2000,
+        2000
+      ],
+      "notes": [
+        "高折射率胶；不能默认是提高曲面光焦度的选择。"
+      ],
+      "uncertainty_n": null
+    },
+    {
+      "id": "noa-170",
+      "name": "NOA 170",
+      "manufacturer": "Norland Products",
+      "category": "adhesive",
+      "state": "cured",
+      "process": "UV 光固化胶合",
+      "source_ids": [
+        "noa-170-tds"
+      ],
+      "reported_index": {
+        "value": 1.705,
+        "wavelength_nm": null,
+        "temperature_C": null,
+        "source_id": "noa-170-tds",
+        "basis": "TDS 固化典型值；此栏未指定测量波长及温度，不等同于 nd"
+      },
+      "liquid_index_reference": 1.68,
+      "abbe_vd": null,
+      "dispersion": null,
+      "cure": {
+        "band_nm": [
+          315,
+          395
+        ],
+        "dose_J_cm2": 6.0
+      },
+      "liquid_viscosity_cP_at_25C": [
+        4800,
+        4800
+      ],
+      "notes": [
+        "高折射率；固化后刚硬且脆；也可用 400–450 nm 可见光固化。"
+      ],
+      "uncertainty_n": null
+    },
+    {
+      "id": "dymax-op32",
+      "name": "OP-32",
+      "manufacturer": "Dymax",
+      "category": "adhesive",
+      "state": "cured",
+      "process": "UV/可见光胶合",
+      "source_ids": [
+        "dymax-op32-pds"
+      ],
+      "reported_index": {
+        "value": 1.51,
+        "wavelength_nm": null,
+        "temperature_C": 20,
+        "source_id": "dymax-op32-pds",
+        "basis": "固化值，ASTM D542；表中未注明波长"
+      },
+      "abbe_vd": null,
+      "dispersion": null,
+      "uncertainty_n": null,
+      "shrinkage": {
+        "linear_percent": 2.3,
+        "volume_percent": null,
+        "source_id": "dymax-op32-pds"
+      },
+      "notes": [
+        "柔性低应力胶；来源为厂家 PDS 的经销商镜像。未核实本地库存或与打印树脂的粘接兼容性。"
+      ]
+    },
+    {
+      "id": "ipxs-darus2026",
+      "name": "IPX-S",
+      "manufacturer": "Nanoscribe",
+      "category": "printed_lens_resin",
+      "state": "UV-polymerized bulk specimen",
+      "process": "2PP 打印候选；本条光学数据测自 UV 聚合块体",
+      "source_ids": [
+        "darus-6471-v1",
+        "nanoscribe-printing"
+      ],
+      "uncertainty_n": null,
+      "reported_index": {
+        "value": 1.51098765,
+        "wavelength_nm": 587.5618,
+        "temperature_C": null,
+        "source_id": "darus-6471-v1",
+        "basis": "来源 AGF 的 Nd 元数据；未在此重新标为直接测量点"
+      },
+      "abbe_vd": {
+        "value": 48.57643774,
+        "source_id": "darus-6471-v1",
+        "basis": "来源 AGF 元数据"
+      },
+      "dispersion": {
+        "formula": "sellmeier1_um",
+        "coefficients": [
+          1.01446849,
+          0.00471043,
+          0.2274078,
+          0.03826303,
+          0.68392672,
+          201.74281987
+        ],
+        "valid_range_nm": [
+          405,
+          1940
+        ],
+        "temperature_C": null,
+        "source_id": "darus-6471-v1",
+        "basis": "作者 AGF 的 Sellmeier 拟合系数；未重新拟合",
+        "range_basis": "按实际测量表最短/最长波长收窄；原 AGF LD 为 300–3000 nm"
+      },
+      "agf_name": "SAOS_IPXS_20261014",
+      "original_agf_name": "IPX-S_LGLS",
+      "index_samples": [
+        [
+          405.0,
+          1.5298
+        ],
+        [
+          450.0,
+          1.5228
+        ],
+        [
+          500.0,
+          1.5169
+        ],
+        [
+          550.0,
+          1.5133
+        ],
+        [
+          600.0,
+          1.5104
+        ],
+        [
+          650.0,
+          1.5082
+        ],
+        [
+          700.0,
+          1.5063
+        ],
+        [
+          750.0,
+          1.5051
+        ],
+        [
+          800.0,
+          1.5039
+        ],
+        [
+          850.0,
+          1.5028
+        ],
+        [
+          900.0,
+          1.5022
+        ],
+        [
+          950.0,
+          1.5014
+        ],
+        [
+          1000.0,
+          1.5008
+        ],
+        [
+          1050.0,
+          1.5001
+        ],
+        [
+          1100.0,
+          1.4997
+        ],
+        [
+          1150.0,
+          1.4992
+        ],
+        [
+          1200.0,
+          1.4989
+        ],
+        [
+          1250.0,
+          1.4985
+        ],
+        [
+          1300.0,
+          1.4981
+        ],
+        [
+          1350.0,
+          1.4977
+        ],
+        [
+          1400.0,
+          1.4975
+        ],
+        [
+          1565.0,
+          1.4964
+        ],
+        [
+          1617.0,
+          1.4958
+        ],
+        [
+          1940.0,
+          1.4942
+        ]
+      ],
+      "spectral_column_suffix": "IPXS",
+      "notes": [
+        "打印剂量、后固化及热处理会影响折射率；此数据作为初始设计基准，不代表本机打印批次实测。",
+        "原始 AGF 透射率字段采用接近百分数的数值，项目导出版不复制 IT；不可据折射率目录宣称收光效率。"
+      ]
+    },
+    {
+      "id": "ips-darus2026",
+      "name": "IP-S",
+      "manufacturer": "Nanoscribe",
+      "category": "printed_lens_resin",
+      "state": "UV-polymerized bulk specimen",
+      "process": "2PP 打印候选；本条光学数据测自 UV 聚合块体",
+      "source_ids": [
+        "darus-6471-v1",
+        "nanoscribe-printing"
+      ],
+      "uncertainty_n": null,
+      "reported_index": {
+        "value": 1.51111972,
+        "wavelength_nm": 587.5618,
+        "temperature_C": null,
+        "source_id": "darus-6471-v1",
+        "basis": "来源 AGF 的 Nd 元数据；未在此重新标为直接测量点"
+      },
+      "abbe_vd": {
+        "value": 50.33686517,
+        "source_id": "darus-6471-v1",
+        "basis": "来源 AGF 元数据"
+      },
+      "dispersion": {
+        "formula": "sellmeier1_um",
+        "coefficients": [
+          1.01941235,
+          0.00360982,
+          0.22513022,
+          0.03996804,
+          0.68244796,
+          180.41040092
+        ],
+        "valid_range_nm": [
+          405,
+          1940
+        ],
+        "temperature_C": null,
+        "source_id": "darus-6471-v1",
+        "basis": "作者 AGF 的 Sellmeier 拟合系数；未重新拟合",
+        "range_basis": "按实际测量表最短/最长波长收窄；原 AGF LD 为 300–3000 nm"
+      },
+      "agf_name": "SAOS_IPS_20261014",
+      "original_agf_name": "IP-S_LGLS",
+      "index_samples": [
+        [
+          405.0,
+          1.5295
+        ],
+        [
+          450.0,
+          1.5221
+        ],
+        [
+          500.0,
+          1.5174
+        ],
+        [
+          550.0,
+          1.5133
+        ],
+        [
+          600.0,
+          1.5106
+        ],
+        [
+          650.0,
+          1.5083
+        ],
+        [
+          700.0,
+          1.5069
+        ],
+        [
+          750.0,
+          1.5051
+        ],
+        [
+          800.0,
+          1.5042
+        ],
+        [
+          850.0,
+          1.5034
+        ],
+        [
+          900.0,
+          1.5026
+        ],
+        [
+          950.0,
+          1.5019
+        ],
+        [
+          1000.0,
+          1.5013
+        ],
+        [
+          1050.0,
+          1.5008
+        ],
+        [
+          1100.0,
+          1.5004
+        ],
+        [
+          1150.0,
+          1.4998
+        ],
+        [
+          1200.0,
+          1.4995
+        ],
+        [
+          1250.0,
+          1.4988
+        ],
+        [
+          1300.0,
+          1.4985
+        ],
+        [
+          1350.0,
+          1.4981
+        ],
+        [
+          1400.0,
+          1.4977
+        ],
+        [
+          1565.0,
+          1.4968
+        ],
+        [
+          1617.0,
+          1.4965
+        ],
+        [
+          1940.0,
+          1.4946
+        ]
+      ],
+      "spectral_column_suffix": "IPS",
+      "notes": [
+        "打印剂量、后固化及热处理会影响折射率；此数据作为初始设计基准，不代表本机打印批次实测。",
+        "原始 AGF 透射率字段采用接近百分数的数值，项目导出版不复制 IT；不可据折射率目录宣称收光效率。"
+      ]
+    },
+    {
+      "id": "ipdip2-darus2026",
+      "name": "IP-Dip2",
+      "manufacturer": "Nanoscribe",
+      "category": "printed_lens_resin",
+      "state": "UV-polymerized bulk specimen",
+      "process": "2PP 打印候选；本条光学数据测自 UV 聚合块体",
+      "source_ids": [
+        "darus-6471-v1",
+        "nanoscribe-printing"
+      ],
+      "uncertainty_n": null,
+      "reported_index": {
+        "value": 1.55450603,
+        "wavelength_nm": 587.5618,
+        "temperature_C": null,
+        "source_id": "darus-6471-v1",
+        "basis": "来源 AGF 的 Nd 元数据；未在此重新标为直接测量点"
+      },
+      "abbe_vd": {
+        "value": 35.35793732,
+        "source_id": "darus-6471-v1",
+        "basis": "来源 AGF 元数据"
+      },
+      "dispersion": {
+        "formula": "sellmeier1_um",
+        "coefficients": [
+          1.14674041,
+          0.0036351,
+          0.21193111,
+          0.0623593,
+          0.83717737,
+          261.47009103
+        ],
+        "valid_range_nm": [
+          405,
+          1940
+        ],
+        "temperature_C": null,
+        "source_id": "darus-6471-v1",
+        "basis": "作者 AGF 的 Sellmeier 拟合系数；未重新拟合",
+        "range_basis": "按实际测量表最短/最长波长收窄；原 AGF LD 为 300–3000 nm"
+      },
+      "agf_name": "SAOS_IPDIP2_20261014",
+      "original_agf_name": "IP-Dip2_LGLS",
+      "index_samples": [
+        [
+          405.0,
+          1.5852
+        ],
+        [
+          450.0,
+          1.5738
+        ],
+        [
+          500.0,
+          1.5628
+        ],
+        [
+          550.0,
+          1.5576
+        ],
+        [
+          600.0,
+          1.5537
+        ],
+        [
+          650.0,
+          1.5506
+        ],
+        [
+          700.0,
+          1.5484
+        ],
+        [
+          750.0,
+          1.5463
+        ],
+        [
+          800.0,
+          1.5449
+        ],
+        [
+          850.0,
+          1.5433
+        ],
+        [
+          900.0,
+          1.5424
+        ],
+        [
+          950.0,
+          1.5415
+        ],
+        [
+          1000.0,
+          1.5407
+        ],
+        [
+          1050.0,
+          1.5399
+        ],
+        [
+          1100.0,
+          1.5393
+        ],
+        [
+          1150.0,
+          1.5388
+        ],
+        [
+          1200.0,
+          1.5382
+        ],
+        [
+          1250.0,
+          1.5378
+        ],
+        [
+          1300.0,
+          1.5373
+        ],
+        [
+          1350.0,
+          1.537
+        ],
+        [
+          1400.0,
+          1.5368
+        ],
+        [
+          1565.0,
+          1.5357
+        ],
+        [
+          1617.0,
+          1.5353
+        ],
+        [
+          1940.0,
+          1.5334
+        ]
+      ],
+      "spectral_column_suffix": "IPDip2",
+      "notes": [
+        "打印剂量、后固化及热处理会影响折射率；此数据作为初始设计基准，不代表本机打印批次实测。",
+        "原始 AGF 透射率字段采用接近百分数的数值，项目导出版不复制 IT；不可据折射率目录宣称收光效率。"
+      ]
+    },
+    {
+      "id": "ipvisio-darus2026",
+      "name": "IP-Visio",
+      "manufacturer": "Nanoscribe",
+      "category": "printed_lens_resin",
+      "state": "UV-polymerized bulk specimen",
+      "process": "2PP 打印候选；本条光学数据测自 UV 聚合块体",
+      "source_ids": [
+        "darus-6471-v1",
+        "nanoscribe-printing"
+      ],
+      "uncertainty_n": null,
+      "reported_index": {
+        "value": 1.51125172,
+        "wavelength_nm": 587.5618,
+        "temperature_C": null,
+        "source_id": "darus-6471-v1",
+        "basis": "来源 AGF 的 Nd 元数据；未在此重新标为直接测量点"
+      },
+      "abbe_vd": {
+        "value": 51.95285242,
+        "source_id": "darus-6471-v1",
+        "basis": "来源 AGF 元数据"
+      },
+      "dispersion": {
+        "formula": "sellmeier1_um",
+        "coefficients": [
+          1.03160454,
+          0.00502229,
+          0.21353364,
+          0.03590836,
+          0.66333375,
+          180.03978908
+        ],
+        "valid_range_nm": [
+          405,
+          1940
+        ],
+        "temperature_C": null,
+        "source_id": "darus-6471-v1",
+        "basis": "作者 AGF 的 Sellmeier 拟合系数；未重新拟合",
+        "range_basis": "按实际测量表最短/最长波长收窄；原 AGF LD 为 300–3000 nm"
+      },
+      "agf_name": "SAOS_IPVISIO_20261014",
+      "original_agf_name": "IP-Visio_LGLS",
+      "index_samples": [
+        [
+          405.0,
+          1.5284
+        ],
+        [
+          450.0,
+          1.5222
+        ],
+        [
+          500.0,
+          1.517
+        ],
+        [
+          550.0,
+          1.5133
+        ],
+        [
+          600.0,
+          1.5108
+        ],
+        [
+          650.0,
+          1.5084
+        ],
+        [
+          700.0,
+          1.5073
+        ],
+        [
+          750.0,
+          1.5055
+        ],
+        [
+          800.0,
+          1.5044
+        ],
+        [
+          850.0,
+          1.5034
+        ],
+        [
+          900.0,
+          1.5026
+        ],
+        [
+          950.0,
+          1.502
+        ],
+        [
+          1000.0,
+          1.5015
+        ],
+        [
+          1050.0,
+          1.5009
+        ],
+        [
+          1100.0,
+          1.5007
+        ],
+        [
+          1150.0,
+          1.5001
+        ],
+        [
+          1200.0,
+          1.4997
+        ],
+        [
+          1250.0,
+          1.4992
+        ],
+        [
+          1300.0,
+          1.499
+        ],
+        [
+          1350.0,
+          1.4987
+        ],
+        [
+          1400.0,
+          1.4982
+        ],
+        [
+          1565.0,
+          1.4972
+        ],
+        [
+          1617.0,
+          1.4968
+        ],
+        [
+          1940.0,
+          1.4947
+        ]
+      ],
+      "spectral_column_suffix": "IPVisio",
+      "notes": [
+        "打印剂量、后固化及热处理会影响折射率；此数据作为初始设计基准，不代表本机打印批次实测。",
+        "原始 AGF 透射率字段采用接近百分数的数值，项目导出版不复制 IT；不可据折射率目录宣称收光效率。"
+      ]
+    },
+    {
+      "id": "ipxclear-darus2026",
+      "name": "IPX-Clear",
+      "manufacturer": "Nanoscribe",
+      "category": "printed_lens_resin",
+      "state": "UV-polymerized bulk specimen",
+      "process": "2PP 打印候选；本条光学数据测自 UV 聚合块体",
+      "source_ids": [
+        "darus-6471-v1",
+        "nanoscribe-printing"
+      ],
+      "uncertainty_n": null,
+      "reported_index": {
+        "value": 1.54334297,
+        "wavelength_nm": 587.5618,
+        "temperature_C": null,
+        "source_id": "darus-6471-v1",
+        "basis": "来源 AGF 的 Nd 元数据；未在此重新标为直接测量点"
+      },
+      "abbe_vd": {
+        "value": 39.97086334,
+        "source_id": "darus-6471-v1",
+        "basis": "来源 AGF 元数据"
+      },
+      "dispersion": {
+        "formula": "sellmeier1_um",
+        "coefficients": [
+          1.10704317,
+          0.00581972,
+          0.22146381,
+          0.04786079,
+          0.85653953,
+          240.53043471
+        ],
+        "valid_range_nm": [
+          405,
+          1940
+        ],
+        "temperature_C": null,
+        "source_id": "darus-6471-v1",
+        "basis": "作者 AGF 的 Sellmeier 拟合系数；未重新拟合",
+        "range_basis": "按实际测量表最短/最长波长收窄；原 AGF LD 为 300–3000 nm"
+      },
+      "agf_name": "SAOS_IPXCLEAR_20261014",
+      "original_agf_name": "IPX-Clear_LGLS",
+      "index_samples": [
+        [
+          405.0,
+          1.5685
+        ],
+        [
+          450.0,
+          1.5583
+        ],
+        [
+          500.0,
+          1.5512
+        ],
+        [
+          550.0,
+          1.5466
+        ],
+        [
+          600.0,
+          1.5423
+        ],
+        [
+          650.0,
+          1.5397
+        ],
+        [
+          700.0,
+          1.5377
+        ],
+        [
+          750.0,
+          1.5358
+        ],
+        [
+          800.0,
+          1.5346
+        ],
+        [
+          850.0,
+          1.5333
+        ],
+        [
+          900.0,
+          1.532
+        ],
+        [
+          950.0,
+          1.5311
+        ],
+        [
+          1000.0,
+          1.5304
+        ],
+        [
+          1050.0,
+          1.5298
+        ],
+        [
+          1100.0,
+          1.5292
+        ],
+        [
+          1150.0,
+          1.5287
+        ],
+        [
+          1200.0,
+          1.5281
+        ],
+        [
+          1250.0,
+          1.5279
+        ],
+        [
+          1300.0,
+          1.5273
+        ],
+        [
+          1350.0,
+          1.5271
+        ],
+        [
+          1400.0,
+          1.5265
+        ],
+        [
+          1565.0,
+          1.5254
+        ],
+        [
+          1617.0,
+          1.5251
+        ],
+        [
+          1940.0,
+          1.5229
+        ]
+      ],
+      "spectral_column_suffix": "IPXClear",
+      "notes": [
+        "打印剂量、后固化及热处理会影响折射率；此数据作为初始设计基准，不代表本机打印批次实测。",
+        "原始 AGF 透射率字段采用接近百分数的数值，项目导出版不复制 IT；不可据折射率目录宣称收光效率。"
+      ]
+    },
+    {
+      "id": "ipxq-darus2026",
+      "name": "IPX-Q",
+      "manufacturer": "Nanoscribe",
+      "category": "printed_lens_resin",
+      "state": "UV-polymerized bulk specimen",
+      "process": "2PP 打印候选；本条光学数据测自 UV 聚合块体",
+      "source_ids": [
+        "darus-6471-v1",
+        "nanoscribe-printing"
+      ],
+      "uncertainty_n": null,
+      "reported_index": {
+        "value": 1.51086507,
+        "wavelength_nm": 587.5618,
+        "temperature_C": null,
+        "source_id": "darus-6471-v1",
+        "basis": "来源 AGF 的 Nd 元数据；未在此重新标为直接测量点"
+      },
+      "abbe_vd": {
+        "value": 51.15514889,
+        "source_id": "darus-6471-v1",
+        "basis": "来源 AGF 元数据"
+      },
+      "dispersion": {
+        "formula": "sellmeier1_um",
+        "coefficients": [
+          1.01716482,
+          0.00760716,
+          0.22468707,
+          0.02708433,
+          0.68529315,
+          199.93113953
+        ],
+        "valid_range_nm": [
+          405,
+          1940
+        ],
+        "temperature_C": null,
+        "source_id": "darus-6471-v1",
+        "basis": "作者 AGF 的 Sellmeier 拟合系数；未重新拟合",
+        "range_basis": "按实际测量表最短/最长波长收窄；原 AGF LD 为 300–3000 nm"
+      },
+      "agf_name": "SAOS_IPXQ_20261014",
+      "original_agf_name": "IPX-Q_LGLS",
+      "index_samples": [
+        [
+          405.0,
+          1.528
+        ],
+        [
+          450.0,
+          1.5217
+        ],
+        [
+          500.0,
+          1.5168
+        ],
+        [
+          550.0,
+          1.513
+        ],
+        [
+          600.0,
+          1.5101
+        ],
+        [
+          650.0,
+          1.508
+        ],
+        [
+          700.0,
+          1.5064
+        ],
+        [
+          750.0,
+          1.5051
+        ],
+        [
+          800.0,
+          1.504
+        ],
+        [
+          850.0,
+          1.5029
+        ],
+        [
+          900.0,
+          1.502
+        ],
+        [
+          950.0,
+          1.5016
+        ],
+        [
+          1000.0,
+          1.5009
+        ],
+        [
+          1050.0,
+          1.5004
+        ],
+        [
+          1100.0,
+          1.5
+        ],
+        [
+          1150.0,
+          1.4993
+        ],
+        [
+          1200.0,
+          1.4988
+        ],
+        [
+          1250.0,
+          1.4983
+        ],
+        [
+          1300.0,
+          1.4979
+        ],
+        [
+          1350.0,
+          1.4977
+        ],
+        [
+          1400.0,
+          1.4974
+        ],
+        [
+          1565.0,
+          1.4967
+        ],
+        [
+          1617.0,
+          1.4961
+        ],
+        [
+          1940.0,
+          1.4941
+        ]
+      ],
+      "spectral_column_suffix": "IPXQ",
+      "notes": [
+        "打印剂量、后固化及热处理会影响折射率；此数据作为初始设计基准，不代表本机打印批次实测。",
+        "原始 AGF 透射率字段采用接近百分数的数值，项目导出版不复制 IT；不可据折射率目录宣称收光效率。"
+      ]
+    },
+    {
+      "id": "ipn162-darus2026",
+      "name": "IP-n162",
+      "manufacturer": "Nanoscribe",
+      "category": "printed_lens_resin",
+      "state": "UV-polymerized bulk specimen",
+      "process": "2PP 打印候选；本条光学数据测自 UV 聚合块体",
+      "source_ids": [
+        "darus-6471-v1",
+        "nanoscribe-printing"
+      ],
+      "uncertainty_n": null,
+      "reported_index": {
+        "value": 1.62228902,
+        "wavelength_nm": 587.5618,
+        "temperature_C": null,
+        "source_id": "darus-6471-v1",
+        "basis": "来源 AGF 的 Nd 元数据；未在此重新标为直接测量点"
+      },
+      "abbe_vd": {
+        "value": 25.04701184,
+        "source_id": "darus-6471-v1",
+        "basis": "来源 AGF 元数据"
+      },
+      "dispersion": {
+        "formula": "sellmeier1_um",
+        "coefficients": [
+          1.27870502,
+          0.01030338,
+          0.25262641,
+          0.06736247,
+          0.21389375,
+          810.53856323
+        ],
+        "valid_range_nm": [
+          405,
+          1940
+        ],
+        "temperature_C": null,
+        "source_id": "darus-6471-v1",
+        "basis": "作者 AGF 的 Sellmeier 拟合系数；未重新拟合",
+        "range_basis": "按实际测量表最短/最长波长收窄；原 AGF LD 为 300–3000 nm"
+      },
+      "agf_name": "SAOS_IPN162_20261014",
+      "original_agf_name": "IP-n162_LGLS",
+      "index_samples": [
+        [
+          405.0,
+          1.6713
+        ],
+        [
+          450.0,
+          1.6508
+        ],
+        [
+          500.0,
+          1.6369
+        ],
+        [
+          550.0,
+          1.6276
+        ],
+        [
+          600.0,
+          1.6209
+        ],
+        [
+          650.0,
+          1.616
+        ],
+        [
+          700.0,
+          1.6123
+        ],
+        [
+          750.0,
+          1.609
+        ],
+        [
+          800.0,
+          1.6068
+        ],
+        [
+          850.0,
+          1.6049
+        ],
+        [
+          900.0,
+          1.6032
+        ],
+        [
+          950.0,
+          1.6019
+        ],
+        [
+          1000.0,
+          1.6008
+        ],
+        [
+          1050.0,
+          1.5998
+        ],
+        [
+          1100.0,
+          1.5989
+        ],
+        [
+          1150.0,
+          1.5982
+        ],
+        [
+          1200.0,
+          1.5976
+        ],
+        [
+          1250.0,
+          1.597
+        ],
+        [
+          1300.0,
+          1.5965
+        ],
+        [
+          1350.0,
+          1.5961
+        ],
+        [
+          1400.0,
+          1.5959
+        ],
+        [
+          1565.0,
+          1.5951
+        ],
+        [
+          1617.0,
+          1.5947
+        ],
+        [
+          1940.0,
+          1.5933
+        ]
+      ],
+      "spectral_column_suffix": "IPn162",
+      "notes": [
+        "打印剂量、后固化及热处理会影响折射率；此数据作为初始设计基准，不代表本机打印批次实测。",
+        "原始 AGF 透射率字段采用接近百分数的数值，项目导出版不复制 IT；不可据折射率目录宣称收光效率。"
+      ]
+    },
+    {
+      "id": "ormocomp-darus2026",
+      "name": "OrmoComp",
+      "manufacturer": "micro resist technology",
+      "category": "printed_lens_resin",
+      "state": "UV-polymerized bulk specimen",
+      "process": "2PP 打印候选；本条光学数据测自 UV 聚合块体",
+      "source_ids": [
+        "darus-6471-v1",
+        "nanoscribe-printing"
+      ],
+      "uncertainty_n": null,
+      "reported_index": {
+        "value": 1.52181156,
+        "wavelength_nm": 587.5618,
+        "temperature_C": null,
+        "source_id": "darus-6471-v1",
+        "basis": "来源 AGF 的 Nd 元数据；未在此重新标为直接测量点"
+      },
+      "abbe_vd": {
+        "value": 50.80237976,
+        "source_id": "darus-6471-v1",
+        "basis": "来源 AGF 元数据"
+      },
+      "dispersion": {
+        "formula": "sellmeier1_um",
+        "coefficients": [
+          1.0418771,
+          0.00755081,
+          0.23153611,
+          0.02780865,
+          0.82984718,
+          264.39959638
+        ],
+        "valid_range_nm": [
+          405,
+          1940
+        ],
+        "temperature_C": null,
+        "source_id": "darus-6471-v1",
+        "basis": "作者 AGF 的 Sellmeier 拟合系数；未重新拟合",
+        "range_basis": "按实际测量表最短/最长波长收窄；原 AGF LD 为 300–3000 nm"
+      },
+      "agf_name": "SAOS_ORMOCOMP_20261014",
+      "original_agf_name": "Ormocomp_LGLS",
+      "index_samples": [
+        [
+          405.0,
+          1.5394
+        ],
+        [
+          450.0,
+          1.5326
+        ],
+        [
+          500.0,
+          1.528
+        ],
+        [
+          550.0,
+          1.5237
+        ],
+        [
+          600.0,
+          1.5212
+        ],
+        [
+          650.0,
+          1.5193
+        ],
+        [
+          700.0,
+          1.5173
+        ],
+        [
+          750.0,
+          1.5156
+        ],
+        [
+          800.0,
+          1.5146
+        ],
+        [
+          850.0,
+          1.5137
+        ],
+        [
+          900.0,
+          1.513
+        ],
+        [
+          950.0,
+          1.5121
+        ],
+        [
+          1000.0,
+          1.5115
+        ],
+        [
+          1050.0,
+          1.5109
+        ],
+        [
+          1100.0,
+          1.5105
+        ],
+        [
+          1150.0,
+          1.51
+        ],
+        [
+          1200.0,
+          1.5098
+        ],
+        [
+          1250.0,
+          1.5092
+        ],
+        [
+          1300.0,
+          1.509
+        ],
+        [
+          1350.0,
+          1.5085
+        ],
+        [
+          1400.0,
+          1.5082
+        ],
+        [
+          1565.0,
+          1.5074
+        ],
+        [
+          1617.0,
+          1.507
+        ],
+        [
+          1940.0,
+          1.505
+        ]
+      ],
+      "spectral_column_suffix": "Ormocomp",
+      "notes": [
+        "打印剂量、后固化及热处理会影响折射率；此数据作为初始设计基准，不代表本机打印批次实测。",
+        "原始 AGF 透射率字段采用接近百分数的数值，项目导出版不复制 IT；不可据折射率目录宣称收光效率。"
+      ]
+    },
+    {
+      "id": "ormoclear",
+      "name": "OrmoClear",
+      "manufacturer": "micro resist technology",
+      "category": "replicated_lens_resin",
+      "state": "cured",
+      "process": "UV 压印/模塑；本库未确认该配方的 2PP 工艺",
+      "source_ids": [
+        "ormoclear"
+      ],
+      "reported_index": {
+        "value": 1.555,
+        "wavelength_nm": 589,
+        "temperature_C": null,
+        "source_id": "ormoclear",
+        "basis": "厂家固化典型值"
+      },
+      "abbe_vd": {
+        "value": 34,
+        "source_id": "ormoclear",
+        "basis": "厂家公布值，未注明谱线约定"
+      },
+      "dispersion": null,
+      "uncertainty_n": null,
+      "cure": {
+        "band_nm": [
+          300,
+          410
+        ],
+        "dose_J_cm2": [
+          1,
+          3
+        ]
+      },
+      "notes": [
+        "体积收缩 3–5%；不将 589 nm 的值自动替代为 587.56 nm 的 nd，也不由单点和阿贝数伪造精确双色数据。"
+      ]
+    },
+    {
+      "id": "ormoclear30",
+      "name": "OrmoClear30",
+      "manufacturer": "micro resist technology",
+      "category": "replicated_lens_resin",
+      "state": "cured",
+      "process": "UV 压印/模塑；本库未确认该配方的 2PP 工艺",
+      "source_ids": [
+        "ormoclear"
+      ],
+      "reported_index": {
+        "value": 1.561,
+        "wavelength_nm": 589,
+        "temperature_C": null,
+        "source_id": "ormoclear",
+        "basis": "厂家固化典型值"
+      },
+      "abbe_vd": {
+        "value": 34,
+        "source_id": "ormoclear",
+        "basis": "厂家公布值，未注明谱线约定"
+      },
+      "dispersion": null,
+      "uncertainty_n": null,
+      "cure": {
+        "band_nm": [
+          300,
+          410
+        ],
+        "dose_J_cm2": [
+          1,
+          3
+        ]
+      },
+      "notes": [
+        "体积收缩 远小于 2%（厂商原文 <<2）；不将 589 nm 的值自动替代为 587.56 nm 的 nd，也不由单点和阿贝数伪造精确双色数据。"
+      ]
+    }
+  ]
+}

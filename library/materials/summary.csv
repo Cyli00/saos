@@ -1,0 +1,23 @@
+﻿材料ID,名称,厂商,类别,样品状态,公布折射率,公布波长nm,n488_模型计算,n532_模型计算,色散公式,有效范围nm,来源ID
+noa-61,NOA 61,Norland Products,adhesive,cured,1.56,,1.56859143,1.56415770,cauchy_nm,"[435.8, 1500]",noa-61-tds
+noa-63,NOA 63,Norland Products,adhesive,cured,1.56,,,,缺少模型,,noa-63-tds
+noa-65,NOA 65,Norland Products,adhesive,cured,1.52,,,,缺少模型,,noa-65-tds
+noa-68,NOA 68,Norland Products,adhesive,cured,1.54,,,,缺少模型,,noa-68-tds
+noa-81,NOA 81,Norland Products,adhesive,cured,1.56,,,,缺少模型,,noa-81-tds
+noa-84,NOA 84,Norland Products,adhesive,cured,1.476,,,,缺少模型,,noa-84-tds
+noa-1375,NOA 1375,Norland Products,adhesive,cured,1.43,,,,缺少模型,,noa-1375-tds
+noa-147,NOA 147,Norland Products,adhesive,cured,1.474,,,,缺少模型,,noa-147-tds
+noa-148,NOA 148,Norland Products,adhesive,cured,1.474,,,,缺少模型,,noa-148-tds
+noa-160,NOA 160,Norland Products,adhesive,cured,1.6,,,,缺少模型,,noa-160-tds
+noa-170,NOA 170,Norland Products,adhesive,cured,1.705,,,,缺少模型,,noa-170-tds
+dymax-op32,OP-32,Dymax,adhesive,cured,1.51,,,,缺少模型,,dymax-op32-pds
+ipxs-darus2026,IPX-S,Nanoscribe,printed_lens_resin,UV-polymerized bulk specimen,1.51098765,587.5618,1.51824613,1.51447532,sellmeier1_um,"[405, 1940]","darus-6471-v1,nanoscribe-printing"
+ips-darus2026,IP-S,Nanoscribe,printed_lens_resin,UV-polymerized bulk specimen,1.51111972,587.5618,1.51813535,1.51448363,sellmeier1_um,"[405, 1940]","darus-6471-v1,nanoscribe-printing"
+ipdip2-darus2026,IP-Dip2,Nanoscribe,printed_lens_resin,UV-polymerized bulk specimen,1.55450603,587.5618,1.56552420,1.55967166,sellmeier1_um,"[405, 1940]","darus-6471-v1,nanoscribe-printing"
+ipvisio-darus2026,IP-Visio,Nanoscribe,printed_lens_resin,UV-polymerized bulk specimen,1.51125172,587.5618,1.51802455,1.51451608,sellmeier1_um,"[405, 1940]","darus-6471-v1,nanoscribe-printing"
+ipxclear-darus2026,IPX-Clear,Nanoscribe,printed_lens_resin,UV-polymerized bulk specimen,1.54334297,587.5618,1.55276945,1.54784115,sellmeier1_um,"[405, 1940]","darus-6471-v1,nanoscribe-printing"
+ipxq-darus2026,IPX-Q,Nanoscribe,printed_lens_resin,UV-polymerized bulk specimen,1.51086507,587.5618,1.51770607,1.51418365,sellmeier1_um,"[405, 1940]","darus-6471-v1,nanoscribe-printing"
+ipn162-darus2026,IP-n162,Nanoscribe,printed_lens_resin,UV-polymerized bulk specimen,1.62228902,587.5618,1.63973750,1.63048297,sellmeier1_um,"[405, 1940]","darus-6471-v1,nanoscribe-printing"
+ormocomp-darus2026,OrmoComp,micro resist technology,printed_lens_resin,UV-polymerized bulk specimen,1.52181156,587.5618,1.52885354,1.52522479,sellmeier1_um,"[405, 1940]","darus-6471-v1,nanoscribe-printing"
+ormoclear,OrmoClear,micro resist technology,replicated_lens_resin,cured,1.555,589,,,缺少模型,,ormoclear
+ormoclear30,OrmoClear30,micro resist technology,replicated_lens_resin,cured,1.561,589,,,缺少模型,,ormoclear

@@ -1,0 +1,67 @@
+{
+  "doi": "10.18419/DARUS-6471",
+  "version": "1.0",
+  "license": "CC BY 4.0",
+  "authors": [
+    "Leander Siegle",
+    "Leonardo Guimaraes",
+    "Harald Giessen"
+  ],
+  "retrieved": "2026-10-14",
+  "files": [
+    {
+      "file": "ExtinctionCoefficientData.txt",
+      "url": "https://darus.uni-stuttgart.de/api/access/datafile/659851",
+      "sha256": "020893ba63a06afe449799fa94a18bc8345915605cd6a2c8dd7c009d1e1ee884",
+      "bytes": 408680
+    },
+    {
+      "file": "kData.txt",
+      "url": "https://darus.uni-stuttgart.de/api/access/datafile/659849",
+      "sha256": "9e27945c82e0b1fd510852ffe591029d18e1f1e318baa6e1181662d95819857d",
+      "bytes": 452779
+    },
+    {
+      "file": "Luminescence532nmData.txt",
+      "url": "https://darus.uni-stuttgart.de/api/access/datafile/659853",
+      "sha256": "9eb7f445ed35782ee15357a423fb0c9210651bd3145dce7e4de8cf2ee8d04142",
+      "bytes": 311289
+    },
+    {
+      "file": "LuminescenceUVData.txt",
+      "url": "https://darus.uni-stuttgart.de/api/access/datafile/659852",
+      "sha256": "85375b414f017f401d312f5815669cad1869a3615bb455030dc3d55c870db36b",
+      "bytes": 284222
+    },
+    {
+      "file": "Photoresists_GuimaresSiegle2026.AGF",
+      "url": "https://darus.uni-stuttgart.de/api/access/datafile/659843",
+      "sha256": "b2e0a3097674ae334aa0d6cb612b12e600ca538fce684dc9882ebe09b4c93410",
+      "bytes": 39533
+    },
+    {
+      "file": "RefractiveIndexAbbeData.txt",
+      "url": "https://darus.uni-stuttgart.de/api/access/datafile/659842",
+      "sha256": "dc2ad650ee99b20cb478260592339a32005fea4ea6ce18199835347247a1a164",
+      "bytes": 588
+    },
+    {
+      "file": "RefractiveIndexMeasuredData.txt",
+      "url": "https://darus.uni-stuttgart.de/api/access/datafile/659857",
+      "sha256": "19d007155bc27d0a28b99e47ec0d3f0fb2678bb7f2f8aebd5b0ef5bb89869c02",
+      "bytes": 1613
+    },
+    {
+      "file": "RefractiveIndexSellmeierData.txt",
+      "url": "https://darus.uni-stuttgart.de/api/access/datafile/659856",
+      "sha256": "7d58209b36f8e88d9d76179cc3f50013992fde4cf3c673771417254e3ed68b26",
+      "bytes": 380634
+    },
+    {
+      "file": "TransmissionData.txt",
+      "url": "https://darus.uni-stuttgart.de/api/access/datafile/659846",
+      "sha256": "5a4c0900935e8413c1e4b0dd6db5766091ebc03c163c3de68a370453e9020eae",
+      "bytes": 383526
+    }
+  ]
+}
