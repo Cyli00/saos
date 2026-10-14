@@ -43,7 +43,7 @@ MAX_PER_PATENT = 2
 
 
 def library_dir() -> Path:
-    return Path(os.environ.get("SAOS_LIBRARY", config.REPO_ROOT / "library")).resolve()
+    return Path(os.environ.get("SAOS_LIBRARY", config.REPO_ROOT / "library" / "microscope")).resolve()
 
 
 def entry_dir(entry_id: str) -> Path:

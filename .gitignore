@@ -4,3 +4,15 @@ __pycache__/
 *.pyc
 work/
 .pytest_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.log
+*.tmp
+*.bak
+*.orig

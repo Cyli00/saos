@@ -43,6 +43,7 @@ def test_minimal_loop(saos_home):
         root = saos_home / "jobs" / job
         for name in ("extract.json", "merit_wizard.json", "merit_extra.json"):
             shutil.copy(FIXTURES / name, root / "sources" / name)
+        (root / "spec").mkdir()
         shutil.copy(FIXTURES / "benchmark.yaml", root / "spec" / "benchmark.yaml")
         src = root / "sources"
 

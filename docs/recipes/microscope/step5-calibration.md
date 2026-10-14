@@ -16,7 +16,7 @@
 
 本轮收尾完成，难任务校准列入 TODO，不阻塞第 6 步。不追加 39 个压力测试，也不为调焦修复重跑 65 个正式任务。正式结果仍属于清单锁定的旧代码和验收配置；修复后的评估器只获得 3.8 节所列范围内的回归证据，不据此称为已校准。
 
-正式统计与修复回归分别归档在 [formal-result.json](../library/calibration/step5-20261013-evidence/formal-result.json) 和 [focus-regression.json](../library/calibration/step5-20261013-evidence/focus-regression.json)，文件校验值见 [files.sha256.json](../library/calibration/step5-20261013-evidence/files.sha256.json)。证据文件按生成时的原貌保留，其中的 `work-<名>/…` 路径对应现在的 `work/<名>/…`（2026-10-14 起所有实例统一放在 `work/` 下，默认实例为 `work/main`，原 `work/jobs` 即 `work/main/jobs`），文件内容和校验值未改。正式统计的全局 `excluded` 中有 39 个未运行的压力测试任务；调参组和验证组的主实验排除数均为 0。
+正式统计与修复回归分别归档在 [formal-result.json](../../../library/microscope/calibration/step5-20261013-evidence/formal-result.json) 和 [focus-regression.json](../../../library/microscope/calibration/step5-20261013-evidence/focus-regression.json)，文件校验值见 [files.sha256.json](../../../library/microscope/calibration/step5-20261013-evidence/files.sha256.json)。证据文件按生成时的原貌保留，其中的 `work-<名>/…` 路径对应现在的 `work/<名>/…`（2026-10-14 起所有实例统一放在 `work/` 下，默认实例为 `work/main`，原 `work/jobs` 即 `work/main/jobs`），文件内容和校验值未改。正式统计的全局 `excluded` 中有 39 个未运行的压力测试任务；调参组和验证组的主实验排除数均为 0。
 
 **判定规则决定记录（2026-10-13）**
 
@@ -45,7 +45,7 @@
 
 ### 1.2 案例与分组
 
-正式批次的任务由实验清单事先固定（`zea bench plan`，写入 `library/calibration/<批次>.json`），不按成败事后增删：
+正式批次的任务由实验清单事先固定（`zea bench plan`，写入 `library/microscope/calibration/<批次>.json`），不按成败事后增删：
 
 | 类别 | 起点 | 每个结构的任务 | 调参组（7 个结构） | 验证组（6 个结构） |
 |---|---|---|---|---|
@@ -238,7 +238,7 @@ v1、v2 的轨迹只作开发记录，不参与校准。
 
 最终回归版本的包代码 SHA-256 为 `d3b4a5797ce025a6c03a604cefa7a88c42fdfe0a93e29f4deb191db1caccbc02`。8 个特殊输入的最终结论均未变化，其中 4 个保持逐项相同，另外 4 个改变了无效原因。输入、历史记录的路径及 SHA-256、结果比较和轨迹已归档在 `focus-regression.json`。
 
-**慢案例超时记录补齐**：客户端在 120.2 s 超时，脚本记录“超时未完成”并发出停止请求；后台随后完成评估并保存 `work/g1/jobs/20261013-224329-focus-guard-regression2/eval/in145.accept.json`，内部耗时 173.85 s。停止记录为 `forced: false`。收尾时核对输入镜头、规格文件哈希与回归清单一致，代码标识与最终版本一致，从保存结果补齐回归记录，保留原客户端超时信息，未再次执行该输入。后台原结果另存为 [slow-case.accept.json](../library/calibration/step5-20261013-evidence/slow-case.accept.json)。
+**慢案例超时记录补齐**：客户端在 120.2 s 超时，脚本记录“超时未完成”并发出停止请求；后台随后完成评估并保存 `work/g1/jobs/20261013-224329-focus-guard-regression2/eval/in145.accept.json`，内部耗时 173.85 s。停止记录为 `forced: false`。收尾时核对输入镜头、规格文件哈希与回归清单一致，代码标识与最终版本一致，从保存结果补齐回归记录，保留原客户端超时信息，未再次执行该输入。后台原结果另存为 [slow-case.accept.json](../../../library/microscope/calibration/step5-20261013-evidence/slow-case.accept.json)。
 
 120 s 不再作为光学有效性的判据或通用终止预算。客户端等待超时不能证明后台未完成，也不能当作光学无效；先检查已保存结果，再决定是否需要重试。当前 `focus_trace` 随完整结果保存，进程在结果落盘前被强制结束时，不能保证保留逐步轨迹。
 
@@ -248,7 +248,7 @@ v1、v2 的轨迹只作开发记录，不参与校准。
 
 ## 4. 调参组结果
 
-正式批次 `step5-20261013`（清单 `library/calibration/step5-20261013.json`，代码 `c86b6225…7dc0`），2026-10-13 21:00–21:17，3 个 standalone 实例，每实例局部优化 4 线程。调参阶段结束时，只运行了调参组主实验 35 个任务；当时调参组压力测试和验证组都未运行（验证组主实验随后在参数固定后运行，见第 5 节；压力测试本轮未运行）。
+正式批次 `step5-20261013`（清单 `library/microscope/calibration/step5-20261013.json`，代码 `c86b6225…7dc0`），2026-10-13 21:00–21:17，3 个 standalone 实例，每实例局部优化 4 线程。调参阶段结束时，只运行了调参组主实验 35 个任务；当时调参组压力测试和验证组都未运行（验证组主实验随后在参数固定后运行，见第 5 节；压力测试本轮未运行）。
 
 **状态**：实验已完成（35 个任务全部合格：33 个样本，2 个重复起点，排除 0，冲突 0）；没有找到能区分候选的证据，结论为**证据不足**。
 

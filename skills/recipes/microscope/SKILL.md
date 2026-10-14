@@ -5,7 +5,7 @@ description: Recipe for dry, infinity-corrected microscope objectives (NA ≤ 0.
 
 # Recipe: microscope objective
 
-Distilled from the original zea workflow (steps 1–6, see `docs/step3-minimal-loop.md` … `docs/step6-interview-and-plan.md`). Commands live under `uv run saos microscope …`; helpers under `saos.recipes.microscope`.
+Distilled from the original zea workflow (steps 1–6, see `docs/recipes/microscope/step3-minimal-loop.md` … `docs/recipes/microscope/step6-interview-and-plan.md`). Commands live under `uv run saos microscope …`; helpers under `saos.recipes.microscope`.
 
 ## 1. Scope
 
@@ -24,11 +24,11 @@ Dry objectives, infinity corrected, all-spherical, NA ≤ 0.65, achromat or plan
 
 ## 3. Checks
 
-The recipe's own acceptance (`ops.accept`, via `saos microscope accept`) builds an acceptance model (objective + cover glass + reference tube lens, apertures and vignetting cleared), focuses by working distance only (on-axis e-line c4 = 0) and judges: magnification, working distance, optical length, clear diameter, glass status, surface types, centre/edge thickness, air gaps, axial RMS WFE ≤ λ/14, axial colour ≤ 2·δob, OSC ≤ 0.0025, plan field ratio ≥ 0.85 (plan achromat), field RMS WFE, lateral colour, MTF, distortion. Details and sources: `docs/optical-spec-and-acceptance.md`. To use it inside a saos harness, add a `script` check whose `run(ctx)` calls `ops.accept(ctx, spec=...)` and returns `spec_shortfall`.
+The recipe's own acceptance (`ops.accept`, via `saos microscope accept`) builds an acceptance model (objective + cover glass + reference tube lens, apertures and vignetting cleared), focuses by working distance only (on-axis e-line c4 = 0) and judges: magnification, working distance, optical length, clear diameter, glass status, surface types, centre/edge thickness, air gaps, axial RMS WFE ≤ λ/14, axial colour ≤ 2·δob, OSC ≤ 0.0025, plan field ratio ≥ 0.85 (plan achromat), field RMS WFE, lateral colour, MTF, distortion. Details and sources: `docs/recipes/microscope/optical-spec-and-acceptance.md`. To use it inside a saos harness, add a `script` check whose `run(ctx)` calls `ops.accept(ctx, spec=...)` and returns `spec_shortfall`.
 
 ## 4. Starting designs
 
-`saos microscope library query --na A --magnification M` ranks 25 admitted patent embodiments (`library/entries/`). The library prescription is at the patent's own scale: scale radii and thicknesses to the target focal length, set the cover glass and swap glasses into the allowed catalogs before round 0. New patents: `docs/library.md` (extract → `library check` → `library add` → `library verify`).
+`saos microscope library query --na A --magnification M` ranks 25 admitted patent embodiments (`library/microscope/entries/`). The library prescription is at the patent's own scale: scale radii and thicknesses to the target focal length, set the cover glass and swap glasses into the allowed catalogs before round 0. New patents: `docs/recipes/microscope/library.md` (extract → `library check` → `library add` → `library verify`).
 
 ## 5. Modelling notes
 
@@ -40,4 +40,4 @@ Reference policy that recovered all 65 perturbed benchmark tasks (most in 1–2 
 
 ## 7. Verified
 
-Reproduction of 25 library entries; real-OpticStudio minimal loop (`tests/test_zemax_loop.py`); 65 benchmark tasks (`docs/step5-calibration.md`). The stop parameters of the old round rule (3 rounds, 1 %, 20) were never calibrated.
+Reproduction of 25 library entries; real-OpticStudio minimal loop (`tests/test_zemax_loop.py`); 65 benchmark tasks (`docs/recipes/microscope/step5-calibration.md`). The stop parameters of the old round rule (3 rounds, 1 %, 20) were never calibrated.

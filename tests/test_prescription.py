@@ -5,7 +5,6 @@ import math
 import pytest
 
 from saos import prescription
-from saos.recipes.microscope import layout
 from saos.protocol import SaosError
 
 
@@ -56,23 +55,3 @@ def test_two_stops_rejected():
     p["surfaces"][0]["stop"] = True
     with pytest.raises(SaosError):
         prescription.normalize(p)
-
-
-def rows(*comments):
-    return [{"index": i, "comment": c} for i, c in enumerate(comments)]
-
-
-def test_objective_block_without_and_with_cover():
-    plain = rows("saos:object", "r1", "r2", "saos:stop", "saos:tube", "")
-    assert layout.objective_block(plain) == (1, 3)
-    assert layout.gap_surface(plain) == 0
-    covered = rows("saos:object", "saos:cover_top", "r1", "r2", "saos:tube", "")
-    assert layout.objective_block(covered) == (2, 3)
-    assert layout.gap_surface(covered) == 1
-
-
-def test_objective_block_requires_layout():
-    with pytest.raises(SaosError):
-        layout.objective_block(rows("obj", "r1", "saos:tube", ""))
-    with pytest.raises(SaosError):
-        layout.objective_block(rows("saos:object", "r1", "r2", ""))

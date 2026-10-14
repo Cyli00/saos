@@ -1,4 +1,4 @@
-"""光学规格（YAML）的读取、补全和冻结，口径见 docs/optical-spec-and-acceptance.md。
+"""光学规格（YAML）的读取、补全和冻结，口径见 docs/recipes/microscope/optical-spec-and-acceptance.md。
 
 规格中的每个值既可以直接写，也可以写成 {value: ..., source: user|assumption, basis: ...}。
 这里只取 value；source、basis 原样保留在规格文件里，供设计计划使用。

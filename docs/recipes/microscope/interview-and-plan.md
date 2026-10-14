@@ -4,7 +4,7 @@
 
 ## 从对话到确认
 
-agent 使用仓库中的 [saos-interview 技能](../skills/saos-interview/SKILL.md)。用户描述使用目的和条件，agent 澄清不能推断的内容，写出结构化访谈记录。程序检查规格与来源，列出缺项，生成可审阅页面。程序不负责把任意自然语言自动解析为规格；因此 agent 仍须对照用户原话检查是否遗漏。
+agent 使用仓库中的 [saos-interview 技能](../../../skills/recipes/microscope/SKILL.md)。用户描述使用目的和条件，agent 澄清不能推断的内容，写出结构化访谈记录。程序检查规格与来源，列出缺项，生成可审阅页面。程序不负责把任意自然语言自动解析为规格；因此 agent 仍须对照用户原话检查是否遗漏。
 
 ```bash
 uv run saos job create --name microscope-plan
@@ -30,7 +30,7 @@ uv run saos microscope plan handoff --job <任务编号>
 
 ## 访谈记录格式
 
-可运行的例子见 [目视情景](../tests/fixtures/interview/visual.yaml)。访谈从 `saos job create` 开始，叙述记录存为任务的 `sources/interview.md`，结构化记录存为 `sources/interview.yaml`；需求文档不放进仓库的 `docs/`，也不把临时页面放进仓库根目录。
+可运行的例子见 [目视情景](../../../tests/recipes/microscope/fixtures/interview/visual.yaml)。访谈从 `saos job create` 开始，叙述记录存为任务的 `sources/interview.md`，结构化记录存为 `sources/interview.yaml`；需求文档不放进仓库的 `docs/`，也不把临时页面放进仓库根目录。
 
 | 字段 | 含义 |
 |---|---|
@@ -62,6 +62,6 @@ uv run saos microscope plan handoff --job <任务编号>
 
 ## 验证边界
 
-离线测试覆盖来源与漏项、相机频率换算、超范围需求、特殊字符、初始结构差异提示、版本替换、确认与交接、规格和评估器变化失效。另有 6 类受控模拟访谈回放，见 `tests/fixtures/interview/conversations.json`：模拟由当前模型编写，显式给出事实映射，不冒充独立模型盲测或自然语言解析准确率。本次真实光纤访谈记录在 `work/native-fiber/jobs/20261014-100420-fiber-hemiellipsoid/sources/interview.md`；收尾边界见 `docs/step6-interview-and-plan.md`。
+离线测试覆盖来源与漏项、相机频率换算、超范围需求、特殊字符、初始结构差异提示、版本替换、确认与交接、规格和评估器变化失效。另有 6 类受控模拟访谈回放，见 `tests/fixtures/interview/conversations.json`：模拟由当前模型编写，显式给出事实映射，不冒充独立模型盲测或自然语言解析准确率。本次真实光纤访谈记录在 `work/native-fiber/jobs/20261014-100420-fiber-hemiellipsoid/sources/interview.md`；收尾边界见 `docs/recipes/microscope/step6-interview-and-plan.md`。
 
 用户明确授权在规格未定标时探索，可另立任务，通过 Interactive Extension 在原生 Zemax 窗口中搭建和检查。该授权不等于确认正式设计计划；见该任务的 `notes/native-framework.md`。

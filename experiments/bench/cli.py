@@ -65,7 +65,7 @@ def register(sub, parser_class, default_timeout: float) -> None:
     bench_parser = sub.add_parser("bench", help="优化基准")
     bsub = bench_parser.add_subparsers(dest="action", required=True, parser_class=parser_class)
     bsub.add_parser("split", help="把可作基准的条目分为调参组和验证组").set_defaults(func=cmd_split)
-    p = bsub.add_parser("plan", help="生成正式批次的实验清单（library/calibration/<批次>.json），记录当前代码版本")
+    p = bsub.add_parser("plan", help="生成正式批次的实验清单（library/microscope/calibration/<批次>.json），记录当前代码版本")
     p.add_argument("--batch", required=True)
     p.add_argument("--policy", default=runner.POLICY)
     p.set_defaults(func=cmd_bench_plan)

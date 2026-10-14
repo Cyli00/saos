@@ -1,4 +1,4 @@
-"""验收评估：按 docs/optical-spec-and-acceptance.md 第 3、4 节逐项判定，并计算规格差距。
+"""验收评估：按 docs/recipes/microscope/optical-spec-and-acceptance.md 第 3、4 节逐项判定，并计算规格差距。
 
 流程：从设计文件取出物镜部分 → 按规格重建验收模型 → 只调工作距离对焦到轴上 e 线 c4 = 0
 → 检查光线 → 逐项测量 → 单项差距与规格差距。
@@ -213,7 +213,7 @@ def residual_rms(rms_centroid: float, *removed: float) -> float:
 
 
 def field_wfe(rms_centroid: float, c4: float, c5: float, c6: float, *, remove_defocus_astig: bool) -> float:
-    """视场波像差（docs/optical-spec-and-acceptance.md 3.3 节）。
+    """视场波像差（docs/recipes/microscope/optical-spec-and-acceptance.md 3.3 节）。
 
     平场比同时启用时，离焦和像散已由平场比限定，扣除 c4–c6；否则在固定验收焦面上计入总波像差。
     """

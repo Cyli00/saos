@@ -332,6 +332,7 @@ def prepare(
     spec = yaml.safe_load((d / "benchmark.yaml").read_text(encoding="utf-8"))
     if stretch:
         spec = stretched_spec(spec, library.load_entry(entry_id)["metrics"], stretch)
+    job.spec_dir.mkdir(exist_ok=True)
     (job.root / "spec" / "benchmark.yaml").write_text(yaml.safe_dump(spec, allow_unicode=True, sort_keys=False), encoding="utf-8")
     # 处方副本：准入时与实验清单记录的输入哈希核对
     (job.root / "sources" / "prescription.json").write_bytes((d / "prescription.json").read_bytes())

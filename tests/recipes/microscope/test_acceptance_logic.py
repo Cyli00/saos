@@ -122,6 +122,7 @@ def test_spec_with_nan_threshold_is_rejected():
 
 
 def write_spec(job, text, name="spec.yaml"):
+    job.spec_dir.mkdir(exist_ok=True)
     (job.spec_dir / name).write_text(text, encoding="utf-8")
     return f"spec/{name}"
 

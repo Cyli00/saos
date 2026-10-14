@@ -1,4 +1,4 @@
-"""调整轮次的记录与停机判断（DESIGN.md 流程第 4 步；比较规则见 docs/optical-spec-and-acceptance.md 4.2 节）。
+"""调整轮次的记录与停机判断（DESIGN.md 流程第 4 步；比较规则见 docs/recipes/microscope/optical-spec-and-acceptance.md 4.2 节）。
 
 每个设计任务一份 rounds.jsonl：第 0 轮是初始结构的验收评估，之后每轮一条。
 """
@@ -11,7 +11,7 @@ from typing import Any
 
 from saos.protocol import ErrorCode, SaosError
 
-# 停机参数为初始值，未校准：第 5 步正式批次的调参组样本全部 1–2 轮通过，无法区分候选（docs/step5-calibration.md）
+# 停机参数为初始值，未校准：第 5 步正式批次的调参组样本全部 1–2 轮通过，无法区分候选（docs/recipes/microscope/step5-calibration.md）
 STAGNATION_ROUNDS = 3
 STAGNATION_REL = 0.01
 MAX_ROUNDS = 20
@@ -55,6 +55,7 @@ def decide(history: list[float], n: int = STAGNATION_ROUNDS, rel: float = STAGNA
 def freeze(job, spec_name: str, config: dict[str, Any], digest: str) -> None:
     """第 0 轮：保存完整验收配置，并在 job.json 记录规格路径和配置哈希。"""
     path = job.spec_dir / "frozen_config.json"
+    path.parent.mkdir(exist_ok=True)
     path.write_text(json.dumps(config, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
     job.update_state(spec=spec_name, frozen={"spec": spec_name, "config": "spec/frozen_config.json", "sha256": digest})
 

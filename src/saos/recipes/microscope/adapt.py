@@ -1,6 +1,6 @@
 """把专利（或教材）提取出的面数据适配成 saos 标准设计布局的处方，并给出复现校验的期望值。
 
-提取格式见 docs/library.md（schema 2）；第 3 步的旧格式（schema 1）在读取时自动转换。
+提取格式见 docs/recipes/microscope/library.md（schema 2）；第 3 步的旧格式（schema 1）在读取时自动转换。
 """
 
 from __future__ import annotations
