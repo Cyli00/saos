@@ -84,6 +84,17 @@ def test_step2_acceptance(saos_home):
         r1 = surfaces[1]["radius"]
         effl_before = ok(saos("lens", "operand", "--job", job_a, "EFFL", "--int2", "2", env=env))["value"]
 
+        # 建模说明：真实目录玻璃、各波长折射率、布局图；样例没有材料记录、面说明和一阶分析，只该报这三条
+        # model description of a sample: no material record, descriptions or first-order analysis, so exactly these three warnings
+        described = ok(saos("lens", "describe", "--job", job_a, "--lang", "en", env=env))
+        folder = Path(saos_home) / "jobs" / job_a / described["folder"]
+        assert described["folder"] == "models/001-start" and (folder / "index.html").is_file()
+        model = json.loads((folder / "model.json").read_text(encoding="utf-8"))["model"]
+        glass = [s for s in model["surfaces"] if s["material_source"]["kind"] == "catalog"]
+        assert glass and all(s["material_source"]["catalogs"] and min(s["n"]) > 1.4 and s["n"][0] != s["n"][-1] for s in glass)
+        assert all(isinstance(v, str) and (folder / v).is_file() for v in described["layout"].values()), described["layout"]
+        assert [w.split(":")[0][:30] for w in described["warnings"]] == ["The lens uses real materials b", "These surfaces have no descrip", "No first-order analysis"]
+
         # 修改参数：半径、玻璃
         new_r1 = round(r1 * 1.02, 6)
         changed = ok(saos("lens", "set", "--job", job_a, "--surface", "1", "--param", "radius", "--value", str(new_r1), env=env))

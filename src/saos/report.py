@@ -68,6 +68,13 @@ TEXT: dict[str, tuple[str, str]] = {
     "best_so_far": ("<b>目前最好的镜头</b>：{lens}（第 {n} 轮，目标差距 G = {g}）", "<b>Best lens so far</b>: {lens} (round {n}, shortfall G = {g})"),
     "judgement": ("<b>终止判断</b>：{text}", "<b>Stop decision</b>: {text}"),
     "h.request": ("需求", "Request"),
+    "h.materials": ("交付镜头的材料（第 {n} 轮）", "Materials of the delivered lens (round {n})"),
+    "th.materials": ("面|材料|来源|各波长折射率", "Surface|Material|Source|Index per wavelength"),
+    "mat.model": ("模型玻璃 nd {nd}，Vd {vd}（不是真实材料）", "model glass nd {nd}, Vd {vd} (not a real material)"),
+    "mat.catalog": ("目录 {cats}", "catalog {cats}"),
+    "blocked": ("<b>没有可交付的镜头</b>：所有轮次都还含模型玻璃（第 {surfaces} 面），下面列的是探索中最好的一轮，不能作为设计交付。",
+                "<b>No deliverable lens</b>: every round still uses a model glass (surfaces {surfaces}); the round below is the best exploration result and is not a deliverable design."),
+    "model_ok": ("建模说明：{model}（用户已确认）", "Model description: {model} (approved by the user)"),
     "confirmed": ("用户确认：{quote}", "Confirmed by the user: {quote}"),
     "not_recorded": ("（未记录）", "(not recorded)"),
     "h.assumptions": ("假设", "Assumptions"),
@@ -231,6 +238,11 @@ def build(job: jobs.Job) -> dict[str, Any]:
     if not harness_path.is_file():
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"job {job.id} has no {harness.HARNESS_FILE}")
     h = harness.load(harness_path)
+    # 报告只引用完好的证据：封存过的文件被改动或删除时拒绝生成
+    # a report cites intact evidence only: refuse when a sealed file was changed or deleted
+    problems = job.verify_seals()
+    if problems:
+        raise SaosError(ErrorCode.EVIDENCE_TAMPERED, f"{len(problems)} sealed evidence file(s) were changed or deleted; see details", {"problems": problems[:50]})
     rounds = ledger.load(job.root / ledger.LEDGER_FILE)
     if not rounds:
         raise SaosError(ErrorCode.BAD_ARGS, f"job {job.id} has no recorded rounds; run saos round first")
@@ -240,14 +252,19 @@ def build(job: jobs.Job) -> dict[str, Any]:
     rounds = ledger.current_window(rounds)
     decision = ledger.decide(rounds, h["stop"])
     final = rounds[-1]
-    best = min(rounds, key=lambda r: (r["shortfall"], r["round"]))
-    deliver = final if final.get("achieved") else best
-    eval_file = job.root / "rounds" / f"r{deliver['round']:03d}.json"
+    # 只交付不含模型玻璃的轮次；全是探索时取最好的一轮并标明不可交付
+    # only rounds without a model glass are deliverable; if none is, show the best one marked as not deliverable
+    candidates = [r for r in rounds if ledger.deliverable(r)] or rounds
+    best = min(candidates, key=lambda r: (r["shortfall"], r["round"]))
+    deliver = final if final.get("achieved") and ledger.deliverable(final) else best
+    # 权威记录是 evaluations/NNN/result.json；旧任务的 rounds/rNNN.json 作为后备
+    # the authoritative record is evaluations/NNN/result.json; rounds/rNNN.json of older jobs is the fallback
+    eval_file = job.root / (deliver.get("evaluation") or f"rounds/r{deliver['round']:03d}.json")
     if not eval_file.is_file():
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"missing evaluation for round {deliver['round']}")
     evaluation = json.loads(eval_file.read_text(encoding="utf-8"))
     return {"harness": {**evaluation["harness"], "lang": h.get("lang")}, "rounds": rounds, "decision": decision,
-            "deliver": deliver, "items": evaluation["items"]}
+            "deliver": deliver, "items": evaluation["items"], "blocked": not ledger.deliverable(deliver)}
 
 
 def header_row(spec: str) -> str:
@@ -292,6 +309,18 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
         else "<br>" + t("progress", n=decision["last_gain_round"], k=decision["rounds_without_gain"], untried=e(untried))
     )
     lens_link = f'<a href="../lenses/{e(deliver["file"])}">{e(deliver["file"])}</a>'
+    blocked = f'<div class="card">{t("blocked", surfaces=e(", ".join(map(str, deliver.get("model_glass") or []))))}</div>' if data.get("blocked") else ""
+    mat_rows = []
+    for m in deliver.get("materials") or []:
+        if m["kind"] == "model":
+            name, source = "MODEL", t("mat.model", nd=fmt(m.get("nd")), vd=fmt(m.get("vd")))
+        else:
+            name, source = m.get("name") or "", t("mat.catalog", cats=", ".join(m.get("catalogs") or []))
+        n = " / ".join(f"{v:.6f}" for v in m.get("n") or [])
+        mat_rows.append(f'<tr><td class="num">{m["surface"]}</td><td>{e(name)}</td><td>{e(source)}</td><td class="num">{e(n)}</td></tr>')
+    model_line = f'<p class="muted">{t("model_ok", model=e(deliver["model"]))}</p>' if deliver.get("model") else ""
+    materials = (f'<div class="wrap"><table><thead><tr>{header_row(t("th.materials"))}</tr></thead><tbody>{"".join(mat_rows)}</tbody></table></div>'
+                 if mat_rows else f"<p>{t('none')}</p>") + model_line
     return f"""<!doctype html><html lang="{'zh-CN' if lang == 'zh' else 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{t('title')} · {e(job.id)}</title><style>{CSS}</style></head><body><main>
 <p class="muted">{t('byline', job=e(job.id), time=e(jobs.now_iso()))}</p>
@@ -299,6 +328,8 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
 <p>{t('summary.' + status)}</p>
 <div class="card">{t('best_so_far' if status == 'continue' else 'deliver', lens=lens_link, n=deliver['round'], g=fmt(deliver['shortfall']))}
 <br>{t('judgement', text=e(judgement(decision, h['stop'], t)))}{progress}</div>
+{blocked}
+<h2>{t('h.materials', n=deliver['round'])}</h2>{materials}
 <h2>{t('h.request')}</h2><blockquote>{e(h['request'])}</blockquote>
 <p class="muted">{t('confirmed', quote=e(confirmed) or t('not_recorded'))}</p><h3>{t('h.assumptions')}</h3><ul>{assumptions}</ul>
 <h2>{t('h.items', n=deliver['round'])}</h2><div class="wrap"><table><thead><tr>{header_row(t('th.items'))}</tr></thead><tbody>{''.join(rows)}</tbody></table></div>
@@ -314,10 +345,18 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
 def write(job: jobs.Job, lang: str | None = None) -> dict[str, Any]:
     data = build(job)
     chosen = i18n.resolve(lang, data["harness"].get("lang"))
-    out = job.root / "report" / "index.html"
-    out.parent.mkdir(exist_ok=True)
-    out.write_text(render(job, data, chosen), encoding="utf-8")
+    folder = job.root / "report"
+    folder.mkdir(exist_ok=True)
+    html = render(job, data, chosen)
+    # 每次生成都留一份编号副本并封存；index.html 始终是最新一份
+    # every generation is kept as a numbered, sealed copy; index.html is always the latest
+    archived = folder / f"{jobs.next_archive_number(folder):03d}-r{data['deliver']['round']:03d}-{data['decision']['status']}.html"
+    archived.write_text(html, encoding="utf-8")
+    job.seal(archived)
+    out = folder / "index.html"
+    out.write_text(html, encoding="utf-8")
     return {
+        "archived": archived.relative_to(job.root).as_posix(),
         "report": str(out),
         "lang": chosen,
         "status": data["decision"]["status"],

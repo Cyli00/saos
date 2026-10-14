@@ -86,11 +86,15 @@ class ScriptContext:
         self._daemon.loaded = Loaded(self.job, path)
         return self.job.relative_lens(path)
 
-    def save_as(self, name: str, *, overwrite: bool = False) -> str:
-        """把当前系统存为本任务 lenses/ 下的文件，并把它记为当前加载的镜头。"""
+    def save_as(self, name: str, *, overwrite: bool = False, archive: bool = False) -> str:
+        """把当前系统存为本任务 lenses/ 下的文件，并把它记为当前加载的镜头。归档目录只有工具（archive=True）能写。
+        Save the system as a file under the job's lenses/ and make it the loaded lens. Only the tools (archive=True)
+        write into the archive folders lenses/rounds/ and lenses/captures/."""
         from saos.daemon import Loaded
 
         target = self.job.resolve_lens(name, must_exist=False)
+        if self.job.is_archive_lens(target) and not archive:
+            raise SaosError(ErrorCode.BAD_ARGS, "lenses/rounds/ and lenses/captures/ hold evidence written by the tools; save under another name")
         if target.exists() and not overwrite and target != self.lens:
             raise SaosError(ErrorCode.FILE_EXISTS, f"job {self.job.id} already has {name}; pass overwrite=True")
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -153,5 +157,6 @@ def execute(daemon: Daemon, job: jobs.Job, name: str, source: str, args: dict[st
         record["elapsed_s"] = round(time.perf_counter() - started, 3)
         try:
             write_json(copy.with_suffix(".json"), record)
+            job.seal(copy, copy.with_suffix(".json"))
         except (OSError, ValueError, TypeError):
             pass

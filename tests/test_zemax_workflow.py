@@ -83,7 +83,15 @@ def test_workflow_until_achieved_or_exhausted_with_reports(saos_home, tmp_path):
             "stop": {"rel": 0.01, "max_rounds": 8, "tiers": ["local", "variables", "global"]},
             "confirmed": {"quote": "可以，按这个做"},
         })
+        # 模型确认：没有确认过的建模说明不能记录轮次 / model gate: no rounds before an approved description
+        assert saos("round", "--job", job, env=env)["error"]["code"] == "MODEL_NOT_APPROVED"
+        notes = tmp_path / "notes.json"
+        notes.write_text(json.dumps({"surfaces": {str(i): f"surface {i} of the sample" for i in range(len(surfaces))},
+                                     "assumptions": ["sample lens"], "first_order": ["focal length as designed"]}), encoding="utf-8")
+        described = ok(saos("lens", "describe", "--job", job, "--notes", notes, env=env))
+        ok(saos("lens", "approve", "--job", job, "--model", described["folder"], "--quote", "模型没问题", env=env))
         r0 = ok(saos("round", "--job", job, "--note", "perturbed start", env=env))
+        assert all(m["kind"] == "catalog" for m in r0["record"]["materials"]) and r0["record"]["model_glass"] == []
         assert r0["record"]["tier"] == "baseline" and not r0["record"]["achieved"]
 
         # 下一轮调试：放开曲率，评价函数为 RMS 光斑并约束焦距，局部优化
@@ -116,6 +124,8 @@ def test_workflow_until_achieved_or_exhausted_with_reports(saos_home, tmp_path):
             "stop": {"rel": 0.01, "max_rounds": 10, "tiers": ["local", "global"]},
             "confirmed": {"quote": "试试看"},
         })
+        described = ok(saos("lens", "describe", "--job", job2, "--notes", notes, env=env))
+        ok(saos("lens", "approve", "--job", job2, "--model", described["folder"], "--quote", "同一个模型", env=env))
         ok(saos("round", "--job", job2, env=env))
         ok(saos("opt", "vary", "--job", job2, "--param", "radius", "--surfaces", "1-6", env=env))
         ok(saos("opt", "merit", "--job", job2, "wizard", "--file", settings, env=env))

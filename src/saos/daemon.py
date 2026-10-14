@@ -98,6 +98,8 @@ class Daemon:
             "lens.unload": self.op_unload,
             "lens.info": self.op_info,
             "lens.surfaces": self.op_surfaces,
+            "lens.describe": self.op_describe,
+            "lens.approve": self.op_approve,
             "lens.set": self.op_set,
             "lens.save": self.op_save,
             "lens.operand": self.op_operand,
@@ -240,6 +242,7 @@ class Daemon:
         target = folder / f"{jobs.next_archive_number(folder):03d}-unsaved{jobs.LENS_SUFFIX}"
         self.backend.save_as(target)
         self.window_unsaved = False
+        job.seal(target)
         return job.relative_lens(target)
 
     # ---- 操作 ----
@@ -273,6 +276,8 @@ class Daemon:
             raise SaosError(ErrorCode.BAD_ARGS, f"only {jobs.LENS_SUFFIX} files can be imported")
         name = _arg(args, "name", str, default=src.name)
         dest = job.resolve_lens(name, must_exist=False)
+        if job.is_archive_lens(dest):
+            raise SaosError(ErrorCode.BAD_ARGS, "lenses/rounds/ and lenses/captures/ hold evidence written by the tools; import under another name")
         if self.loaded is not None and self.loaded.path == dest:
             raise SaosError(ErrorCode.BAD_ARGS, f"{name} is loaded; an import cannot overwrite it")
         if dest.exists() and not args.get("overwrite", False):
@@ -310,6 +315,33 @@ class Daemon:
         loaded = self._require_loaded(self._job(args))
         return {**loaded.describe(), "surfaces": self.backend.surfaces()}
 
+    def op_describe(self, args: dict[str, Any]) -> dict[str, Any]:
+        """建模说明：models/NNN-<镜头>/ 下的 index.html、model.json 和布局图，给用户在优化前核对模型。"""
+        from saos import model_report
+
+        job = self._job(args)
+        loaded = self._require_loaded(job)
+        notes = _arg(args, "notes", dict, default=None)
+        root = job.root / "models"
+        root.mkdir(exist_ok=True)
+        folder = root / f"{jobs.next_archive_number(root):03d}-{loaded.path.stem}"
+        desc = self.backend.describe_model(folder, "layout")
+        lens = loaded.path.relative_to(job.lenses_dir).as_posix()
+        result = model_report.write(job, desc, folder, notes, lens, _arg(args, "lang", str, default=None))
+        if notes is not None:
+            notes_file = job.root / "notes" / f"model-{folder.name.split('-', 1)[0]}.json"
+            write_json(notes_file, notes)
+            job.seal(notes_file)
+            result["notes"] = notes_file.relative_to(job.root).as_posix()
+        return {**loaded.describe(), **result, "folder": folder.relative_to(job.root).as_posix()}
+
+    def op_approve(self, args: dict[str, Any]) -> dict[str, Any]:
+        """记录用户对某份建模说明的确认（原话）；之后结构一致的镜头才能记录调试轮次。
+        Record the user's approval (their words) of a model description; rounds then require a matching structure."""
+        from saos import model_gate
+
+        return model_gate.approve(self._job(args), _arg(args, "model", str), _arg(args, "quote", str))
+
     def op_set(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))
         surface = _arg(args, "surface", int)
@@ -327,6 +359,8 @@ class Daemon:
         loaded = self._require_loaded(job)
         name = _arg(args, "file", str, default=None)
         target = loaded.path if name is None else job.resolve_lens(name, must_exist=False)
+        if job.is_archive_lens(target):
+            raise SaosError(ErrorCode.BAD_ARGS, "lenses/rounds/ and lenses/captures/ hold evidence written by the tools; save under another name")
         if target != loaded.path and target.exists() and not args.get("overwrite", False):
             raise SaosError(ErrorCode.FILE_EXISTS, f"job {job.id} already has {name}; pass overwrite to replace it")
         verify = bool(args.get("verify", True))
@@ -352,6 +386,8 @@ class Daemon:
         job = self._job(args)
         presc = prescription.normalize(_arg(args, "prescription", dict))
         target = job.resolve_lens(_arg(args, "file", str), must_exist=False)
+        if job.is_archive_lens(target):
+            raise SaosError(ErrorCode.BAD_ARGS, "lenses/rounds/ and lenses/captures/ hold evidence written by the tools; save under another name")
         if target.exists() and not args.get("overwrite", False):
             raise SaosError(ErrorCode.FILE_EXISTS, f"job {job.id} already has {job.relative_lens(target)}; pass overwrite to replace it")
         captured = self._before_replace(job, bool(args.get("discard", False)), "building a new lens")
@@ -393,6 +429,9 @@ class Daemon:
         data = self.backend.analysis(name, _arg(args, "settings", dict, default={}), folder / f"{stem}.txt", bool(args.get("keep_open")))
         record = {"type": name, "lens": loaded.describe(), "time": jobs.now_iso(), **data}
         write_json(folder / f"{stem}.json", record)
+        job.seal(*(p for p in (folder / f"{stem}.json", folder / f"{stem}.txt") if p.is_file()))
+        if args.get("keep_open"):
+            self.backend.tile_windows()
         rel = (folder / f"{stem}.json").relative_to(job.root).as_posix()
         # 返回值省略网格本体，只留统计量；完整数据在存档文件里
         brief = {**record, "grids": [{k: v for k, v in g.items() if k != "values"} for g in data["grids"]]}
@@ -418,6 +457,7 @@ class Daemon:
             raise SaosError(ErrorCode.BAD_ARGS, "label: letters, digits, - and _, 1–48 chars")
         prefix = f"{jobs.next_archive_number(folder):03d}-{label}"
         files = self.backend.screenshots(folder, prefix)
+        job.seal(*(folder / name for name in files))
         return {"files": [f"screens/{name}" for name in files]}
 
     # ---- 优化与调整轮次 ----

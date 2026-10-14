@@ -4,7 +4,7 @@
 
     <SAOS_HOME>/jobs/<job_id>/        （SAOS_HOME 默认 work/main，其他实例为 work/<实例名>）
         job.json     任务状态（原子写入）
-        spec/        光学规格文件
+        spec/        显微物镜配方的光学规格文件（只在用到时创建）
         sources/     输入材料，含用户需求访谈（interview.md、interview.yaml）
         lenses/      镜头文件副本，所有 .zmx 读写都限制在这里
         log.jsonl    执行记录，每行一条
@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -30,6 +31,19 @@ LENS_SUFFIX = ".zmx"
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+SEALS_FILE = "seals.jsonl"
+# lenses/ 下的归档目录：工具写入一次，之后不再改 / archive folders under lenses/: written once by the tools
+ARCHIVE_LENS_DIRS = ("rounds", "captures")
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
 
 
 def next_archive_number(folder: Path) -> int:
@@ -67,6 +81,48 @@ class Job:
         state["updated_at"] = now_iso()
         write_json(self.state_file, state)
         return state
+
+    def is_archive_lens(self, path: Path) -> bool:
+        """lenses/rounds/、lenses/captures/ 下的镜头是证据，不能用 lens save 覆盖。
+        Lenses under lenses/rounds/ and lenses/captures/ are evidence and must not be overwritten by lens save."""
+        try:
+            rel = path.resolve().relative_to(self.lenses_dir.resolve())
+        except ValueError:
+            return False
+        return len(rel.parts) > 1 and rel.parts[0] in ARCHIVE_LENS_DIRS
+
+    def seal(self, *paths: Path) -> None:
+        """记下工具写入的证据文件的哈希；之后 verify_seals 能发现被改动或删除的文件。
+        Record the hash of evidence files written by the tools so that verify_seals can detect later edits or deletions."""
+        lines = []
+        for p in paths:
+            p = Path(p)
+            for f in sorted(p.rglob("*")) if p.is_dir() else [p]:
+                if f.is_file():
+                    lines.append(json.dumps({"path": f.resolve().relative_to(self.root.resolve()).as_posix(),
+                                             "sha256": sha256_file(f), "time": now_iso()}, ensure_ascii=False))
+        if lines:
+            with (self.root / SEALS_FILE).open("a", encoding="utf-8") as fh:
+                fh.write("".join(line + "\n" for line in lines))
+
+    def verify_seals(self) -> list[dict[str, Any]]:
+        """返回被改动或缺失的证据文件（每个路径取最后一次封存）。 / Evidence files changed or missing since sealing."""
+        path = self.root / SEALS_FILE
+        if not path.is_file():
+            return []
+        latest: dict[str, str] = {}
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                row = json.loads(line)
+                latest[row["path"]] = row["sha256"]
+        problems = []
+        for rel, sha in sorted(latest.items()):
+            f = self.root / rel
+            if not f.is_file():
+                problems.append({"path": rel, "problem": "missing"})
+            elif sha256_file(f) != sha:
+                problems.append({"path": rel, "problem": "changed"})
+        return problems
 
     def append_log(self, record: dict[str, Any]) -> None:
         line = json.dumps({"time": now_iso(), **record}, ensure_ascii=False)
@@ -121,11 +177,12 @@ def create_job(name: str, spec_path: str | None = None) -> Job:
         raise SaosError(ErrorCode.JOB_EXISTS, f"design job {job_id} already exists") from exc
 
     job = Job(job_id, root)
-    job.spec_dir.mkdir()
     job.lenses_dir.mkdir()
     (root / "sources").mkdir()
     spec_rel = None
     if spec_src is not None:
+        # spec/ 只属于显微物镜配方的规格文件，通用流程不建
+        job.spec_dir.mkdir()
         target = job.spec_dir / spec_src.name
         shutil.copy2(spec_src, target)
         spec_rel = target.relative_to(root).as_posix()

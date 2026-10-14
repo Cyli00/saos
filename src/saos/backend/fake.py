@@ -92,6 +92,19 @@ class FakeBackend(Backend):
     def surfaces(self) -> list[dict[str, Any]]:
         return copy.deepcopy(self._require()["surfaces"])
 
+    def describe_model(self, folder: Path | None, prefix: str = "layout") -> dict[str, Any]:
+        info = self.system_info()
+        info["aperture"].update(telecentric_object=False, afocal_image=False)
+        info["fields"]["normalization"] = "Radial"
+        info["ray_aiming"] = "Off"
+        surfaces = []
+        for s in self.surfaces():
+            material = s.get("material", "")
+            source = {"kind": "none"} if not material else {"kind": "mirror"} if material == "MIRROR" else {"kind": "catalog", "name": material, "catalogs": ["FAKE"]}
+            surfaces.append({**s, "material_source": s.get("material_source", source), "n": s.get("n", [1.5 if material else 1.0]),
+                             "aperture": s.get("aperture", {"type": "None"}), "solve_detail": {}, "params": s.get("params", []), "global_vertex": None})
+        return {**info, "surfaces": surfaces, "layout": {} if folder is None else {"3d": {"error": "fake backend draws no layout"}}}
+
     def set_surface(self, index: int, param: str, value: Any) -> dict[str, Any]:
         lens = self._require()
         if param not in SURFACE_PARAMS:

@@ -61,9 +61,13 @@ def cmd_job(args: argparse.Namespace) -> Any:
             "path": str(job.root),
             "state": job.read_state(),
             "lenses": sorted(p.relative_to(job.lenses_dir).as_posix() for p in job.lenses_dir.rglob("*.zmx")),
-            "spec": sorted(p.name for p in job.spec_dir.iterdir()),
+            "spec": sorted(p.name for p in job.spec_dir.iterdir()) if job.spec_dir.is_dir() else [],
             "log_tail": [json.loads(line) for line in lines[-args.log:]] if args.log > 0 else [],
         }
+    if args.action == "verify":
+        job = jobs.get_job(args.job)
+        problems = job.verify_seals()
+        return {"job": job.id, "intact": not problems, "problems": problems}
     raise AssertionError(args.action)
 
 
@@ -96,6 +100,13 @@ def cmd_lens(args: argparse.Namespace) -> Any:
         return _lens_request("lens.screenshot", args, {"label": args.label})
     if action in ("info", "surfaces"):
         return _lens_request(f"lens.{action}", args, {})
+    if action == "describe":
+        notes = _read_json(args.notes) if args.notes else None
+        if notes is not None and not isinstance(notes, dict):
+            raise SaosError(ErrorCode.BAD_ARGS, "--notes must contain a JSON object")
+        return _lens_request("lens.describe", args, {"notes": notes, "lang": args.lang})
+    if action == "approve":
+        return _lens_request("lens.approve", args, {"model": args.model, "quote": args.quote})
     if action == "set":
         return _lens_request("lens.set", args, {"surface": args.surface, "param": args.param, "value": args.value})
     if action == "save":
@@ -210,6 +221,8 @@ def build_parser() -> argparse.ArgumentParser:
     show = jsub.add_parser("show", help="show a design job")
     show.add_argument("job")
     show.add_argument("--log", type=int, default=10, help="number of recent log records to show")
+    verify = jsub.add_parser("verify", help="check that no evidence file written by the tools was changed or deleted (seals.jsonl)")
+    verify.add_argument("job")
     job.set_defaults(func=cmd_job)
 
     lens = sub.add_parser("lens", help="lens operations (run by the daemon)")
@@ -245,6 +258,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--discard", action="store_true")
     lens_cmd("info", "system data: aperture, fields, wavelengths, …")
     lens_cmd("surfaces", "surface rows of the Lens Data Editor")
+    p = lens_cmd("describe", "model description page for the user (models/NNN-<lens>/index.html): every surface, material source and index per wavelength, apertures, fields, wavelengths, layout, plus automatic modelling checks")
+    p.add_argument("--notes", help='JSON file: {"surfaces": {"<index>": "what this surface is"}, "assumptions": ["…"]}')
+    p.add_argument("--lang", choices=("zh", "en"), help="page language (default: the harness lang, then SAOS_LANG, then the system language)")
+    p = lens_cmd("approve", "record the user's approval of a model description; rounds need a lens whose structure matches an approved description")
+    p.add_argument("--model", required=True, help="the description folder, e.g. models/001-start")
+    p.add_argument("--quote", required=True, help="the user's own words of approval")
     p = lens_cmd("set", "change one surface parameter")
     p.add_argument("--surface", type=int, required=True)
     p.add_argument("--param", required=True, help="radius / thickness / conic / semi_diameter / material / comment")

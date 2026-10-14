@@ -153,7 +153,12 @@ def record_round(ctx, spec: str | None = None, note: str = "", observe: bool = F
         rounds.freeze(job, spec_name, config, digest)
     number = len(history)
     merit = ctx.backend.merit_value()
-    rel = ctx.save_as(f"rounds/r{number:03d}.zmx", overwrite=True)
+    # 归档目录只由工具写入；归档后回到工作文件，之后的 lens save 不会改写归档
+    # only the tools write the archive; switch back to the working file so a later lens save cannot rewrite it
+    working = ctx.lens
+    rel = ctx.save_as(f"rounds/r{number:03d}.zmx", overwrite=True, archive=True)
+    if working is not None and not job.is_archive_lens(working):
+        ctx.save_as(job.relative_lens(working), overwrite=True)
     result = _accept(ctx, spec_name, spec_obj)
     record = {
         "round": number,

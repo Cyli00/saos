@@ -350,6 +350,185 @@ class ZosBackend(Backend):
             },
         }
 
+    def describe_model(self, folder: Path | None, prefix: str = "layout") -> dict[str, Any]:
+        """建模说明：系统设置、逐面参数（含所有非空的 Par 列）、材料及各波长折射率（INDX 实测）、孔径、求解、顶点全局位置和布局图。"""
+        zosapi = _load_zosapi(self.root)
+        system = self.system
+        sd = system.SystemData
+        lde = system.LDE
+        fields = sd.Fields
+        waves = sd.Wavelengths
+        n_waves = int(waves.NumberOfWavelengths)
+        catalogs = self._catalogs_in_use()
+        info = {
+            "file": str(system.SystemFile),
+            "title": str(sd.TitleNotes.Title),
+            "lens_units": str(sd.Units.LensUnits),
+            "aperture": {
+                "type": str(sd.Aperture.ApertureType),
+                "value": float(sd.Aperture.ApertureValue),
+                "telecentric_object": bool(sd.Aperture.TelecentricObjectSpace),
+                "afocal_image": bool(sd.Aperture.AFocalImageSpace),
+            },
+            "ray_aiming": str(sd.RayAiming.RayAiming),
+            "fields": {
+                "type": str(fields.GetFieldType()),
+                "normalization": str(fields.Normalization),
+                "items": [
+                    {"x": float(f.X), "y": float(f.Y), "weight": float(f.Weight),
+                     "vignetting": {k: float(getattr(f, k)) for k in ("VDX", "VDY", "VCX", "VCY", "VAN")}}
+                    for f in (fields.GetField(i) for i in range(1, fields.NumberOfFields + 1))
+                ],
+            },
+            "wavelengths": [
+                {"um": float(w.Wavelength), "weight": float(w.Weight), "primary": bool(w.IsPrimary)}
+                for w in (waves.GetWavelength(i) for i in range(1, n_waves + 1))
+            ],
+            "material_catalogs": catalogs,
+            "stop_surface": int(lde.StopSurface),
+        }
+        mc = sd.MaterialCatalogs
+        members = {c: {str(m).upper() for m in mc.GetMaterialsInCatalog(c)} for c in catalogs}
+        columns = zosapi.Editors.LDE.SurfaceColumn
+        surfaces = []
+        for i in range(lde.NumberOfSurfaces):
+            row = lde.GetSurfaceAt(i)
+            item = self._surface_dict(row, i)
+            item["material_source"] = self._material_source(row, members)
+            # INDX 给出该面之后介质在各波长的折射率
+            item["n"] = [self.operand("INDX", i, w, []) for w in range(1, n_waves + 1)]
+            item["aperture"] = self._aperture_dict(row)
+            item["solve_detail"] = {
+                name: self._solve_dict(getattr(row, attr).GetSolveData())
+                for name, attr in (("radius", "RadiusCell"), ("thickness", "ThicknessCell"), ("conic", "ConicCell"),
+                                   ("semi_diameter", "SemiDiameterCell"), ("material", "MaterialCell"))
+            }
+            params = []
+            for n in range(1, 255):
+                col = getattr(columns, f"Par{n}", None)
+                if col is None:
+                    break
+                try:
+                    cell = row.GetSurfaceCell(col)
+                    header = str(cell.Header)
+                except Exception:  # noqa: BLE001 - 超出该面型的列
+                    continue
+                if not header or "unused" in header.lower():
+                    continue
+                kind = str(cell.DataType)
+                value: Any = int(cell.IntegerValue) if kind == "Integer" else float(cell.DoubleValue) if kind == "Double" else str(cell.Value)
+                if value not in (0, 0.0, ""):
+                    params.append({"par": n, "name": header, "value": value, "solve": str(cell.GetSolveData().Type)})
+            item["params"] = params
+            item["tilt_decenter"] = self._tilt_decenter(row)
+            m = lde.GetGlobalMatrix(i, *([0.0] * 12))
+            item["global_vertex"] = [float(v) for v in m[10:13]] if m[0] else None
+            surfaces.append(item)
+        info["surfaces"] = surfaces
+        info["layout"] = {} if folder is None else self._export_layouts(folder, prefix)
+        return info
+
+    def _material_source(self, row, members: dict[str, set[str]]) -> dict[str, Any]:
+        solve = row.MaterialCell.GetSolveData()
+        if str(solve.Type) == "MaterialModel":
+            data = solve._S_MaterialModel
+            return {"kind": "model", "nd": float(data.IndexNd), "vd": float(data.AbbeVd), "dpgf": float(data.dPgF)}
+        name = str(row.Material).upper()
+        if name == "-":  # 坐标断点不定义介质，沿用前一个面之后的介质
+            return {"kind": "inherit"}
+        if not name:
+            return {"kind": "none"}
+        if name == "MIRROR":
+            return {"kind": "mirror"}
+        return {"kind": "catalog", "name": name, "catalogs": [c for c, names in members.items() if name in names]}
+
+    @staticmethod
+    def _tilt_decenter(row) -> dict[str, Any]:
+        """面属性里的倾斜与偏心（前、后）；全为零时返回空字典。
+        Tilt and decenter in the surface properties (before and after); empty when all are zero."""
+        out: dict[str, Any] = {}
+        try:
+            td = row.TiltDecenterData
+        except Exception:  # noqa: BLE001 - 该面型没有这一项 / not available for this surface type
+            return out
+        for side in ("Before", "After"):
+            for key in ("DecenterX", "DecenterY", "TiltX", "TiltY", "TiltZ"):
+                try:
+                    v = float(getattr(td, f"{side}Surface{key}"))
+                except Exception:  # noqa: BLE001
+                    continue
+                if v:
+                    out[f"{side.lower()}_{key}"] = v
+        # 后置倾斜偏心的模式（显式/拾取/反向）和坐标返回同样决定布局 / the after-surface mode and coordinate return also fix the layout
+        for key, attr, default in (("after_mode", "AfterSurfaceMode", "Explicit"), ("coordinate_return", "CoordinateReturn", "None")):
+            try:
+                value = str(getattr(td, attr))
+            except Exception:  # noqa: BLE001
+                continue
+            if value not in ("", default) and (key != "after_mode" or out):
+                out[key] = value
+        return out
+
+    @staticmethod
+    def _aperture_dict(row) -> dict[str, Any]:
+        data = row.ApertureData
+        out: dict[str, Any] = {"type": str(data.CurrentType)}
+        settings = data.CurrentTypeSettings
+        for attr in ("_S_CircularAperture", "_S_CircularObscuration", "_S_RectangularAperture", "_S_RectangularObscuration",
+                     "_S_EllipticalAperture", "_S_EllipticalObscuration"):
+            try:
+                s = getattr(settings, attr)
+            except Exception:  # noqa: BLE001 - 不是这种孔径
+                continue
+            if s is None:
+                continue
+            for key in ("MinimumRadius", "MaximumRadius", "XHalfWidth", "YHalfWidth", "ApertureXDecenter", "ApertureYDecenter"):
+                try:
+                    out[key] = float(getattr(s, key))
+                except Exception:  # noqa: BLE001 - 该孔径类型没有这个量
+                    pass
+            break
+        if bool(data.IsPickedUp):
+            out["picked_up_from"] = int(data.PickupFrom)
+        return out
+
+    @staticmethod
+    def _solve_dict(solve) -> dict[str, Any]:
+        out: dict[str, Any] = {"type": str(solve.Type)}
+        if out["type"] == "SurfacePickup":
+            p = solve._S_SurfacePickup
+            out.update(surface=int(p.Surface), scale=float(p.ScaleFactor), offset=float(p.Offset))
+        return out
+
+    # 3D 布局的相机角度（度，绕 X、Y、Z）：默认视角看 YZ 平面；折转系统的光路常在 XZ 平面，另给俯视和斜视
+    LAYOUT_VIEWS = {"3d-yz": (0.0, 0.0, 0.0), "3d-xz": (90.0, 0.0, 0.0), "3d-oblique": (30.0, 30.0, 0.0)}
+
+    def _export_layouts(self, folder: Path, prefix: str) -> dict[str, Any]:
+        """3D 布局（几个视角）和 YZ 截面导出为 PNG；某一种失败时记录原因，不影响其余内容。"""
+        folder.mkdir(parents=True, exist_ok=True)
+        lay = self.system.Tools.Layouts
+        jobs_: list[tuple[str, Any, tuple[float, float, float] | None]] = [(k, lay.Open3DViewerExport, v) for k, v in self.LAYOUT_VIEWS.items()]
+        jobs_.append(("cross-section", lay.OpenCrossSectionExport, None))
+        out: dict[str, Any] = {}
+        for key, opener, angles in jobs_:
+            target = folder / f"{prefix}-{key}.png"
+            tool = None
+            try:
+                tool = opener()
+                tool.OutputFileName = str(target)
+                tool.SaveImageAsFile = True
+                tool.OutputPixelWidth, tool.OutputPixelHeight = 1600, 1000
+                if angles is not None:
+                    tool.CameraViewpointAngleX, tool.CameraViewpointAngleY, tool.CameraViewpointAngleZ = angles
+                tool.RunAndWaitForCompletion()
+                out[key] = target.name if target.is_file() else {"error": str(tool.ErrorMessage) or "no image written"}
+            except Exception as exc:  # noqa: BLE001 - 布局图只是辅助，失败不影响其余内容
+                out[key] = {"error": f"{type(exc).__name__}: {exc}"[:300]}
+            finally:
+                if tool is not None:
+                    tool.Close()
+        return out
+
     # ---- 修改 ----
 
     _ATTR = {

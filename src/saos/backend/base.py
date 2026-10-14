@@ -92,6 +92,10 @@ class Backend(ABC):
         """显性调试：在连接的窗口中打开 Lens Data 或 System Viewer，以及一个像质分析。"""
         raise SaosError(ErrorCode.BAD_ARGS, "explicit debugging windows need extension mode (saos daemon start --mode extension)")
 
+    def tile_windows(self) -> list[dict[str, Any]]:
+        """显性调试：把浮动窗口平铺开，互不遮挡；隐式运行时什么也不做。"""
+        return []
+
     def refresh_windows(self) -> dict[str, Any] | None:
         """改动镜头后刷新显性调试的窗口；隐式运行时什么也不做。"""
         return None
@@ -103,6 +107,11 @@ class Backend(ABC):
     def screenshots(self, folder: Path, prefix: str) -> list[str]:
         """把连接的 OpticStudio 的可见窗口截成 PNG，返回文件名。"""
         raise SaosError(ErrorCode.BAD_ARGS, "screenshots need extension mode")
+
+    def describe_model(self, folder: Path | None, prefix: str = "layout") -> dict[str, Any]:
+        """建模说明所需的全部数据（系统设置、逐面参数与材料、各波长折射率、孔径、求解）；folder 不为空时把布局图写到那里。
+        Everything a model description needs; layout pictures are written to folder unless it is None."""
+        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support describe_model")
 
     # ---- 第 3 步：搭建与验收用 ----
 
