@@ -9,7 +9,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 
 ## 命令
 
-需求访谈和只读设计计划新增 `microscope interview check`、`microscope plan create/show/confirm/handoff`，均不连接 Zemax。访谈记录格式、参数及用户确认流程见 [interview-and-plan.md](./interview-and-plan.md)。
+需求访谈和只读设计计划新增 `microscope interview check`、`microscope plan create/show/confirm/handoff`，均不连接 Zemax。访谈记录格式、参数及用户确认流程见 [interview-and-plan.md](./recipes/microscope/interview-and-plan.md)。
 
 | 命令 | 作用 |
 |---|---|
@@ -23,6 +23,9 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `saos lens unload --job J [--discard]` | 卸载当前镜头 |
 | `saos lens info --job J` | 系统数据：孔径、视场、波长、玻璃目录、面数、光阑面 |
 | `saos lens surfaces --job J` | 各面的类型、半径、厚度、材料、半口径、二次曲面系数、求解类型 |
+| `saos job verify <job>` | 检查工具写入并封存的证据文件（`seals.jsonl`）有没有被改动或删除；返回 `intact` 和 `problems` |
+| `saos lens approve --job J --model models/NNN-<镜头> --quote "<用户原话>"` | 记录用户对这份建模说明的确认（`approval.json`，含结构指纹和当时仍在的自动检查结果）。之后 `saos round` 只接受结构与某份已确认说明一致的镜头 |
+| `saos lens describe --job J [--notes N.json] [--lang zh\|en]` | 建模说明：写 `models/NNN-<镜头>/index.html`、`model.json` 和布局图（3D 三个视角，轴对称系统另有截面）。逐面列出面型、所有非零附加参数、材料来源与各波长折射率（INDX 实测）、孔径、求解和顶点全局位置，并给出系统孔径、物方远心、光线瞄准、视场、波长。N.json 写每个面代表的实物、假设和一阶分析：`{"surfaces": {"3": "…"}, "assumptions": ["…"], "first_order": ["…"]}`。返回值的 `warnings` 是自动检查的问题（模型玻璃、目录外材料、无色散介质、非平面的菲涅尔基底、物方 NA 未设远心、渐晕因子、缺少面说明或一阶分析） |
 | `saos lens set --job J --surface N --param P --value V` | 修改一个面参数：radius、thickness、conic、semi_diameter、material、comment。数值可写 `inf` |
 | `saos lens save --job J [--as NAME] [--overwrite] [--no-verify]` | 保存；默认保存后从磁盘重新加载，与保存前逐面核对 |
 | `saos lens operand --job J TYPE [--int1 --int2 --d1 … --d6]` | 计算一个优化操作数，例如 `EFFL --int2 2` |
@@ -30,7 +33,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `saos lens view --job J [--viewer lde\|cross-section\|3d\|shaded] [--analysis TYPE] [--set KEY=VALUE …]` | 显性调试：打开 Lens Data 或一种 System Viewer，加一个像质分析（默认 StandardSpot，按系统最看重的像质选），按当前镜头刷新。选择会被记住；之后 load、set、build、opt local、exec、round 结束时自动刷新已打开的分析窗口。连接 extension 后自动按默认选择打开 |
 | `saos lens screenshot --job J [--label L]` | 显性调试：把 OpticStudio 的可见窗口截成 PNG，存为任务的 `screens/NNN-L-K.png`（PrintWindow，被遮挡也能截；最小化的窗口跳过） |
 | `saos check --job J` | 按任务的需求框定 `sources/harness.yaml` 对当前镜头逐项实测和判定，不记录。需求框定未确认时也能用，便于框定阶段先看数值 |
-| `saos round --job J [--tier local\|variables\|materials\|global\|structure] [--note TEXT]` | 记录一个调试轮次：存为 `lenses/rounds/rNNN.zmx`，逐项实测判定（全文存为 `rounds/rNNN.json`），写入 `ledger.jsonl`，返回终止判断（continue / achieved / exhausted / limit）及还没试过的层级。第 0 轮不填 tier。需求框定未确认、改动后没有新的确认原话、或已经终止时拒绝 |
+| `saos round --job J [--tier local\|variables\|materials\|global\|structure] [--note TEXT]` | 记录一个调试轮次：存为 `lenses/rounds/rNNN.zmx`，逐项实测判定（全文存为 `rounds/rNNN.json`），写入 `ledger.jsonl`，返回终止判断（continue / achieved / exhausted / limit）及还没试过的层级。第 0 轮不填 tier。需求框定未确认、改动后没有新的确认原话、已经终止、或镜头结构与已确认的建模说明不一致（`MODEL_NOT_APPROVED`）时拒绝。每轮记下所用材料；含模型玻璃的轮次不算达成、不能交付 |
 | `saos report --job J [--lang zh\|en]` | 由需求框定和 ledger 生成交付报告 `report/index.html`，不连接 OpticStudio；语言见「报告语言」 |
 | `saos exec SCRIPT --job J [--arg K=V …] [--args-file JSON] [--name N] [--quiet]` | 在后台进程内执行脚本（ADR-0007），见下文「脚本执行」 |
 | `saos microscope adapt EXTRACT --focal-length F --field-number N [--tube-lens 200] [--catalogs …] [--stop rear_focal\|r<面号>] --out DIR` | 把子 agent 提取的面数据适配成标准设计布局的处方，输出 prescription.json、expect.json、adapt_report.json（不经后台进程） |
@@ -43,17 +46,17 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `saos opt local --job J [--cycles auto\|1\|5\|10\|50]` | 局部优化（阻尼最小二乘） |
 | `saos microscope round --job J [--spec FILE] [--note TEXT]` | 记录一个调整轮次：存为 lenses/rounds/rNNN.zmx，做验收评估，返回停机判断（pass / stagnated / limit / continue）。第 0 轮时冻结光学规格，之后不能更换。后台协议另有 `observe` 参数，供基准实验使用：照常冻结和核对，停机判断只记录不执行 |
 | `saos microscope library check EXTRACT` | 入库前用近轴计算核对提取结果：焦距和工作距离的印刷值落在印刷精度的舍入包络内，或与计算值相差不超过 1%，即为一致（不经后台进程） |
-| `saos microscope library add ID --extract FILE [--catalogs …] [--focal-length F] [--field-number N] [--stop rear_focal\|printed\|r<面号>]` | 把提取结果适配成处方，写入 `library/entries/ID/`，状态为 extracted（不经后台进程） |
+| `saos microscope library add ID --extract FILE [--catalogs …] [--focal-length F] [--field-number N] [--stop rear_focal\|printed\|r<面号>]` | 把提取结果适配成处方，写入 `library/microscope/entries/ID/`，状态为 extracted（不经后台进程） |
 | `saos microscope library verify ID --job J [--discard]` | 搭建、复现校验、探测验收、推导基准规格并确认原结构 G = 0，结果写回条目。当前镜头有未保存修改时返回 UNSAVED_CHANGES；显式加 `--discard` 才会丢弃，包括其他任务的修改。复现不通过的条目状态为 rejected |
 | `saos microscope library list` | 列出条目：状态、焦距、NA、片数、能否作基准及原因 |
 | `saos microscope library query --na A --magnification M [--class achromat\|plan_achromat] [--field-number N] [--working-distance W] [--limit K]` | 按光学规格从已收录条目中选初始结构 |
-| `uv run python experiments/bench/run.py split` | 把可作基准的条目分为调参组和验证组，写入 `library/benchmarks.json` |
+| `uv run python experiments/bench/run.py split` | 把可作基准的条目分为调参组和验证组，写入 `library/microscope/benchmarks.json` |
 | `uv run python experiments/bench/run.py run ENTRY [--seed S] [--radius-rel A] [--thickness-rel B] [--no-amplify] [--stretch wd=F length=F] [--max-rounds N] [--cores K] [--job J] [--discard]` | 开发用基准任务：搭建条目、受控扰动（默认幅度按 ×1、×2、×4、×8 放大到 G0 ≥ 1）或拉伸规格，按参考策略逐轮优化，每轮用 observe 模式记录，不按停滞规则中途停机；轨迹写入任务的 `bench.jsonl`。`--job` 续跑；后台进程里有其他任务的未保存镜头时默认拒绝，`--discard` 才放弃 |
-| `uv run python experiments/bench/run.py plan --batch B` | 生成正式批次的实验清单 `library/calibration/B.json`，记录任务、分组、策略版本和代码哈希；已存在时拒绝覆盖 |
+| `uv run python experiments/bench/run.py plan --batch B` | 生成正式批次的实验清单 `library/microscope/calibration/B.json`，记录任务、分组、策略版本和代码哈希；已存在时拒绝覆盖 |
 | `uv run python experiments/bench/run.py run --batch B --task T [--cores K]` | 按清单运行正式任务；客户端或后台进程的代码版本与清单不同、或后台进程不是 standalone 时拒绝。本 SAOS_HOME 中已有该任务时续跑 |
 | `uv run python experiments/bench/run.py calibrate --batch B --homes DIR… [--validate N REL CAP]` | 按清单准入正式轨迹并列出排除原因、重复起点，在调参组主实验上按冻结规则选停机参数；给出 `--validate` 时在验证组主实验和两组压力测试上检验固定参数 |
 
-结构库的收录规则、提取格式和基准规格的推导见 [library.md](./library.md)。
+结构库的收录规则、提取格式和基准规格的推导见 [library.md](./recipes/microscope/library.md)。
 
 `--job` 必须与当前加载的镜头属于同一任务；镜头文件名一律相对该任务的 `lenses/`。
 
@@ -90,7 +93,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 调试时可以让后台进程连接一个手动打开的 OpticStudio 窗口，在窗口里看到镜头的变化：打开 OpticStudio 后执行 `saos daemon start --mode extension`。启动流程通过 Windows UI Automation 选择 Programming、打开 Interactive Extension，将 Auto Close on Disconnect 设为 Off，核对等待连接状态并读取实际实例编号。已有等待对话框会直接复用；窗口已连接到其他扩展时拒绝接管。存在多个窗口时用 `SAOS_UI_PID` 指定进程编号，否则拒绝猜选。控件不可用或窗口被模态对话框阻塞时返回明确错误。
 
 - 之前实测后台进程退出后扩展对话框关闭，需要重新开启；用户随后在本机确认，取消勾选 “Auto close on disconnect” 即可避免该问题。重连前检查对话框仍处于等待连接状态，若已关闭则重新开启。没有开启交互扩展时启动返回 `ZOS_ERROR`。该设置不代替 OpticStudio 进程意外退出后的连接恢复处理。
-- 窗口实例与后台实例的验收结果在数值上相差约 10⁻⁵（相对），拟合残差贴近界限时结论可能翻转（docs/step5-calibration.md 3.2 节）。正式实验只用 standalone 实例。
+- 窗口实例与后台实例的验收结果在数值上相差约 10⁻⁵（相对），拟合残差贴近界限时结论可能翻转（docs/recipes/microscope/step5-calibration.md 3.2 节）。正式实验只用 standalone 实例。
 - 窗口实时刷新会拖慢运算：实测一次验收评估 98 s，standalone 下为 13 s。所以验收评估、轮次记录、复现校验期间暂停刷新，结束后窗口显示最终状态（暂停后验收评估为 22 s）。局部优化不暂停，实测 15.8 s，standalone 下为 13 s。设环境变量 `SAOS_UI_LIVE=1` 后全程刷新。
 - 后台进程退出时不关闭窗口。
 
@@ -110,6 +113,10 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `SCRIPT_ERROR` | `exec` 的脚本抛出异常，`details` 给出脚本存档路径和 traceback；后台进程继续运行 |
 | `SPEC_CHANGED` | 调整轮次中，规格路径或补全后的验收配置与第 0 轮冻结的不一致；需要新建任务 |
 | `VALUE_NOT_APPLIED` | 修改没有生效（例如被求解覆盖），`details` 给出目标值、实际值和求解类型 |
+| `LENS_MODIFIED_BY_CHECK` | 记录轮次时，判定脚本改动了镜头（取值前后的镜头内容不同）；本轮不记录。把判定改成只读后重试 |
+| `DUPLICATE_ROUND` | 同一镜头在同一需求和判定版本下已经记过一轮（多为超时后的重试）；`details` 给出已有的轮次 |
+| `EVIDENCE_TAMPERED` | 生成报告时发现封存的证据文件被改动或删除（`saos job verify` 可列出） |
+| `MODEL_NOT_APPROVED` | 记录轮次时，当前镜头的结构与任何已确认的建模说明都不一致（或还没有确认过）；`details.changed` 列出与最近一次确认相比变了什么。重新 `lens describe`、给用户看、`lens approve` |
 | `NO_LENS_LOADED` / `JOB_MISMATCH` | 没有加载镜头；加载的是另一个任务的镜头 |
 | `UNSAVED_CHANGES` | 当前镜头有未保存修改，不能加载其他镜头、卸载或退出 |
 | `PATH_OUTSIDE_JOB` | 文件路径越出本任务的 `lenses/` |
@@ -129,16 +136,23 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 ```
 work/<实例名>/
   daemon/            state.json、authkey、daemon.log（后台进程运行时存在）
-  jobs/<job_id>/
-    job.json         任务状态：status、current_lens、last_saved 等
-    spec/            光学规格文件
-    sources/         输入材料：用户需求访谈（interview.md、interview.yaml）、提取结果、处方、复现期望值、评价函数设置等
-    notes/           agent 对该任务的设计记录（框架搭建、检查结论等）
-    lenses/          镜头文件副本，所有读写都限制在这里；lenses/rounds/ 存各调整轮次
-    eval/            验收评估结果（<镜头名>.accept.json）和验收模型（.accept.zmx）
-    rounds.jsonl     调整轮次记录：轮次、规格差距、各项单项差距、评价函数值、说明
-    bench.jsonl      优化基准任务的完整轨迹：每轮的策略、规格差距、单项差距、耗时
+  jobs/<job_id>/     每一步产生哪些文件、谁写、能否改动：见 DESIGN.md「任务目录」
+    job.json         任务状态
     log.jsonl        执行记录：每条命令的参数、结果、错误码、耗时
+    seals.jsonl      封存文件的哈希（saos job verify 据此检查）
+    sources/         harness.yaml（需求框定）、interview.md（拷问过程）、materials.yaml（材料来源）
+    checks/          需求框定引用的判定脚本
+    lenses/          镜头文件；rounds/rNNN.zmx 与 captures/NNN-unsaved.zmx 是工具写入的归档，lens save 不能写入
+    notes/           model-NNN.json（lens describe 的说明输入，工具保存）与 agent 的说明文字
+    models/          建模说明 NNN-<镜头>/：index.html、model.json、layout-*.png、approval.json（用户确认）
+    scripts/         saos exec 的脚本副本和结果
+    analyses/        lens analysis 的数值导出
+    screens/         显性调试截图
+    evaluations/     每次 check / round 的需求快照、support/（checks/ 副本）、分析导出、result.json（测量的权威记录）
+    ledger.jsonl     调试轮次台账（指向 evaluations/NNN/result.json）；旧任务另有 rounds/rNNN.json
+    report/          NNN-rMMM-<状态>.html（每次生成的封存副本）与 index.html（最新）
+    explore/<主题>/  不经过 saos exec 的探索代码、中间镜头和日志，附 README.md
+    spec/ eval/ plan/ rounds.jsonl bench.jsonl   显微物镜配方专用，只在用到时创建
 ```
 
 ## 环境变量
@@ -149,7 +163,7 @@ work/<实例名>/
 | `SAOS_HOME` | 未设置 | 直接指定运行目录，优先于 `SAOS_INSTANCE`；任务目录、后台进程状态和命名管道名都由最终目录推出 |
 | `SAOS_OPTICSTUDIO_DIR` | `C:\Program Files\Ansys Zemax OpticStudio 2024 R1.00` | 加载 ZOS-API DLL 的目录 |
 | `SAOS_BACKEND` | `zos` | 测试时设为 `fake`，不启动 Zemax |
-| `SAOS_LIBRARY` | `<仓库>/library` | 初始结构库的位置 |
+| `SAOS_LIBRARY` | `<仓库>/library/microscope` | 显微物镜配方的初始结构库位置 |
 | `SAOS_LANG` | 未设置 | 给人看的输出（交付报告、后台日志）的语言，`zh` 或 `en`；未设置时取系统界面语言 |
 | `SAOS_UI_LIVE` | 未设置 | extension 模式下设为 1 时，验收评估等操作期间也实时刷新窗口 |
 

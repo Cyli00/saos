@@ -7,49 +7,88 @@ description: Drive Ansys Zemax OpticStudio through the saos tools to take a user
 
 Run commands from the saos repository root with `uv run saos …`. Every command prints one JSON object (`{"ok": true, "result": …}` or `{"ok": false, "error": {code, message, details}}`). Command help: `uv run saos --help` and `uv run saos <command> --help`. Harness format: [harness.md](harness.md). Terms: `GLOSSARY.md` (English and Chinese names).
 
-## Three invariants (never break these)
+You are the designer. The workflow fixes only a few gates and invariants; how you model, which starting design you choose, which merit function, variables, optimiser and search strategy you use is your judgement. Think like an optical engineer: understand the physics of this particular system before you optimise it, and change your approach when the evidence says it is not working.
+
+## Invariants (never break these)
 
 1. **Record the need.** Keep the user's own words and every assumption you fill in, in the job's `sources/`.
-2. **Measured evidence.** Every number you deliver comes from an actual OpticStudio computation (operand, analysis export, script) that is archived in the job. Never report an estimate as a result.
+2. **Measured evidence.** Every number you deliver comes from an actual OpticStudio computation (operand, analysis export, script) archived in the job. Never report an estimate as a result.
 3. **No silent relaxing.** If a goal cannot be met, say by how much. Changing the harness requires going back to the user and a new confirmation quote.
+4. **Real materials in what you deliver.** A delivered lens uses only materials with a source (catalog, library, datasheet, paper). A model glass (`nd`/`Vd` only) is fine for exploration; the tools mark such rounds as not deliverable.
 
-Everything else — modelling, starting design, merit functions, variables, strategy — is your call.
+## Gates (the only places you stop and wait for the user)
 
-## 1. Frame the need (the only mandatory stop)
+1. **The need**: the user approves the harness; their words go into `confirmed.quote`.
+2. **The model**: the user approves the model description; `saos lens approve` records their words. `saos round` refuses a lens whose structure (surface types, kinds of media, apertures, stop, system settings) matches no approved description. Radii, thicknesses, polynomial terms and the choice among real materials stay yours.
 
-Create the job first: `uv run saos job create --name <name>`. Then grill the user in rounds: ask every question you can ask now, number them, give your recommended answer for each, and word them so "yes" accepts your recommendation. Explain optics terms in plain words for non-experts. Look up facts yourself (files, references in `ref/docs`, OpticStudio manual) instead of asking.
+Between and after the gates, do not stop to ask, except when the harness turns out to be unreachable or must change, or when the structure must change in a way the user has not seen.
 
-Write `sources/harness.yaml` (full format, shortfall and stop rule: [harness.md](harness.md)):
+## 1. Frame the need
 
-- `request`: the user's words verbatim.
-- `targets`: each with `kind` (constraint = must meet; target = has a pass line; preference = no pass line, reported only), a `check` (one Zemax operand, one analysis value via `path`, or a job script returning a number), and a `goal` (`max`, `min`, or `equals` + `tol`) with a `scale` when the bound is 0.
-- `assumptions`: everything you filled in.
-- `stop`: keep the defaults (rel 0.01, max_rounds 30, all tiers) unless the user wants otherwise; it is part of the need.
-- `recipes`: the recipes you plan to load.
-- `lang`: `zh` or `en`, the language the user writes in; the report follows it.
+Create the job: `uv run saos job create --name <name>`. Grill the user in rounds: ask every question you can ask now, numbered, each with your recommended answer, worded so "yes" accepts it. Explain optics terms in plain words. Look facts up yourself (files, `ref/docs`, the OpticStudio manual, the web) instead of asking. Keep every round, with the user's answers verbatim, in `sources/interview.md`.
 
-Use `uv run saos check --job J` on a loaded lens to sanity-check that every check evaluates. Show the user the harness in plain language and ask for explicit approval. Only an explicit approval counts; record it verbatim as `confirmed.quote`. After that, do not stop to ask again unless the harness turns out to be unreachable or must change.
+Write `sources/harness.yaml` ([harness.md](harness.md)): the user's words verbatim, targets with `kind` (constraint / target / preference), a `check` and a `goal`, your `assumptions`, the `stop` rule (defaults unless the user wants otherwise), planned `recipes`, and `lang`. Every check must measure the real quantity; never special-case a surface type or setting to skip a measurement. Checks are read-only: work on a copy or restore the lens, otherwise the round is refused (`LENS_MODIFIED_BY_CHECK`). When the design gives no valid value, return `inf`; raise only when the check itself cannot run. Show the harness in plain language, get explicit approval, record it verbatim.
 
-## 2. Load recipes
+## 2. Recipes
 
-If a recipe in `skills/recipes/<system>/SKILL.md` matches the system, load it now. Recipes are optional shortcuts, not rules. If none matches, work with the general tools.
+If `skills/recipes/<system>/SKILL.md` matches, read it. Recipes are experience, not rules.
 
-## 3. Design in rounds
+## 3. Model, understand, describe
 
-- Get a lens into the job: `lens import` (a .zmx), `lens build` (a prescription JSON), or `exec` a script that builds it with ZOS-API and calls `ctx.save_as(...)`.
-- General tools: `lens surfaces/set/save/operand`, `opt vary/merit/local`, `lens analysis TYPE --set KEY=VALUE` (numeric export of any OpticStudio analysis), and `exec SCRIPT` for anything else ZOS-API can do (`ctx.system`, `ctx.zosapi`, `ctx.args`, `ctx.load`, `ctx.save_as`, `ctx.mark_dirty`, `ctx.path`). Scripts and results are archived under `scripts/`.
-- After each adjustment record a round: `uv run saos round --job J --tier <tier> --note "<what you did>"` (round 0 has no tier). Tiers, low to high: `local` (local optimisation on current variables), `variables` (more variables or a different merit construction/weights), `materials` (glass changes), `global` (global search / Hammer), `structure` (add, split or remove elements, aspheres).
-- Read the decision: `achieved` → deliver; `exhausted` → every allowed tier was tried since the last ≥ rel gain, deliver the gap report; `limit` → deliver; `continue` → keep going and escalate to `next_tier` once your current tier stops gaining. Do not judge progress by the merit function; only the shortfall in the ledger is comparable across rounds.
-- Local optimisation only finds a local minimum; free variables in batches (curvatures, then spacings, then materials) and keep thickness and edge limits as boundary conditions.
+- Build the lens however suits the system: `lens import`, `lens build`, or `exec` a ZOS-API script that calls `ctx.save_as(...)`.
+- Materials: look in OpticStudio catalogs and `library/` first; if neither has what the design needs, search the web (WebSearch/WebFetch) for datasheets or papers. Record every material's source in `sources/materials.yaml` (format in `src/saos/materials_record.py`; a library entry or an OpticStudio vendor catalog counts as a source). Never invent dispersion or let one index stand for several wavelengths.
+- Know what OpticStudio does with every surface type and system setting you rely on; when unsure, read the manual or probe it (`lens operand`, ray traces) before trusting a result.
+- Do a first-order analysis before optimising: whatever this system needs to show that the structure can reach the harness (for example magnification, stop and pupils, beam sizes at the apertures, the bending each surface must do, what must be given up). If it cannot, go back to the user now.
+- Write notes (`{"surfaces": {"<index>": "what it physically is"}, "assumptions": [...], "first_order": [...]}`) and run `uv run saos lens describe --job J --notes notes.json`; the tools keep them as `notes/model-NNN.json`, and approval needs them. The page (`models/NNN-<lens>/index.html`) lists every surface, material source and index per wavelength, apertures, fields, wavelengths, ray aiming, your notes, layout pictures and automatic warnings. Resolve the warnings or explain them, give the user the page, and after their approval run `uv run saos lens approve --job J --model models/NNN-<lens> --quote "<their words>"`.
 
-## 4. Deliver
+## 4. Design in rounds
 
-Run `uv run saos report --job J` (in the user's language via the harness `lang`, or `--lang zh|en`) and give the user the `report/index.html` path, the status, the delivered lens, and for each unmet goal how far it is off. Mention that a tolerance analysis can follow.
+- Tools: `lens surfaces/set/save/operand`, `opt vary/merit/local`, `lens analysis TYPE --set KEY=VALUE`, and `exec SCRIPT` for anything ZOS-API can do (`ctx.system`, `ctx.zosapi`, `ctx.args`, `ctx.load`, `ctx.save_as`, `ctx.mark_dirty`, `ctx.path`).
+- Prefer OpticStudio's own optimisers (local DLS, Hammer, global search) and merit operands; make sure the merit function measures what the harness means and cannot be satisfied by a loophole (for example by discarding light or leaving the physical part).
+- Record a round after each adjustment: `uv run saos round --job J --tier <tier> --note "<what you did>"`. Tiers, low to high: `local`, `variables`, `materials` (substitute sourced materials), `global`, `structure`. Read the decision (`achieved`, `exhausted`, `limit`, `continue` with `next_tier`); compare rounds by the shortfall, never by the merit value.
+- If the structure must change in a way the approved description does not cover, describe the new model and get it approved before recording rounds on it.
+
+## 5. Deliver
+
+`uv run saos report --job J` writes `report/index.html` in the user's language: status, the delivered lens (the first achieved round, else the smallest shortfall among deliverable rounds), its materials, and for each unmet goal how far it is off. Give the user the path and say that a tolerance analysis can follow.
+
+## Compute
+
+- OpticStudio is the reference. Write your own tracer or search code only when the number of evaluations makes ZOS-API too slow, and only after the model is approved. Compare it ray by ray with OpticStudio on the same lens and archive the comparison; hand its results back to OpticStudio for refinement and every delivered number.
+- Before heavy numerics, check what the machine offers (`nvidia-smi`, CuPy); DESIGN.md "环境" has measured numbers for this machine. A GPU pays off only with a fused kernel over a batch of designs × rays.
+- Never saturate the machine: at most half the logical cores, low priority. A long run writes a progress file, and you tell the user what is running, where and until when.
 
 ## Explicit debugging (on-screen)
 
-When the user wants to watch, start with `uv run saos daemon start --mode extension` (set `SAOS_UI_PID` if several OpticStudio windows are open). saos opens Lens Data plus one image-quality analysis; pick the analysis that matters most for this system with `lens view --analysis TYPE` (for example FftMtf, StandardSpot, WavefrontMap) and optionally `--viewer cross-section|3d|shaded`. Windows refresh after every lens-changing command. Use `lens screenshot` to capture PNGs. If a command returns `UI_BLOCKED`, ask the user to close the named dialog. Before `lens load`, `unload` or `build` replace the window content, saos saves any unsaved window content to `lenses/captures/NNN-unsaved.zmx` (returned as `captured`); tell the user where their work went. `ctx.load` in scripts does the same; call `ctx.capture_window()` before anything else in a script that replaces the window content. Your own unsaved changes are still refused until you `lens save` or pass `--discard`, which drops only your changes, never the window copy. `exec --quiet` pauses window updates during long scripts.
+When the user wants to watch, start with `uv run saos daemon start --mode extension` (set `SAOS_UI_PID` if several OpticStudio windows are open). saos opens Lens Data plus one image-quality analysis; choose the analysis that matters for this system with `lens view --analysis TYPE` and optionally `--viewer cross-section|3d|shaded`. Windows refresh after every lens-changing command. `lens screenshot` captures PNGs. On `UI_BLOCKED`, ask the user to close the named dialog. Before `lens load`, `unload` or `build` replace the window content, saos saves unsaved window content to `lenses/captures/NNN-unsaved.zmx` (returned as `captured`); tell the user where their work went. `ctx.load` in scripts does the same; call `ctx.capture_window()` first in a script that replaces the window content. Your own unsaved changes are refused until you `lens save` or pass `--discard`, which drops only your changes. `exec --quiet` pauses window updates during long scripts.
 
-## Job directory
+## Where files go
 
-`work/<instance>/jobs/<job>/`: `sources/` (harness, user's words), `lenses/` (lens files; `rounds/rNNN.zmx`), plus tool-written `lenses/captures/`, `scripts/`, `analyses/`, `screens/`, `evaluations/` (evidence of every check), `rounds/`, `ledger.jsonl`, `report/`. Put your own notes in `notes/`. Never write requirement documents into the repository's `docs/`.
+Instance directory `work/<instance>/` holds only `daemon/` and `jobs/`. Files of a job `work/<instance>/jobs/<job>/`, step by step (NNN is a three-digit sequence number):
+
+| Step | File | Written by | Purpose | Changes |
+|---|---|---|---|---|
+| create | `job.json` | tools | job state, current lens | tools update it |
+| any command | `log.jsonl` | tools | every command, result, error code, time | append only |
+| frame the need | `sources/interview.md` | you | each grilling round: questions, recommendations, the user's words | append only |
+| | `sources/harness.yaml` | you | request, targets, checks, assumptions, stop rule, approval quote | content changes need a new approval |
+| | `checks/` | you | check scripts and every helper module or data file they use; checks may depend on nothing else | any change starts a new comparison window |
+| | `evaluations/NNN/` | tools | snapshot, `support/` (copy of `checks/`), analysis exports and `result.json` (with code and OpticStudio versions) of every check or round; `result.json` is the authoritative measurement | sealed |
+| model | `lenses/<name>.zmx` | you | working lenses | free |
+| | `sources/materials.yaml` | you | source of every material (format in `saos.materials_record`, fields as in `library/materials`) | append or correct sources |
+| | `scripts/NNN-<name>.py`, `.json` | tools | copies and results of `saos exec` | sealed |
+| | `analyses/NNN-<type>.json`, `.txt` | tools | numeric exports of `lens analysis` | sealed |
+| | `notes/model-NNN.json` | you, saved by the tools | what each surface is, assumptions, first-order analysis (input of `lens describe --notes`) | sealed |
+| | `models/NNN-<lens>/` | tools | model description: `index.html`, `model.json` (with the structural fingerprint), `layout-*.png` | sealed |
+| model approval | `models/NNN-<lens>/approval.json` | tools | the user's words, fingerprint, warnings still shown | sealed |
+| rounds | `lenses/rounds/rNNN.zmx` | tools | archived lens, written after the checks proved they did not change it; the working file stays the current lens | sealed; `lens save` refuses it |
+| | `lenses/rounds/orphaned/` | tools | archives left by a failed attempt, moved aside instead of overwritten | kept |
+| | `ledger.jsonl` | tools | per round: shortfall, tier, materials, lens hash, approved model, pointer to `evaluations/NNN/result.json`; appending it completes the round | append only |
+| explicit debugging | `screens/NNN-<label>-*.png`, `lenses/captures/NNN-unsaved.zmx` | tools | screenshots; window content saved before it is replaced | sealed |
+| exploration | `explore/<topic>/` with `README.md` | you | code, intermediate lenses, logs run outside `saos exec`; README states purpose, outcome, superseded or not | free |
+| delivery | `report/NNN-rMMM-<status>.html` | tools | every generated report | sealed |
+| | `report/index.html` | tools | the latest report | regenerated |
+| any time | `notes/*.md` | you | prose: design notes, exploration reports | free |
+| any time | `seals.jsonl` | tools | hashes of sealed files | append only |
+
+Sealed means the tools recorded the file's hash; `uv run saos job verify <job>` and `tests/test_repo_layout.py` report any later change or deletion, and `saos report` refuses to run while one exists. Nothing about a specific job goes into the repository (see DESIGN.md "仓库目录"). Temporary files go to the system temp directory.

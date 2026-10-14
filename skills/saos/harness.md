@@ -69,20 +69,23 @@ For each constraint and target, the gap is `max(0, excess over the pass line) / 
 
 After every `saos round` the ledger decides, in this order:
 
-1. `achieved`: G = 0 in this round.
+A round whose checks failed to run (exception, unreadable file) is invalid: it counts as no progress, no tier tried, and is never delivered; the decision asks to fix the checks. A check that runs but finds no valid value for this design should return `inf`; that is a design result and counts as unmet. `max_rounds` counts the rounds of the current harness version.
+
+1. `achieved`: G = 0 in this round and the lens uses no model glass. (G = 0 with a model glass gives `continue` with `next_tier: materials`.)
 2. `limit`: the round number reached `max_rounds`.
 3. `exhausted`: since the last round that cut the best G by at least `rel`, every tier listed in `stop.tiers` was tried at least once without such a gain.
 4. `continue`: otherwise; `next_tier` is the lowest allowed tier not yet tried since the last gain.
 
-Tiers, low to high: `local` (local optimisation on the current variables), `variables` (more variables or a different merit construction), `materials` (glass changes), `global` (global search, Hammer), `structure` (add, split or remove elements, aspheres). When the harness content changes (anything except `confirmed` and `lang`), a new confirmation is required and progress is measured again from that round.
+Tiers, low to high: `local` (local optimisation on the current variables), `variables` (more variables or a different merit construction), `materials` (substitute sourced real materials), `global` (global search, Hammer, or your own coarse search handed back to OpticStudio), `structure` (add, split or remove elements, aspheres). When the harness content changes (anything except `confirmed` and `lang`), a new confirmation is required and progress is measured again from that round.
 
 ## Workflow
 
-Every check archives the harness, the check-script source, analysis exports and the result in a new `evaluations/NNN/`; `evidence_file` points to the result. Editing a check script starts a new comparison window without a new approval; changing what a goal means still needs an updated, confirmed harness. Only the script file itself is versioned, not modules it imports.
+Check scripts live under `checks/` together with every helper module and data file they use. Every check archives the harness, a copy of the whole `checks/` tree (`support/`), analysis exports and `result.json` (with the saos code hash and the OpticStudio version) in a new `evaluations/NNN/`; `evidence_file` points to the result, which is the authoritative record of the measurement. Editing any file under `checks/` starts a new comparison window without a new approval; changing what a goal means still needs an updated, confirmed harness.
 
 Reports use only the rounds of the current harness and script version, with the goals recorded in each round; after a change, record a new round before reporting. A failed measurement is reported with its error, never as met.
 
 1. `saos check --job J` evaluates every check on the loaded lens. Use it while framing; it needs no confirmation.
 2. Show the user the harness in plain language and get an explicit approval; record it verbatim in `confirmed.quote`.
-3. `saos round --job J [--tier T] --note "..."` records round 0 (no tier), then one round per adjustment. It refuses to record without confirmation, after a content change without a new quote, and after the job has stopped.
-4. `saos report --job J [--lang zh|en]` writes `report/index.html`.
+3. Describe the model (`saos lens describe`) and record the user's approval (`saos lens approve --model models/NNN-<lens> --quote "..."`).
+4. `saos round --job J [--tier T] --note "..."` records round 0 (no tier), then one round per adjustment. Order: model approval → measure → verify the checks left the lens unchanged (`LENS_MODIFIED_BY_CHECK` otherwise) → archive the lens → append the ledger, which completes the round. The same lens under the same harness and check version is not recorded twice (`DUPLICATE_ROUND` names the existing round), so a retry after a client timeout is safe. It refuses to record without confirmation, after a content change without a new quote, after the job has stopped, and when the lens structure matches no approved model description (`MODEL_NOT_APPROVED`, with what changed in `details.changed`). Each round stores the materials in use; a round with a model glass is never delivered.
+5. `saos report --job J [--lang zh|en]` writes `report/index.html`.
