@@ -93,6 +93,7 @@ class Daemon:
             "lens.operand": self.op_operand,
             "lens.build": self.op_build,
             "lens.view": self.op_view,
+            "lens.analysis": self.op_analysis,
             "lens.capture": self.op_capture,
             "opt.vary": self.op_vary,
             "opt.merit": self.op_merit,
@@ -328,6 +329,25 @@ class Daemon:
         rel = job.relative_lens(target)
         job.update_state(current_lens=rel, last_saved=rel, captured_from=original)
         return {"file": rel, "captured_from": original}
+
+    def op_analysis(self, args: dict[str, Any]) -> dict[str, Any]:
+        """运行一个分析并导出数值：analyses/NNN-<类型>.json 与 OpticStudio 的文本导出 .txt。"""
+        job = self._job(args)
+        if args.get("list"):
+            return {"types": self.backend.analysis_types()}
+        loaded = self._require_loaded(job)
+        name = _arg(args, "type", str)
+        folder = job.root / "analyses"
+        folder.mkdir(exist_ok=True)
+        numbers = [int(p.name[:3]) for p in folder.glob("[0-9][0-9][0-9]-*.json")]
+        stem = f"{max(numbers, default=0) + 1:03d}-{name}"
+        data = self.backend.analysis(name, _arg(args, "settings", dict, default={}), folder / f"{stem}.txt", bool(args.get("keep_open")))
+        record = {"type": name, "lens": loaded.describe(), "time": jobs.now_iso(), **data}
+        write_json(folder / f"{stem}.json", record)
+        rel = (folder / f"{stem}.json").relative_to(job.root).as_posix()
+        # 返回值省略网格本体，只留统计量；完整数据在存档文件里
+        brief = {**record, "grids": [{k: v for k, v in g.items() if k != "values"} for g in data["grids"]]}
+        return {"file": rel, "text": f"analyses/{stem}.txt" if data.get("text_file") else None, **brief}
 
     def op_view(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))

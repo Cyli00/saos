@@ -79,3 +79,15 @@ def test_needs_save_marks_dirty_after_script(daemon, loaded, monkeypatch):
     monkeypatch.setattr(daemon.backend, "needs_save", lambda: True)
     run(daemon, loaded, "def run(ctx):\n    return None\n")
     assert daemon.loaded.dirty
+
+
+def test_analysis_export_is_archived(daemon, loaded):
+    out = daemon.handle({"op": "lens.analysis", "args": {"job": loaded.id, "type": "FakeCurve", "settings": {"Field": "all"}}})["result"]
+    assert out["file"] == "analyses/001-FakeCurve.json" and out["text"] == "analyses/001-FakeCurve.txt"
+    assert out["series"][0]["y"]["v"][-1] == 100.0 and out["settings"] == {"Field": "all"}
+    saved = json.loads((loaded.root / out["file"]).read_text(encoding="utf-8"))
+    assert saved["lens"]["file"] == "a.zmx" and saved["type"] == "FakeCurve"
+    again = daemon.handle({"op": "lens.analysis", "args": {"job": loaded.id, "type": "FakeCurve"}})["result"]
+    assert again["file"] == "analyses/002-FakeCurve.json"
+    assert daemon.handle({"op": "lens.analysis", "args": {"job": loaded.id, "type": "Nope"}})["error"]["code"] == ErrorCode.BAD_ARGS
+    assert daemon.handle({"op": "lens.analysis", "args": {"job": loaded.id, "list": True}})["result"] == {"types": ["FakeCurve"]}

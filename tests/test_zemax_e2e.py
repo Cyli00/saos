@@ -131,6 +131,18 @@ def test_step2_acceptance(saos_home):
         assert err(saos("exec", str(script), "--job", job_a, env=env)) == ErrorCode.SCRIPT_ERROR
         assert ok(saos("lens", "info", "--job", job_a, env=env))["dirty"] is False
 
+        # 分析导出：序列、网格、点列图数据和文本全文都存进任务目录
+        mtf = ok(saos("lens", "analysis", "--job", job_a, "FftMtf", "--set", "MaximumFrequency=50", "--set", "Field=all", env=env))
+        assert mtf["series"] and all(len(s["x"]) > 10 for s in mtf["series"]) and mtf["settings"]["MaximumFrequency"].startswith("50")
+        assert (saos_home / "jobs" / job_a / mtf["file"]).is_file() and (saos_home / "jobs" / job_a / mtf["text"]).is_file()
+        spot = ok(saos("lens", "analysis", "--job", job_a, "StandardSpot", env=env))
+        assert spot["spot"]["rms_radius"][0][0] > 0
+        wave = ok(saos("lens", "analysis", "--job", job_a, "WavefrontMap", env=env))
+        assert wave["grids"][0]["stats"] is not None and "values" not in wave["grids"][0]
+        assert err(saos("lens", "analysis", "--job", job_a, "FftMtf", "--set", "Bogus=1", env=env)) == ErrorCode.BAD_ARGS
+        assert "StandardSpot" in ok(saos("lens", "analysis", "--job", job_a, "--list", env=env))["types"]
+        assert ok(saos("lens", "info", "--job", job_a, env=env))["dirty"] is False
+
         # 文件互不混用
         lenses_a = sorted(p.name for p in (saos_home / "jobs" / job_a / "lenses").glob("*.zmx"))
         lenses_b = sorted(p.name for p in (saos_home / "jobs" / job_b / "lenses").glob("*.zmx"))

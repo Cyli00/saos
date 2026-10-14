@@ -114,6 +114,20 @@ class FakeBackend(Backend):
             surface[param] = "" if value is None else str(value)
         return copy.deepcopy(surface)
 
+    def analysis_types(self) -> list[str]:
+        return ["FakeCurve"]
+
+    def analysis(self, name: str, settings: dict[str, Any], text_path: Path, keep_open: bool = False) -> dict[str, Any]:
+        """假分析：一条以 TOTR 为斜率的直线，用来测试导出和存档流程。"""
+        if name != "FakeCurve":
+            raise SaosError(ErrorCode.BAD_ARGS, f"unknown analysis type {name!r}")
+        slope = self.operand("TOTR", 0, 0, [])
+        x = [0.0, 0.5, 1.0]
+        text_path.parent.mkdir(parents=True, exist_ok=True)
+        text_path.write_text("fake analysis" + chr(10), encoding="utf-8")
+        return {"header": ["fake"], "messages": [], "series": [{"description": "line", "x_label": "x", "x": x, "y": {"v": [slope * v for v in x]}}],
+                "grids": [], "text_file": True, "settings": dict(settings), "message": None}
+
     def operand(self, name: str, int1: int, int2: int, data: list[float]) -> float:
         lens = self._require()
         name = name.upper()

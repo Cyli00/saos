@@ -81,6 +81,13 @@ class Backend(ABC):
         """连接的窗口里有 saos 之外的未保存修改。只在 extension 模式下有意义。"""
         return False
 
+    def analysis_types(self) -> list[str]:
+        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} has no analyses")
+
+    def analysis(self, name: str, settings: dict[str, Any], text_path: Path, keep_open: bool = False) -> dict[str, Any]:
+        """运行一个 OpticStudio 分析，返回导出的序列、网格、点列图数据和表头；完整文本写到 text_path。"""
+        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} has no analyses")
+
     def show_analyses(self) -> dict[str, Any]:
         """在连接的窗口中打开并刷新原生分析窗口（显性调试）。"""
         raise SaosError(ErrorCode.BAD_ARGS, "原生窗口显示需要 extension 模式")

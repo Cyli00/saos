@@ -66,6 +66,21 @@ def cmd_lens(args: argparse.Namespace) -> Any:
         return _lens_request("lens.load", args, {"file": args.file, "discard": args.discard})
     if action == "unload":
         return _lens_request("lens.unload", args, {"discard": args.discard})
+    if action == "analysis":
+        if args.list:
+            return _lens_request("lens.analysis", args, {"list": True})
+        if not args.type:
+            raise SaosError(ErrorCode.BAD_ARGS, "analysis type is required unless --list is given")
+        settings: dict[str, Any] = {}
+        for item in args.set:
+            key, sep, value = item.partition("=")
+            if not sep:
+                raise SaosError(ErrorCode.BAD_ARGS, f"--set expects KEY=VALUE, got {item!r}")
+            try:
+                settings[key] = json.loads(value)
+            except ValueError:
+                settings[key] = value
+        return _lens_request("lens.analysis", args, {"type": args.type, "settings": settings, "keep_open": args.keep_open})
     if action in ("info", "surfaces", "view"):
         return _lens_request(f"lens.{action}", args, {})
     if action == "set":
@@ -193,6 +208,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = lens_cmd("capture", "将当前窗口内容另存为任务副本，保留原文件")
     p.add_argument("--as", dest="as_name", required=True)
     lens_cmd("view", "extension 模式下打开并刷新原生分析窗口")
+    p = lens_cmd("analysis", "运行 OpticStudio 分析并导出数值到任务的 analyses/")
+    p.add_argument("type", nargs="?", help="AnalysisIDM 名称，例如 StandardSpot、FftMtf、RayFan、WavefrontMap")
+    p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE", help="分析设置，例如 Field=all、Wavelength=1、SampleSize=S_64x64")
+    p.add_argument("--keep-open", action="store_true", help="extension 模式下保留分析窗口")
+    p.add_argument("--list", action="store_true", help="列出可用的分析类型")
     p = lens_cmd("load", "加载任务中的镜头文件")
     p.add_argument("file", help="相对 lenses/ 的文件名")
     p.add_argument("--discard", action="store_true", help="放弃当前镜头未保存的修改")

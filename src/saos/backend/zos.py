@@ -146,6 +146,37 @@ class ZosBackend(Backend):
     def has_unsaved_changes(self) -> bool:
         return self.mode == "extension" and self.needs_save()
 
+    # ---- 分析导出 ----
+
+    def analysis_types(self) -> list[str]:
+        from saos.backend import analysis
+
+        return analysis.analysis_names(_load_zosapi(self.root))
+
+    def analysis(self, name: str, settings: dict[str, Any], text_path: Path, keep_open: bool = False) -> dict[str, Any]:
+        from saos.backend import analysis
+
+        zosapi = _load_zosapi(self.root)
+        run = self.system.Analyses.New_Analysis(analysis.idm(zosapi, name))
+        try:
+            impl = analysis.settings_of(run)
+            analysis.apply_settings(impl, settings)
+            message = run.ApplyAndWaitForCompletion()
+            results = run.GetResults()
+            if results is None:
+                raise SaosError(ErrorCode.ZOS_ERROR, f"{name} returned no results", {"message": str(message) if message else None})
+            info = self.system_info()
+            out = analysis.extract(results, len(info["fields"]["items"]), len(info["wavelengths"]))
+            text_path.parent.mkdir(parents=True, exist_ok=True)
+            out["text_file"] = bool(results.GetTextFile(str(text_path)))
+            out["settings"] = analysis.describe_settings(impl)
+            out["message"] = str(message) if message else None
+            return out
+        finally:
+            # 显性调试时可以留下窗口给用户看；隐式运行一律关闭，避免分析对象越积越多
+            if not (keep_open and self.mode == "extension"):
+                run.Close()
+
     # 原生分析窗口；波前图和 PSF 只看轴上主波长，其余设为全部视场、全部波长
     _ANALYSES = ("Draw3D", "StandardSpot", "RayFan", "WavefrontMap", "HuygensPsf", "HuygensMtf", "RMSField", "GeometricEncircledEnergy")
     _AXIS_ONLY = ("WavefrontMap", "HuygensPsf")
