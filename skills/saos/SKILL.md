@@ -5,7 +5,7 @@ description: Drive Ansys Zemax OpticStudio through the saos tools to take a user
 
 # saos — simulate any optical system
 
-Run commands from the saos repository root with `uv run saos …`. Every command prints one JSON object (`{"ok": true, "result": …}` or `{"ok": false, "error": {code, message, details}}`). Full command reference: `docs/cli.md`. Terms: `GLOSSARY.md`. Design intent: `DESIGN.md`.
+Run commands from the saos repository root with `uv run saos …`. Every command prints one JSON object (`{"ok": true, "result": …}` or `{"ok": false, "error": {code, message, details}}`). Command help: `uv run saos --help` and `uv run saos <command> --help`. Harness format: [harness.md](harness.md). Terms: `GLOSSARY.md` (English and Chinese names).
 
 ## Three invariants (never break these)
 
@@ -19,13 +19,14 @@ Everything else — modelling, starting design, merit functions, variables, stra
 
 Create the job first: `uv run saos job create --name <name>`. Then grill the user in rounds: ask every question you can ask now, number them, give your recommended answer for each, and word them so "yes" accepts your recommendation. Explain optics terms in plain words for non-experts. Look up facts yourself (files, references in `ref/docs`, OpticStudio manual) instead of asking.
 
-Write `sources/harness.yaml` (format in `docs/cli.md`, section "需求框定"):
+Write `sources/harness.yaml` (full format, shortfall and stop rule: [harness.md](harness.md)):
 
 - `request`: the user's words verbatim.
 - `targets`: each with `kind` (constraint = must meet; target = has a pass line; preference = no pass line, reported only), a `check` (one Zemax operand, one analysis value via `path`, or a job script returning a number), and a `goal` (`max`, `min`, or `equals` + `tol`) with a `scale` when the bound is 0.
 - `assumptions`: everything you filled in.
 - `stop`: keep the defaults (rel 0.01, max_rounds 30, all tiers) unless the user wants otherwise; it is part of the need.
 - `recipes`: the recipes you plan to load.
+- `lang`: `zh` or `en`, the language the user writes in; the report follows it.
 
 Use `uv run saos check --job J` on a loaded lens to sanity-check that every check evaluates. Show the user the harness in plain language and ask for explicit approval. Only an explicit approval counts; record it verbatim as `confirmed.quote`. After that, do not stop to ask again unless the harness turns out to be unreachable or must change.
 
@@ -43,7 +44,7 @@ If a recipe in `skills/recipes/<system>/SKILL.md` matches the system, load it no
 
 ## 4. Deliver
 
-Run `uv run saos report --job J` and give the user the `report/index.html` path, the status, the delivered lens, and for each unmet goal how far it is off. Mention that a tolerance analysis can follow.
+Run `uv run saos report --job J` (in the user's language via the harness `lang`, or `--lang zh|en`) and give the user the `report/index.html` path, the status, the delivered lens, and for each unmet goal how far it is off. Mention that a tolerance analysis can follow.
 
 ## Explicit debugging (on-screen)
 

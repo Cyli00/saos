@@ -20,12 +20,18 @@ from multiprocessing.connection import Connection, Listener
 from pathlib import Path
 from typing import Any, Callable
 
-from saos import config, jobs, prescription, scripting, workflow
+from saos import config, i18n, jobs, prescription, scripting, workflow
 from saos.backend import Backend, make_backend
 from saos.backend.base import same_number
 from saos.protocol import ErrorCode, SaosError, decode, encode, fail, jsonable, ok, write_json
 
 log = logging.getLogger("saos.daemon")
+
+
+def _t(zh: str, en: str) -> str:
+    """日志给人看，按 SAOS_LANG 或系统界面语言选中英文。"""
+    return i18n.text(i18n.resolve(), zh, en)
+
 
 REQUEST_READ_TIMEOUT_S = 30
 # 显性调试：这些操作可能改变镜头，结束后刷新已打开的分析窗口
@@ -145,7 +151,7 @@ class Daemon:
         except SaosError as exc:
             error = exc
         except Exception as exc:  # noqa: BLE001 - 后台进程不能因单个请求崩溃
-            log.exception("操作 %s 出现未预期异常", op)
+            log.exception(_t("操作 %s 出现未预期异常", "unexpected error in op %s"), op)
             error = self._unexpected(exc)
         duration_ms = round((time.perf_counter() - started) * 1000, 1)
         self._log_to_job(op, args, error, duration_ms)
@@ -173,7 +179,7 @@ class Daemon:
         try:
             self.backend.refresh_windows()
         except Exception:  # noqa: BLE001 - 刷新失败不影响操作结果
-            log.exception("刷新显性调试窗口失败")
+            log.exception(_t("刷新显性调试窗口失败", "refreshing the explicit debugging windows failed"))
 
     def _unexpected(self, exc: Exception) -> SaosError:
         detail = {"exception": type(exc).__name__, "message": str(exc)[:2000]}
@@ -211,7 +217,7 @@ class Daemon:
         try:
             job.append_log(record)
         except OSError:
-            log.exception("写入任务 %s 的执行记录失败", job_id)
+            log.exception(_t("写入任务 %s 的执行记录失败", "writing the run record of job %s failed"), job_id)
 
     # ---- 辅助 ----
 
@@ -515,15 +521,15 @@ def serve(mode: str, token: str = "") -> int:
     error_file.unlink(missing_ok=True)
 
     backend = make_backend(mode)
-    log.info("后台进程 %s 启动，连接 OpticStudio（%s）", os.getpid(), mode)
+    log.info(_t("后台进程 %s 启动，连接 OpticStudio（%s）", "daemon %s starting, connecting to OpticStudio (%s)"), os.getpid(), mode)
     try:
         zos_info = backend.start()
     except SaosError as exc:
-        log.error("启动失败：%s", exc.message)
+        log.error(_t("启动失败：%s", "start failed: %s"), exc.message)
         write_json(error_file, exc.to_dict())
         return 1
     except Exception as exc:  # noqa: BLE001
-        log.exception("启动失败")
+        log.exception(_t("启动失败", "start failed"))
         write_json(error_file, SaosError(ErrorCode.DAEMON_START_FAILED, str(exc)).to_dict())
         return 1
 
@@ -542,7 +548,7 @@ def serve(mode: str, token: str = "") -> int:
         try:
             zos_info["windows"] = backend.show_windows()
         except Exception as exc:  # noqa: BLE001 - 窗口打不开不阻止连接，agent 可以再用 lens view
-            log.warning("打开显性调试窗口失败：%s", exc)
+            log.warning(_t("打开显性调试窗口失败：%s", "opening the explicit debugging windows failed: %s"), exc)
         daemon.mark_window_baseline()
     write_json(
         config.daemon_state_file(),
@@ -555,25 +561,25 @@ def serve(mode: str, token: str = "") -> int:
             "opticstudio": zos_info,
         },
     )
-    log.info("就绪：%s，OpticStudio %s", config.pipe_address(), zos_info.get("version"))
+    log.info(_t("就绪：%s，OpticStudio %s", "ready: %s, OpticStudio %s"), config.pipe_address(), zos_info.get("version"))
     try:
         while not daemon.stopping:
             try:
                 conn = listener.accept()
             except Exception as exc:  # noqa: BLE001 - 认证失败等只影响单个连接
-                log.warning("拒绝连接：%s", exc)
+                log.warning(_t("拒绝连接：%s", "connection refused: %s"), exc)
                 continue
             try:
                 _serve_one(daemon, conn)
             except Exception:  # noqa: BLE001
-                log.exception("处理请求时出错")
+                log.exception(_t("处理请求时出错", "error while handling a request"))
             finally:
                 conn.close()
     finally:
-        log.info("正在退出")
+        log.info(_t("正在退出", "shutting down"))
         backend.close()
         listener.close()
         config.daemon_state_file().unlink(missing_ok=True)
         config.daemon_authkey_file().unlink(missing_ok=True)
-        log.info("已退出")
+        log.info(_t("已退出", "stopped"))
     return 0

@@ -172,7 +172,7 @@ def cmd_round(args: argparse.Namespace) -> Any:
 def cmd_report(args: argparse.Namespace) -> Any:
     from saos import report
 
-    return report.write(jobs.get_job(args.job))
+    return report.write(jobs.get_job(args.job), lang=args.lang)
 
 
 class _Parser(argparse.ArgumentParser):
@@ -309,6 +309,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_round)
     p = sub.add_parser("report", help="write the delivery report report/index.html from the harness and the ledger (no OpticStudio needed)")
     p.add_argument("--job", required=True)
+    p.add_argument("--lang", choices=["en", "zh"], help="report language (default: harness lang, then SAOS_LANG, then the system UI language)")
     p.set_defaults(func=cmd_report)
 
     from saos.recipes.microscope import cli as microscope_cli

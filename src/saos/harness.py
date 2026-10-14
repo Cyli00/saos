@@ -13,6 +13,7 @@
         scale: 0.5                  # 单项差距的归一化尺度，默认取 tol 或界限的绝对值
     assumptions: [...]
     recipes: []
+    lang: zh                        # 用户使用的语言，决定交付报告的语言；可省略
     stop: {rel: 0.01, max_rounds: 30, tiers: [local, variables, materials, global, structure]}
     confirmed: {quote: 用户确认的原话, time: ...}
 
@@ -31,6 +32,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from saos import i18n
 from saos.protocol import ErrorCode, SaosError
 
 if TYPE_CHECKING:
@@ -57,8 +59,8 @@ def load(path: Path) -> dict[str, Any]:
 
 
 def digest(harness: dict[str, Any]) -> str:
-    """需求框定内容的哈希，不含确认信息：确认换了、内容没变，差距仍然可比。"""
-    body = {k: v for k, v in harness.items() if k != "confirmed"}
+    """需求框定内容的哈希，不含确认信息和报告语言：这两项换了、内容没变，差距仍然可比。"""
+    body = {k: v for k, v in harness.items() if k not in ("confirmed", "lang")}
     return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
 
 
@@ -91,6 +93,8 @@ def validate(data: Any) -> dict[str, Any]:
             scale = t.get("scale", _default_scale(goal))
             if not _positive(scale):
                 raise _bad(f"{t['id']}: scale must be a positive number (the bound is 0, so give one explicitly)")
+    if data.get("lang") is not None and data["lang"] not in i18n.LANGS:
+        raise _bad(f"lang must be one of {i18n.LANGS} (the language the user writes in)")
     stop = {**DEFAULT_STOP, **(data.get("stop") or {})}
     if not (_positive(stop["rel"]) and isinstance(stop["max_rounds"], int) and stop["max_rounds"] > 0):
         raise _bad("stop.rel must be > 0 and stop.max_rounds a positive integer")

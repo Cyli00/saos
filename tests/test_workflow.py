@@ -103,10 +103,16 @@ def test_workflow_rounds_until_achieved_and_report(setup):
     assert r1["record"]["achieved"] and r1["decision"]["status"] == "achieved"
     assert call(daemon, "round.record", job=job.id, tier="local")["error"]["code"] == ErrorCode.BAD_ARGS  # 已停止
     assert (job.root / "lenses" / "rounds" / "r001.zmx").is_file() and (job.root / "rounds" / "r001.json").is_file()
-    out = report.write(job)
+    out = report.write(job, lang="zh")
     html = (job.root / "report" / "index.html").read_text(encoding="utf-8")
-    assert out["status"] == "achieved" and out["deliver"] == "rounds/r001.zmx"
+    assert out["status"] == "achieved" and out["deliver"] == "rounds/r001.zmx" and out["lang"] == "zh"
     assert "达成" in html and "总长不超过 95 mm" in html and "TOTR" in html and "<svg" in html
+    # 语言由需求框定的 lang 决定，--lang 优先；切换语言不改变需求框定的哈希
+    write_harness(job, {**HARNESS, "lang": "en"})
+    assert report.write(job)["lang"] == "en"
+    html = (job.root / "report" / "index.html").read_text(encoding="utf-8")
+    assert 'lang="en"' in html and "Achieved" in html and "达成" not in html and "总长不超过 95 mm" in html
+    assert report.write(job, lang="zh")["lang"] == "zh"
 
 
 def test_harness_change_needs_new_confirmation(setup):

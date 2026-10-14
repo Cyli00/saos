@@ -31,7 +31,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `saos lens screenshot --job J [--label L]` | 显性调试：把 OpticStudio 的可见窗口截成 PNG，存为任务的 `screens/NNN-L-K.png`（PrintWindow，被遮挡也能截；最小化的窗口跳过） |
 | `saos check --job J` | 按任务的需求框定 `sources/harness.yaml` 对当前镜头逐项实测和判定，不记录。需求框定未确认时也能用，便于框定阶段先看数值 |
 | `saos round --job J [--tier local\|variables\|materials\|global\|structure] [--note TEXT]` | 记录一个调试轮次：存为 `lenses/rounds/rNNN.zmx`，逐项实测判定（全文存为 `rounds/rNNN.json`），写入 `ledger.jsonl`，返回终止判断（continue / achieved / exhausted / limit）及还没试过的层级。第 0 轮不填 tier。需求框定未确认、改动后没有新的确认原话、或已经终止时拒绝 |
-| `saos report --job J` | 由需求框定和 ledger 生成交付报告 `report/index.html`，不连接 OpticStudio |
+| `saos report --job J [--lang zh\|en]` | 由需求框定和 ledger 生成交付报告 `report/index.html`，不连接 OpticStudio；语言见「报告语言」 |
 | `saos exec SCRIPT --job J [--arg K=V …] [--args-file JSON] [--name N] [--quiet]` | 在后台进程内执行脚本（ADR-0007），见下文「脚本执行」 |
 | `saos microscope adapt EXTRACT --focal-length F --field-number N [--tube-lens 200] [--catalogs …] [--stop rear_focal\|r<面号>] --out DIR` | 把子 agent 提取的面数据适配成标准设计布局的处方，输出 prescription.json、expect.json、adapt_report.json（不经后台进程） |
 | `saos lens build --job J PRESCRIPTION --as NAME [--overwrite]` | 按处方用 ZOS-API 搭建镜头，保存到 lenses/ 并加载 |
@@ -59,32 +59,13 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 
 ## 需求框定
 
-`sources/harness.yaml`，字段用英文：
+`sources/harness.yaml` 的格式、目标差距的算法和终止规则以英文写在 [skills/saos/harness.md](../skills/saos/harness.md)，agent 直接读那一份；这里不再重复。
 
-```yaml
-schema: 1
-request: 用户原话
-targets:
-  - id: efl
-    kind: constraint            # constraint | target | preference
-    description: effective focal length
-    check: {operand: {type: EFFL, int1: 0, int2: 0, data: []}}
-    goal: {equals: 50.0, tol: 0.5}   # 或 {max: v}、{min: v}，可同时给 min 和 max
-    scale: 0.5                  # 单项差距的尺度；默认取 tol 或界限的绝对值，界限为 0 时必须给出
-  - id: spot_axis
-    kind: target
-    check: {analysis: {type: StandardSpot, settings: {}, path: "spot.rms_radius[0][1]"}}
-    goal: {max: 10.0}
-  - id: custom
-    kind: preference            # 期望项只报告数值，可以没有 goal
-    check: {script: checks/custom.py}   # 任务内的脚本，run(ctx) 返回一个数
-assumptions: [agent 补全的条件]
-recipes: []
-stop: {rel: 0.01, max_rounds: 30, tiers: [local, variables, materials, global, structure]}
-confirmed: {quote: 用户确认的原话}
-```
+要点：判定方法三选一（operand、analysis、script）；`goal` 写 `max`、`min` 或 `equals` + `tol`；`lang`（`zh`/`en`）决定交付报告的语言，改它不需要重新确认；`confirmed.quote` 只能是用户的原话。
 
-`analysis` 的 `path` 指向 `saos lens analysis` 导出结构中的一个数，例如 `series[0].y.Tangential[20]`、`grids[0].stats.max`；键里有点号时写成 `['0.48']`。终止规则见 DESIGN.md「终止规则」。
+## 报告语言
+
+`saos report` 的语言按以下顺序选择：`--lang` > 需求框定的 `lang` > 环境变量 `SAOS_LANG` > 系统界面语言（Windows 取 `GetUserDefaultUILanguage`）> 英文。后台日志按 `SAOS_LANG` 和系统界面语言选择。给 agent 读的错误信息和命令帮助只有英文。
 
 ## 脚本执行
 
@@ -167,6 +148,7 @@ work/<实例名>/
 | `SAOS_OPTICSTUDIO_DIR` | `C:\Program Files\Ansys Zemax OpticStudio 2024 R1.00` | 加载 ZOS-API DLL 的目录 |
 | `SAOS_BACKEND` | `zos` | 测试时设为 `fake`，不启动 Zemax |
 | `SAOS_LIBRARY` | `<仓库>/library` | 初始结构库的位置 |
+| `SAOS_LANG` | 未设置 | 给人看的输出（交付报告、后台日志）的语言，`zh` 或 `en`；未设置时取系统界面语言 |
 | `SAOS_UI_LIVE` | 未设置 | extension 模式下设为 1 时，验收评估等操作期间也实时刷新窗口 |
 
 ## 测试
