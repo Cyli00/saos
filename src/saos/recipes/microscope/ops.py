@@ -35,10 +35,20 @@ def _job_spec(job: jobs.Job, spec_name: str) -> Spec:
     return load_spec(spec_path)
 
 
+def _saved_lens_in_window(ctx, lens: Path) -> dict[str, Any]:
+    """验收类操作会在窗口里重建或重新加载镜头：窗口有未保存内容时先存副本，再从文件加载，保证测的是已保存的镜头。"""
+    captured = ctx.capture_window()
+    if captured:
+        ctx.backend.load(lens)
+        return {"captured": captured}
+    return {}
+
+
 def repro(ctx, expect: dict[str, Any]) -> dict[str, Any]:
     """复现校验：焦距、数值孔径、工作距离、放大率与期望值比较。"""
     lens = _lens(ctx)
     backend = ctx.backend
+    captured = {} if ctx.dirty else _saved_lens_in_window(ctx, lens)
     design = backend.snapshot()
     gap = layout.gap_surface(design)
     original = design[gap]["thickness"]
@@ -54,7 +64,7 @@ def repro(ctx, expect: dict[str, Any]) -> dict[str, Any]:
             backend.set_surface(gap, "thickness", original)
         else:
             backend.load(lens)
-    return {**ctx.describe(), **result}
+    return {**ctx.describe(), **result, **captured}
 
 
 def accept(ctx, spec: str | None = None) -> dict[str, Any]:
@@ -70,6 +80,7 @@ def accept(ctx, spec: str | None = None) -> dict[str, Any]:
 
 def _accept(ctx, spec_name: str, spec: Spec) -> dict[str, Any]:
     backend, job, lens = ctx.backend, ctx.job, _lens(ctx)
+    captured = _saved_lens_in_window(ctx, lens)
     design = backend.snapshot()
     info = backend.system_info()
     evaluator = acceptance.Evaluator(backend, spec, info["material_catalogs"], telecentric_object=info["aperture"].get("telecentric_object", False))
@@ -85,7 +96,7 @@ def _accept(ctx, spec_name: str, spec: Spec) -> dict[str, Any]:
             model_path = None
         backend.load(lens)
     rel = job.relative_lens(lens)
-    result = {"job": job.id, "file": rel, "spec": spec_name, **result}
+    result = {"job": job.id, "file": rel, "spec": spec_name, **result, **captured}
     if model_path is not None:
         result["acceptance_model"] = model_path.relative_to(job.root).as_posix()
     write_json(job.root / "eval" / f"{lens.stem}.accept.json", result)

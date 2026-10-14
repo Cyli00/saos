@@ -75,7 +75,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 
 - `ctx.system`：OpticStudio 的 PrimarySystem；`ctx.zosapi`：ZOSAPI 命名空间；`ctx.backend`：saos 后端；
 - `ctx.job`、`ctx.args`（`--arg` 和 `--args-file` 合并后的字典）、`ctx.lens`（当前加载的镜头路径，可能为 None）、`ctx.dirty`；
-- `ctx.load(name)`、`ctx.save_as(name, overwrite=False)`：切换或保存镜头时必须用它们，后台进程才能跟踪当前文件；`ctx.mark_dirty()`；`ctx.path(rel)`：任务目录内的路径。
+- `ctx.load(name)`、`ctx.save_as(name, overwrite=False)`：切换或保存镜头时必须用它们，后台进程才能跟踪当前文件；`ctx.load` 换掉窗口内容前会把未保存的窗口内容存成副本（`ctx.capture_window()` 也可单独调用，副本路径列在执行结果的 `captured`）；`ctx.mark_dirty()`；`ctx.path(rel)`：任务目录内的路径。
 
 每次执行都把脚本副本和结果存为任务的 `scripts/NNN-<名>.py` 与 `.json`，交付的数值可以追溯到具体脚本。脚本抛出异常时返回 `SCRIPT_ERROR`（含 traceback），后台进程继续运行；连接已中断时按连接中断处理。执行结束后若 OpticStudio 的 NeedsSave 置位，当前镜头记为有未保存修改；只读的 Zernike 拟合也会置位，所以这一判断偏保守。`--quiet` 在 extension 模式下暂停窗口刷新，显微物镜的验收类命令默认带上。
 
@@ -164,6 +164,6 @@ work/<实例名>/
 - `saos lens view --job J [--viewer …] [--analysis TYPE]`：extension 模式下打开 Lens Data 或一种 System Viewer，加一个像质分析，并刷新；UpdateMode 设为 EditorsOnly，分析窗口由 saos 在改动后刷新。standalone 模式下返回 BAD_ARGS。
 - `saos lens screenshot --job J [--label L]`：截取 OpticStudio 窗口 PNG。
 
-extension 模式下，`lens load`、`lens unload`、`lens build` 换掉窗口内容前，若 OpticStudio 的 NeedsSave 置位（分析窗口的刷新也会置位，无法与用户修改区分），先把窗口内容存成 `lenses/captures/NNN-unsaved.zmx`，返回值 `captured` 给出路径，然后继续；`--discard` 跳过这份副本。agent 自己未保存的修改（后台 dirty）仍返回 UNSAVED_CHANGES，先 `lens save` 或加 `--discard`。
+extension 模式下，`lens load`、`lens unload`、`lens build` 换掉窗口内容前，若 OpticStudio 的 NeedsSave 置位（分析窗口的刷新也会置位，无法与用户修改区分），先把窗口内容存成 `lenses/captures/NNN-unsaved.zmx`，返回值 `captured` 给出路径，然后继续。脚本中的 `ctx.load` 和显微物镜配方的 accept、repro 同样先存副本，返回值带 `captured`。agent 自己未保存的修改（后台 dirty）仍返回 UNSAVED_CHANGES，先 `lens save` 或加 `--discard`；`--discard` 只放弃 agent 自己的修改，窗口内容照样先存副本。
 
 光纤侧视框架的搭建脚本已移出命令行，见 `experiments/fiber/` 和 TODO。

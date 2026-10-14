@@ -32,6 +32,7 @@ class ScriptContext:
         self.job = job
         self.args = args
         self.backend = daemon.backend
+        self.captured: list[str] = []
 
     @property
     def system(self):
@@ -67,11 +68,19 @@ class ScriptContext:
         if loaded is not None and loaded.job.id == self.job.id:
             loaded.dirty = True
 
+    def capture_window(self) -> str | None:
+        """换掉窗口内容之前调用：窗口有未保存内容时存成 lenses/captures/ 下的副本，返回其路径。"""
+        rel = self._daemon.capture_window(self.job)
+        if rel:
+            self.captured.append(rel)
+        return rel
+
     def load(self, name: str) -> str:
-        """加载本任务 lenses/ 下的文件；不检查当前镜头的未保存修改，由脚本自己负责。"""
+        """加载本任务 lenses/ 下的文件；agent 自己的未保存修改由脚本负责，窗口里的未保存内容先存副本。"""
         from saos.daemon import Loaded
 
         path = self.job.resolve_lens(name, must_exist=True)
+        self.capture_window()
         self._daemon.loaded = None
         self.backend.load(path)
         self._daemon.loaded = Loaded(self.job, path)
@@ -120,13 +129,17 @@ def execute(daemon: Daemon, job: jobs.Job, name: str, source: str, args: dict[st
         run = namespace.get("run")
         if not callable(run):
             raise SaosError(ErrorCode.BAD_ARGS, "script must define run(ctx)")
-        result = jsonable(run(ScriptContext(daemon, job, args)))
+        ctx = ScriptContext(daemon, job, args)
+        result = jsonable(run(ctx))
         try:
             json.dumps(result, allow_nan=False)
         except (TypeError, ValueError) as exc:
             raise SaosError(ErrorCode.BAD_ARGS, f"run(ctx) must return JSON-serializable data: {exc}") from exc
         record.update(ok=True, result=result)
-        return {"script": rel, "result": result}
+        out = {"script": rel, "result": result}
+        if ctx.captured:
+            record["captured"] = out["captured"] = ctx.captured
+        return out
     except SaosError as exc:
         record.update(ok=False, error=exc.to_dict())
         raise

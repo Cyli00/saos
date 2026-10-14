@@ -120,3 +120,15 @@ def test_archives_keep_incrementing_past_three_digits(daemon, loaded, monkeypatc
         result = daemon.handle({"op": "lens.screenshot", "args": {"job": loaded.id}})["result"]
         assert result["files"] == [f"screens/{number}-window-1.png"]
     assert (screens / "1000-window-1.png").read_bytes() == b"old"
+
+
+def test_context_load_captures_unsaved_window_content(daemon, loaded, monkeypatch):
+    unsaved = [True]
+    monkeypatch.setattr(daemon.backend, "has_unsaved_changes", lambda: unsaved[0])
+    load = daemon.backend.load
+    monkeypatch.setattr(daemon.backend, "load", lambda path: (load(path), unsaved.__setitem__(0, False)))
+    out = run(daemon, loaded, "def run(ctx):\n    ctx.load('a.zmx')\n    return ctx.load('a.zmx')\n")["result"]
+    assert out["result"] == "a.zmx" and out["captured"] == ["captures/001-unsaved.zmx"]
+    assert (loaded.lenses_dir / "captures/001-unsaved.zmx").is_file()
+    archived = json.loads(next((loaded.root / "scripts").glob("*.json")).read_text(encoding="utf-8"))
+    assert archived["captured"] == ["captures/001-unsaved.zmx"]

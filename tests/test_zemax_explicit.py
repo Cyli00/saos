@@ -124,7 +124,31 @@ def test_explicit_debugging_tools(ui_pid, tmp_path):
         ok(saos("lens", "save", "--job", job, "--as", "r001.zmx", env=env))
         # 分析窗口会让 NeedsSave 置位；换镜头前窗口内容先存成副本，不阻断
         loaded = ok(saos("lens", "load", "--job", job, "start.zmx", env=env))
-        assert loaded["captured"] is None or (tmp_path / "home" / "jobs" / job / "lenses" / loaded["captured"]).is_file()
+        lenses = tmp_path / "home" / "jobs" / job / "lenses"
+        assert loaded["captured"] is None or (lenses / loaded["captured"]).is_file()
         ok(saos("lens", "save", "--job", job, "--no-verify", env=env))
+
+        # 窗口里有改动时换镜头：--discard 只放弃 agent 自己的修改，窗口内容仍先存成副本，副本就是改动后的内容
+        edited = surfaces[2]["thickness"] + 0.5
+        ok(saos("lens", "set", "--job", job, "--surface", 2, "--param", "thickness", "--value", edited, env=env))
+        replaced = ok(saos("lens", "load", "--job", job, "start.zmx", "--discard", env=env))
+        assert replaced["captured"] and (lenses / replaced["captured"]).is_file()
+        ok(saos("lens", "load", "--job", job, replaced["captured"], "--discard", env=env))
+        assert ok(saos("lens", "surfaces", "--job", job, env=env))["surfaces"][2]["thickness"] == pytest.approx(edited)
+
+        # check：未确认的需求框定也能逐项取值，证据写进 evaluations/
+        harness = tmp_path / "home" / "jobs" / job / "sources" / "harness.yaml"
+        harness.parent.mkdir(exist_ok=True)
+        harness.write_text(json.dumps({"schema": 1, "request": "track", "targets": [
+            {"id": "track", "kind": "constraint", "check": {"operand": {"type": "TOTR"}}, "goal": {"max": 1000.0}},
+            {"id": "spot", "kind": "target", "check": {"analysis": {"type": "StandardSpot", "path": "spot.rms_radius[0][1]"}}, "goal": {"max": 1000.0}}]}), encoding="utf-8")
+        checked = ok(saos("check", "--job", job, env=env))
+        assert checked["achieved"] and all(item["value"] > 0 for item in checked["items"])
+        assert (tmp_path / "home" / "jobs" / job / checked["evidence_file"]).is_file()
+
+        # capture 与 unload
+        assert ok(saos("lens", "capture", "--job", job, "--as", "window.zmx", env=env))["file"] == "window.zmx"
+        assert (lenses / "window.zmx").is_file()
+        assert ok(saos("lens", "unload", "--job", job, env=env))["unloaded"]["file"] == "window.zmx"
     finally:
         ok(saos("daemon", "stop", "--discard", env=env))

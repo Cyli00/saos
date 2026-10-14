@@ -226,11 +226,14 @@ class Daemon:
             )
 
     def _before_replace(self, job: jobs.Job, discard: bool, action: str) -> str | None:
-        """换掉窗口内容之前：agent 自己的未保存修改要先保存；窗口的未保存标志无法区分用户修改和分析窗口的副作用，
-        一律先把窗口内容存成任务内的副本再继续，返回副本路径。"""
+        """换掉窗口内容之前：agent 自己的未保存修改要先保存或显式放弃；窗口里的未保存内容总是先存副本，
+        discard 只放弃 agent 自己的修改，不能替用户放弃。"""
         self._check_not_dirty(discard, action)
-        if discard or not self._window_edited():
-            self.window_unsaved = False
+        return self.capture_window(job)
+
+    def capture_window(self, job: jobs.Job) -> str | None:
+        """窗口的未保存标志无法区分用户修改和分析窗口的副作用，置位时一律把窗口内容存成任务内的副本，返回副本路径。"""
+        if not self._window_edited():
             return None
         folder = job.lenses_dir / "captures"
         folder.mkdir(parents=True, exist_ok=True)

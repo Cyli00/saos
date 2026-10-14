@@ -187,18 +187,21 @@ def test_native_unsaved_state_survives_queries(saos_home, fake_lens_file, monkey
     daemon = Daemon(backend, {**backend.start(), "initial_needs_save": False}, "extension")
     monkeypatch.setattr(backend, "has_unsaved_changes", lambda: True)
     job = jobs.create_job("window")
+    backend.load(fake_lens_file)
     ok_result(call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx"))
-    assert ok_result(call(daemon, "lens.load", job=job.id, file="a.zmx", discard=True))["captured"] is None
+    # discard 只放弃 agent 自己的修改，窗口内容仍先存副本
+    assert ok_result(call(daemon, "lens.load", job=job.id, file="a.zmx", discard=True))["captured"] == "captures/001-unsaved.zmx"
     # 面数据不变也可能改了评价函数或专有参数，查询不能消除原生未保存标志。
     ok_result(call(daemon, query, job=job.id))
-    assert ok_result(call(daemon, "lens.load", job=job.id, file="a.zmx"))["captured"] == "captures/001-unsaved.zmx"
-    assert ok_result(call(daemon, "lens.unload", job=job.id))["captured"] == "captures/002-unsaved.zmx"
+    assert ok_result(call(daemon, "lens.load", job=job.id, file="a.zmx"))["captured"] == "captures/002-unsaved.zmx"
+    assert ok_result(call(daemon, "lens.unload", job=job.id))["captured"] == "captures/003-unsaved.zmx"
 
 
 def test_save_clears_initial_protection_without_refreshing(saos_home, fake_lens_file, monkeypatch):
     backend = FakeBackend()
     daemon = Daemon(backend, {**backend.start(), "initial_needs_save": True}, "extension")
     job = jobs.create_job("saved-window")
+    backend.load(fake_lens_file)
     ok_result(call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx"))
     ok_result(call(daemon, "lens.load", job=job.id, file="a.zmx", discard=True))
     daemon.window_unsaved = True
