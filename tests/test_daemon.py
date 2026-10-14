@@ -167,32 +167,54 @@ def test_compare_surfaces_detects_changes():
     assert compare_surfaces(a, a + a)[0]["field"] == "num_surfaces"
 
 
-def test_unmanaged_window_dirty_state_blocks_replacement(daemon, fake_lens_file, monkeypatch):
+def test_unmanaged_window_dirty_state_is_captured_before_replacement(daemon, fake_lens_file, monkeypatch):
     job = jobs.create_job('protect-window')
     daemon.backend.load(fake_lens_file)
     monkeypatch.setattr(daemon.backend, 'has_unsaved_changes', lambda: True)
     ok_result(call(daemon, 'lens.import', job=job.id, src=str(fake_lens_file), name='copy.zmx'))
-    assert err_code(call(daemon, 'lens.load', job=job.id, file='copy.zmx')) == ErrorCode.UNSAVED_CHANGES
     original = fake_lens_file.read_bytes()
-    capture = ok_result(call(daemon, 'lens.capture', job=job.id, file='window-copy.zmx'))
-    assert capture['file'] == 'window-copy.zmx'
+    assert ok_result(call(daemon, 'lens.load', job=job.id, file='copy.zmx'))['captured'] == 'captures/001-unsaved.zmx'
+    assert ok_result(call(daemon, 'lens.load', job=job.id, file='copy.zmx'))['captured'] == 'captures/002-unsaved.zmx'
+    assert (job.lenses_dir / 'captures/001-unsaved.zmx').is_file()
     assert fake_lens_file.read_bytes() == original
+    assert ok_result(call(daemon, 'lens.capture', job=job.id, file='window-copy.zmx'))['file'] == 'window-copy.zmx'
     assert err_code(call(daemon, 'lens.capture', job=job.id, file='window-copy.zmx')) == ErrorCode.FILE_EXISTS
 
 
-def test_window_edits_are_told_apart_from_saos_side_effects(saos_home, fake_lens_file, monkeypatch):
-    # extension 模式：NeedsSave 置位但镜头内容与上次请求结束时相同，是 saos 自己的动作；内容变了才是用户修改
+@pytest.mark.parametrize("query", ["ping", "lens.info", "lens.surfaces"])
+def test_native_unsaved_state_survives_queries(saos_home, fake_lens_file, monkeypatch, query):
     backend = FakeBackend()
     daemon = Daemon(backend, {**backend.start(), "initial_needs_save": False}, "extension")
     monkeypatch.setattr(backend, "has_unsaved_changes", lambda: True)
     job = jobs.create_job("window")
     ok_result(call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx"))
-    ok_result(call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="b.zmx"))
+    assert ok_result(call(daemon, "lens.load", job=job.id, file="a.zmx", discard=True))["captured"] is None
+    # 面数据不变也可能改了评价函数或专有参数，查询不能消除原生未保存标志。
+    ok_result(call(daemon, query, job=job.id))
+    assert ok_result(call(daemon, "lens.load", job=job.id, file="a.zmx"))["captured"] == "captures/001-unsaved.zmx"
+    assert ok_result(call(daemon, "lens.unload", job=job.id))["captured"] == "captures/002-unsaved.zmx"
+
+
+def test_save_clears_initial_protection_without_refreshing(saos_home, fake_lens_file, monkeypatch):
+    backend = FakeBackend()
+    daemon = Daemon(backend, {**backend.start(), "initial_needs_save": True}, "extension")
+    job = jobs.create_job("saved-window")
+    ok_result(call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx"))
     ok_result(call(daemon, "lens.load", job=job.id, file="a.zmx", discard=True))
-    ok_result(call(daemon, "lens.load", job=job.id, file="b.zmx"))
-    backend.lens["surfaces"][1]["thickness"] = 9.0  # 用户在窗口里手改
-    assert err_code(call(daemon, "lens.load", job=job.id, file="a.zmx")) == ErrorCode.UNSAVED_CHANGES
-    ok_result(call(daemon, "lens.load", job=job.id, file="a.zmx", discard=True))
+    daemon.window_unsaved = True
+    dirty = [True]
+    save = backend.save_as
+
+    def saved(path):
+        save(path)
+        dirty[0] = False
+
+    monkeypatch.setattr(backend, "save_as", saved)
+    monkeypatch.setattr(backend, "has_unsaved_changes", lambda: dirty[0])
+    monkeypatch.setattr(backend, "refresh_windows", lambda: dirty.__setitem__(0, True))
+    ok_result(call(daemon, "lens.save", job=job.id))
+    assert not daemon.window_unsaved and not dirty[0]
+    assert ok_result(call(daemon, "lens.load", job=job.id, file="a.zmx"))["captured"] is None
 
 
 def test_unsaved_window_content_at_connect_is_protected(saos_home, fake_lens_file):
@@ -200,10 +222,9 @@ def test_unsaved_window_content_at_connect_is_protected(saos_home, fake_lens_fil
     daemon = Daemon(backend, {**backend.start(), "initial_needs_save": True}, "extension")
     job = jobs.create_job("window")
     ok_result(call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx"))
-    assert err_code(call(daemon, "lens.load", job=job.id, file="a.zmx")) == ErrorCode.UNSAVED_CHANGES
     backend.load(fake_lens_file)
-    ok_result(call(daemon, "lens.capture", job=job.id, file="window.zmx"))
-    ok_result(call(daemon, "lens.load", job=job.id, file="a.zmx"))
+    assert ok_result(call(daemon, "lens.load", job=job.id, file="a.zmx"))["captured"] == "captures/001-unsaved.zmx"
+    assert ok_result(call(daemon, "lens.load", job=job.id, file="a.zmx"))["captured"] is None
 
 
 def test_blocking_dialog_fails_fast(daemon, loaded, monkeypatch):

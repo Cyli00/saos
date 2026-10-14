@@ -118,7 +118,7 @@ def cmd_verify(args: argparse.Namespace) -> Any:
     entry["repro"] = {"pass": repro["pass"], "metrics": {m["metric"]: round(m["rel_error"], 6) for m in repro["metrics"]}}
     if not repro["pass"]:
         entry["status"] = "rejected"
-        entry["reason"] = "复现校验未通过：" + ", ".join(f"{m['metric']} 相对误差 {m['rel_error']:.2%}" for m in repro["metrics"] if not m["pass"])
+        entry["reason"] = "reproduction check failed: " + ", ".join(f"{m['metric']} relative error {m['rel_error']:.2%}" for m in repro["metrics"] if not m["pass"])
         library.save_entry(args.id, entry)
         return {"entry": args.id, "status": entry["status"], "reason": entry["reason"]}
     entry["status"] = "admitted"
@@ -129,7 +129,7 @@ def cmd_verify(args: argparse.Namespace) -> Any:
     probe = _accept(job, args.id, "probe", library.probe_spec(entry, cls), t)
     library.write_file(args.id, "probe_accept.json", probe)
     if probe["verdict"] == "invalid":
-        entry["benchmark"] = {"eligible": False, "reason": f"格式默认规格下无法评估：{probe['invalid']}"}
+        entry["benchmark"] = {"eligible": False, "reason": f"cannot evaluate under the format default spec: {probe['invalid']}"}
         library.save_entry(args.id, entry)
         return {"entry": args.id, "status": entry["status"], "benchmark": entry["benchmark"]}
     values = {i["id"]: i["value"] for i in probe["items"]}
@@ -147,9 +147,9 @@ def cmd_verify(args: argparse.Namespace) -> Any:
         bench["baseline_shortfall"] = check["spec_shortfall"]
         if check["verdict"] != "pass":
             bench["eligible"] = False
-            bench["reason"] = f"基准规格下原结构未通过：G = {check['spec_shortfall']}"
+            bench["reason"] = f"the original design fails its benchmark spec: G = {check['spec_shortfall']}"
     else:
-        bench["reason"] = "有依据的判据未通过：" + ", ".join(derived["failed_fixed_items"])
+        bench["reason"] = "sourced criteria failed: " + ", ".join(derived["failed_fixed_items"])
     entry["benchmark"] = bench
     library.save_entry(args.id, entry)
     return {"entry": args.id, "status": entry["status"], "repro": entry["repro"], "benchmark": bench}

@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import math
 import os
@@ -23,7 +22,7 @@ from typing import Any, Callable
 from saos import config, i18n, jobs, prescription, scripting, workflow
 from saos.backend import Backend, make_backend
 from saos.backend.base import same_number
-from saos.protocol import ErrorCode, SaosError, decode, encode, fail, jsonable, ok, write_json
+from saos.protocol import ErrorCode, SaosError, decode, encode, fail, ok, write_json
 
 log = logging.getLogger("saos.daemon")
 
@@ -35,7 +34,7 @@ def _t(zh: str, en: str) -> str:
 
 REQUEST_READ_TIMEOUT_S = 30
 # 显性调试：这些操作可能改变镜头，结束后刷新已打开的分析窗口
-REFRESH_AFTER = frozenset({"lens.load", "lens.set", "lens.save", "lens.build", "lens.capture", "opt.local", "script.exec", "round.record"})
+REFRESH_AFTER = frozenset({"lens.load", "lens.set", "lens.build", "opt.local", "script.exec", "round.record"})
 COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
 COMPARED_NUMBER_KEYS = ("radius", "thickness", "conic", "semi_diameter")
 
@@ -91,7 +90,6 @@ class Daemon:
         self.stopping = False
         # 显性调试：连接时窗口里已有的未保存内容要保护，直到保存、捕获副本或显式放弃
         self.window_unsaved = bool(zos_info.get("initial_needs_save"))
-        self._window_baseline: str | None = None
         self.handlers: dict[str, Callable[[dict[str, Any]], Any]] = {
             "ping": self.op_ping,
             "shutdown": self.op_shutdown,
@@ -146,8 +144,6 @@ class Daemon:
                 result = handler(args)
             if op in REFRESH_AFTER:
                 self._refresh_windows()
-            if self.mode == "extension" and not self.stopping:
-                self.mark_window_baseline()
         except SaosError as exc:
             error = exc
         except Exception as exc:  # noqa: BLE001 - 后台进程不能因单个请求崩溃
@@ -157,23 +153,9 @@ class Daemon:
         self._log_to_job(op, args, error, duration_ms)
         return fail(error) if error else ok(result)
 
-    def _fingerprint(self) -> str | None:
-        try:
-            return json.dumps(jsonable({"surfaces": self.backend.surfaces(), "system": self.backend.system_info()}), sort_keys=True, default=str)
-        except Exception:  # noqa: BLE001 - 没有可读的系统时无从比较
-            return None
-
-    def mark_window_baseline(self) -> None:
-        """记下 saos 一次请求结束时窗口里的镜头内容。之后 NeedsSave 置位但内容没变，就是 saos 自己的动作
-        （打开分析窗口、Zernike 拟合等实测都会置位），不是用户的修改。"""
-        self._window_baseline = self._fingerprint()
-
     def _window_edited(self) -> bool:
-        if self.window_unsaved:
-            return True
-        if not self.backend.has_unsaved_changes():
-            return False
-        return self._window_baseline is None or self._fingerprint() != self._window_baseline
+        # 部分面参数无法完整读取；宁可让只读分析的副作用要求保存，也不把用户修改误判为安全。
+        return self.window_unsaved or self.backend.has_unsaved_changes()
 
     def _refresh_windows(self) -> None:
         try:
@@ -236,16 +218,26 @@ class Daemon:
         return self.loaded
 
     def _check_not_dirty(self, discard: bool, action: str) -> None:
-        if discard:
-            self.window_unsaved = False
-        elif self._window_edited():
-            raise SaosError(ErrorCode.UNSAVED_CHANGES, f"the OpticStudio window has unsaved edits; save or capture a copy before {action}, or pass discard")
         if self.loaded is not None and self.loaded.dirty and not discard:
             raise SaosError(
                 ErrorCode.UNSAVED_CHANGES,
                 f"the lens of job {self.loaded.job.id} has unsaved changes; save before {action}, or pass discard",
                 self.loaded.describe(),
             )
+
+    def _before_replace(self, job: jobs.Job, discard: bool, action: str) -> str | None:
+        """换掉窗口内容之前：agent 自己的未保存修改要先保存；窗口的未保存标志无法区分用户修改和分析窗口的副作用，
+        一律先把窗口内容存成任务内的副本再继续，返回副本路径。"""
+        self._check_not_dirty(discard, action)
+        if discard or not self._window_edited():
+            self.window_unsaved = False
+            return None
+        folder = job.lenses_dir / "captures"
+        folder.mkdir(parents=True, exist_ok=True)
+        target = folder / f"{jobs.next_archive_number(folder):03d}-unsaved{jobs.LENS_SUFFIX}"
+        self.backend.save_as(target)
+        self.window_unsaved = False
+        return job.relative_lens(target)
 
     # ---- 操作 ----
 
@@ -289,23 +281,23 @@ class Daemon:
     def op_load(self, args: dict[str, Any]) -> dict[str, Any]:
         job = self._job(args)
         path = job.resolve_lens(_arg(args, "file", str), must_exist=True)
-        self._check_not_dirty(bool(args.get("discard", False)), "loading another lens")
+        captured = self._before_replace(job, bool(args.get("discard", False)), "loading another lens")
         self.loaded = None
         self.backend.load(path)
         self.loaded = Loaded(job, path)
         rel = job.relative_lens(path)
         job.update_state(status="active", current_lens=rel)
-        return {"job": job.id, "file": rel, "num_surfaces": len(self.backend.surfaces())}
+        return {"job": job.id, "file": rel, "num_surfaces": len(self.backend.surfaces()), "captured": captured}
 
     def op_unload(self, args: dict[str, Any]) -> dict[str, Any]:
         job = self._job(args)
         if self.loaded is None:
             return {"job": job.id, "unloaded": None}
         loaded = self._require_loaded(job)
-        self._check_not_dirty(bool(args.get("discard", False)), "unloading")
+        captured = self._before_replace(job, bool(args.get("discard", False)), "unloading")
         self.backend.new_system()
         self.loaded = None
-        return {"job": job.id, "unloaded": loaded.describe()}
+        return {"job": job.id, "unloaded": loaded.describe(), "captured": captured}
 
     def op_info(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))
@@ -340,6 +332,7 @@ class Daemon:
         self.backend.save_as(target)
         loaded.path = target
         loaded.dirty = False
+        self.window_unsaved = False
         rel = job.relative_lens(target)
         job.update_state(current_lens=rel, last_saved=rel)
         result: dict[str, Any] = {"job": job.id, "file": rel, "verified": False}
@@ -358,7 +351,7 @@ class Daemon:
         target = job.resolve_lens(_arg(args, "file", str), must_exist=False)
         if target.exists() and not args.get("overwrite", False):
             raise SaosError(ErrorCode.FILE_EXISTS, f"job {job.id} already has {job.relative_lens(target)}; pass overwrite to replace it")
-        self._check_not_dirty(bool(args.get("discard", False)), "building a new lens")
+        captured = self._before_replace(job, bool(args.get("discard", False)), "building a new lens")
         self.loaded = None
         self.backend.build(presc)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -366,7 +359,7 @@ class Daemon:
         self.loaded = Loaded(job, target)
         rel = job.relative_lens(target)
         job.update_state(status="active", current_lens=rel, last_saved=rel)
-        return {"job": job.id, "file": rel, "num_surfaces": len(self.backend.surfaces())}
+        return {"job": job.id, "file": rel, "num_surfaces": len(self.backend.surfaces()), "captured": captured}
 
     def op_capture(self, args: dict[str, Any]) -> dict[str, Any]:
         job = self._job(args)
@@ -393,8 +386,7 @@ class Daemon:
         name = _arg(args, "type", str)
         folder = job.root / "analyses"
         folder.mkdir(exist_ok=True)
-        numbers = [int(p.name[:3]) for p in folder.glob("[0-9][0-9][0-9]-*.json")]
-        stem = f"{max(numbers, default=0) + 1:03d}-{name}"
+        stem = f"{jobs.next_archive_number(folder):03d}-{name}"
         data = self.backend.analysis(name, _arg(args, "settings", dict, default={}), folder / f"{stem}.txt", bool(args.get("keep_open")))
         record = {"type": name, "lens": loaded.describe(), "time": jobs.now_iso(), **data}
         write_json(folder / f"{stem}.json", record)
@@ -418,11 +410,10 @@ class Daemon:
             self._require_loaded(job)
         folder = job.root / "screens"
         folder.mkdir(exist_ok=True)
-        numbers = [int(p.name[:3]) for p in folder.glob("[0-9][0-9][0-9]-*.png")]
         label = _arg(args, "label", str, default="window")
         if not scripting.NAME_RE.match(label):
             raise SaosError(ErrorCode.BAD_ARGS, "label: letters, digits, - and _, 1–48 chars")
-        prefix = f"{max(numbers, default=0) + 1:03d}-{label}"
+        prefix = f"{jobs.next_archive_number(folder):03d}-{label}"
         files = self.backend.screenshots(folder, prefix)
         return {"files": [f"screens/{name}" for name in files]}
 
@@ -549,7 +540,6 @@ def serve(mode: str, token: str = "") -> int:
             zos_info["windows"] = backend.show_windows()
         except Exception as exc:  # noqa: BLE001 - 窗口打不开不阻止连接，agent 可以再用 lens view
             log.warning(_t("打开显性调试窗口失败：%s", "opening the explicit debugging windows failed: %s"), exc)
-        daemon.mark_window_baseline()
     write_json(
         config.daemon_state_file(),
         {

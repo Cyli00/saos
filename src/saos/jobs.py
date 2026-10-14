@@ -32,6 +32,11 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
+def next_archive_number(folder: Path) -> int:
+    numbers = [int(p.name.split("-", 1)[0]) for p in folder.iterdir() if p.name.split("-", 1)[0].isdigit()]
+    return max(numbers, default=0) + 1
+
+
 @dataclass(frozen=True)
 class Job:
     id: str

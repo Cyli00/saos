@@ -31,7 +31,7 @@ def decide(history: list[float], n: int = STAGNATION_ROUNDS, rel: float = STAGNA
 
     n、rel、cap 只在离线回放比较停机参数时改，实际任务用模块常量。"""
     if not history:
-        raise ValueError("至少需要第 0 轮")
+        raise ValueError("at least round 0 is needed")
     g_best = history[0]
     flat = 0
     for g in history[1:]:
@@ -63,15 +63,15 @@ def check_frozen(job, spec_name: str, config: dict[str, Any], digest: str) -> No
     """之后各轮：规格路径和补全后的验收配置都必须与第 0 轮一致。"""
     frozen = job.read_state().get("frozen")
     if not frozen:
-        raise SaosError(ErrorCode.SPEC_CHANGED, "任务已有调整轮次，但没有冻结的验收配置；请新建任务")
+        raise SaosError(ErrorCode.SPEC_CHANGED, "the job has rounds but no frozen acceptance config; create a new job")
     if spec_name != frozen["spec"]:
-        raise SaosError(ErrorCode.SPEC_CHANGED, f"光学规格已冻结为 {frozen['spec']}，不能更换为 {spec_name}", {"frozen": frozen})
+        raise SaosError(ErrorCode.SPEC_CHANGED, f"the optical spec is frozen as {frozen['spec']} and cannot change to {spec_name}", {"frozen": frozen})
     if digest != frozen["sha256"]:
         old = json.loads((job.root / frozen["config"]).read_text(encoding="utf-8"))
         changed = sorted(k for k in set(old) | set(config) if old.get(k) != config.get(k))
         raise SaosError(
             ErrorCode.SPEC_CHANGED,
-            "补全后的验收配置与第 0 轮冻结的不一致，规格差距不再可比；请新建任务（或派生任务）",
+            "the completed acceptance config differs from the one frozen at round 0, so shortfalls are no longer comparable; create a new (or derived) job",
             {"changed_keys": changed, "frozen_sha256": frozen["sha256"], "current_sha256": digest},
         )
 

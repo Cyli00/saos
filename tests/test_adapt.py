@@ -131,7 +131,7 @@ def test_printed_glass_name_is_used_when_consistent():
     out = adapt.from_extraction(ex2, catalogs=CATALOGS, focal_length_mm=10, field_number=27)
     by = {(g["n"], g["printed"]): g for g in out["report"]["glasses"]}
     assert by[(1.71736, "SF1")]["how"] == "printed name"
-    assert by[(1.5927, "N-BK7")]["how"].startswith("nd/νd")
+    assert by[(1.5927, "N-BK7")]["how"].startswith("nearest in nd/νd")
 
 
 def test_aspheric_surfaces_are_rejected():

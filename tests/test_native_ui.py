@@ -39,3 +39,20 @@ def test_window_selection_requires_unambiguous_target():
         choose_window(windows, 3)
     assert choose_window(windows, 2) == windows[1]
     assert choose_window(windows[:1]) == windows[0]
+
+
+def test_gdi_screenshot_png_is_opaque():
+    import struct
+    import zlib
+
+    from saos.native_ui import encode_png
+
+    png = encode_png(2, 1, bytes([30, 20, 10, 0, 60, 50, 40, 123]))
+    offset = 8
+    compressed = b""
+    while offset < len(png):
+        size = struct.unpack(">I", png[offset:offset + 4])[0]
+        if png[offset + 4:offset + 8] == b"IDAT":
+            compressed += png[offset + 8:offset + 8 + size]
+        offset += size + 12
+    assert zlib.decompress(compressed) == bytes([0, 10, 20, 30, 255, 40, 50, 60, 255])

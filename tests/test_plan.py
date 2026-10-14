@@ -89,7 +89,7 @@ def test_invalid_numeric_and_boolean_input_is_not_silently_accepted(path, value)
 def test_unknown_or_unattributed_fields_are_rejected():
     data = draft()
     data["spec"]["numerical_aperture"] = 0.5
-    with pytest.raises(SaosError, match="不支持"):
+    with pytest.raises(SaosError, match="unsupported"):
         interview.check(data)
     data = draft()
     del data["provenance"]["magnification"]
@@ -128,20 +128,20 @@ def create_plan(saos_home, example_library, tmp_path, data=None):
 def test_plan_confirm_handoff_and_immutable_approved_revision(saos_home, example_library, tmp_path):
     job, result = create_plan(saos_home, example_library, tmp_path)
     assert not job.read_state().get("spec")
-    with pytest.raises(SaosError, match="尚未"):
+    with pytest.raises(SaosError, match="not confirmed"):
         plan.handoff(job.id)
     confirmed = plan.confirm(job.id, result["revision"], "我确认这个版本")
     assert confirmed["state"] == "confirmed"
     handoff = plan.handoff(job.id)
     assert handoff["config_sha256"] == acceptance.config_hash(acceptance.acceptance_config(parse_spec(plan.inspect(job.id)["payload"]["review"]["spec"])))
     assert plan.confirm(job.id, result["revision"], "确认")["already_confirmed"]
-    with pytest.raises(SaosError, match="已确认"):
+    with pytest.raises(SaosError, match="already confirmed"):
         plan.create(job.id, FIXTURE, "TEST-e1", "理由")
     spec_path = job.root / confirmed["spec"]
     spec_data = json.loads(spec_path.read_text(encoding="utf-8"))
     spec_data["na"] = 0.3
     spec_path.write_text(json.dumps(spec_data), encoding="utf-8")
-    with pytest.raises(SaosError, match="偏离"):
+    with pytest.raises(SaosError, match="drifted"):
         plan.handoff(job.id)
 
 
@@ -149,19 +149,25 @@ def test_plan_html_escapes_input_and_discloses_glass_mismatch(saos_home, example
     data = draft()
     data["request"] = '<img src=x onerror="alert(1)"> & 用户原话'
     job, result = create_plan(saos_home, example_library, tmp_path, data)
-    page = Path(result["page"]).read_text(encoding="utf-8")
-    assert '<img src=x' not in page and '&lt;img src=x' in page
-    assert 'href="javascript:' not in page
-    assert "OLD" in page and "不会自动放宽玻璃约束" in page
-    assert 'aria-labelledby="section-title section-desc"' in page
+    pages = {lang: Path(path).read_text(encoding="utf-8") for lang, path in result["pages"].items()}
+    assert result["page"] in result["pages"].values()
+    for page in pages.values():
+        assert '<img src=x' not in page and '&lt;img src=x' in page
+        assert 'href="javascript:' not in page
+        assert 'aria-labelledby="section-title section-desc"' in page
+    assert "OLD" in pages["zh"] and "不会自动放宽玻璃约束" in pages["zh"] and 'href="index.en.html"' in pages["zh"]
+    assert "does not relax the glass constraints" in pages["en"] and 'href="index.zh.html"' in pages["en"]
+    assert '<html lang="en">' in pages["en"] and "最小工作距离" not in pages["en"] and "Minimum working distance" in pages["en"]
+    # 用户原话和库中资料保持原文，其余页面文字都是英文
+    assert "按 NA 与倍率选取" in pages["en"] and "测试专利" in pages["en"]
 
 
-@pytest.mark.parametrize("file", ["index.html", "spec.json", "plan.json"])
+@pytest.mark.parametrize("file", ["index.zh.html", "index.en.html", "spec.json", "plan.json"])
 def test_changed_artifacts_cannot_be_confirmed(saos_home, example_library, tmp_path, file):
     job, result = create_plan(saos_home, example_library, tmp_path)
     p = Path(result["page"]).with_name(file)
     p.write_text(p.read_text(encoding="utf-8") + " ", encoding="utf-8")
-    with pytest.raises(SaosError, match="变化"):
+    with pytest.raises(SaosError, match="changed"):
         plan.confirm(job.id, result["revision"], "确认")
 
 
@@ -169,16 +175,16 @@ def test_new_version_supersedes_old_and_missing_structure_blocks_confirmation(sa
     job = jobs.create_job("versions")
     first = plan.create(job.id, FIXTURE, "TEST-e1", "理由一")
     second = plan.create(job.id, FIXTURE, None)
-    with pytest.raises(SaosError, match="最新版本"):
+    with pytest.raises(SaosError, match="latest revision"):
         plan.confirm(job.id, first["revision"], "确认")
-    with pytest.raises(SaosError, match="尚未选定"):
+    with pytest.raises(SaosError, match="no admitted starting design"):
         plan.confirm(job.id, second["revision"], "确认")
 
 
 def test_evaluator_change_requires_new_review(saos_home, example_library, tmp_path, monkeypatch):
     job, result = create_plan(saos_home, example_library, tmp_path)
     monkeypatch.setattr(acceptance, "ZERN_MAX_TERM", acceptance.ZERN_MAX_TERM + 1)
-    with pytest.raises(SaosError, match="评估器"):
+    with pytest.raises(SaosError, match="evaluator"):
         plan.confirm(job.id, result["revision"], "确认")
 
 

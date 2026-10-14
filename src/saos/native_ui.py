@@ -180,6 +180,8 @@ def encode_png(width: int, height: int, bgra: bytes) -> bytes:
 
     rgba = bytearray(bgra)
     rgba[0::4], rgba[2::4] = bgra[2::4], bgra[0::4]
+    # BI_RGB 的高字节不是 alpha，窗口截图统一为不透明。
+    rgba[3::4] = b"\xff" * (width * height)
     stride = width * 4
     raw = b"".join(b"\x00" + bytes(rgba[y * stride : (y + 1) * stride]) for y in range(height))
 

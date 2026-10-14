@@ -43,6 +43,8 @@ def record_round(ctx, tier: str | None = None, note: str = "") -> dict[str, Any]
     h = load_harness(ctx)
     confirmation = _confirmation(h)
     sha = harness.digest(h)
+    scripts = harness.prepare_scripts(ctx.job.root, h)
+    method_sha = harness.method_digest(scripts)
     path = ctx.path(ledger.LEDGER_FILE)
     history = ledger.load(path)
     number = len(history)
@@ -54,7 +56,7 @@ def record_round(ctx, tier: str | None = None, note: str = "") -> dict[str, Any]
         last = history[-1]
         if sha != last.get("harness_sha") and confirmation == last.get("confirmation"):
             raise SaosError(ErrorCode.SPEC_CHANGED, "the harness changed without a new user confirmation; the shortfall would no longer be comparable")
-        if sha == last.get("harness_sha"):
+        if (sha, method_sha) == ledger.version(last):
             status = ledger.decide(history, h["stop"])["status"]
             if status != "continue":
                 raise SaosError(ErrorCode.BAD_ARGS, f"rounds already stopped ({status}); change the harness with the user to continue", {"status": status})
@@ -63,7 +65,7 @@ def record_round(ctx, tier: str | None = None, note: str = "") -> dict[str, Any]
     except Exception:  # noqa: BLE001 - 没有评价函数或后端不支持时只是不记录
         merit = None
     rel = ctx.save_as(f"rounds/r{number:03d}.zmx", overwrite=True)
-    evaluation = harness.evaluate(ctx, h)
+    evaluation = harness.evaluate(ctx, h, scripts)
     record = {
         "round": number,
         "tier": tier,
@@ -75,12 +77,13 @@ def record_round(ctx, tier: str | None = None, note: str = "") -> dict[str, Any]
         "failing": {i["id"]: i["shortfall"] for i in evaluation["items"] if i.get("shortfall", 0) > 0},
         "merit": merit,
         "harness_sha": sha,
+        "method_sha": method_sha,
         "confirmation": confirmation,
         "time": jobs.now_iso(),
     }
-    ledger.append(path, record)
     # 每轮的完整判定（含取值依据）另存，交付报告据此逐项列出
     write_json(ctx.path(f"rounds/r{number:03d}.json"), {"round": number, **evaluation})
+    ledger.append(path, record)
     decision = ledger.decide(history + [record], h["stop"])
     ctx.job.update_state(round=number, round_status=decision["status"])
     return {"record": record, "decision": decision, "evaluation": evaluation}

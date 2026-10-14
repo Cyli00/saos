@@ -57,14 +57,22 @@ def significant(best: float, g: float, rel: float) -> bool:
     return best > 0 and (best - g) / best >= rel
 
 
+def version(record: dict[str, Any]) -> tuple[Any, Any]:
+    return record.get("harness_sha"), record.get("method_sha")
+
+
+def current_window(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    start = max((k for k, r in enumerate(rounds) if k == 0 or version(r) != version(rounds[k - 1])), default=0)
+    return rounds[start:]
+
+
 def decide(rounds: list[dict[str, Any]], stop: dict[str, Any]) -> dict[str, Any]:
     """rounds 为 ledger 中的全部轮次（含第 0 轮）。返回状态、理由和建议的下一层级。"""
     if not rounds:
         raise ValueError("ledger has no rounds")
     rel, cap, tiers = float(stop["rel"]), int(stop["max_rounds"]), [t for t in TIERS if t in stop["tiers"]]
     # 需求框定最后一次改动之后的轮次才可比
-    start = max((k for k, r in enumerate(rounds) if k == 0 or r.get("harness_sha") != rounds[k - 1].get("harness_sha")), default=0)
-    window = rounds[start:]
+    window = current_window(rounds)
     best, last_gain = window[0]["shortfall"], 0
     for k, r in enumerate(window[1:], start=1):
         if significant(best, r["shortfall"], rel):

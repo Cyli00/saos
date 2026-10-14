@@ -122,7 +122,9 @@ def test_explicit_debugging_tools(ui_pid, tmp_path):
         # 有未保存修改时不能换镜头
         assert saos("lens", "load", "--job", job, "start.zmx", env=env)["error"]["code"] == ErrorCode.UNSAVED_CHANGES
         ok(saos("lens", "save", "--job", job, "--as", "r001.zmx", env=env))
-        ok(saos("lens", "load", "--job", job, "start.zmx", env=env))
+        # 分析窗口会让 NeedsSave 置位；换镜头前窗口内容先存成副本，不阻断
+        loaded = ok(saos("lens", "load", "--job", job, "start.zmx", env=env))
+        assert loaded["captured"] is None or (tmp_path / "home" / "jobs" / job / "lenses" / loaded["captured"]).is_file()
         ok(saos("lens", "save", "--job", job, "--no-verify", env=env))
     finally:
         ok(saos("daemon", "stop", "--discard", env=env))

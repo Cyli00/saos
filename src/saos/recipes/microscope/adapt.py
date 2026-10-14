@@ -35,7 +35,7 @@ def _num(value: Any) -> float:
 
 
 def _bad(message: str) -> SaosError:
-    return SaosError(ErrorCode.BAD_ARGS, f"适配失败：{message}")
+    return SaosError(ErrorCode.BAD_ARGS, f"adapt failed: {message}")
 
 
 def upgrade(extract: dict[str, Any], embodiment: str | None = None) -> dict[str, Any]:
@@ -45,7 +45,7 @@ def upgrade(extract: dict[str, Any], embodiment: str | None = None) -> dict[str,
     key = embodiment or "embodiment_1"
     emb = extract.get(key)
     if not isinstance(emb, dict):
-        raise _bad(f"提取结果中没有 {key}")
+        raise _bad(f"extraction has no {key}")
     header = dict(emb["header"])
     beta = header.get("beta")
     if isinstance(beta, str):
@@ -70,11 +70,11 @@ def oriented_rows(ex: dict[str, Any]) -> list[dict[str, Any]]:
     rows = [dict(r) for r in ex["surfaces"]]
     for r in rows:
         if r.get("aspheric"):
-            raise _bad(f"面 {r.get('i')} 是非球面，第一版只收全球面结构")
+            raise _bad(f"surface {r.get('i')} is aspheric; only all-spherical designs are supported")
     if ex.get("order", "object_to_image") == "object_to_image":
         return rows
     if ex["order"] != "image_to_object":
-        raise _bad(f"order 只能是 object_to_image / image_to_object，收到 {ex['order']}")
+        raise _bad(f"order must be object_to_image or image_to_object, got {ex['order']}")
     flipped = []
     n = len(rows)
     for k in range(n):
@@ -153,7 +153,7 @@ def match_glasses(rows: list[dict[str, Any]], catalogs: list[str]) -> dict[tuple
                 "material": {"model": {"nd": key[0], "vd": key[1], "dpgf": 0.0}},
                 "catalog": None,
                 "status": "Model",
-                "how": f"原文折射率只印 {column_decimals(rows)['n']} 位小数，用模型玻璃",
+                "how": f"source prints only {column_decimals(rows)['n']} decimals of the index; using a model glass",
                 "candidates": candidates,
             }
             continue
@@ -162,9 +162,9 @@ def match_glasses(rows: list[dict[str, Any]], catalogs: list[str]) -> dict[tuple
             continue
         distance, best = hits[0]
         if distance <= MODEL_GLASS_DISTANCE:
-            result[key] = {"material": best.name, "catalog": best.catalog, "status": best.status, "how": f"nd/νd 最近（距离 {distance:.2f}）", "candidates": candidates}
+            result[key] = {"material": best.name, "catalog": best.catalog, "status": best.status, "how": f"nearest in nd/νd (distance {distance:.2f})", "candidates": candidates}
         else:
-            result[key] = {"material": {"model": {"nd": key[0], "vd": key[1], "dpgf": 0.0}}, "catalog": None, "status": "Model", "how": "模型玻璃", "candidates": candidates}
+            result[key] = {"material": {"model": {"nd": key[0], "vd": key[1], "dpgf": 0.0}}, "catalog": None, "status": "Model", "how": "model glass", "candidates": candidates}
     return result
 
 
@@ -179,7 +179,7 @@ def native_focal_length(ex: dict[str, Any]) -> float:
         return float(header["f"])
     beta = header.get("beta")
     if beta is None:
-        raise _bad("归一化数据需要表头的 β 才能确定焦距")
+        raise _bad("normalized data needs β in the header to fix the focal length")
     tube = float(header.get("tube_lens_f") or REFERENCE_TUBE_MM)
     # 专利的 β 对应它自己的筒镜焦距；换到参考筒镜时保持 f 不变，即 f = tube / |β|
     return tube / abs(float(beta))
@@ -196,8 +196,8 @@ def resolve_cover_glass(cover: dict[str, Any] | None, *, scale: float) -> tuple[
             continue
         # 后续处方、库指标和舍入包络都统一缩放，毫米制默认厚度需先换回原文单位。
         resolved[key] = default / scale if key == "thickness" else default
-        label = {"thickness": "厚度 0.17 mm", "n": "nd 1.523", "nu": "νd 55"}[key]
-        assumptions.append(f"盖玻片原文缺少 {key}，按 {label} 假设")
+        label = {"thickness": "thickness 0.17 mm", "n": "nd 1.523", "nu": "νd 55"}[key]
+        assumptions.append(f"cover glass {key} missing in the source; assumed {label}")
     return resolved, assumptions
 
 
@@ -219,7 +219,7 @@ def from_extraction(
     na = float(header["NA"])
     wave = ex.get("wavelength") or "d"
     if wave not in WAVES:
-        raise _bad(f"wavelength 只能是 d / e，收到 {wave}")
+        raise _bad(f"wavelength must be d or e, got {wave}")
 
     printed_stop = [k for k, r in enumerate(rows) if r.get("stop")]
     stop = stop or ("printed" if printed_stop else "rear_focal")
@@ -249,7 +249,7 @@ def from_extraction(
         # 物镜后焦面上的虚拟光阑：物方远心。参考筒镜放在同一平面，位置不影响理想透镜成像
         surfaces.append({"radius": math.inf, "thickness": 0.0, "comment": layout.TAG_STOP, "stop": True})
     elif not any(s["stop"] for s in surfaces):
-        raise _bad(f"stop 必须是 rear_focal、printed 或 r<面号>，收到 {stop}")
+        raise _bad(f"stop must be rear_focal, printed or r<surface>, got {stop}")
     surfaces.append({"type": "paraxial", "focal_length": tube_lens_mm, "opd_mode": 1, "thickness": tube_lens_mm, "comment": layout.TAG_TUBE})
 
     cover, cover_assumptions = resolve_cover_glass(ex.get("cover_glass"), scale=scale)
@@ -304,10 +304,10 @@ def from_extraction(
             for (n, nu, name), g in glasses.items()
         ],
         "assumptions": [
-            f"专利折射率按 {wave} 线处理" + ("（专利未注明，按 d 线假设）" if not ex.get("wavelength") else ""),
-            "光阑放在物镜后焦面（物方远心）" if stop == "rear_focal" else f"光阑按专利（{stop}）",
-            f"焦距 {f_target:g} mm（缩放 {scale:g}），参考筒镜 {tube_lens_mm:g} mm",
-            f"物镜视场数 {fn:g}" + ("" if (field_number or header.get("field_number") or header.get("image_height")) else "（专利未给，按默认 22 假设）"),
+            f"patent indices taken at the {wave} line" + (" (not stated in the patent; d line assumed)" if not ex.get("wavelength") else ""),
+            "stop at the rear focal plane (object-side telecentric)" if stop == "rear_focal" else f"stop as in the patent ({stop})",
+            f"focal length {f_target:g} mm (scale {scale:g}), reference tube lens {tube_lens_mm:g} mm",
+            f"objective field number {fn:g}" + ("" if (field_number or header.get("field_number") or header.get("image_height")) else " (not given in the patent; default 22 assumed)"),
         ]
         + cover_assumptions,
     }

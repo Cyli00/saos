@@ -15,7 +15,7 @@ uv run saos microscope plan show --job <任务编号>
 
 `microscope interview check` 的 `ready: false` 表示需要继续访谈，`questions` 给出未解决项。命令成功只代表检查完成，不代表访谈完成。格式错误、未知规格字段、缺少来源、非有限数值等返回 `BAD_ARGS`。
 
-`microscope plan create` 只接受没有优化记录、尚未确认计划的任务。产出位于任务的 `plan/<完整版本 SHA-256>/`，包含 `index.html`、`plan.json`、`spec.json` 和文件校验值。新版本保留旧版本并更新当前版本指针。未选定条目时省略 `--entry`，页面显示“等待初始结构”，不能确认进入优化；可列出的候选只是查询结果，不代表一定适合。
+`microscope plan create` 只接受没有优化记录、尚未确认计划的任务。产出位于任务的 `plan/<完整版本 SHA-256>/`，包含中英两版页面 `index.zh.html`、`index.en.html`（互相链接，内容相同），以及 `plan.json`、`spec.json` 和文件校验值。命令返回的 `page` 按 `SAOS_LANG`／系统界面语言选一版，`pages` 列出两版。用户原话和库中资料保持原文，不翻译。新版本保留旧版本并更新当前版本指针。未选定条目时省略 `--entry`，页面显示“等待初始结构”，不能确认进入优化；可列出的候选只是查询结果，不代表一定适合。
 
 用户在对话里明确确认当前页面后，agent 记录原话：
 

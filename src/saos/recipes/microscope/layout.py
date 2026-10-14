@@ -27,14 +27,14 @@ def objective_block(rows: list[dict[str, Any]]) -> tuple[int, int]:
     """在标准设计布局的面列表中找出物镜部分，返回 [first, last]（面序号，含两端）。"""
     comments = [str(r.get("comment", "")) for r in rows]
     if not comments or comments[0] != TAG_OBJECT:
-        raise SaosError(ErrorCode.BAD_ARGS, "不是 saos 标准设计布局：物面注释不是 saos:object")
+        raise SaosError(ErrorCode.BAD_ARGS, "not a saos standard layout: the object surface comment is not saos:object")
     try:
         tube = comments.index(TAG_TUBE)
     except ValueError as exc:
-        raise SaosError(ErrorCode.BAD_ARGS, "不是 saos 标准设计布局：找不到 saos:tube 参考筒镜") from exc
+        raise SaosError(ErrorCode.BAD_ARGS, "not a saos standard layout: no saos:tube reference tube lens") from exc
     first = 2 if len(comments) > 1 and comments[1] == TAG_COVER_TOP else 1
     if tube <= first:
-        raise SaosError(ErrorCode.BAD_ARGS, "标准设计布局中物镜部分为空")
+        raise SaosError(ErrorCode.BAD_ARGS, "the objective part of the standard layout is empty")
     return first, tube - 1
 
 

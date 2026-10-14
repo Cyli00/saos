@@ -356,7 +356,7 @@ def test_focus_invalid_when_start_and_paraxial_focus_both_fail():
     backend = FocusBackend(t=10.19, focus=12.24, paraxial=12.02, fail=lambda t: t < 12.5)
     with pytest.raises(InvalidEvaluation) as exc:
         focus_on_axis(backend, **FOCUS_ARGS)
-    assert exc.value.reason == "轴上光线追迹失败，起点和近轴焦点处都无法调焦"
+    assert exc.value.reason == "on-axis ray trace failed; cannot focus at the start or at the paraxial focus"
     assert backend.zernike_at == []
 
 
@@ -372,7 +372,7 @@ def test_paraxial_focus_requires_pary_near_zero(pary, t_start):
     backend.operand = lambda name, int1, int2, data: pary(backend.t)
     with pytest.raises(InvalidEvaluation) as exc:
         paraxial_focus(backend, gap=0, wave=2, t_start=t_start, tol_mm=4e-5, na_image=0.025, magnification=10)
-    assert exc.value.reason == "近轴焦点没有收敛"
+    assert exc.value.reason == "paraxial focus did not converge"
 
 
 def test_paraxial_focus_converges_with_small_residual():
@@ -398,7 +398,7 @@ def test_focus_invalid_when_target_lies_in_failure_region():
     backend = FocusBackend(t=13.35, focus=12.87, paraxial=15.37, fail=lambda t: t < 12.93)
     with pytest.raises(InvalidEvaluation) as exc:
         focus_on_axis(backend, **FOCUS_ARGS)
-    assert exc.value.reason == "调焦时轴上光线追迹失败，回退后仍无有效位置"
+    assert exc.value.reason == "on-axis ray trace failed while focusing; no valid position after backing off"
     assert exc.value.details["last_valid_thickness"] >= 12.93 > exc.value.details["nearest_failed_thickness"]
     assert not any(backend.fail(x) for x in backend.zernike_at)
     assert len(backend.zernike_at) <= 20
@@ -410,6 +410,6 @@ def test_evaluator_reports_focus_trace_and_has_no_precheck(monkeypatch):
     evaluator = Evaluator(backend, spec_of("plan_achromat"), [])
     monkeypatch.setattr(evaluator, "build_model", lambda design: setattr(evaluator, "first", 1) or setattr(evaluator, "last", 2) or setattr(evaluator, "gap", 0))
     out = evaluator.run([])
-    assert out["verdict"] == "invalid" and out["invalid"]["reason"] == "轴上光线追迹失败，起点和近轴焦点处都无法调焦"
+    assert out["verdict"] == "invalid" and out["invalid"]["reason"] == "on-axis ray trace failed; cannot focus at the start or at the paraxial focus"
     assert [e["kind"] for e in out["focus_trace"]] == ["start", "paraxial"] and backend.zernike_at == []
     assert "axis_precheck" not in out and "axis_precheck" not in acceptance_config(evaluator.spec)["evaluator"]

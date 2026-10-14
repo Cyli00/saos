@@ -20,7 +20,7 @@ Dry objectives, infinity corrected, all-spherical, NA ≤ 0.65, achromat or plan
 - "The whole field should be sharp" means plan achromat and a field range; measurement use needs a distortion limit.
 - Glass catalogs (default CDGM, status Standard/Preferred).
 
-`saos microscope interview check FILE` lists missing items; `saos microscope plan create/confirm/handoff` renders and binds an HTML review page if the user wants one.
+`saos microscope interview check FILE` lists missing items; `saos microscope plan create/confirm/handoff` renders and binds an HTML review page (Chinese and English versions; show the user the one in their language) if the user wants one.
 
 ## 3. Checks
 

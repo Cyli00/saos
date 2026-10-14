@@ -7,9 +7,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from saos import jobs
+from saos import i18n, jobs
 
 from saos.recipes.microscope import acceptance, interview, library
+from saos.recipes.microscope.plan_html import PAGES, render
 from saos import protocol
 from saos.protocol import ErrorCode, SaosError, read_json
 from saos.recipes.microscope.spec import Spec, parse_spec
@@ -26,9 +27,9 @@ def write_json(path: Path, data: Any) -> None:
 def _draft_job(job: jobs.Job) -> None:
     state = job.read_state()
     if state.get("frozen") or (job.root / "rounds.jsonl").exists() or (job.root / "bench.jsonl").exists():
-        raise SaosError(ErrorCode.BAD_ARGS, "已有优化或基准记录的任务不能用来创建／确认新的设计计划，请新建任务")
+        raise SaosError(ErrorCode.BAD_ARGS, "a job with optimisation or benchmark records cannot create or confirm a new design plan; create a new job")
     if state.get("plan", {}).get("approved"):
-        raise SaosError(ErrorCode.BAD_ARGS, "此任务的设计计划已确认，修改要求请新建任务")
+        raise SaosError(ErrorCode.BAD_ARGS, "this job's design plan is already confirmed; create a new job to change the requirements")
 
 
 def _query(spec: Spec, limit: int) -> list[dict[str, Any]]:
@@ -43,36 +44,35 @@ def candidates(result: dict[str, Any]) -> list[dict[str, Any]]:
 
 def starting_design(entry_id: str, result: dict[str, Any], rationale: str) -> dict[str, Any]:
     if not rationale.strip():
-        interview.bad("选择初始结构时必须写 --rationale，说明选择理由和需调整之处")
+        interview.bad("choosing a starting design needs --rationale: why this structure and what still needs changing")
     entry = library.load_entry(entry_id)
     if entry.get("status") != "admitted" or not entry.get("repro", {}).get("pass"):
-        interview.bad("初始结构必须已经收录并通过复现校验")
+        interview.bad("the starting design must be admitted and pass its reproduction check")
     spec = parse_spec(result["spec"])
     match = next(r for r in _query(spec, len(library.all_entries())) if r["id"] == entry_id)
-    notes = list(match["notes"])
+    # 调整项是结构化标记，计划页按语言显示
+    notes = list(match["flags"])
     if match["scaled"]["optical_length_mm"] > spec.item("optical_length").threshold:
-        notes.append("按焦距缩放的光学长度估计超过规格上限，需要优化；该估计尚未重新追迹。")
+        notes.append({"kind": "optical_length"})
     if match["scaled"]["clear_diameter_mm"] > spec.item("clear_diameter").threshold:
-        notes.append("按焦距缩放的通光直径估计超过规格上限，需要重新评估。")
+        notes.append({"kind": "clear_diameter"})
     if entry["metrics"].get("cover_glass") != spec.cover_glass:
-        notes.append("库中盖玻片条件与目标规格不同，需要重新适配并验收。")
+        notes.append({"kind": "cover_glass"})
     glass_changes = [g["material"] for g in entry["metrics"].get("glasses", [])
                      if g.get("catalog", "").upper() not in spec.glass_catalogs or g.get("status") not in spec.glass_allowed_status]
     if glass_changes:
-        notes.append("需处理不符合目标目录或状态的玻璃：" + "、".join(glass_changes) + "。选择此结构不会自动放宽玻璃约束。")
+        notes.append({"kind": "glass", "materials": glass_changes})
     return {"entry": entry, "query": match, "rationale": rationale, "adjustments": notes,
             "prescription": library.read_json(library.entry_dir(entry_id) / "prescription.json")}
 
 
 def create(job_id: str, draft_path: Path, entry_id: str | None, rationale: str = "") -> dict[str, Any]:
-    from saos.recipes.microscope.plan_html import render
-
     job = jobs.get_job(job_id)
     _draft_job(job)
     draft = interview.read_draft(draft_path)
     result = interview.check(draft)
     if not result["ready"]:
-        raise SaosError(ErrorCode.BAD_ARGS, "需求访谈尚未完成，请先补充待问问题", {"questions": result["questions"]})
+        raise SaosError(ErrorCode.BAD_ARGS, "the interview is incomplete; ask the open questions first", {"questions": result["questions"]})
     spec = parse_spec(result["spec"])
     config = acceptance.acceptance_config(spec)
     payload = {"schema": 1, "job": job.id, "created_at": jobs.now_iso(), "interview": draft, "review": result,
@@ -84,15 +84,20 @@ def create(job_id: str, draft_path: Path, entry_id: str | None, rationale: str =
     directory.mkdir(parents=True, exist_ok=True)
     write_json(directory / "plan.json", payload)
     write_json(directory / "spec.json", result["spec"])
-    html = render(payload, revision)
-    (directory / "index.html").write_text(html, encoding="utf-8")
-    artifacts = {name: hashlib.sha256((directory / name).read_bytes()).hexdigest() for name in ("plan.json", "spec.json", "index.html")}
+    for lang, name in PAGES.items():
+        (directory / name).write_text(render(payload, revision, lang), encoding="utf-8")
+    artifacts = {name: hashlib.sha256((directory / name).read_bytes()).hexdigest() for name in ("plan.json", "spec.json", *PAGES.values())}
     write_json(directory / "artifacts.json", artifacts)
     pointer = {"revision": revision, "approved": False, "state": payload["state"]}
     write_json(job.root / "plan" / "current.json", pointer)
     job.update_state(plan=pointer)
-    return {"job": job.id, "revision": revision, "state": payload["state"], "page": str(directory / "index.html"),
+    return {"job": job.id, "revision": revision, "state": payload["state"], **_pages(directory),
             "assumptions": sum(r["source"] == "assumption" for r in result["fields"])}
+
+
+def _pages(directory: Path) -> dict[str, Any]:
+    pages = {lang: str(directory / name) for lang, name in PAGES.items()}
+    return {"page": pages[i18n.resolve()], "pages": pages}
 
 
 def inspect(job_id: str, revision: str | None = None) -> dict[str, Any]:
@@ -100,36 +105,36 @@ def inspect(job_id: str, revision: str | None = None) -> dict[str, Any]:
     pointer = read_json(job.root / "plan" / "current.json")
     revision = revision or pointer["revision"]
     if not isinstance(revision, str) or len(revision) != 64 or any(c not in "0123456789abcdef" for c in revision):
-        interview.bad("设计计划版本必须为完整 SHA-256")
+        interview.bad("the plan revision must be a full SHA-256")
     if revision != pointer["revision"]:
-        raise SaosError(ErrorCode.SPEC_CHANGED, "这不是当前设计计划，请重新审阅最新版本")
+        raise SaosError(ErrorCode.SPEC_CHANGED, "this is not the current design plan; review the latest revision")
     directory = job.root / "plan" / revision
     payload = read_json(directory / "plan.json")
     if digest(payload) != revision or payload.get("job") != job.id:
-        raise SaosError(ErrorCode.SPEC_CHANGED, "设计计划内容已变化，请重新生成并审阅")
+        raise SaosError(ErrorCode.SPEC_CHANGED, "the design plan has changed; create and review it again")
     artifacts = read_json(directory / "artifacts.json")
-    for name in ("plan.json", "spec.json", "index.html"):
+    for name in ("plan.json", "spec.json", *PAGES.values()):
         if not (directory / name).is_file() or hashlib.sha256((directory / name).read_bytes()).hexdigest() != artifacts.get(name):
-            raise SaosError(ErrorCode.SPEC_CHANGED, f"设计计划文件 {name} 已变化，请重新生成并审阅")
+            raise SaosError(ErrorCode.SPEC_CHANGED, f"design plan file {name} has changed; create and review it again")
     if read_json(directory / "spec.json") != payload["review"]["spec"]:
-        raise SaosError(ErrorCode.SPEC_CHANGED, "计划展示的规格与待交接规格不一致")
+        raise SaosError(ErrorCode.SPEC_CHANGED, "the spec shown in the plan differs from the spec to hand off")
     live_config = acceptance.acceptance_config(parse_spec(payload["review"]["spec"]))
     if live_config != payload["acceptance_config"]:
-        raise SaosError(ErrorCode.SPEC_CHANGED, "当前评估器口径与计划不一致，请重新生成并审阅")
+        raise SaosError(ErrorCode.SPEC_CHANGED, "the current evaluator differs from the plan; create and review it again")
     return {"job": job.id, "revision": revision, "state": pointer["state"], "approved": pointer["approved"],
-            "page": str(directory / "index.html"), "payload": payload}
+            **_pages(directory), "payload": payload}
 
 
 def confirm(job_id: str, revision: str, evidence: str) -> dict[str, Any]:
     if not evidence.strip():
-        interview.bad("需要 --evidence 记录用户在对话中明确确认该版本的原话")
+        interview.bad("--evidence needs the user's own words confirming this revision")
     reviewed = inspect(job_id, revision)
     job = jobs.get_job(job_id)
     if reviewed["approved"]:
         return {"job": job_id, "revision": revision, "state": "confirmed", "already_confirmed": True}
     _draft_job(job)
     if reviewed["payload"]["starting_design"] is None:
-        interview.bad("尚未选定已收录的初始结构；先完成离线入库或选择已有结构，再生成计划")
+        interview.bad("no admitted starting design is chosen; admit one offline or choose an existing one, then create the plan again")
     payload = reviewed["payload"]
     config = payload["acceptance_config"]
     spec_path = f"spec/plan-{revision}.json"
@@ -139,18 +144,18 @@ def confirm(job_id: str, revision: str, evidence: str) -> dict[str, Any]:
     write_json(job.root / "plan" / revision / "approval.json", approval)
     write_json(job.root / "plan" / "current.json", approval)
     job.update_state(spec=spec_path, plan=approval)
-    return {"job": job.id, **approval, "next": "确认已记录；准备初始镜头后，按本规格进入第 0 轮验收。"}
+    return {"job": job.id, **approval, "next": "confirmation recorded; prepare the starting lens, then run round 0 acceptance against this spec"}
 
 
 def handoff(job_id: str) -> dict[str, Any]:
     """自动阶段读取确认记录时，再检查任务规格未被改动。"""
     reviewed = inspect(job_id)
     if not reviewed["approved"]:
-        interview.bad("设计计划尚未得到用户确认")
+        interview.bad("the design plan is not confirmed by the user")
     job = jobs.get_job(job_id)
     approval = read_json(job.root / "plan" / reviewed["revision"] / "approval.json")
     if job.read_state().get("spec") != approval["spec"] or read_json(job.root / approval["spec"]) != reviewed["payload"]["review"]["spec"]:
-        raise SaosError(ErrorCode.SPEC_CHANGED, "任务规格已偏离用户确认的设计计划")
+        raise SaosError(ErrorCode.SPEC_CHANGED, "the job spec has drifted from the design plan the user confirmed")
     return {"job": job_id, "revision": reviewed["revision"], "spec": approval["spec"],
             "config_sha256": approval["config_sha256"], "starting_design": reviewed["payload"]["starting_design"],
-            "note": "此处方是库中原结构快照，尚未按用户规格重新适配，不能把原库验收当作本任务验收。"}
+            "note": "this prescription is the library snapshot, not yet adapted to the user's spec; its library acceptance is not this job's acceptance"}

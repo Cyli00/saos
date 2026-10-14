@@ -91,3 +91,32 @@ def test_analysis_export_is_archived(daemon, loaded):
     assert again["file"] == "analyses/002-FakeCurve.json"
     assert daemon.handle({"op": "lens.analysis", "args": {"job": loaded.id, "type": "Nope"}})["error"]["code"] == ErrorCode.BAD_ARGS
     assert daemon.handle({"op": "lens.analysis", "args": {"job": loaded.id, "list": True}})["result"] == {"types": ["FakeCurve"]}
+
+
+def test_archives_keep_incrementing_past_three_digits(daemon, loaded, monkeypatch):
+    folder = loaded.root / "scripts"
+    folder.mkdir()
+    (folder / "999-probe.py").write_text("旧存档", encoding="utf-8")
+    first = run(daemon, loaded, "def run(ctx):\n    return 1000\n")["result"]
+    second = run(daemon, loaded, "def run(ctx):\n    return 1001\n")["result"]
+    assert first["script"] == "scripts/1000-probe.py" and second["script"] == "scripts/1001-probe.py"
+    assert json.loads((loaded.root / first["script"]).with_suffix(".json").read_text())["result"] == 1000
+    analyses = loaded.root / "analyses"
+    analyses.mkdir()
+    (analyses / "1000-FakeCurve.txt").write_text("保留失败请求的证据", encoding="utf-8")
+    result = daemon.handle({"op": "lens.analysis", "args": {"job": loaded.id, "type": "FakeCurve"}})["result"]
+    assert result["file"] == "analyses/1001-FakeCurve.json"
+    screens = loaded.root / "screens"
+    screens.mkdir()
+    (screens / "1000-window-1.png").write_bytes(b"old")
+
+    def screenshot(folder, prefix):
+        name = f"{prefix}-1.png"
+        (folder / name).write_bytes(b"new")
+        return [name]
+
+    monkeypatch.setattr(daemon.backend, "screenshots", screenshot)
+    for number in (1001, 1002):
+        result = daemon.handle({"op": "lens.screenshot", "args": {"job": loaded.id}})["result"]
+        assert result["files"] == [f"screens/{number}-window-1.png"]
+    assert (screens / "1000-window-1.png").read_bytes() == b"old"

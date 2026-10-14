@@ -87,6 +87,7 @@ class ScriptContext:
         target.parent.mkdir(parents=True, exist_ok=True)
         self.backend.save_as(target)
         self._daemon.loaded = Loaded(self.job, target)
+        self._daemon.window_unsaved = False
         rel = self.job.relative_lens(target)
         self.job.update_state(current_lens=rel, last_saved=rel)
         return rel
@@ -104,8 +105,7 @@ def next_copy(job: jobs.Job, name: str) -> Path:
         raise SaosError(ErrorCode.BAD_ARGS, "script name: letters, digits, - and _, 1–48 chars, starting with a letter or digit")
     folder = job.root / SCRIPTS_DIR
     folder.mkdir(exist_ok=True)
-    numbers = [int(p.name[:3]) for p in folder.glob("[0-9][0-9][0-9]-*.py")]
-    return folder / f"{max(numbers, default=0) + 1:03d}-{name}.py"
+    return folder / f"{jobs.next_archive_number(folder):03d}-{name}.py"
 
 
 def execute(daemon: Daemon, job: jobs.Job, name: str, source: str, args: dict[str, Any]) -> dict[str, Any]:

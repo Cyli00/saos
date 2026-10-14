@@ -58,7 +58,7 @@ confirmed: {quote: "Yes, go ahead."}
   - `operand`: `{type, int1, int2, data}`. Any Zemax optimisation operand, evaluated on the current lens.
   - `analysis`: `{type, settings, path}`. Runs an OpticStudio analysis (same export as `saos lens analysis`) and picks one number by `path`, for example `series[0].y.Tangential[20]` or `grids[0].stats.max`. Keys that contain dots are written as `['0.48']`. Run `saos lens analysis TYPE` first to see the structure.
   - `script`: a path inside the job. The script defines `run(ctx)` and returns one number; `ctx` is the same as for `saos exec`.
-- `goal`: `{max: v}`, `{min: v}`, both, or `{equals: v, tol: t}` with `t > 0`.
+- `goal`: `{max: v}`, `{min: v}`, both with `min <= max`, or `{equals: v, tol: t}` with `t > 0`. Values must be finite numbers; `equals` cannot be combined with bounds.
 - `scale`: normalises the gap of this goal. Default: `tol` for `equals`, otherwise `|bound|`. Required when the bound is 0.
 
 ## Shortfall
@@ -77,6 +77,10 @@ After every `saos round` the ledger decides, in this order:
 Tiers, low to high: `local` (local optimisation on the current variables), `variables` (more variables or a different merit construction), `materials` (glass changes), `global` (global search, Hammer), `structure` (add, split or remove elements, aspheres). When the harness content changes (anything except `confirmed` and `lang`), a new confirmation is required and progress is measured again from that round.
 
 ## Workflow
+
+Every check archives the harness, the check-script source, analysis exports and the result in a new `evaluations/NNN/`; `evidence_file` points to the result. Editing a check script starts a new comparison window without a new approval; changing what a goal means still needs an updated, confirmed harness. Only the script file itself is versioned, not modules it imports.
+
+Reports use only the rounds of the current harness and script version, with the goals recorded in each round; after a change, record a new round before reporting. A failed measurement is reported with its error, never as met.
 
 1. `saos check --job J` evaluates every check on the loaded lens. Use it while framing; it needs no confirmation.
 2. Show the user the harness in plain language and get an explicit approval; record it verbatim in `confirmed.quote`.

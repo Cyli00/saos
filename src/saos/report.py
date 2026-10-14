@@ -166,12 +166,14 @@ def gap_text(goal: dict[str, Any] | None, value: float | None, t: Tr) -> str:
 
 
 def evidence_text(item: dict[str, Any], t: Tr) -> str:
+    if item.get("error"):
+        return e(item["error"])
     ev = item.get("evidence") or {}
     if "operand" in ev:
         op = ev["operand"]
         return f"{t('ev.operand')} <code>{e(op.get('type'))}</code> int1={e(op.get('int1', 0))} int2={e(op.get('int2', 0))} data={e(op.get('data', []))}"
     if "analysis" in ev:
-        link = f'<a href="../{e(ev["text"])}">{e(ev["text"])}</a>'
+        link = f'<a href="../{e(ev["text"])}">{e(ev["text"])}</a>' if ev.get("text") else "—"
         return t("ev.analysis", name=e(ev["analysis"]), path=e(ev["path"]), link=link)
     if "script" in ev:
         return f'{t("ev.script")} <a href="../{e(ev["script"])}">{e(ev["script"])}</a>'
@@ -232,13 +234,20 @@ def build(job: jobs.Job) -> dict[str, Any]:
     rounds = ledger.load(job.root / ledger.LEDGER_FILE)
     if not rounds:
         raise SaosError(ErrorCode.BAD_ARGS, f"job {job.id} has no recorded rounds; run saos round first")
+    current = (harness.digest(h), harness.method_digest(harness.prepare_scripts(job.root, h)))
+    if ledger.version(rounds[-1]) != current:
+        raise SaosError(ErrorCode.SPEC_CHANGED, "no round matches the current harness and check scripts; record a new round before reporting")
+    rounds = ledger.current_window(rounds)
     decision = ledger.decide(rounds, h["stop"])
     final = rounds[-1]
     best = min(rounds, key=lambda r: (r["shortfall"], r["round"]))
     deliver = final if final.get("achieved") else best
     eval_file = job.root / "rounds" / f"r{deliver['round']:03d}.json"
-    items = json.loads(eval_file.read_text(encoding="utf-8"))["items"] if eval_file.is_file() else []
-    return {"harness": h, "rounds": rounds, "decision": decision, "deliver": deliver, "items": items}
+    if not eval_file.is_file():
+        raise SaosError(ErrorCode.FILE_NOT_FOUND, f"missing evaluation for round {deliver['round']}")
+    evaluation = json.loads(eval_file.read_text(encoding="utf-8"))
+    return {"harness": {**evaluation["harness"], "lang": h.get("lang")}, "rounds": rounds, "decision": decision,
+            "deliver": deliver, "items": evaluation["items"]}
 
 
 def header_row(spec: str) -> str:
@@ -249,10 +258,9 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
     t = Tr(lang)
     h, rounds, decision, deliver = data["harness"], data["rounds"], data["decision"], data["deliver"]
     status = decision["status"]
-    targets = {x["id"]: x for x in h["targets"]}
     rows = []
     for item in data["items"]:
-        goal = targets.get(item["id"], {}).get("goal")
+        goal = item.get("goal")
         preference = item["kind"] == "preference"
         mark = "—" if preference else (f'<span class="pass">{t("met")}</span>' if item.get("passed") else f'<span class="fail">{t("unmet")}</span>')
         gap = "—" if preference else gap_text(goal, item.get("value"), t)

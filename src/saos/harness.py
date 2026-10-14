@@ -32,8 +32,8 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
-from saos import i18n
-from saos.protocol import ErrorCode, SaosError
+from saos import i18n, jobs
+from saos.protocol import ErrorCode, SaosError, write_json
 
 if TYPE_CHECKING:
     from saos.scripting import ScriptContext
@@ -64,6 +64,28 @@ def digest(harness: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
 
 
+def prepare_scripts(root: Path, h: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    scripts = {}
+    for target in h["targets"]:
+        if "script" not in target["check"]:
+            continue
+        rel = str(target["check"]["script"])
+        path = (root / rel).resolve()
+        if root.resolve() not in path.parents:
+            raise SaosError(ErrorCode.PATH_OUTSIDE_JOB, f"path escapes the job directory: {rel}")
+        try:
+            source = path.read_text(encoding="utf-8")
+            scripts[target["id"]] = {"source": source, "sha256": hashlib.sha256(source.encode("utf-8")).hexdigest()}
+        except (OSError, UnicodeError) as exc:
+            scripts[target["id"]] = {"source": None, "sha256": None, "error": f"{type(exc).__name__}: {exc}"}
+    return scripts
+
+
+def method_digest(scripts: dict[str, dict[str, Any]]) -> str:
+    versions = {key: value["sha256"] for key, value in scripts.items()}
+    return hashlib.sha256(json.dumps(versions, sort_keys=True).encode()).hexdigest()
+
+
 def validate(data: Any) -> dict[str, Any]:
     if not isinstance(data, dict) or data.get("schema") != 1:
         raise _bad("must be a mapping with schema: 1")
@@ -88,6 +110,13 @@ def validate(data: Any) -> dict[str, Any]:
         if t["kind"] != "preference":
             if not isinstance(goal, dict) or not ({"max", "min", "equals"} & set(goal)):
                 raise _bad(f"{t['id']}: goal needs max, min or equals (with tol)")
+            for key in ("min", "max", "equals"):
+                if key in goal and not _finite_number(goal[key]):
+                    raise _bad(f"{t['id']}: goal.{key} must be a finite number")
+            if "equals" in goal and ("min" in goal or "max" in goal):
+                raise _bad(f"{t['id']}: equals cannot be combined with min or max")
+            if "min" in goal and "max" in goal and goal["min"] > goal["max"]:
+                raise _bad(f"{t['id']}: goal.min must not exceed goal.max")
             if "equals" in goal and not _positive(goal.get("tol")):
                 raise _bad(f"{t['id']}: equals needs a positive tol")
             scale = t.get("scale", _default_scale(goal))
@@ -103,8 +132,12 @@ def validate(data: Any) -> dict[str, Any]:
     return {**data, "stop": stop}
 
 
+def _finite_number(x: Any) -> bool:
+    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
+
+
 def _positive(x: Any) -> bool:
-    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) and x > 0
+    return _finite_number(x) and x > 0
 
 
 def _default_scale(goal: dict[str, Any]) -> float | None:
@@ -147,40 +180,55 @@ def pick(data: Any, path: str) -> Any:
     return current
 
 
-def measure(ctx: ScriptContext, target: dict[str, Any]) -> dict[str, Any]:
+def measure(ctx: ScriptContext, target: dict[str, Any], folder: Path, scripts: dict[str, dict[str, Any]]) -> dict[str, Any]:
     """在 OpticStudio 中取一个目标的值；返回值和取值依据。"""
     kind, spec = next(iter(target["check"].items()))
+    evidence: dict[str, Any] = {}
     try:
         if kind == "operand":
             value = ctx.backend.operand(str(spec["type"]), int(spec.get("int1", 0)), int(spec.get("int2", 0)), [float(x) for x in spec.get("data", [])])
             evidence = {"operand": spec}
         elif kind == "analysis":
-            folder = ctx.path("analyses")
-            data = ctx.backend.analysis(str(spec["type"]), dict(spec.get("settings") or {}), folder / f"check-{target['id']}.txt")
+            text_path = folder / f"{target['id']}.txt"
+            data = ctx.backend.analysis(str(spec["type"]), dict(spec.get("settings") or {}), text_path)
+            write_json(folder / f"{target['id']}.json", data)
+            evidence = {"analysis": spec["type"], "settings": spec.get("settings") or {}, "path": spec["path"],
+                        "text": text_path.relative_to(ctx.job.root).as_posix() if data.get("text_file") else None}
             value = pick(data, str(spec["path"]))
-            evidence = {"analysis": spec["type"], "settings": spec.get("settings") or {}, "path": spec["path"], "text": f"analyses/check-{target['id']}.txt"}
         else:
             from saos import scripting
 
-            source = ctx.path(str(spec)).read_text(encoding="utf-8")
-            namespace: dict[str, Any] = {"__name__": f"saos_check_{target['id']}"}
-            exec(compile(source, str(ctx.path(str(spec))), "exec"), namespace)
+            script = scripts[target["id"]]
+            if script["source"] is None:
+                return {"value": None, "error": script["error"], "evidence": {"source": str(spec)}}
+            copy = folder / f"{target['id']}.py"
+            copy.write_text(script["source"], encoding="utf-8")
+            evidence = {"script": copy.relative_to(ctx.job.root).as_posix(), "source": str(spec), "sha256": script["sha256"]}
+            namespace: dict[str, Any] = {"__name__": f"saos_check_{target['id']}", "__file__": str(ctx.path(str(spec)))}
+            exec(compile(script["source"], str(copy), "exec"), namespace)
             value = namespace["run"](scripting.ScriptContext(ctx._daemon, ctx.job, {"target": target["id"]}))
-            evidence = {"script": str(spec)}
         value = float(value)
-    except SaosError:
-        raise
-    except (KeyError, IndexError, TypeError, ValueError, OSError) as exc:
-        return {"value": None, "error": f"{type(exc).__name__}: {exc}", "evidence": target["check"]}
+    except Exception as exc:
+        # 判定失败是可报告的结果，连接中断和阻塞仍交给后台进程处理。
+        if not ctx.backend.healthy() or (isinstance(exc, SaosError) and exc.code in (ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.UI_BLOCKED)):
+            raise
+        return {"value": None, "error": f"{type(exc).__name__}: {exc}", "evidence": evidence}
     return {"value": value if math.isfinite(value) else None, "evidence": evidence}
 
 
-def evaluate(ctx: ScriptContext, harness: dict[str, Any]) -> dict[str, Any]:
+def evaluate(ctx: ScriptContext, harness: dict[str, Any], scripts: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     """逐项取值和判定。目标差距 G 是约束和性能指标的单项差距之和；期望项只报告数值。"""
+    scripts = prepare_scripts(ctx.job.root, harness) if scripts is None else scripts
+    root = ctx.path("evaluations")
+    root.mkdir(exist_ok=True)
+    folder = root / f"{jobs.next_archive_number(root):03d}"
+    folder.mkdir()
     items = []
     total = 0.0
-    for target in harness["targets"]:
-        measured = measure(ctx, target)
+    for index, target in enumerate(harness["targets"]):
+        target_folder = folder / f"{index:03d}-{target['id']}"
+        target_folder.mkdir()
+        measured = measure(ctx, target, target_folder, scripts)
         item = {"id": target["id"], "kind": target["kind"], "description": target.get("description", ""), **measured}
         if target["kind"] != "preference":
             g = shortfall(target, measured["value"])
@@ -188,4 +236,8 @@ def evaluate(ctx: ScriptContext, harness: dict[str, Any]) -> dict[str, Any]:
             total += g
         items.append(item)
     judged = [i for i in items if i["kind"] != "preference"]
-    return {"shortfall": total, "achieved": all(i["passed"] for i in judged), "items": items}
+    result = {"shortfall": total, "achieved": all(i["passed"] for i in judged), "items": items,
+              "harness": harness, "harness_sha": digest(harness), "method_sha": method_digest(scripts),
+              "lens": ctx.describe(), "evidence_file": (folder / "result.json").relative_to(ctx.job.root).as_posix()}
+    write_json(folder / "result.json", result)
+    return result

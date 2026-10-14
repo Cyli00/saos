@@ -27,7 +27,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `saos lens save --job J [--as NAME] [--overwrite] [--no-verify]` | 保存；默认保存后从磁盘重新加载，与保存前逐面核对 |
 | `saos lens operand --job J TYPE [--int1 --int2 --d1 … --d6]` | 计算一个优化操作数，例如 `EFFL --int2 2` |
 | `saos lens analysis --job J TYPE [--set KEY=VALUE …] [--keep-open]` / `--list` | 运行一个 OpticStudio 分析（AnalysisIDM 名称，如 StandardSpot、FftMtf、RayFan、WavefrontMap、FieldCurvatureAndDistortion），导出数据序列、网格（超过 256×256 时降采样）、点列图 RMS/GEO 半径和表头，存为任务的 `analyses/NNN-TYPE.json`，并保存 OpticStudio 的文本全文 `.txt`。设置名取自分析的设置对象，Field、Wavelength、Surface 用编号或 `all`；枚举按成员名。返回值省略网格本体，只给统计量 |
-| `saos lens view --job J [--viewer lde\|cross-section\|3d\|shaded] [--analysis TYPE] [--set KEY=VALUE …]` | 显性调试：打开 Lens Data 或一种 System Viewer，加一个像质分析（默认 StandardSpot，按系统最看重的像质选），按当前镜头刷新。选择会被记住；之后 load、set、save、build、capture、opt local、exec 结束时自动刷新已打开的分析窗口。连接 extension 后自动按默认选择打开 |
+| `saos lens view --job J [--viewer lde\|cross-section\|3d\|shaded] [--analysis TYPE] [--set KEY=VALUE …]` | 显性调试：打开 Lens Data 或一种 System Viewer，加一个像质分析（默认 StandardSpot，按系统最看重的像质选），按当前镜头刷新。选择会被记住；之后 load、set、build、opt local、exec、round 结束时自动刷新已打开的分析窗口。连接 extension 后自动按默认选择打开 |
 | `saos lens screenshot --job J [--label L]` | 显性调试：把 OpticStudio 的可见窗口截成 PNG，存为任务的 `screens/NNN-L-K.png`（PrintWindow，被遮挡也能截；最小化的窗口跳过） |
 | `saos check --job J` | 按任务的需求框定 `sources/harness.yaml` 对当前镜头逐项实测和判定，不记录。需求框定未确认时也能用，便于框定阶段先看数值 |
 | `saos round --job J [--tier local\|variables\|materials\|global\|structure] [--note TEXT]` | 记录一个调试轮次：存为 `lenses/rounds/rNNN.zmx`，逐项实测判定（全文存为 `rounds/rNNN.json`），写入 `ledger.jsonl`，返回终止判断（continue / achieved / exhausted / limit）及还没试过的层级。第 0 轮不填 tier。需求框定未确认、改动后没有新的确认原话、或已经终止时拒绝 |
@@ -61,7 +61,9 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 
 `sources/harness.yaml` 的格式、目标差距的算法和终止规则以英文写在 [skills/saos/harness.md](../skills/saos/harness.md)，agent 直接读那一份；这里不再重复。
 
-要点：判定方法三选一（operand、analysis、script）；`goal` 写 `max`、`min` 或 `equals` + `tol`；`lang`（`zh`/`en`）决定交付报告的语言，改它不需要重新确认；`confirmed.quote` 只能是用户的原话。
+要点：判定方法三选一（operand、analysis、script）；`goal` 写有限数值的 `max`、`min` 或 `equals` + `tol`；`lang`（`zh`/`en`）决定交付报告的语言，改它不需要重新确认；`confirmed.quote` 只能是用户的原话。
+
+每次检查的快照和证据存在新的 `evaluations/NNN/`，返回的 `evidence_file` 指向完整结果。修改检查脚本会开始新的判定方法版本，旧轮次不再参与进展比较和交付选择；需求或脚本改动后还没记录新轮次时，`saos report` 返回 `SPEC_CHANGED`。脚本版本只跟踪直接指定的源码，不跟踪它导入的模块。
 
 ## 报告语言
 
@@ -162,6 +164,6 @@ work/<实例名>/
 - `saos lens view --job J [--viewer …] [--analysis TYPE]`：extension 模式下打开 Lens Data 或一种 System Viewer，加一个像质分析，并刷新；UpdateMode 设为 EditorsOnly，分析窗口由 saos 在改动后刷新。standalone 模式下返回 BAD_ARGS。
 - `saos lens screenshot --job J [--label L]`：截取 OpticStudio 窗口 PNG。
 
-extension 模式下，窗口有 saos 之外的未保存修改（OpticStudio 的 NeedsSave）时禁止换镜头。实测（2024 R1）临时增删评价函数行的 Zernike 拟合、把面参数写回相同的值都会让 NeedsSave 置位，所以 saos 自己的修改仍以后台进程记录的 dirty 为准；复现校验结束时对未修改的镜头直接重新加载文件，不留下 NeedsSave。分析窗口刷新是否会置位尚未实测；遇到误报时，确认要保存当前任务内容后用 `lens save --no-verify` 保存再切换。
+extension 模式下，`lens load`、`lens unload`、`lens build` 换掉窗口内容前，若 OpticStudio 的 NeedsSave 置位（分析窗口的刷新也会置位，无法与用户修改区分），先把窗口内容存成 `lenses/captures/NNN-unsaved.zmx`，返回值 `captured` 给出路径，然后继续；`--discard` 跳过这份副本。agent 自己未保存的修改（后台 dirty）仍返回 UNSAVED_CHANGES，先 `lens save` 或加 `--discard`。
 
 光纤侧视框架的搭建脚本已移出命令行，见 `experiments/fiber/` 和 TODO。

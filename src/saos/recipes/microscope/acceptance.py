@@ -78,21 +78,21 @@ def focus_on_axis(
 
     def c4(t: float, kind: str) -> float:
         raw = backend.zernike(wave=wave, field=field, samp=ZERN_SAMP, max_term=ZERN_MAX_TERM, terms=(-1, 4))
-        value = finite(raw[4], "c4（调焦）", wave=wave)
+        value = finite(raw[4], "c4 (focus)", wave=wave)
         trail.append({"wave": wave, "kind": kind, "thickness": t, "ray_failures": 0, "c4": value, "fit_error": raw.get(-1)})
         return value
 
     def move(t: float) -> None:
         backend.set_surface(gap, "thickness", t)
 
-    t0 = finite(backend.surfaces()[gap]["thickness"], "工作距离间隔")
+    t0 = finite(backend.surfaces()[gap]["thickness"], "working distance gap")
     if not rays_ok(t0, "start"):
         start = t0
         t0 = paraxial_focus(backend, gap=gap, wave=wave, t_start=t0, tol_mm=tol_mm, na_image=na_image, magnification=magnification)
         move(t0)
         restarted = True
         if not rays_ok(t0, "paraxial"):
-            raise InvalidEvaluation("轴上光线追迹失败，起点和近轴焦点处都无法调焦", {"wave": wave, "start_thickness": start, "paraxial_thickness": t0})
+            raise InvalidEvaluation("on-axis ray trace failed; cannot focus at the start or at the paraxial focus", {"wave": wave, "start_thickness": start, "paraxial_thickness": t0})
     c0 = c4(t0, "paraxial" if restarted else "start")
     step = 4 * math.sqrt(3) * c0 * lam_um / na_image**2 / magnification**2 / 1000
     t1 = t0 + (step if abs(step) > tol_mm else 10 * tol_mm)
@@ -111,7 +111,7 @@ def focus_on_axis(
             else:
                 move(t0)
                 raise InvalidEvaluation(
-                    "调焦时轴上光线追迹失败，回退后仍无有效位置",
+                    "on-axis ray trace failed while focusing; no valid position after backing off",
                     {"wave": wave, "last_valid_thickness": t0, "last_valid_c4": c0, "nearest_failed_thickness": bad, "backoff": FOCUS_BACKOFF},
                 )
         c1 = c4(t1, "secant")
@@ -120,7 +120,7 @@ def focus_on_axis(
         if c1 == c0:
             break
         t0, c0, t1 = t1, c1, t1 - c1 * (t1 - t0) / (c1 - c0)
-    raise InvalidEvaluation("调焦没有收敛", {"wave": wave, "last_thickness": t1, "last_c4": c1})
+    raise InvalidEvaluation("focusing did not converge", {"wave": wave, "last_thickness": t1, "last_c4": c1})
 
 
 def paraxial_focus(
@@ -136,7 +136,7 @@ def paraxial_focus(
 
     def pary(t: float) -> float:
         backend.set_surface(gap, "thickness", t)
-        return finite(backend.operand("PARY", image, wave, [0.0, 0.0, 0.0, 1.0]), "PARY（近轴调焦）", wave=wave, thickness=t)
+        return finite(backend.operand("PARY", image, wave, [0.0, 0.0, 0.0, 1.0]), "PARY (paraxial focus)", wave=wave, thickness=t)
 
     t0, t1 = t_start, t_start + 0.01 * max(abs(t_start), 1.0)
     p0 = pary(t0)
@@ -147,7 +147,7 @@ def paraxial_focus(
         if p1 == p0:
             break
         t0, p0, t1 = t1, p1, t1 - p1 * (t1 - t0) / (p1 - p0)
-    raise InvalidEvaluation("近轴焦点没有收敛", {"wave": wave, "last_thickness": t1, "last_pary": p1, "residual_limit": residual_limit})
+    raise InvalidEvaluation("paraxial focus did not converge", {"wave": wave, "last_thickness": t1, "last_pary": p1, "residual_limit": residual_limit})
 
 
 def acceptance_config(spec: Spec) -> dict[str, Any]:
@@ -200,7 +200,7 @@ def finite(value: Any, what: str, **context: Any) -> float:
     都会把无效数值悄悄变成"达标"。
     """
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-        raise InvalidEvaluation("测量值无效（NaN、无穷或非数值）", {"what": what, "value": repr(value), **context})
+        raise InvalidEvaluation("invalid measurement (NaN, infinite or not a number)", {"what": what, "value": repr(value), **context})
     return float(value)
 
 
@@ -292,7 +292,7 @@ class Evaluator:
             {"surface": r["index"], "aperture": r["aperture"]} for r in design if r.get("aperture", "None") != "None"
         ]
         if not any(r["stop"] for r in self.objective) and not tube["stop"]:
-            raise SaosError(ErrorCode.BAD_ARGS, "设计文件的物镜部分和参考筒镜上都没有光阑")
+            raise SaosError(ErrorCode.BAD_ARGS, "no stop in the objective part or on the reference tube lens")
 
         surfaces: list[dict[str, Any]] = []
         if spec.cover_glass:
@@ -348,7 +348,7 @@ class Evaluator:
             raw = self.backend.zernike(wave=wave, field=self.field_index[key[1]], samp=ZERN_SAMP, max_term=ZERN_MAX_TERM, terms=wanted)
             z = {t: finite(c, f"ZERN {t}", wave=wave, field=r) for t, c in raw.items()}
             if z[-1] > ZERN_FIT_LIMIT:
-                raise InvalidEvaluation("Zernike 拟合残差超限", {"wave": wave, "field": r, "fit_error": z[-1], "max_term": ZERN_MAX_TERM})
+                raise InvalidEvaluation("Zernike fit residual too large", {"wave": wave, "field": r, "fit_error": z[-1], "max_term": ZERN_MAX_TERM})
             self._zern[key] = z
         return {t: self._zern[key][t] for t in (-1, *terms)}
 
@@ -404,7 +404,7 @@ class Evaluator:
         rays = [(w, 0.0, r, px, py) for r in self.fields for w in (WAVE_F, WAVE_E, WAVE_C) for px, py in pupil]
         failures = self.backend.trace_check(rays)
         if failures:
-            raise InvalidEvaluation("检查光线追迹失败或被截断", {"failures": failures[:20], "count": len(failures), "total": len(rays)})
+            raise InvalidEvaluation("check rays failed or were clipped", {"failures": failures[:20], "count": len(failures), "total": len(rays)})
 
     def measure(self, t_e: float) -> tuple[dict[str, Any], dict[str, Any]]:
         spec = self.spec
@@ -412,8 +412,8 @@ class Evaluator:
         d: dict[str, Any] = {}
         rows = self.backend.snapshot()
         for r in rows[: self.image]:
-            finite(r["thickness"], "厚度", surface=r["index"])
-            finite(r["semi_diameter"], "半口径", surface=r["index"])
+            finite(r["thickness"], "thickness", surface=r["index"])
+            finite(r["semi_diameter"], "semi-diameter", surface=r["index"])
         objective = rows[self.first : self.last + 1]
         glass_rows = [r for r in objective if r["material"]]
         lens_surfaces = [r["index"] for r in objective if r["material"] or rows[r["index"] - 1]["material"]]
@@ -532,7 +532,7 @@ class Evaluator:
                 g = by_name[m]
                 ok, info = g.status in self.spec.glass_allowed_status, {"catalog": g.catalog, "status": g.status}
             else:
-                ok, info = False, {"reason": "不在规格允许的玻璃目录中"}
+                ok, info = False, {"reason": "not in a glass catalog allowed by the spec"}
             bad += not ok
             report.append({"surface": r["index"], "material": m, "ok": ok, **info})
         return float(bad), report
@@ -547,7 +547,7 @@ class Evaluator:
                 if not item.valid_value(measured.get(item.id))
             }
             if bad:
-                invalid = {"reason": "测量值无效（NaN、无穷或缺失）", "items": bad}
+                invalid = {"reason": "invalid measurement (NaN, infinite or missing)", "items": bad}
                 measured = None
         items = []
         total = 0.0

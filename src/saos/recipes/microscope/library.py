@@ -48,14 +48,14 @@ def library_dir() -> Path:
 
 def entry_dir(entry_id: str) -> Path:
     if not entry_id or not set(entry_id) <= ENTRY_ID_CHARS:
-        raise SaosError(ErrorCode.BAD_ARGS, f"条目编号只能包含字母、数字和 -_.：{entry_id!r}")
+        raise SaosError(ErrorCode.BAD_ARGS, f"entry id may only contain letters, digits and -_.: {entry_id!r}")
     return library_dir() / "entries" / entry_id
 
 
 def load_entry(entry_id: str) -> dict[str, Any]:
     path = entry_dir(entry_id) / "entry.json"
     if not path.is_file():
-        raise SaosError(ErrorCode.FILE_NOT_FOUND, f"结构库中没有条目 {entry_id}")
+        raise SaosError(ErrorCode.FILE_NOT_FOUND, f"no library entry {entry_id}")
     return read_json(path)
 
 
@@ -155,7 +155,7 @@ def derive_benchmark_spec(entry: dict[str, Any], probe: dict[str, Any], correcti
         value = float(it["value"])
         new = math.ceil(value * CALIBRATION_MARGIN * 1000) / 1000
         key = "threshold_um" if item_id == "lateral_color" else "threshold"
-        targets[item_id] = {key: new, "basis": f"基准专用：复现值 {value:.4g}，格式默认值 {it['threshold']:.4g} 不通过，取 ×{CALIBRATION_MARGIN}"}
+        targets[item_id] = {key: new, "basis": f"benchmark only: reproduced value {value:.4g} fails the format default {it['threshold']:.4g}; using ×{CALIBRATION_MARGIN}"}
         evidence.append({"item": item_id, "default": it["threshold"], "measured": value, "benchmark_threshold": new})
 
     wd = float(items["working_distance"]["value"])
@@ -191,13 +191,28 @@ def derive_benchmark_spec(entry: dict[str, Any], probe: dict[str, Any], correcti
         "eligible": not failed_fixed,
         "failed_fixed_items": {i: {"value": items[i]["value"], "threshold": items[i]["threshold"]} for i in failed_fixed},
         "calibration_evidence": evidence,
-        "note": f"基准专用规格，由 {entry['id']} 在格式默认规格下的验收结果推导（saos.recipes.microscope.library.derive_benchmark_spec）",
+        "note": f"benchmark-only spec derived from the acceptance of {entry['id']} under the format default spec (saos.recipes.microscope.library.derive_benchmark_spec)",
         "perturbation": PERTURBATION,
         "_metrics_at_derivation": {"focal_length_mm": m["focal_length_mm"]},
     }
 
 
 # ---- 查询 ----
+
+
+def flag_text(flag: dict[str, Any], lang: str) -> str:
+    """候选结构与规格的差异；agent 读英文，计划页按语言显示。"""
+    kind, zh = flag["kind"], lang == "zh"
+    if kind == "na_low":
+        return f"NA {flag['value']:.3g} 低于要求 {flag['required']:.3g}" if zh else f"NA {flag['value']:.3g} below the required {flag['required']:.3g}"
+    if kind == "field_number_low":
+        return f"视场数 {flag['value']:.3g} 小于要求 {flag['required']:.3g}" if zh else f"field number {flag['value']:.3g} below the required {flag['required']:.3g}"
+    if kind == "correction_class":
+        return f"声称的校正等级为 {flag['claimed'] or '未注明'}" if zh else f"claimed correction class: {flag['claimed'] or 'not stated'}"
+    if kind == "working_distance_low":
+        return (f"缩放后机械工作距离 {flag['value']:.3g} mm 小于要求 {flag['required']:.3g} mm" if zh
+                else f"scaled mechanical working distance {flag['value']:.3g} mm below the required {flag['required']:.3g} mm")
+    raise ValueError(f"unknown flag {kind}")
 
 
 def query(
@@ -223,23 +238,23 @@ def query(
         sf = scale_free_metrics(e)
         s = f_target / e["metrics"]["focal_length_mm"]
         score = 0.0
-        notes = []
+        flags = []
         if sf["na"] < na:
             score += 10 * (na - sf["na"]) / na
-            notes.append(f"NA {sf['na']:.3g} 低于要求 {na:.3g}")
+            flags.append({"kind": "na_low", "value": sf["na"], "required": na})
         else:
             score += (sf["na"] - na) / na
         if objective_field_number and sf["ofn_at_reference_tube"] < objective_field_number:
             score += 3 * (objective_field_number - sf["ofn_at_reference_tube"]) / objective_field_number
-            notes.append(f"视场数 {sf['ofn_at_reference_tube']:.3g} 小于要求")
+            flags.append({"kind": "field_number_low", "value": sf["ofn_at_reference_tube"], "required": objective_field_number})
         claimed = e["metrics"].get("claimed_class") or ""
         if correction_class == "plan_achromat" and "plan" not in claimed.lower():
             score += 1.0
-            notes.append(f"声称的校正等级为 {claimed or '未注明'}")
+            flags.append({"kind": "correction_class", "claimed": claimed or None})
         wd_scaled = sf["wd_mech_over_f"] * f_target
         if working_distance_min and wd_scaled < working_distance_min:
             score += 3 * (working_distance_min - wd_scaled) / working_distance_min
-            notes.append(f"缩放后机械工作距离 {wd_scaled:.3g} mm 小于要求")
+            flags.append({"kind": "working_distance_low", "value": wd_scaled, "required": working_distance_min})
         out.append(
             {
                 "id": e["id"],
@@ -254,7 +269,8 @@ def query(
                 "na": sf["na"],
                 "elements": sf["elements"],
                 "claimed_class": claimed or None,
-                "notes": notes,
+                "flags": flags,
+                "notes": [flag_text(f, "en") for f in flags],
             }
         )
     out.sort(key=lambda r: r["score"])
@@ -298,7 +314,7 @@ def split_benchmarks(entries: list[dict[str, Any]]) -> dict[str, Any]:
             groups[target].extend(e["id"] for e in units[p])
             in_band[target] += len(units[p])
     return {
-        "rule": "以专利为单位分组，同一专利的条目只进同一组；每个专利最多取编号最前的 2 个可作基准的条目；专利按最高 NA 分档，档内按 SHA-1(专利号) 排序，依次放进本档案例较少的组，持平时放进总案例较少的组",
+        "rule": "group by patent so entries of one patent stay in one split; take at most the first 2 benchmark-eligible entries per patent; bin patents by their highest NA, sort within a bin by SHA-1(patent number) and put each into the split with fewer cases in that bin, ties going to the split with fewer cases overall",
         "perturbation": PERTURBATION,
         "groups": groups,
         "cases": [

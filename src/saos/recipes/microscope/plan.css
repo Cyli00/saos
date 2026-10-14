@@ -28,7 +28,8 @@ a:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outli
 header { display: flex; justify-content: space-between; align-items: center; padding: 1.1rem max(24px, calc((100vw - 1100px)/2)); border-bottom: 1px solid var(--line); background: var(--paper); gap: 1rem; }
 .brand { color: var(--ink); font: bold 28px var(--number); text-decoration: none; }
 .brand span { font: 14px var(--body); color: var(--muted); margin-left: 1rem; }
-.status { background: var(--accent-light); color: var(--accent); padding: .15rem .7rem; font-size: 14px; border-radius: 4px; white-space: nowrap; }
+.lang { font-size: 14px; color: var(--accent); white-space: nowrap; }
+.status { margin-left: auto; background: var(--accent-light); color: var(--accent); padding: .15rem .7rem; font-size: 14px; border-radius: 4px; white-space: nowrap; }
 main { max-width: 1100px; margin: 0 auto; padding: 0 48px 48px; background: var(--paper); }
 section { padding: 38px 0; border-bottom: 1px solid var(--line); scroll-margin-top: 20px; }
 h1, h2 { font-family: var(--heading); line-height: 1.35; }
@@ -100,7 +101,7 @@ footer { max-width: 1100px; margin: 0 auto; padding: 20px 48px; color: var(--mut
 @media print {
   :root { background: white; font-size: 10pt; }
   main { padding: 0; max-width: none; }
-  header, footer, nav, .skip { display: none; }
+  header, footer, nav, .skip, .lang { display: none; }
   section { padding: 16px 0; }
   h2, h3 { break-after: avoid; }
   tr, .section-view { break-inside: avoid; }
