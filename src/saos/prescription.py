@@ -1,15 +1,8 @@
-"""镜头处方：从零搭建一个序列系统所需的全部数据，以及 saos 的标准设计布局。
+"""镜头处方：从零搭建一个序列系统所需的数据（lens build 的输入格式）。
 
-标准设计布局（lens build 生成，验收评估据此找出物镜部分）：
-
-    面 0      物面（有盖玻片时介质为盖玻片，厚度为盖玻片厚度）       注释 saos:object
-    面 1      盖玻片上表面，厚度为工作距离间隔（仅有盖玻片时）       注释 saos:cover_top
-    ...       物镜各面（可含注释为 saos:stop 的虚拟光阑面）
-    面 k      参考筒镜：Paraxial 面，焦距 f_TL，后接 f_TL 到像面      注释 saos:tube
-    面 k+1    像面
-
-没有盖玻片时，物面厚度就是工作距离间隔。
+目前支持 standard 与 paraxial 两种面型、物方 NA 孔径和物高视场。
 """
+
 
 from __future__ import annotations
 
@@ -17,11 +10,6 @@ import math
 from typing import Any
 
 from saos.protocol import ErrorCode, SaosError
-
-TAG_OBJECT = "saos:object"
-TAG_COVER_TOP = "saos:cover_top"
-TAG_STOP = "saos:stop"
-TAG_TUBE = "saos:tube"
 
 RAY_AIMING = ("off", "paraxial", "real")
 
@@ -78,7 +66,7 @@ def normalize(p: dict[str, Any]) -> dict[str, Any]:
     out_obj = {
         "thickness": _number(obj.get("thickness"), "object.thickness"),
         "material": normalize_material(obj.get("material", ""), "object"),
-        "comment": str(obj.get("comment", TAG_OBJECT)),
+        "comment": str(obj.get("comment", "")),
     }
 
     surfaces = []
@@ -119,23 +107,3 @@ def normalize(p: dict[str, Any]) -> dict[str, Any]:
         "object": out_obj,
         "surfaces": surfaces,
     }
-
-
-def objective_block(rows: list[dict[str, Any]]) -> tuple[int, int]:
-    """在标准设计布局的面列表中找出物镜部分，返回 [first, last]（面序号，含两端）。"""
-    comments = [str(r.get("comment", "")) for r in rows]
-    if not comments or comments[0] != TAG_OBJECT:
-        raise SaosError(ErrorCode.BAD_ARGS, "不是 saos 标准设计布局：物面注释不是 saos:object")
-    try:
-        tube = comments.index(TAG_TUBE)
-    except ValueError as exc:
-        raise SaosError(ErrorCode.BAD_ARGS, "不是 saos 标准设计布局：找不到 saos:tube 参考筒镜") from exc
-    first = 2 if len(comments) > 1 and comments[1] == TAG_COVER_TOP else 1
-    if tube <= first:
-        raise SaosError(ErrorCode.BAD_ARGS, "标准设计布局中物镜部分为空")
-    return first, tube - 1
-
-
-def gap_surface(rows: list[dict[str, Any]]) -> int:
-    """工作距离间隔所在的面（其厚度即物方调焦量）。"""
-    return 1 if len(rows) > 1 and rows[1].get("comment") == TAG_COVER_TOP else 0

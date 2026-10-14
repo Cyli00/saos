@@ -115,6 +115,22 @@ def test_step2_acceptance(saos_home):
         assert reloaded[3]["material"] == "N-SK16"
         assert ok(saos("lens", "operand", "--job", job_a, "EFFL", "--int2", "2", env=env))["value"] == pytest.approx(effl_after, rel=1e-12)
 
+        # 脚本执行：直接用 ZOS-API，出错不影响后台进程
+        script = saos_home / "probe.py"
+        script.write_text(
+            "def run(ctx):\n"
+            "    lde = ctx.system.LDE\n"
+            "    standard = ctx.zosapi.Editors.LDE.SurfaceType.Standard\n"
+            "    return {'surfaces': int(lde.NumberOfSurfaces), 'standard': str(standard), 'lens': ctx.lens.name, 'k': ctx.args['k']}\n",
+            encoding="utf-8",
+        )
+        ran = ok(saos("exec", str(script), "--job", job_a, "--arg", "k=2", env=env))
+        assert ran["result"] == {"surfaces": 13, "standard": "Standard", "lens": "r001.zmx", "k": 2}
+        assert (saos_home / "jobs" / job_a / ran["script"]).is_file()
+        script.write_text("def run(ctx):\n    return ctx.system.LDE.GetSurfaceAt(999).Radius\n", encoding="utf-8")
+        assert err(saos("exec", str(script), "--job", job_a, env=env)) == ErrorCode.SCRIPT_ERROR
+        assert ok(saos("lens", "info", "--job", job_a, env=env))["dirty"] is False
+
         # 文件互不混用
         lenses_a = sorted(p.name for p in (saos_home / "jobs" / job_a / "lenses").glob("*.zmx"))
         lenses_b = sorted(p.name for p in (saos_home / "jobs" / job_b / "lenses").glob("*.zmx"))

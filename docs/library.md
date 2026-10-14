@@ -5,20 +5,20 @@
 ## 流程
 
 ```
-候选检索 → 筛选（子 agent）→ 面数据提取（子 agent，schema 2）→ saos library check → saos library add → saos library verify → saos bench split
+候选检索 → 筛选（子 agent）→ 面数据提取（子 agent，schema 2）→ saos microscope library check → saos microscope library add → saos microscope library verify → uv run python experiments/bench/run.py split
 ```
 
 1. **候选检索**：在 Google Patents 显微物镜分类（CPC G02B21/02）中按关键词检索，按标题去掉系统类、浸液、反射式等专利。Google Patents 的页面在批量访问时返回 503，所以全文改从 USPTO 下载 PDF（`https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/<号>`）。这些 PDF 只有图像，用本地 RapidOCR 识别成文字。
 2. **筛选**：先用正则从 OCR 文字中找出 NA 在范围内的专利，再由 Haiku 子 agent 读全文，逐个实施例记录放大率、NA、浸液、共轭方式、非球面、片数、面数据表所在页、声称的校正等级。只做事实记录，原文没写的字段为 null。
 3. **提取**：Haiku 子 agent 读专利页面图像，按下面的 schema 2 输出 JSON。
-4. **`saos library check FILE`**：用独立的近轴计算核对表头的焦距和工作距离。印刷值落在舍入包络内（见下），或与计算值相差不超过 1%，即为一致。不一致时回到页面图像查原因，不直接入库。
-5. **`saos library add <id> --extract FILE`**：适配为处方，写入 `library/entries/<id>/`，状态为 extracted。
-6. **`saos library verify <id> --job J`**（需要后台进程）：
+4. **`saos microscope library check FILE`**：用独立的近轴计算核对表头的焦距和工作距离。印刷值落在舍入包络内（见下），或与计算值相差不超过 1%，即为一致。不一致时回到页面图像查原因，不直接入库。
+5. **`saos microscope library add <id> --extract FILE`**：适配为处方，写入 `library/entries/<id>/`，状态为 extracted。
+6. **`saos microscope library verify <id> --job J`**（需要后台进程）：
    - 当前镜头有未保存修改时返回 `UNSAVED_CHANGES`。先保存，或显式加 `--discard` 放弃当前镜头的修改；这也适用于另一个任务正在加载的镜头。
    - 搭建并做复现校验。焦距、NA、顶点工作距离逐项与原文比较，每项允许的偏差取相对误差 1% 与舍入包络半宽的较大者。全部通过才算收录（admitted），否则拒收（rejected）并写明原因。
    - 在"格式默认规格"下做一次验收评估（probe）。这次评估只填入结构固有的 NA、倍率、视场和盖玻片，界限类取宽松值，测量结果作为标定证据。
    - 按下节规则推导基准规格，并确认原结构在基准规格下 G = 0。
-7. **`saos bench split`**：把可作基准的条目分为调参组和验证组，写入 `library/benchmarks.json`。
+7. **`uv run python experiments/bench/run.py split`**：把可作基准的条目分为调参组和验证组，写入 `library/benchmarks.json`。
 
 **舍入包络**：专利表格的数字按印刷位数四舍五入，复现精度不可能高于印刷精度。`adapt.rounding_envelope` 按每列的印刷小数位（JSON 数值会丢掉末尾的 0，所以取该列中最多的位数）把半径、间隔、折射率在 ±半个末位内均匀抽样 4000 次，用近轴计算得到焦距和工作距离的分布范围。例如 US 6128139 的折射率只印 2 位小数，f = 20 mm 时焦距的包络半宽约 0.3–0.46 mm，超过 1%。
 

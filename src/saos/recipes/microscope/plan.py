@@ -7,10 +7,12 @@ import json
 from pathlib import Path
 from typing import Any
 
-from saos import acceptance, interview, jobs, library
+from saos import jobs
+
+from saos.recipes.microscope import acceptance, interview, library
 from saos import protocol
 from saos.protocol import ErrorCode, SaosError, read_json
-from saos.spec import Spec, parse_spec
+from saos.recipes.microscope.spec import Spec, parse_spec
 
 
 def digest(data: Any) -> str:
@@ -63,7 +65,7 @@ def starting_design(entry_id: str, result: dict[str, Any], rationale: str) -> di
 
 
 def create(job_id: str, draft_path: Path, entry_id: str | None, rationale: str = "") -> dict[str, Any]:
-    from saos.plan_html import render
+    from saos.recipes.microscope.plan_html import render
 
     job = jobs.get_job(job_id)
     _draft_job(job)

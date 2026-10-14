@@ -8,25 +8,25 @@ agent 使用仓库中的 [saos-interview 技能](../skills/saos-interview/SKILL.
 
 ```bash
 uv run saos job create --name microscope-plan
-uv run saos interview check <访谈记录.yaml>
-uv run saos plan create --job <任务编号> --interview <访谈记录.yaml> --entry US4521083-e1 --rationale "选择理由与需调整之处"
-uv run saos plan show --job <任务编号>
+uv run saos microscope interview check <访谈记录.yaml>
+uv run saos microscope plan create --job <任务编号> --interview <访谈记录.yaml> --entry US4521083-e1 --rationale "选择理由与需调整之处"
+uv run saos microscope plan show --job <任务编号>
 ```
 
-`interview check` 的 `ready: false` 表示需要继续访谈，`questions` 给出未解决项。命令成功只代表检查完成，不代表访谈完成。格式错误、未知规格字段、缺少来源、非有限数值等返回 `BAD_ARGS`。
+`microscope interview check` 的 `ready: false` 表示需要继续访谈，`questions` 给出未解决项。命令成功只代表检查完成，不代表访谈完成。格式错误、未知规格字段、缺少来源、非有限数值等返回 `BAD_ARGS`。
 
-`plan create` 只接受没有优化记录、尚未确认计划的任务。产出位于任务的 `plan/<完整版本 SHA-256>/`，包含 `index.html`、`plan.json`、`spec.json` 和文件校验值。新版本保留旧版本并更新当前版本指针。未选定条目时省略 `--entry`，页面显示“等待初始结构”，不能确认进入优化；可列出的候选只是查询结果，不代表一定适合。
+`microscope plan create` 只接受没有优化记录、尚未确认计划的任务。产出位于任务的 `plan/<完整版本 SHA-256>/`，包含 `index.html`、`plan.json`、`spec.json` 和文件校验值。新版本保留旧版本并更新当前版本指针。未选定条目时省略 `--entry`，页面显示“等待初始结构”，不能确认进入优化；可列出的候选只是查询结果，不代表一定适合。
 
 用户在对话里明确确认当前页面后，agent 记录原话：
 
 ```bash
-uv run saos plan confirm --job <任务编号> --revision <完整版本 SHA-256> --evidence "用户的明确确认原话"
-uv run saos plan handoff --job <任务编号>
+uv run saos microscope plan confirm --job <任务编号> --revision <完整版本 SHA-256> --evidence "用户的明确确认原话"
+uv run saos microscope plan handoff --job <任务编号>
 ```
 
 确认绑定该版本的用户需求、完整规格、验收配置、初始结构快照和展示文件。旧版本、改过的展示文件、改变后的评估器配置都不能确认。确认不会启动优化。`handoff` 在交接前重新核对确认与任务规格，返回规格路径和库中处方快照；快照仍是原结构，必须按用户规格完成适配和第 0 轮验收。不能用库中基准规格或原结构的 G = 0 替代本任务的要求和验收。
 
-现有底层 `lens`、`opt` 命令仍供基准与调试使用，不依赖设计计划；这不是一个拦截所有 CLI 调用的权限系统。用户设计工作流由技能要求在自动阶段前执行 `plan handoff`，普通轮次仍由已有冻结机制约束。确认后的要求变化需新建任务。
+现有底层 `lens`、`opt` 命令仍供基准与调试使用，不依赖设计计划；这不是一个拦截所有 CLI 调用的权限系统。用户设计工作流由技能要求在自动阶段前执行 `microscope plan handoff`，普通轮次仍由已有冻结机制约束。确认后的要求变化需新建任务。
 
 ## 访谈记录格式
 
@@ -54,7 +54,7 @@ uv run saos plan handoff --job <任务编号>
 
 初始结构图使用库中处方的曲率和轴向位置绘制 SVG；原处方没有逐面通光半口径，因此高度仅作示意，并在图注说明。它不包含光线追迹，也不表示目标规格下的最终形状。候选的缩放数值同样只是估计。
 
-所有用户文字、专利疑点和选择理由都进行 HTML 转义；外部链接只允许 HTTP(S)。页面不包含脚本、外部字体、远程资源或浏览器确认按钮。确认后保留原审阅副本，当前状态通过对话和 `plan show` 查看，页面不会伪装成实时状态面板。
+所有用户文字、专利疑点和选择理由都进行 HTML 转义；外部链接只允许 HTTP(S)。页面不包含脚本、外部字体、远程资源或浏览器确认按钮。确认后保留原审阅副本，当前状态通过对话和 `microscope plan show` 查看，页面不会伪装成实时状态面板。
 
 视觉规范沿用 DESIGN.md 的“朴素 HTML”要求：白底、深色文字、青绿色标记、琥珀色假设提醒；剖面图是主视觉。`src/saos/plan.css` 中的 CSS 变量是颜色与字体的唯一运行时来源，由渲染器嵌入单文件 HTML。中文正文采用系统中文无衬线字体，标题使用本地中文衬线字体，数值使用等宽字体。链接与原生 details/summary 是唯一交互控件，支持键盘焦点；表格在窄屏内滚动，页面支持打印。
 

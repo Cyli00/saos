@@ -46,20 +46,20 @@ def test_minimal_loop(saos_home):
         shutil.copy(FIXTURES / "benchmark.yaml", root / "spec" / "benchmark.yaml")
         src = root / "sources"
 
-        adapted = saos("adapt", "patent", src / "extract.json", "--focal-length", 10, "--tube-lens", 200,
+        adapted = saos("microscope", "adapt", src / "extract.json", "--focal-length", 10, "--tube-lens", 200,
                       "--field-number", 27, "--catalogs", "OHARA", "SCHOTT", "HOYA", "SUMITA", "--out", src, env=env)
         assert adapted["report"]["scale"] == pytest.approx(10.0)
 
         saos("lens", "build", "--job", job, src / "prescription.json", "--as", "repro.zmx", env=env)
-        repro = saos("lens", "repro", "--job", job, src / "expect.json", env=env)
+        repro = saos("microscope", "repro", "--job", job, src / "expect.json", env=env)
         assert repro["pass"] is True
         assert all(m["rel_error"] < 0.002 for m in repro["metrics"])
 
-        accepted = saos("eval", "accept", "--job", job, "--spec", "spec/benchmark.yaml", env=env)
+        accepted = saos("microscope", "accept", "--job", job, "--spec", "spec/benchmark.yaml", env=env)
         assert accepted["verdict"] == "pass" and accepted["spec_shortfall"] == 0
 
-        saos("lens", "perturb", "--job", job, "--seed", 1, "--radius-rel", 0.01, "--thickness-rel", 0.03, env=env)
-        r0 = saos("round", "record", "--job", job, "--spec", "spec/benchmark.yaml", "--note", "round 0", env=env)
+        saos("microscope", "perturb", "--job", job, "--seed", 1, "--radius-rel", 0.01, "--thickness-rel", 0.03, env=env)
+        r0 = saos("microscope", "round", "--job", job, "--spec", "spec/benchmark.yaml", "--note", "round 0", env=env)
         assert r0["record"]["verdict"] == "fail"
         assert r0["record"]["spec_shortfall"] == pytest.approx(12.873, abs=0.01)
         assert set(r0["record"]["items"]) == {"axial_rms_wfe", "osc", "field_rms_wfe"}
@@ -70,7 +70,7 @@ def test_minimal_loop(saos_home):
         saos("opt", "merit", "--job", job, "wizard", "--file", src / "merit_wizard.json", env=env)
         saos("opt", "merit", "--job", job, "add", "--file", src / "merit_extra.json", env=env)
         saos("opt", "local", "--job", job, "--cycles", "auto", env=env)
-        r1 = saos("round", "record", "--job", job, "--note", "round 1", env=env)
+        r1 = saos("microscope", "round", "--job", job, "--note", "round 1", env=env)
         assert r1["record"]["verdict"] == "pass"
         assert r1["decision"]["status"] == "pass"
 

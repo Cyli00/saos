@@ -3,7 +3,7 @@
     成功：{"ok": true, "result": ...}，退出码 0
     失败：{"ok": false, "error": {"code", "message", "details"}}，退出码 1
 
-daemon 和 job 命令在本进程内执行；lens 命令转发给后台进程。
+daemon 和 job 命令在本进程内执行；lens、opt、exec 命令转发给后台进程。配方的命令由各配方注册（saos microscope …）。
 """
 
 from __future__ import annotations
@@ -85,10 +85,6 @@ def cmd_lens(args: argparse.Namespace) -> Any:
     if action == "build":
         presc = _read_json(args.prescription)
         return _lens_request("lens.build", args, {"prescription": presc, "file": args.as_name, "overwrite": args.overwrite, "discard": args.discard})
-    if action == "repro":
-        return _lens_request("lens.repro", args, {"expect": _read_json(args.expect)})
-    if action == "perturb":
-        return _lens_request("lens.perturb", args, {"seed": args.seed, "radius_rel": args.radius_rel, "thickness_rel": args.thickness_rel})
     raise AssertionError(action)
 
 
@@ -122,41 +118,26 @@ def cmd_opt(args: argparse.Namespace) -> Any:
     raise AssertionError(args.action)
 
 
-def cmd_round(args: argparse.Namespace) -> Any:
-    payload: dict[str, Any] = {"job": args.job, "note": args.note}
-    if args.spec:
-        payload["spec"] = args.spec
-    return client.request("round.record", payload, timeout=args.timeout)
-
-
-def cmd_eval(args: argparse.Namespace) -> Any:
-    payload: dict[str, Any] = {"job": args.job}
-    if args.spec:
-        payload["spec"] = args.spec
-    return client.request("eval.accept", payload, timeout=args.timeout)
-
-
-def cmd_adapt(args: argparse.Namespace) -> Any:
-    from saos import adapt
-
-    extract = _read_json(args.extract)
-    out = adapt.from_extraction(
-        extract,
-        embodiment=args.embodiment,
-        focal_length_mm=args.focal_length,
-        tube_lens_mm=args.tube_lens,
-        field_number=args.field_number,
-        catalogs=args.catalogs,
-        stop=args.stop,
-    )
-    out_dir = Path(args.out)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    written = {}
-    for key, name in (("prescription", "prescription.json"), ("expect", "expect.json"), ("report", "adapt_report.json")):
-        path = out_dir / name
-        path.write_text(json.dumps(jsonable(out[key]), ensure_ascii=False, indent=2), encoding="utf-8")
-        written[key] = str(path)
-    return {"written": written, "expect": out["expect"], "report": out["report"]}
+def cmd_exec(args: argparse.Namespace) -> Any:
+    script = Path(args.script)
+    try:
+        source = script.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise SaosError(ErrorCode.FILE_NOT_FOUND, f"cannot read script {script}: {exc}") from exc
+    script_args: dict[str, Any] = _read_json(args.args_file) if args.args_file else {}
+    if not isinstance(script_args, dict):
+        raise SaosError(ErrorCode.BAD_ARGS, "--args-file must contain a JSON object")
+    for item in args.arg:
+        key, sep, value = item.partition("=")
+        if not sep or not key:
+            raise SaosError(ErrorCode.BAD_ARGS, f"--arg expects KEY=VALUE, got {item!r}")
+        try:
+            script_args[key] = json.loads(value)
+        except ValueError:
+            script_args[key] = value
+    name = args.name or "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in script.stem)[:48] or "script"
+    payload = {"job": args.job, "name": name, "source": source, "args": script_args, "quiet": args.quiet}
+    return client.request("script.exec", payload, timeout=args.timeout)
 
 
 class _Parser(argparse.ArgumentParser):
@@ -238,21 +219,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--as", dest="as_name", required=True)
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--discard", action="store_true")
-    p = lens_cmd("repro", "复现校验：焦距、数值孔径、工作距离、放大率与期望值比较")
-    p.add_argument("expect", help="期望值 JSON")
-    p = lens_cmd("perturb", "受控扰动：按固定随机种子改变物镜各面曲率和厚度")
-    p.add_argument("--seed", type=int, required=True)
-    p.add_argument("--radius-rel", type=float, required=True, help="曲率相对变化上限，如 0.01")
-    p.add_argument("--thickness-rel", type=float, default=0.0)
     lens.set_defaults(func=cmd_lens)
 
-    ev = sub.add_parser("eval", help="验收评估（转发给后台进程）")
-    esub = ev.add_subparsers(dest="action", required=True, parser_class=_Parser)
-    acc = esub.add_parser("accept", help="按光学规格对当前已保存的镜头做验收评估")
-    acc.add_argument("--job", required=True)
-    acc.add_argument("--spec", help="任务目录内的规格文件，默认用 job.json 中的 spec")
-    acc.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
-    ev.set_defaults(func=cmd_eval)
+    ex = sub.add_parser("exec", help="在后台进程内执行脚本：脚本定义 run(ctx)，副本和结果存进任务的 scripts/")
+    ex.add_argument("script", help="Python 脚本路径")
+    ex.add_argument("--job", required=True)
+    ex.add_argument("--name", help="存档名，默认取脚本文件名")
+    ex.add_argument("--arg", action="append", default=[], metavar="KEY=VALUE", help="传给 ctx.args；VALUE 按 JSON 解析，失败时当字符串")
+    ex.add_argument("--args-file", help="JSON 对象文件，作为 ctx.args 的初值")
+    ex.add_argument("--quiet", action="store_true", help="extension 模式下执行期间暂停窗口刷新")
+    ex.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
+    ex.set_defaults(func=cmd_exec)
 
     op = sub.add_parser("opt", help="优化（转发给后台进程）")
     osub = op.add_subparsers(dest="action", required=True, parser_class=_Parser)
@@ -275,34 +252,9 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--cores", type=int)
     op.set_defaults(func=cmd_opt)
 
-    rd = sub.add_parser("round", help="调整轮次（转发给后台进程）")
-    rsub = rd.add_subparsers(dest="action", required=True, parser_class=_Parser)
-    rec = rsub.add_parser("record", help="把当前镜头存为下一轮，做验收评估并给出是否停机")
-    rec.add_argument("--job", required=True)
-    rec.add_argument("--spec", help="第 0 轮必须给出；之后沿用，不能更换")
-    rec.add_argument("--note", default="", help="本轮调整说明")
-    rec.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
-    rd.set_defaults(func=cmd_round)
+    from saos.recipes.microscope import cli as microscope_cli
 
-    from saos import library_cli, plan_cli
-    from saos.bench import cli as bench_cli
-
-    library_cli.register(sub, _Parser, client.DEFAULT_REQUEST_TIMEOUT_S)
-    bench_cli.register(sub, _Parser, client.DEFAULT_REQUEST_TIMEOUT_S)
-    plan_cli.register(sub, _Parser)
-
-    ad = sub.add_parser("adapt", help="把提取的面数据适配成标准设计布局的处方")
-    asub = ad.add_subparsers(dest="action", required=True, parser_class=_Parser)
-    pat = asub.add_parser("patent", help="专利/教材面数据提取结果 → 处方 + 复现期望值")
-    pat.add_argument("extract", help="提取结果 JSON")
-    pat.add_argument("--embodiment", help="schema 1 提取结果中的实施例键名")
-    pat.add_argument("--focal-length", type=float, help="缩放到的物镜焦距 mm；默认毫米制按原值，归一化数据按 200/|β|")
-    pat.add_argument("--tube-lens", type=float, default=200.0)
-    pat.add_argument("--field-number", type=float, help="默认取提取结果中的视场数或像高")
-    pat.add_argument("--catalogs", nargs="+", default=["OHARA", "SCHOTT", "HOYA", "SUMITA", "NIKON-HIKARI", "CDGM"])
-    pat.add_argument("--stop", help="rear_focal、printed 或 r<面号>；默认有印出的光阑就用，否则 rear_focal")
-    pat.add_argument("--out", required=True, help="输出目录")
-    ad.set_defaults(func=cmd_adapt)
+    microscope_cli.register(sub, _Parser, client.DEFAULT_REQUEST_TIMEOUT_S)
     return parser
 
 

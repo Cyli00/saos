@@ -29,11 +29,14 @@ from typing import Any
 
 import yaml
 
-from saos import client, config, jobs, library, prescription, rounds
+from saos import client, config, jobs
+
+from saos.recipes.microscope import calls, layout, library, rounds
 from saos.protocol import ErrorCode, SaosError, jsonable
-from saos.spec import Spec, load_spec
+from saos.recipes.microscope.spec import Spec, load_spec
 
 POLICY = "reference-v3"
+MICROSCOPE_OPS = {"round.record": "record_round", "lens.perturb": "perturb", "eval.accept": "accept"}
 MARECHAL = 1 / 14
 ESCALATION = 3.0
 MAX_ESCALATION_STEPS = 5
@@ -62,19 +65,22 @@ class Case:
         self.log_path = job.root / "bench.jsonl"
 
     def req(self, op: str, **args: Any) -> Any:
+        if op in MICROSCOPE_OPS:
+            # 原后台进程操作已移入显微物镜配方，改由脚本执行调用
+            return calls.call(MICROSCOPE_OPS[op], self.job.id, self.timeout, **args)
         return client.request(op, {"job": self.job.id, **args}, timeout=self.timeout)
 
     # ---- 布局 ----
 
     def layout(self) -> dict[str, Any]:
         rows = self.req("lens.surfaces")["surfaces"]
-        first, last = prescription.objective_block(rows)
+        first, last = layout.objective_block(rows)
         block = list(range(first, last + 1))
-        lens = [r["index"] for r in rows[first : last + 1] if r["type"] == "Standard" and r["comment"] != prescription.TAG_STOP]
+        lens = [r["index"] for r in rows[first : last + 1] if r["type"] == "Standard" and r["comment"] != layout.TAG_STOP]
         return {
             "rows": rows,
             "block": block,
-            "gap": prescription.gap_surface(rows),
+            "gap": layout.gap_surface(rows),
             "first": lens[0],
             "last": lens[-1],
             "radii": [i for i in lens if math.isfinite(rows[i]["radius"])],
@@ -406,7 +412,7 @@ def run_task(batch: str, task_id: str, timeout: float, cores: int | None = None,
     """按实验清单运行一个正式任务；本 SAOS_HOME 中已有该任务时续跑最早的那个。
 
     运行前核对：客户端与后台进程的代码版本都等于清单记录的版本，后台进程为清单要求的模式。"""
-    from saos.bench import calibration
+    import calibration
 
     manifest = calibration.load_plan(batch)
     task = calibration.task_of(manifest, task_id)

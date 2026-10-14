@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from saos.bench import runner as bench
+import runner as bench
 
 
 @pytest.fixture
@@ -49,7 +49,7 @@ def test_stretched_spec_scales_measured_values():
 
 def test_first_targeted_round_already_escalates(monkeypatch):
     case = object.__new__(bench.Case)
-    case.spec = __import__("saos.spec", fromlist=["parse_spec"]).parse_spec(
+    case.spec = __import__("saos.recipes.microscope.spec", fromlist=["parse_spec"]).parse_spec(
         {"spec_version": 1, "correction_class": "achromat", "magnification": 20, "na": 0.4, "limits": {"working_distance_min": 10}}
     )
     monkeypatch.setattr(case, "req", lambda op, **a: {"value": 0.0}, raising=False)
@@ -95,7 +95,7 @@ def test_resume_rejects_other_policy_and_out_of_sync_rounds(tmp_path):
 
 
 def test_prepare_does_not_discard_by_default(lib, saos_home, monkeypatch):
-    from saos import library as lib_mod
+    from saos.recipes.microscope import library as lib_mod
 
     lib_mod.save_entry("X", {"id": "X", "status": "admitted", "metrics": {}})
     lib_mod.write_file("X", "prescription.json", {"title": "x"})
@@ -106,44 +106,6 @@ def test_prepare_does_not_discard_by_default(lib, saos_home, monkeypatch):
     monkeypatch.setattr(bench.Case, "start", lambda self, *a, **k: None)
     bench.prepare("X", 1, 0.01, 0.03, 10)
     assert sent[0][0] == "lens.build" and sent[0][1]["discard"] is False
-
-
-SPEC = """spec_version: 1
-correction_class: achromat
-magnification: 20
-na: 0.4
-limits:
-  working_distance_min: {wd}
-"""
-
-
-def test_observe_rounds_keep_freeze_but_do_not_stop(saos_home, fake_lens_file, monkeypatch):
-    from saos import jobs
-    from saos.backend.fake import FakeBackend
-    from saos.daemon import Daemon
-    from saos.protocol import ErrorCode, SaosError
-
-    backend = FakeBackend()
-    daemon = Daemon(backend, backend.start(), "standalone")
-    job = jobs.create_job("observe")
-    (job.spec_dir / "b.yaml").write_text(SPEC.format(wd=10), encoding="utf-8")
-    daemon.op_import({"job": job.id, "src": str(fake_lens_file), "name": "a.zmx"})
-    daemon.op_load({"job": job.id, "file": "a.zmx"})
-    gs = iter([5.0, 5.0, 5.0, 5.0, 5.0, 5.0])
-    monkeypatch.setattr(backend, "merit_value", lambda: 0.0, raising=False)
-    monkeypatch.setattr(daemon, "_accept", lambda job, loaded, name, spec: {"verdict": "fail", "spec_shortfall": next(gs), "items": []})
-    for k in range(4):
-        out = daemon.op_round({"job": job.id, "spec": "spec/b.yaml", "observe": True})
-    assert out["decision"]["status"] == "stagnated" and out["record"]["round"] == 3
-    out = daemon.op_round({"job": job.id, "spec": "spec/b.yaml", "observe": True})  # 停机后仍可观察
-    assert out["record"]["round"] == 4 and out["record"]["observe"] is True
-    with pytest.raises(SaosError) as exc:  # 不加 observe 时照常拒绝
-        daemon.op_round({"job": job.id})
-    assert exc.value.code == ErrorCode.BAD_ARGS
-    (job.spec_dir / "b.yaml").write_text(SPEC.format(wd=12), encoding="utf-8")
-    with pytest.raises(SaosError) as exc:  # observe 也不能绕过冻结
-        daemon.op_round({"job": job.id, "spec": "spec/b.yaml", "observe": True})
-    assert exc.value.code == ErrorCode.SPEC_CHANGED
 
 
 def test_reconcile_recovers_round_recorded_before_crash(tmp_path):

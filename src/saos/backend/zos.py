@@ -140,8 +140,11 @@ class ZosBackend(Backend):
             raise SaosError(ErrorCode.ZOS_CONNECTION_LOST, "未连接 OpticStudio")
         return self.app.PrimarySystem
 
+    def needs_save(self) -> bool:
+        return bool(self.system.NeedsSave)
+
     def has_unsaved_changes(self) -> bool:
-        return self.mode == "extension" and bool(self.system.NeedsSave)
+        return self.mode == "extension" and self.needs_save()
 
     # 原生分析窗口；波前图和 PSF 只看轴上主波长，其余设为全部视场、全部波长
     _ANALYSES = ("Draw3D", "StandardSpot", "RayFan", "WavefrontMap", "HuygensPsf", "HuygensMtf", "RMSField", "GeometricEncircledEnergy")

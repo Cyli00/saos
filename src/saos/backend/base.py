@@ -73,6 +73,10 @@ class Backend(ABC):
         """一次请求期间的界面提示与刷新控制；只在连接手动打开的窗口时起作用。"""
         yield
 
+    def needs_save(self) -> bool:
+        """OpticStudio 的 NeedsSave 标志。实测只读的 Zernike 拟合、把参数写回相同的值也会让它置位。"""
+        return False
+
     def has_unsaved_changes(self) -> bool:
         """连接的窗口里有 saos 之外的未保存修改。只在 extension 模式下有意义。"""
         return False

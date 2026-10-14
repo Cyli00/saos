@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from saos.interview import ITEM_NAMES
+from saos.recipes.microscope.interview import ITEM_NAMES
 
 
 def e(value: Any) -> str:

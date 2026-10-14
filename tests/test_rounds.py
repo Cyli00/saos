@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from saos.rounds import decide, significant
+from saos.recipes.microscope.rounds import decide, significant
 
 INF = math.inf
 
@@ -39,7 +39,7 @@ def test_round_limit():
 
 
 def test_explicit_parameters_do_not_touch_defaults():
-    from saos import rounds
+    from saos.recipes.microscope import rounds
 
     traj = [10.0, 5.0, 4.98, 4.97, 4.96]
     assert decide(traj)["status"] == "stagnated"

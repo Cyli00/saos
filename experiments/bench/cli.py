@@ -1,4 +1,4 @@
-"""优化基准命令：saos bench split / plan / calibrate / run。"""
+"""优化基准命令：bench split / plan / calibrate / run（入口见 run.py）。"""
 
 from __future__ import annotations
 
@@ -6,8 +6,9 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from saos import library
-from saos.bench import calibration, runner
+from saos.recipes.microscope import library
+import calibration
+import runner
 from saos.protocol import ErrorCode, SaosError, write_json
 
 

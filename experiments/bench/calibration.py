@@ -13,7 +13,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from saos import config, library, rounds
+from saos import config
+
+from saos.recipes.microscope import library, rounds
 from saos.protocol import ErrorCode, SaosError
 
 OBSERVE_ROUNDS = 20  # 正式样本必须完整观察的轮数（或在此之前通过）
@@ -77,7 +79,7 @@ def effective_spec(entry: str, stretch: dict[str, float]) -> dict[str, Any]:
     """任务实际使用的光学规格：库中基准规格，拉伸规格时按原结构实测值改界限。"""
     import yaml
 
-    from saos.bench import runner
+    import runner
 
     spec = yaml.safe_load((library.entry_dir(entry) / "benchmark.yaml").read_text(encoding="utf-8"))
     return runner.stretched_spec(spec, library.load_entry(entry)["metrics"], stretch) if stretch else spec
@@ -87,8 +89,8 @@ def task_inputs(entry: str, stretch: dict[str, float]) -> dict[str, str]:
     """实验输入的指纹：处方、库中基准规格文件，以及任务实际规格推出的完整验收配置。
 
     代码固定不等于输入固定：运行和准入时都按这些哈希核对，库文件被改过就拒绝。"""
-    from saos import acceptance
-    from saos.spec import parse_spec
+    from saos.recipes.microscope import acceptance
+    from saos.recipes.microscope.spec import parse_spec
 
     d = library.entry_dir(entry)
     config_ = acceptance.acceptance_config(parse_spec(effective_spec(entry, stretch)))
@@ -146,7 +148,7 @@ def find_jobs(homes: list[Path], batch: str) -> dict[str, list[Path]]:
 
 def audit(job_dir: Path, manifest: dict[str, Any], task: dict[str, Any]) -> dict[str, Any]:
     """一个正式任务的轨迹是否合格；不合格时给出全部原因。"""
-    from saos import acceptance
+    from saos.recipes.microscope import acceptance
 
     reasons: list[str] = []
     state = json.loads((job_dir / "job.json").read_text(encoding="utf-8"))
@@ -190,7 +192,7 @@ def audit(job_dir: Path, manifest: dict[str, Any], task: dict[str, Any]) -> dict
         reasons.append("规格文件缺失")
     else:
         # 归档规格与计算记录必须一致：从任务实际规格重新生成验收配置，与冻结值和清单比较
-        from saos.spec import load_spec
+        from saos.recipes.microscope.spec import load_spec
 
         try:
             spec_hash = acceptance.config_hash(acceptance.acceptance_config(load_spec(spec_file)))

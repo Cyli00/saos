@@ -27,7 +27,7 @@ import yaml
 
 from saos import config
 from saos.protocol import ErrorCode, SaosError, read_json, write_json
-from saos.spec import REFERENCE_TUBE_MM
+from saos.recipes.microscope.spec import REFERENCE_TUBE_MM
 
 ENTRY_ID_CHARS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.")
 # 第 1 步格式默认值；基准规格从测量值推导时的出发点
@@ -191,7 +191,7 @@ def derive_benchmark_spec(entry: dict[str, Any], probe: dict[str, Any], correcti
         "eligible": not failed_fixed,
         "failed_fixed_items": {i: {"value": items[i]["value"], "threshold": items[i]["threshold"]} for i in failed_fixed},
         "calibration_evidence": evidence,
-        "note": f"基准专用规格，由 {entry['id']} 在格式默认规格下的验收结果推导（saos.library.derive_benchmark_spec）",
+        "note": f"基准专用规格，由 {entry['id']} 在格式默认规格下的验收结果推导（saos.recipes.microscope.library.derive_benchmark_spec）",
         "perturbation": PERTURBATION,
         "_metrics_at_derivation": {"focal_length_mm": m["focal_length_mm"]},
     }

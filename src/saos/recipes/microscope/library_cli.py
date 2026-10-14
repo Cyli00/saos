@@ -10,7 +10,9 @@ from typing import Any
 
 import yaml
 
-from saos import adapt, client, jobs, library
+from saos import client, jobs
+
+from saos.recipes.microscope import adapt, calls, library
 from saos.protocol import read_json as _read_json
 
 
@@ -56,7 +58,7 @@ def cmd_add(args: argparse.Namespace) -> Any:
 
 def check_extract(extract: dict[str, Any]) -> dict[str, Any]:
     """入库前核对提取结果：用独立近轴计算比较焦距和前焦距（无限远物镜的工作距离）与原文表头。"""
-    from saos import paraxial
+    from saos.recipes.microscope import paraxial
 
     ex = adapt.upgrade(extract)
     rows = adapt.oriented_rows(ex)
@@ -97,7 +99,7 @@ def cmd_check(args: argparse.Namespace) -> Any:
 def _accept(job: jobs.Job, entry_id: str, name: str, spec: dict[str, Any], timeout: float) -> dict[str, Any]:
     spec_rel = f"spec/{entry_id}-{name}.yaml"
     (job.root / spec_rel).write_text(yaml.safe_dump(spec, allow_unicode=True, sort_keys=False), encoding="utf-8")
-    return client.request("eval.accept", {"job": job.id, "spec": spec_rel}, timeout=timeout)
+    return calls.call("accept", job.id, timeout, spec=spec_rel)
 
 
 def cmd_verify(args: argparse.Namespace) -> Any:
@@ -111,7 +113,7 @@ def cmd_verify(args: argparse.Namespace) -> Any:
         {"job": job.id, "prescription": library.read_json(d / "prescription.json"), "file": lens_name, "overwrite": True, "discard": args.discard},
         timeout=t,
     )
-    repro = client.request("lens.repro", {"job": job.id, "expect": library.read_json(d / "expect.json")}, timeout=t)
+    repro = calls.call("repro", job.id, t, expect=library.read_json(d / "expect.json"))
     library.write_file(args.id, "repro.json", repro)
     entry["repro"] = {"pass": repro["pass"], "metrics": {m["metric"]: round(m["rel_error"], 6) for m in repro["metrics"]}}
     if not repro["pass"]:

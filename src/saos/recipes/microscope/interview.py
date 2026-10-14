@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 
 from saos.protocol import ErrorCode, SaosError
-from saos.spec import REFERENCE_TUBE_MM, WAVELENGTHS_UM, parse_spec
+from saos.recipes.microscope.spec import REFERENCE_TUBE_MM, WAVELENGTHS_UM, parse_spec
 
 
 FIELDS = {

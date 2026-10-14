@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from saos import adapt
+from saos.recipes.microscope import adapt
 from saos.protocol import SaosError
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "us4521083" / "extract.json").read_text(encoding="utf-8"))
@@ -103,7 +103,7 @@ def test_partial_cover_defaults_preserve_printed_values(cover):
 
 
 def test_check_and_adapt_use_the_same_assumed_cover():
-    from saos.library_cli import check_extract
+    from saos.recipes.microscope.library_cli import check_extract
 
     ex = adapt.upgrade(copy.deepcopy(FIXTURE))
     ex["cover_glass"] = {"thickness": None, "n": 1.5255, "nu": 56.0}
@@ -115,7 +115,7 @@ def test_check_and_adapt_use_the_same_assumed_cover():
 
 
 def test_check_printed_cover_does_not_require_native_scale():
-    from saos.library_cli import check_extract
+    from saos.recipes.microscope.library_cli import check_extract
 
     ex = adapt.upgrade(copy.deepcopy(FIXTURE))
     ex["cover_glass"] = {"thickness": 0.017, "n": 1.5255, "nu": 56.0}

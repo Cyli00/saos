@@ -82,9 +82,9 @@ OpticStudio 2024 R1 Premium 加 ZOS-API 能建模的系统都在范围内，包�
 
 ## 近期工作
 
-1. 代码改名为 saos（包名、命令、环境变量、命名管道、面注释标签），不兼容旧名；`ref/` 联接到 zea 仓库。
-2. 显微物镜的专用操作和命令移入 `saos.recipes.microscope`，`bench/` 移到 `experiments/`。
-3. 脚本执行入口。
+1. ~~代码改名为 saos，不兼容旧名；`ref/` 联接到 zea 仓库。~~ 已完成。
+2. ~~显微物镜的专用操作和命令移入 `saos.recipes.microscope`（命令为 `saos microscope …`），`bench/` 移到 `experiments/bench/`。~~ 已完成。
+3. ~~脚本执行入口 `saos exec`。~~ 已完成，用法见 docs/cli.md「脚本执行」。
 4. 分析导出（数值优先，再做显性调试下的窗口截图）。
 5. 显性调试的窗口规则：连接后自动打开，改动后刷新。
 6. 入口技能 `saos` 和《配方编写规范》，全部用英文。

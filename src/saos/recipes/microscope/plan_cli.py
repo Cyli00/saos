@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from saos import interview, plan
+from saos.recipes.microscope import interview, plan
 
 
 def register(sub, parser_class) -> None:

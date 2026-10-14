@@ -14,8 +14,9 @@ from typing import Any
 
 from saos import glasscat, prescription
 from saos.backend import Backend
+from saos.recipes.microscope import layout
 from saos.protocol import ErrorCode, SaosError
-from saos.spec import LAMBDA_E_UM, PFR_GRID, Spec, sample_points
+from saos.recipes.microscope.spec import LAMBDA_E_UM, PFR_GRID, Spec, sample_points
 
 ZERN_SAMP = 3  # 128×128
 ZERN_MAX_TERM = 66  # 含 ρ¹⁰ 球差项；37 项时离轴点残差约 0.005λ，见第 3 步记录
@@ -224,8 +225,8 @@ def reproduction_check(backend: Backend, design: list[dict[str, Any]], expect: d
 
     expect：{"efl": mm, "na": ..., "wd": mm, "magnification": ..., "rel_tol": 0.01}，缺的项不比较。
     """
-    first, last = prescription.objective_block(design)
-    gap = prescription.gap_surface(design)
+    first, last = layout.objective_block(design)
+    gap = layout.gap_surface(design)
     f_tl = design[last + 1]["focal_length"]
     efl = backend.operand("EFLY", first, last, [])
     na = backend.operand("OBSN", 0, 0, [])
@@ -283,8 +284,8 @@ class Evaluator:
 
     def build_model(self, design: list[dict[str, Any]]) -> None:
         spec = self.spec
-        first, last = prescription.objective_block(design)
-        gap = prescription.gap_surface(design)
+        first, last = layout.objective_block(design)
+        gap = layout.gap_surface(design)
         tube = design[last + 1]
         self.objective = [dict(r) for r in design[first : last + 1]]
         self.diagnostics["design_apertures"] = [
@@ -299,18 +300,18 @@ class Evaluator:
             obj = {
                 "thickness": cover["thickness"],
                 "material": {"model": {"nd": cover["nd"], "vd": cover["vd"], "dpgf": 0.0}},
-                "comment": prescription.TAG_OBJECT,
+                "comment": layout.TAG_OBJECT,
             }
-            surfaces.append({"type": "standard", "radius": math.inf, "thickness": design[gap]["thickness"], "comment": prescription.TAG_COVER_TOP})
+            surfaces.append({"type": "standard", "radius": math.inf, "thickness": design[gap]["thickness"], "comment": layout.TAG_COVER_TOP})
         else:
-            obj = {"thickness": design[gap]["thickness"], "material": "", "comment": prescription.TAG_OBJECT}
+            obj = {"thickness": design[gap]["thickness"], "material": "", "comment": layout.TAG_OBJECT}
         for r in self.objective:
             if r["type"] == "paraxial":
                 surfaces.append({k: r[k] for k in ("type", "focal_length", "opd_mode", "thickness", "comment", "stop")})
             else:
                 surfaces.append({**{k: r[k] for k in ("radius", "conic", "thickness", "material", "comment", "stop")}, "type": "standard"})
         f_tl = spec.tube_lens_focal_length
-        surfaces.append({"type": "paraxial", "focal_length": f_tl, "opd_mode": 1, "thickness": f_tl, "comment": prescription.TAG_TUBE, "stop": tube["stop"]})
+        surfaces.append({"type": "paraxial", "focal_length": f_tl, "opd_mode": 1, "thickness": f_tl, "comment": layout.TAG_TUBE, "stop": tube["stop"]})
 
         radius = spec.object_field_radius
         catalogs = list(dict.fromkeys([c.upper() for c in self.design_catalogs] + list(spec.glass_catalogs)))

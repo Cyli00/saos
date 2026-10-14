@@ -5,7 +5,7 @@ import math
 import pytest
 
 from saos.protocol import SaosError
-from saos.spec import berek_check, parse_spec, sample_points
+from saos.recipes.microscope.spec import berek_check, parse_spec, sample_points
 
 
 def base(**overrides):

@@ -9,9 +9,10 @@ import math
 from typing import Any
 
 from saos import glasscat, prescription
-from saos.paraxial import Surface, back_focal_distance, effective_focal_length, front_focal_distance
+from saos.recipes.microscope.paraxial import Surface, back_focal_distance, effective_focal_length, front_focal_distance
+from saos.recipes.microscope import layout
 from saos.protocol import ErrorCode, SaosError
-from saos.spec import REFERENCE_TUBE_MM
+from saos.recipes.microscope.spec import REFERENCE_TUBE_MM
 
 WAVES = {
     "d": [0.4861327, 0.5875618, 0.6562725],  # F、d、C，主波长 d
@@ -240,26 +241,26 @@ def from_extraction(
                 "radius": _num(r["r"]) * scale,
                 "thickness": thickness,
                 "material": material,
-                "comment": prescription.TAG_STOP if (r.get("stop") and math.isinf(_num(r["r"]))) else f"patent r{r.get('i')}",
+                "comment": layout.TAG_STOP if (r.get("stop") and math.isinf(_num(r["r"]))) else f"patent r{r.get('i')}",
                 "stop": bool(is_stop),
             }
         )
     if stop == "rear_focal":
         # 物镜后焦面上的虚拟光阑：物方远心。参考筒镜放在同一平面，位置不影响理想透镜成像
-        surfaces.append({"radius": math.inf, "thickness": 0.0, "comment": prescription.TAG_STOP, "stop": True})
+        surfaces.append({"radius": math.inf, "thickness": 0.0, "comment": layout.TAG_STOP, "stop": True})
     elif not any(s["stop"] for s in surfaces):
         raise _bad(f"stop 必须是 rear_focal、printed 或 r<面号>，收到 {stop}")
-    surfaces.append({"type": "paraxial", "focal_length": tube_lens_mm, "opd_mode": 1, "thickness": tube_lens_mm, "comment": prescription.TAG_TUBE})
+    surfaces.append({"type": "paraxial", "focal_length": tube_lens_mm, "opd_mode": 1, "thickness": tube_lens_mm, "comment": layout.TAG_TUBE})
 
     cover, cover_assumptions = resolve_cover_glass(ex.get("cover_glass"), scale=scale)
     if cover:
         t_c, n_c = float(cover["thickness"]) * scale, float(cover["n"])
         # 平行平板使物点的近轴像前移 t(1 - 1/n)，所以盖玻片上表面到第一面的间隔取 前焦距 - t/n
         gap = ffd - t_c / n_c
-        obj = {"thickness": t_c, "material": {"model": {"nd": n_c, "vd": float(cover["nu"]), "dpgf": 0.0}}, "comment": prescription.TAG_OBJECT}
-        surfaces.insert(0, {"radius": math.inf, "thickness": gap, "comment": prescription.TAG_COVER_TOP})
+        obj = {"thickness": t_c, "material": {"model": {"nd": n_c, "vd": float(cover["nu"]), "dpgf": 0.0}}, "comment": layout.TAG_OBJECT}
+        surfaces.insert(0, {"radius": math.inf, "thickness": gap, "comment": layout.TAG_COVER_TOP})
     else:
-        obj = {"thickness": ffd, "material": "", "comment": prescription.TAG_OBJECT}
+        obj = {"thickness": ffd, "material": "", "comment": layout.TAG_OBJECT}
 
     m = tube_lens_mm / f_target
     printed_fn = header.get("field_number") or (2 * header["image_height"] if header.get("image_height") else None)

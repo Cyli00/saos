@@ -6,11 +6,9 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import math
 import os
-import random
 import secrets
 import shutil
 import sys
@@ -21,19 +19,16 @@ from multiprocessing.connection import Connection, Listener
 from pathlib import Path
 from typing import Any, Callable
 
-from saos import acceptance, config, jobs, prescription, rounds
+from saos import config, jobs, prescription, scripting
 from saos.backend import Backend, make_backend
 from saos.backend.base import same_number
-from saos.protocol import ErrorCode, SaosError, decode, encode, fail, jsonable, ok, write_json
-from saos.spec import Spec, load_spec
+from saos.protocol import ErrorCode, SaosError, decode, encode, fail, ok, write_json
 
 log = logging.getLogger("saos.daemon")
 
 REQUEST_READ_TIMEOUT_S = 30
 COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
 COMPARED_NUMBER_KEYS = ("radius", "thickness", "conic", "semi_diameter")
-# 连接手动打开的窗口时，这些操作期间暂停界面刷新，结束后窗口显示最终状态；SAOS_UI_LIVE=1 时全程刷新
-QUIET_OPS = frozenset({"eval.accept", "round.record", "lens.repro"})
 
 
 @dataclass
@@ -99,13 +94,10 @@ class Daemon:
             "lens.build": self.op_build,
             "lens.view": self.op_view,
             "lens.capture": self.op_capture,
-            "lens.repro": self.op_repro,
-            "eval.accept": self.op_accept,
-            "lens.perturb": self.op_perturb,
             "opt.vary": self.op_vary,
             "opt.merit": self.op_merit,
             "opt.local": self.op_optimize,
-            "round.record": self.op_round,
+            "script.exec": self.op_exec,
         }
 
     # ---- 请求分发 ----
@@ -124,7 +116,8 @@ class Daemon:
                 raise SaosError(ErrorCode.UNKNOWN_OP, f"未知操作 {op!r}", {"available": sorted(self.handlers)})
             if op not in ("ping", "shutdown") and not self.backend.healthy():
                 raise self._connection_lost({"detected": "操作前的连接检查"})
-            quiet = op in QUIET_OPS and os.environ.get("SAOS_UI_LIVE") != "1"
+            # 连接手动打开的窗口时，带 quiet 的脚本执行期间暂停界面刷新，结束后窗口显示最终状态；SAOS_UI_LIVE=1 时全程刷新
+            quiet = op == "script.exec" and bool(args.get("quiet")) and os.environ.get("SAOS_UI_LIVE") != "1"
             with self.backend.activity(f"saos {op}", quiet):
                 result = handler(args)
         except SaosError as exc:
@@ -163,6 +156,9 @@ class Daemon:
             job = jobs.get_job(job_id)
         except SaosError:
             return
+        if "source" in args:
+            # 脚本全文已存进 scripts/，执行记录只留长度
+            args = {**args, "source": f"<{len(str(args['source']))} chars>"}
         record: dict[str, Any] = {"op": op, "args": args, "ok": error is None, "duration_ms": duration_ms}
         if error is not None:
             record["error"] = {"code": error.code, "message": error.message}
@@ -337,95 +333,7 @@ class Daemon:
         loaded = self._require_loaded(self._job(args))
         return {**loaded.describe(), **self.backend.show_analyses()}
 
-    def op_repro(self, args: dict[str, Any]) -> dict[str, Any]:
-        loaded = self._require_loaded(self._job(args))
-        expect = _arg(args, "expect", dict)
-        design = self.backend.snapshot()
-        gap = prescription.gap_surface(design)
-        original = design[gap]["thickness"]
-        primary = next(w["um"] for w in self.backend.system_info()["wavelengths"] if w["primary"])
-        try:
-            result = acceptance.reproduction_check(self.backend, design, expect, primary)
-        except acceptance.InvalidEvaluation as exc:
-            raise SaosError(ErrorCode.ZOS_ERROR, f"复现校验无法完成：{exc.reason}", exc.details) from exc
-        finally:
-            # 复现校验只临时调焦，结束后恢复，不改变已加载的镜头。未修改的镜头直接重新加载文件：
-            # 实测调焦用的 ZERN 和写回原厚度都会让 OpticStudio 的 NeedsSave 置位，extension 模式下会误报未保存修改
-            if loaded.dirty:
-                self.backend.set_surface(gap, "thickness", original)
-            else:
-                self.backend.load(loaded.path)
-        return {**loaded.describe(), **result}
-
-    def op_accept(self, args: dict[str, Any]) -> dict[str, Any]:
-        job = self._job(args)
-        loaded = self._require_loaded(job)
-        if loaded.dirty:
-            raise SaosError(ErrorCode.UNSAVED_CHANGES, "验收评估针对已保存的镜头文件，先保存", loaded.describe())
-        spec_name = _arg(args, "spec", str, default=None) or job.read_state().get("spec")
-        if not spec_name:
-            raise SaosError(ErrorCode.BAD_ARGS, f"任务 {job.id} 没有光学规格，用 --spec 指定或在 job create 时给出")
-        return self._accept(job, loaded, spec_name, self._load_job_spec(job, spec_name))
-
-    @staticmethod
-    def _load_job_spec(job: jobs.Job, spec_name: str) -> Spec:
-        spec_path = (job.root / spec_name).resolve()
-        if job.root.resolve() not in spec_path.parents or not spec_path.is_file():
-            raise SaosError(ErrorCode.PATH_OUTSIDE_JOB, f"规格文件必须在任务目录内：{spec_name}")
-        return load_spec(spec_path)
-
-    def _accept(self, job: jobs.Job, loaded: Loaded, spec_name: str, spec: Spec) -> dict[str, Any]:
-        design = self.backend.snapshot()
-        info = self.backend.system_info()
-        evaluator = acceptance.Evaluator(
-            self.backend, spec, info["material_catalogs"], telecentric_object=info["aperture"].get("telecentric_object", False)
-        )
-        try:
-            result = evaluator.run(design)
-        finally:
-            stem = loaded.path.stem
-            eval_dir = job.root / "eval"
-            eval_dir.mkdir(exist_ok=True)
-            model_path = eval_dir / f"{stem}.accept.zmx"
-            try:
-                self.backend.save_as(model_path)
-            except Exception:  # noqa: BLE001 - 搭建失败时可能没有可保存的模型
-                model_path = None
-            self.backend.load(loaded.path)
-        rel = job.relative_lens(loaded.path)
-        result = {"job": job.id, "file": rel, "spec": spec_name, **result}
-        if model_path is not None:
-            result["acceptance_model"] = model_path.relative_to(job.root).as_posix()
-        write_json(job.root / "eval" / f"{loaded.path.stem}.accept.json", result)
-        job.update_state(last_evaluation={"file": rel, "verdict": result["verdict"], "spec_shortfall": jsonable(result["spec_shortfall"])})
-        return result
-
     # ---- 优化与调整轮次 ----
-
-    def op_perturb(self, args: dict[str, Any]) -> dict[str, Any]:
-        """受控扰动（固定随机种子）：物镜各面曲率按相对量、各面厚度按相对量均匀随机改变。"""
-        loaded = self._require_loaded(self._job(args))
-        seed = _arg(args, "seed", int)
-        radius_rel = float(_arg(args, "radius_rel", (int, float)))
-        thickness_rel = float(_arg(args, "thickness_rel", (int, float), default=0.0))
-        rows = self.backend.snapshot()
-        first, last = prescription.objective_block(rows)
-        rng = random.Random(seed)
-        changes = []
-        for r in rows[first : last + 1]:
-            if r["type"] != "standard" or r["comment"] == prescription.TAG_STOP:
-                continue
-            i = r["index"]
-            if not math.isinf(r["radius"]):
-                new_r = 1.0 / ((1.0 / r["radius"]) * (1.0 + rng.uniform(-radius_rel, radius_rel)))
-                self.backend.set_surface(i, "radius", new_r)
-                changes.append({"surface": i, "param": "radius", "before": r["radius"], "after": new_r})
-            if i < last and thickness_rel > 0:
-                new_t = r["thickness"] * (1.0 + rng.uniform(-thickness_rel, thickness_rel))
-                self.backend.set_surface(i, "thickness", new_t)
-                changes.append({"surface": i, "param": "thickness", "before": r["thickness"], "after": new_t})
-        loaded.dirty = True
-        return {**loaded.describe(), "seed": seed, "radius_rel": radius_rel, "thickness_rel": thickness_rel, "changes": changes}
 
     def op_vary(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))
@@ -457,54 +365,18 @@ class Daemon:
         loaded.dirty = True
         return {**loaded.describe(), **result}
 
-    def op_round(self, args: dict[str, Any]) -> dict[str, Any]:
-        """记录一个调整轮次：把当前镜头存为 rounds/rNNN.zmx，做验收评估，给出是否停机。
-
-        observe=True 用于校准停机规则（saos bench run）：照常冻结并核对验收配置，
-        但停机判断只记录、不执行，轨迹可以走到停机之后。"""
+    def op_exec(self, args: dict[str, Any]) -> dict[str, Any]:
+        """执行 agent 编写的脚本（ADR-0007）。当前加载的是其他任务的镜头时拒绝。"""
         job = self._job(args)
-        loaded = self._require_loaded(job)
-        log_path = job.root / "rounds.jsonl"
-        history = rounds.load(log_path)
-        frozen = job.read_state().get("frozen") if history else None
-        spec_name = _arg(args, "spec", str, default=None) or (frozen or {}).get("spec")
-        if not spec_name:
-            raise SaosError(ErrorCode.BAD_ARGS, "第 0 轮必须用 --spec 指定光学规格，之后各轮沿用")
-        spec = self._load_job_spec(job, spec_name)
-        config = acceptance.acceptance_config(spec)
-        digest = acceptance.config_hash(config)
-        if history:
-            # 每轮都按当前规格文件重新补全，与第 0 轮冻结的完整验收配置逐项比较
-            rounds.check_frozen(job, spec_name, config, digest)
-            status = rounds.decide([float(h["spec_shortfall"]) for h in history])["status"]
-            if status != "continue" and not args.get("observe", False):
-                raise SaosError(ErrorCode.BAD_ARGS, f"调整已停止（{status}），不能继续记录轮次", {"status": status})
-        else:
-            rounds.freeze(job, spec_name, config, digest)
-        number = len(history)
-        target = job.resolve_lens(f"rounds/r{number:03d}.zmx", must_exist=False)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        merit = self.backend.merit_value()
-        self.backend.save_as(target)
-        loaded.path, loaded.dirty = target, False
-        result = self._accept(job, loaded, spec_name, spec)
-        record = {
-            "round": number,
-            "file": job.relative_lens(target),
-            "verdict": result["verdict"],
-            "spec_shortfall": result["spec_shortfall"],
-            "items": {i["id"]: i["shortfall"] for i in result["items"] if i["shortfall"] > 0},
-            "merit": merit,
-            "note": str(args.get("note", "")),
-            "observe": bool(args.get("observe", False)),
-            "config_sha256": digest,
-            "time": jobs.now_iso(),
-        }
-        with log_path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(jsonable(record), ensure_ascii=False) + "\n")
-        decision = rounds.decide([float(h["spec_shortfall"]) for h in history] + [float(result["spec_shortfall"])])
-        job.update_state(current_lens=record["file"], last_saved=record["file"], round=number, round_status=decision["status"])
-        return {"record": record, "decision": decision, "evaluation": result}
+        if self.loaded is not None:
+            self._require_loaded(job)
+        try:
+            return scripting.execute(self, job, _arg(args, "name", str), _arg(args, "source", str), _arg(args, "args", dict, default={}))
+        finally:
+            # 脚本可能改动了镜头而没有声明；按 OpticStudio 的 NeedsSave 只升不降地标记。
+            # 实测只读的 Zernike 拟合也会让 NeedsSave 置位，所以这样做偏保守
+            if self.loaded is not None and self.backend.healthy() and self.backend.needs_save():
+                self.loaded.dirty = True
 
     def op_operand(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))

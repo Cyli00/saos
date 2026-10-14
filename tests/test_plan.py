@@ -6,10 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from saos import acceptance, interview, jobs, plan
+from saos import jobs
+
+from saos.recipes.microscope import acceptance, interview, plan
 from saos.cli import main
 from saos.protocol import SaosError
-from saos.spec import parse_spec
+from saos.recipes.microscope.spec import parse_spec
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "interview" / "visual.yaml"
@@ -181,5 +183,5 @@ def test_evaluator_change_requires_new_review(saos_home, example_library, tmp_pa
 
 
 def test_cli_interview_and_plan_help_are_available(capsys):
-    assert main(["interview", "check", str(FIXTURE)]) == 0
+    assert main(["microscope", "interview", "check", str(FIXTURE)]) == 0
     assert json.loads(capsys.readouterr().out)["result"]["ready"]
