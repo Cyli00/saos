@@ -4,13 +4,13 @@
 
 ## 从对话到确认
 
-agent 使用仓库中的 [zea-interview 技能](../skills/zea-interview/SKILL.md)。用户描述使用目的和条件，agent 澄清不能推断的内容，写出结构化访谈记录。程序检查规格与来源，列出缺项，生成可审阅页面。程序不负责把任意自然语言自动解析为规格；因此 agent 仍须对照用户原话检查是否遗漏。
+agent 使用仓库中的 [saos-interview 技能](../skills/saos-interview/SKILL.md)。用户描述使用目的和条件，agent 澄清不能推断的内容，写出结构化访谈记录。程序检查规格与来源，列出缺项，生成可审阅页面。程序不负责把任意自然语言自动解析为规格；因此 agent 仍须对照用户原话检查是否遗漏。
 
 ```bash
-uv run zea job create --name microscope-plan
-uv run zea interview check <访谈记录.yaml>
-uv run zea plan create --job <任务编号> --interview <访谈记录.yaml> --entry US4521083-e1 --rationale "选择理由与需调整之处"
-uv run zea plan show --job <任务编号>
+uv run saos job create --name microscope-plan
+uv run saos interview check <访谈记录.yaml>
+uv run saos plan create --job <任务编号> --interview <访谈记录.yaml> --entry US4521083-e1 --rationale "选择理由与需调整之处"
+uv run saos plan show --job <任务编号>
 ```
 
 `interview check` 的 `ready: false` 表示需要继续访谈，`questions` 给出未解决项。命令成功只代表检查完成，不代表访谈完成。格式错误、未知规格字段、缺少来源、非有限数值等返回 `BAD_ARGS`。
@@ -20,8 +20,8 @@ uv run zea plan show --job <任务编号>
 用户在对话里明确确认当前页面后，agent 记录原话：
 
 ```bash
-uv run zea plan confirm --job <任务编号> --revision <完整版本 SHA-256> --evidence "用户的明确确认原话"
-uv run zea plan handoff --job <任务编号>
+uv run saos plan confirm --job <任务编号> --revision <完整版本 SHA-256> --evidence "用户的明确确认原话"
+uv run saos plan handoff --job <任务编号>
 ```
 
 确认绑定该版本的用户需求、完整规格、验收配置、初始结构快照和展示文件。旧版本、改过的展示文件、改变后的评估器配置都不能确认。确认不会启动优化。`handoff` 在交接前重新核对确认与任务规格，返回规格路径和库中处方快照；快照仍是原结构，必须按用户规格完成适配和第 0 轮验收。不能用库中基准规格或原结构的 G = 0 替代本任务的要求和验收。
@@ -30,14 +30,14 @@ uv run zea plan handoff --job <任务编号>
 
 ## 访谈记录格式
 
-可运行的例子见 [目视情景](../tests/fixtures/interview/visual.yaml)。访谈从 `zea job create` 开始，叙述记录存为任务的 `sources/interview.md`，结构化记录存为 `sources/interview.yaml`；需求文档不放进仓库的 `docs/`，也不把临时页面放进仓库根目录。
+可运行的例子见 [目视情景](../tests/fixtures/interview/visual.yaml)。访谈从 `saos job create` 开始，叙述记录存为任务的 `sources/interview.md`，结构化记录存为 `sources/interview.yaml`；需求文档不放进仓库的 `docs/`，也不把临时页面放进仓库根目录。
 
 | 字段 | 含义 |
 |---|---|
 | `schema` | 固定为 1 |
 | `request` | 用户原话或多轮对话中完整的用户需求，不用 agent 的推断覆盖原话 |
 | `scope` | 当前支持 `{medium: air, conjugate: infinity}`；其他值进入待解决问题 |
-| `spec` | `zea.spec` 的现有规格字段；数值直接填写，来源放在 `provenance` |
+| `spec` | `saos.spec` 的现有规格字段；数值直接填写，来源放在 `provenance` |
 | `provenance` | 字段路径 → `{source: user 或 assumption, basis: 原话或依据}`；显式填写的每个字段都要有来源 |
 | `requirements` | 每项含 `text`、`kind`、`fields`；可附 `note`。kind 为 constraint、target、preference、unresolved |
 | `questions` | 尚未解决的问题列表；非空时不生成可确认计划 |
@@ -56,7 +56,7 @@ uv run zea plan handoff --job <任务编号>
 
 所有用户文字、专利疑点和选择理由都进行 HTML 转义；外部链接只允许 HTTP(S)。页面不包含脚本、外部字体、远程资源或浏览器确认按钮。确认后保留原审阅副本，当前状态通过对话和 `plan show` 查看，页面不会伪装成实时状态面板。
 
-视觉规范沿用 DESIGN.md 的“朴素 HTML”要求：白底、深色文字、青绿色标记、琥珀色假设提醒；剖面图是主视觉。`src/zea/plan.css` 中的 CSS 变量是颜色与字体的唯一运行时来源，由渲染器嵌入单文件 HTML。中文正文采用系统中文无衬线字体，标题使用本地中文衬线字体，数值使用等宽字体。链接与原生 details/summary 是唯一交互控件，支持键盘焦点；表格在窄屏内滚动，页面支持打印。
+视觉规范沿用 DESIGN.md 的“朴素 HTML”要求：白底、深色文字、青绿色标记、琥珀色假设提醒；剖面图是主视觉。`src/saos/plan.css` 中的 CSS 变量是颜色与字体的唯一运行时来源，由渲染器嵌入单文件 HTML。中文正文采用系统中文无衬线字体，标题使用本地中文衬线字体，数值使用等宽字体。链接与原生 details/summary 是唯一交互控件，支持键盘焦点；表格在窄屏内滚动，页面支持打印。
 
 这里只生成一个离线审阅页面，不引入 Web 服务、在线聊天 UI、页面表单或新的前端框架。
 

@@ -41,7 +41,7 @@ class ErrorCode:
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
 
-class ZeaError(Exception):
+class SaosError(Exception):
     def __init__(self, code: str, message: str, details: dict[str, Any] | None = None):
         super().__init__(message)
         self.code = code
@@ -56,7 +56,7 @@ def ok(result: Any) -> dict[str, Any]:
     return {"ok": True, "result": result}
 
 
-def fail(err: ZeaError) -> dict[str, Any]:
+def fail(err: SaosError) -> dict[str, Any]:
     return {"ok": False, "error": err.to_dict()}
 
 
@@ -88,7 +88,7 @@ def read_json(path: Path | str) -> Any:
     try:
         return json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
-        raise ZeaError(ErrorCode.BAD_ARGS, f"无法读取 JSON 文件 {path}：{exc}") from exc
+        raise SaosError(ErrorCode.BAD_ARGS, f"无法读取 JSON 文件 {path}：{exc}") from exc
 
 
 def encode(message: dict[str, Any]) -> bytes:
@@ -99,7 +99,7 @@ def decode(raw: bytes) -> dict[str, Any]:
     try:
         message = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ZeaError(ErrorCode.PROTOCOL_ERROR, f"无法解析消息：{exc}") from exc
+        raise SaosError(ErrorCode.PROTOCOL_ERROR, f"无法解析消息：{exc}") from exc
     if not isinstance(message, dict):
-        raise ZeaError(ErrorCode.PROTOCOL_ERROR, "消息必须是 JSON 对象")
+        raise SaosError(ErrorCode.PROTOCOL_ERROR, "消息必须是 JSON 对象")
     return message

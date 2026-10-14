@@ -12,8 +12,8 @@ import time
 from multiprocessing.connection import Client
 from typing import Any
 
-from zea import config
-from zea.protocol import ErrorCode, ZeaError, decode, encode
+from saos import config
+from saos.protocol import ErrorCode, SaosError, decode, encode
 
 DEFAULT_REQUEST_TIMEOUT_S = 600.0
 DEFAULT_START_TIMEOUT_S = 120.0
@@ -100,28 +100,28 @@ def _clear_stale_state() -> None:
 
 
 def request(op: str, args: dict[str, Any] | None = None, timeout: float = DEFAULT_REQUEST_TIMEOUT_S) -> Any:
-    """发送一个请求，成功时返回 result，失败时抛出 ZeaError。"""
+    """发送一个请求，成功时返回 result，失败时抛出 SaosError。"""
     state = read_state()
     if state is None or not pid_alive(int(state.get("pid", 0))):
-        raise ZeaError(ErrorCode.DAEMON_NOT_RUNNING, "后台进程没有运行，先执行 zea daemon start")
+        raise SaosError(ErrorCode.DAEMON_NOT_RUNNING, "后台进程没有运行，先执行 saos daemon start")
     try:
         authkey = config.daemon_authkey_file().read_bytes()
         conn = Client(state["address"], family="AF_PIPE", authkey=authkey)
     except (OSError, KeyError) as exc:
-        raise ZeaError(ErrorCode.DAEMON_NOT_RUNNING, f"无法连接后台进程：{exc}") from exc
+        raise SaosError(ErrorCode.DAEMON_NOT_RUNNING, f"无法连接后台进程：{exc}") from exc
     try:
         conn.send_bytes(encode({"op": op, "args": args or {}}))
         if not conn.poll(timeout):
-            raise ZeaError(ErrorCode.DAEMON_TIMEOUT, f"{timeout:.0f} 秒内没有收到响应", {"op": op})
+            raise SaosError(ErrorCode.DAEMON_TIMEOUT, f"{timeout:.0f} 秒内没有收到响应", {"op": op})
         response = decode(conn.recv_bytes())
     except (EOFError, OSError) as exc:
-        raise ZeaError(ErrorCode.DAEMON_NOT_RUNNING, f"与后台进程的连接中断：{exc}") from exc
+        raise SaosError(ErrorCode.DAEMON_NOT_RUNNING, f"与后台进程的连接中断：{exc}") from exc
     finally:
         conn.close()
     if response.get("ok"):
         return response.get("result")
     err = response.get("error") or {}
-    raise ZeaError(err.get("code", ErrorCode.PROTOCOL_ERROR), err.get("message", "未知错误"), err.get("details"))
+    raise SaosError(err.get("code", ErrorCode.PROTOCOL_ERROR), err.get("message", "未知错误"), err.get("details"))
 
 
 def _log_tail(lines: int = 20) -> list[str]:
@@ -138,12 +138,12 @@ def _kill_tree(pid: int) -> None:
 
 def _spawn(mode: str, token: str) -> subprocess.Popen:
     config.daemon_dir().mkdir(parents=True, exist_ok=True)
-    cmd = [sys.executable, "-m", "zea", "daemon", "run", "--mode", mode, "--token", token]
+    cmd = [sys.executable, "-m", "saos", "daemon", "run", "--mode", mode, "--token", token]
     log_fh = config.daemon_log_file().open("ab")
     # DETACHED_PROCESS 只作用于 venv 启动器，其解释器子进程仍可能创建可见控制台。
     # CREATE_NO_WINDOW 让整条启动链继承无窗口控制台，不能与 DETACHED_PROCESS 混用。
     base_flags = _CREATE_NO_WINDOW | _CREATE_NEW_PROCESS_GROUP
-    kwargs = dict(stdin=subprocess.DEVNULL, stdout=log_fh, stderr=log_fh, cwd=str(config.zea_home()), close_fds=True, env={**os.environ, "ZEA_HOME": str(config.zea_home())})
+    kwargs = dict(stdin=subprocess.DEVNULL, stdout=log_fh, stderr=log_fh, cwd=str(config.saos_home()), close_fds=True, env={**os.environ, "SAOS_HOME": str(config.saos_home())})
     try:
         # 脱离调用方的作业对象，避免命令行退出时后台进程被一起结束
         return subprocess.Popen(cmd, creationflags=base_flags | _CREATE_BREAKAWAY_FROM_JOB, **kwargs)
@@ -162,14 +162,14 @@ def status() -> dict[str, Any]:
         return {"running": False, "stale_state_removed": True}
     try:
         return {"running": True, **request("ping", timeout=10)}
-    except ZeaError as exc:
+    except SaosError as exc:
         return {"running": True, "responding": False, "pid": state.get("pid"), "error": exc.to_dict()}
 
 
 def start(mode: str, timeout: float = DEFAULT_START_TIMEOUT_S) -> dict[str, Any]:
     current = status()
     if current.get("running"):
-        raise ZeaError(ErrorCode.DAEMON_ALREADY_RUNNING, "后台进程已在运行", current)
+        raise SaosError(ErrorCode.DAEMON_ALREADY_RUNNING, "后台进程已在运行", current)
 
     error_file = config.daemon_dir() / "start_error.json"
     error_file.unlink(missing_ok=True)
@@ -181,8 +181,8 @@ def start(mode: str, timeout: float = DEFAULT_START_TIMEOUT_S) -> dict[str, Any]
         if proc.poll() is not None:
             if error_file.is_file():
                 err = json.loads(error_file.read_text(encoding="utf-8"))
-                raise ZeaError(err["code"], err["message"], {**(err.get("details") or {}), "log_tail": _log_tail()})
-            raise ZeaError(ErrorCode.DAEMON_START_FAILED, f"后台进程退出，退出码 {proc.returncode}", {"log_tail": _log_tail()})
+                raise SaosError(err["code"], err["message"], {**(err.get("details") or {}), "log_tail": _log_tail()})
+            raise SaosError(ErrorCode.DAEMON_START_FAILED, f"后台进程退出，退出码 {proc.returncode}", {"log_tail": _log_tail()})
         state = read_state()
         if state is not None and state.get("token") == token:
             info = request("ping", timeout=10)
@@ -190,20 +190,20 @@ def start(mode: str, timeout: float = DEFAULT_START_TIMEOUT_S) -> dict[str, Any]
         time.sleep(0.25)
     _kill_tree(proc.pid)
     _clear_stale_state()
-    raise ZeaError(ErrorCode.DAEMON_TIMEOUT, f"{timeout:.0f} 秒内后台进程没有就绪，已结束该进程", {"log_tail": _log_tail()})
+    raise SaosError(ErrorCode.DAEMON_TIMEOUT, f"{timeout:.0f} 秒内后台进程没有就绪，已结束该进程", {"log_tail": _log_tail()})
 
 
 def stop(discard: bool = False, force: bool = False) -> dict[str, Any]:
     state = read_state()
     if state is None or not pid_alive(int(state.get("pid", 0))):
         _clear_stale_state()
-        raise ZeaError(ErrorCode.DAEMON_NOT_RUNNING, "后台进程没有运行")
+        raise SaosError(ErrorCode.DAEMON_NOT_RUNNING, "后台进程没有运行")
     pid = int(state["pid"])
     # OpticStudio 在后台进程退出后才异步关闭，要等它也退出，避免紧接着重启时两个实例同时占用许可证
     opticstudio = child_pids(pid, "OpticStudio.exe")
     try:
         request("shutdown", {"discard": discard}, timeout=30)
-    except ZeaError as exc:
+    except SaosError as exc:
         if not force:
             raise
         _kill_tree(pid)
@@ -221,7 +221,7 @@ def stop(discard: bool = False, force: bool = False) -> dict[str, Any]:
                 _kill_tree(p)
         _clear_stale_state()
         return {"stopped": True, "pid": pid, "forced": True, "reason": "退出超时", "opticstudio_pids": opticstudio}
-    raise ZeaError(
+    raise SaosError(
         ErrorCode.DAEMON_TIMEOUT,
         f"后台进程或其 OpticStudio {STOP_WAIT_S:.0f} 秒内没有退出，可加 --force 强制结束",
         {"pid": pid, "opticstudio_pids": [p for p in opticstudio if pid_alive(p)]},

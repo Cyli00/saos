@@ -29,9 +29,9 @@ from typing import Any
 
 import yaml
 
-from zea import client, config, jobs, library, prescription, rounds
-from zea.protocol import ErrorCode, ZeaError, jsonable
-from zea.spec import Spec, load_spec
+from saos import client, config, jobs, library, prescription, rounds
+from saos.protocol import ErrorCode, SaosError, jsonable
+from saos.spec import Spec, load_spec
 
 POLICY = "reference-v3"
 MARECHAL = 1 / 14
@@ -204,7 +204,7 @@ class Case:
         用 pending 和 rounds.jsonl 的记录把它补齐。其他不一致一律拒绝续跑。"""
         other = sorted({str(h.get("policy")) for h in history} - {POLICY})
         if other:
-            raise ZeaError(ErrorCode.BAD_ARGS, f"轨迹中有其他版本参考策略的轮次（{other}），不能用 {POLICY} 续跑", {"job": self.job.id})
+            raise SaosError(ErrorCode.BAD_ARGS, f"轨迹中有其他版本参考策略的轮次（{other}），不能用 {POLICY} 续跑", {"job": self.job.id})
         recorded = rounds.load(self.job.root / "rounds.jsonl")
         got, want = [h["round"] for h in history], [r["round"] for r in recorded]
         if want == got:
@@ -223,7 +223,7 @@ class Case:
             }
             self.record(rec)
             return [*history, rec]
-        raise ZeaError(
+        raise SaosError(
             ErrorCode.BAD_ARGS,
             "rounds.jsonl 与 bench.jsonl 的轮次不一致，不能续跑",
             {"rounds": want, "bench": got, "pending": pending and pending.get("round")},
@@ -243,7 +243,7 @@ class Case:
             number = len(history)
             try:
                 rec, streak = self.one_round(history, streak, number)
-            except ZeaError as exc:
+            except SaosError as exc:
                 # 超时、后台进程断开等：记为实验中断，不是光学上的不通过或停滞；可用 --job 续跑
                 self.record({"event": "interrupted", "round": number, "policy": POLICY, "error": exc.code, "message": exc.message})
                 raise
@@ -403,15 +403,15 @@ def last_event(path: Path, kind: str) -> dict[str, Any] | None:
 
 
 def run_task(batch: str, task_id: str, timeout: float, cores: int | None = None, discard: bool = False) -> dict[str, Any]:
-    """按实验清单运行一个正式任务；本 ZEA_HOME 中已有该任务时续跑最早的那个。
+    """按实验清单运行一个正式任务；本 SAOS_HOME 中已有该任务时续跑最早的那个。
 
     运行前核对：客户端与后台进程的代码版本都等于清单记录的版本，后台进程为清单要求的模式。"""
-    from zea.bench import calibration
+    from saos.bench import calibration
 
     manifest = calibration.load_plan(batch)
     task = calibration.task_of(manifest, task_id)
     if manifest["policy"] != POLICY:
-        raise ZeaError(ErrorCode.BAD_ARGS, f"清单要求策略 {manifest['policy']}，当前代码是 {POLICY}")
+        raise SaosError(ErrorCode.BAD_ARGS, f"清单要求策略 {manifest['policy']}，当前代码是 {POLICY}")
     info = client.request("ping", {}, timeout=timeout)
     mismatch = {
         "client_code": config.code_sha256() != manifest["code_sha256"],
@@ -420,8 +420,8 @@ def run_task(batch: str, task_id: str, timeout: float, cores: int | None = None,
     }
     mismatch["inputs"] = calibration.task_inputs(task["entry"], task["stretch"]) != task.get("inputs")
     if any(mismatch.values()):
-        raise ZeaError(ErrorCode.BAD_ARGS, "运行环境或实验输入与实验清单不一致，不能作为正式任务运行", {k: v for k, v in mismatch.items() if v})
-    existing = calibration.find_jobs([config.zea_home()], batch).get(task_id, [])
+        raise SaosError(ErrorCode.BAD_ARGS, "运行环境或实验输入与实验清单不一致，不能作为正式任务运行", {k: v for k, v in mismatch.items() if v})
+    existing = calibration.find_jobs([config.saos_home()], batch).get(task_id, [])
     formal = {"batch": batch, "task": task_id, "group": task["group"], "class": task["class"]}
     return run_case(
         task["entry"],

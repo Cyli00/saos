@@ -9,7 +9,7 @@ import json
 import math
 from typing import Any
 
-from zea.protocol import ErrorCode, ZeaError
+from saos.protocol import ErrorCode, SaosError
 
 # 停机参数为初始值，未校准：第 5 步正式批次的调参组样本全部 1–2 轮通过，无法区分候选（docs/step5-calibration.md）
 STAGNATION_ROUNDS = 3
@@ -63,13 +63,13 @@ def check_frozen(job, spec_name: str, config: dict[str, Any], digest: str) -> No
     """之后各轮：规格路径和补全后的验收配置都必须与第 0 轮一致。"""
     frozen = job.read_state().get("frozen")
     if not frozen:
-        raise ZeaError(ErrorCode.SPEC_CHANGED, "任务已有调整轮次，但没有冻结的验收配置；请新建任务")
+        raise SaosError(ErrorCode.SPEC_CHANGED, "任务已有调整轮次，但没有冻结的验收配置；请新建任务")
     if spec_name != frozen["spec"]:
-        raise ZeaError(ErrorCode.SPEC_CHANGED, f"光学规格已冻结为 {frozen['spec']}，不能更换为 {spec_name}", {"frozen": frozen})
+        raise SaosError(ErrorCode.SPEC_CHANGED, f"光学规格已冻结为 {frozen['spec']}，不能更换为 {spec_name}", {"frozen": frozen})
     if digest != frozen["sha256"]:
         old = json.loads((job.root / frozen["config"]).read_text(encoding="utf-8"))
         changed = sorted(k for k in set(old) | set(config) if old.get(k) != config.get(k))
-        raise ZeaError(
+        raise SaosError(
             ErrorCode.SPEC_CHANGED,
             "补全后的验收配置与第 0 轮冻结的不一致，规格差距不再可比；请新建任务（或派生任务）",
             {"changed_keys": changed, "frozen_sha256": frozen["sha256"], "current_sha256": digest},

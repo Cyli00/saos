@@ -1,4 +1,4 @@
-"""把专利（或教材）提取出的面数据适配成 zea 标准设计布局的处方，并给出复现校验的期望值。
+"""把专利（或教材）提取出的面数据适配成 saos 标准设计布局的处方，并给出复现校验的期望值。
 
 提取格式见 docs/library.md（schema 2）；第 3 步的旧格式（schema 1）在读取时自动转换。
 """
@@ -8,10 +8,10 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from zea import glasscat, prescription
-from zea.paraxial import Surface, back_focal_distance, effective_focal_length, front_focal_distance
-from zea.protocol import ErrorCode, ZeaError
-from zea.spec import REFERENCE_TUBE_MM
+from saos import glasscat, prescription
+from saos.paraxial import Surface, back_focal_distance, effective_focal_length, front_focal_distance
+from saos.protocol import ErrorCode, SaosError
+from saos.spec import REFERENCE_TUBE_MM
 
 WAVES = {
     "d": [0.4861327, 0.5875618, 0.6562725],  # F、d、C，主波长 d
@@ -33,8 +33,8 @@ def _num(value: Any) -> float:
     return float(value)
 
 
-def _bad(message: str) -> ZeaError:
-    return ZeaError(ErrorCode.BAD_ARGS, f"适配失败：{message}")
+def _bad(message: str) -> SaosError:
+    return SaosError(ErrorCode.BAD_ARGS, f"适配失败：{message}")
 
 
 def upgrade(extract: dict[str, Any], embodiment: str | None = None) -> dict[str, Any]:

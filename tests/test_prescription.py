@@ -4,8 +4,8 @@ import math
 
 import pytest
 
-from zea import prescription
-from zea.protocol import ZeaError
+from saos import prescription
+from saos.protocol import SaosError
 
 
 def minimal(**overrides):
@@ -16,8 +16,8 @@ def minimal(**overrides):
         "object": {"thickness": 13.3},
         "surfaces": [
             {"radius": -17.4, "thickness": 1.668, "material": "s-tim28"},
-            {"radius": "inf", "thickness": 0, "comment": "zea:stop", "stop": True},
-            {"type": "paraxial", "focal_length": 200, "thickness": 200, "comment": "zea:tube"},
+            {"radius": "inf", "thickness": 0, "comment": "saos:stop", "stop": True},
+            {"type": "paraxial", "focal_length": 200, "thickness": 200, "comment": "saos:tube"},
         ],
     }
     p.update(overrides)
@@ -46,14 +46,14 @@ def test_normalize_defaults_and_materials():
     ],
 )
 def test_normalize_rejects(change):
-    with pytest.raises(ZeaError):
+    with pytest.raises(SaosError):
         prescription.normalize(minimal(**change))
 
 
 def test_two_stops_rejected():
     p = minimal()
     p["surfaces"][0]["stop"] = True
-    with pytest.raises(ZeaError):
+    with pytest.raises(SaosError):
         prescription.normalize(p)
 
 
@@ -62,16 +62,16 @@ def rows(*comments):
 
 
 def test_objective_block_without_and_with_cover():
-    plain = rows("zea:object", "r1", "r2", "zea:stop", "zea:tube", "")
+    plain = rows("saos:object", "r1", "r2", "saos:stop", "saos:tube", "")
     assert prescription.objective_block(plain) == (1, 3)
     assert prescription.gap_surface(plain) == 0
-    covered = rows("zea:object", "zea:cover_top", "r1", "r2", "zea:tube", "")
+    covered = rows("saos:object", "saos:cover_top", "r1", "r2", "saos:tube", "")
     assert prescription.objective_block(covered) == (2, 3)
     assert prescription.gap_surface(covered) == 1
 
 
 def test_objective_block_requires_layout():
-    with pytest.raises(ZeaError):
-        prescription.objective_block(rows("obj", "r1", "zea:tube", ""))
-    with pytest.raises(ZeaError):
-        prescription.objective_block(rows("zea:object", "r1", "r2", ""))
+    with pytest.raises(SaosError):
+        prescription.objective_block(rows("obj", "r1", "saos:tube", ""))
+    with pytest.raises(SaosError):
+        prescription.objective_block(rows("saos:object", "r1", "r2", ""))

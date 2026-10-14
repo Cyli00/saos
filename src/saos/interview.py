@@ -9,8 +9,8 @@ from typing import Any
 
 import yaml
 
-from zea.protocol import ErrorCode, ZeaError
-from zea.spec import REFERENCE_TUBE_MM, WAVELENGTHS_UM, parse_spec
+from saos.protocol import ErrorCode, SaosError
+from saos.spec import REFERENCE_TUBE_MM, WAVELENGTHS_UM, parse_spec
 
 
 FIELDS = {
@@ -99,7 +99,7 @@ DEFAULT_BASES = {
 
 
 def bad(message: str) -> None:
-    raise ZeaError(ErrorCode.BAD_ARGS, message)
+    raise SaosError(ErrorCode.BAD_ARGS, message)
 
 
 def read_draft(path: Path) -> dict[str, Any]:

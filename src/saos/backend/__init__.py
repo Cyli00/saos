@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from zea import config
-from zea.backend.base import SURFACE_PARAMS, Backend
+from saos import config
+from saos.backend.base import SURFACE_PARAMS, Backend
 
 
 def make_backend(mode: str) -> Backend:
     name = config.backend_name()
     if name == "fake":
-        from zea.backend.fake import FakeBackend
+        from saos.backend.fake import FakeBackend
 
         return FakeBackend()
     if name == "zos":
-        from zea.backend.zos import ZosBackend
+        from saos.backend.zos import ZosBackend
 
         return ZosBackend(mode=mode)
     raise ValueError(f"未知的后端：{name}")

@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from zea import acceptance, interview, jobs, plan
-from zea.cli import main
-from zea.protocol import ZeaError
-from zea.spec import parse_spec
+from saos import acceptance, interview, jobs, plan
+from saos.cli import main
+from saos.protocol import SaosError
+from saos.spec import parse_spec
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "interview" / "visual.yaml"
@@ -80,18 +80,18 @@ def test_unsupported_scope_and_unresolved_requests_block_plan():
 def test_invalid_numeric_and_boolean_input_is_not_silently_accepted(path, value):
     data = draft()
     set_field(data, path, value)
-    with pytest.raises(ZeaError):
+    with pytest.raises(SaosError):
         interview.check(data)
 
 
 def test_unknown_or_unattributed_fields_are_rejected():
     data = draft()
     data["spec"]["numerical_aperture"] = 0.5
-    with pytest.raises(ZeaError, match="不支持"):
+    with pytest.raises(SaosError, match="不支持"):
         interview.check(data)
     data = draft()
     del data["provenance"]["magnification"]
-    with pytest.raises(ZeaError, match="provenance"):
+    with pytest.raises(SaosError, match="provenance"):
         interview.check(data)
 
 
@@ -100,7 +100,7 @@ def example_library(tmp_path, monkeypatch):
     root = tmp_path / "library"
     d = root / "entries" / "TEST-e1"
     d.mkdir(parents=True)
-    monkeypatch.setenv("ZEA_LIBRARY", str(root))
+    monkeypatch.setenv("SAOS_LIBRARY", str(root))
     entry = {"id": "TEST-e1", "status": "admitted", "source": {"patent": "测试专利", "url": "javascript:alert(1)"}, "embodiment": "例 1",
              "metrics": {"focal_length_mm": 10, "na": 0.4, "field_number": 22, "elements": 1, "claimed_class": "plan",
                          "wd_mech_mm": 2, "optical_length_mm": 50, "clear_diameter_mm": 20,
@@ -109,13 +109,13 @@ def example_library(tmp_path, monkeypatch):
     prescription = {"object": {"thickness": 2}, "surfaces": [
         {"radius": 10, "thickness": 3, "material": "OLD", "comment": "patent r1"},
         {"radius": -10, "thickness": 5, "material": "", "comment": "patent r2"},
-        {"radius": "inf", "thickness": 0, "comment": "zea:stop"}]}
+        {"radius": "inf", "thickness": 0, "comment": "saos:stop"}]}
     (d / "entry.json").write_text(json.dumps(entry), encoding="utf-8")
     (d / "prescription.json").write_text(json.dumps(prescription), encoding="utf-8")
     return d
 
 
-def create_plan(zea_home, example_library, tmp_path, data=None):
+def create_plan(saos_home, example_library, tmp_path, data=None):
     job = jobs.create_job("review")
     path = tmp_path / "interview.json"
     path.write_text(json.dumps(data or draft(), ensure_ascii=False), encoding="utf-8")
@@ -123,30 +123,30 @@ def create_plan(zea_home, example_library, tmp_path, data=None):
     return job, result
 
 
-def test_plan_confirm_handoff_and_immutable_approved_revision(zea_home, example_library, tmp_path):
-    job, result = create_plan(zea_home, example_library, tmp_path)
+def test_plan_confirm_handoff_and_immutable_approved_revision(saos_home, example_library, tmp_path):
+    job, result = create_plan(saos_home, example_library, tmp_path)
     assert not job.read_state().get("spec")
-    with pytest.raises(ZeaError, match="尚未"):
+    with pytest.raises(SaosError, match="尚未"):
         plan.handoff(job.id)
     confirmed = plan.confirm(job.id, result["revision"], "我确认这个版本")
     assert confirmed["state"] == "confirmed"
     handoff = plan.handoff(job.id)
     assert handoff["config_sha256"] == acceptance.config_hash(acceptance.acceptance_config(parse_spec(plan.inspect(job.id)["payload"]["review"]["spec"])))
     assert plan.confirm(job.id, result["revision"], "确认")["already_confirmed"]
-    with pytest.raises(ZeaError, match="已确认"):
+    with pytest.raises(SaosError, match="已确认"):
         plan.create(job.id, FIXTURE, "TEST-e1", "理由")
     spec_path = job.root / confirmed["spec"]
     spec_data = json.loads(spec_path.read_text(encoding="utf-8"))
     spec_data["na"] = 0.3
     spec_path.write_text(json.dumps(spec_data), encoding="utf-8")
-    with pytest.raises(ZeaError, match="偏离"):
+    with pytest.raises(SaosError, match="偏离"):
         plan.handoff(job.id)
 
 
-def test_plan_html_escapes_input_and_discloses_glass_mismatch(zea_home, example_library, tmp_path):
+def test_plan_html_escapes_input_and_discloses_glass_mismatch(saos_home, example_library, tmp_path):
     data = draft()
     data["request"] = '<img src=x onerror="alert(1)"> & 用户原话'
-    job, result = create_plan(zea_home, example_library, tmp_path, data)
+    job, result = create_plan(saos_home, example_library, tmp_path, data)
     page = Path(result["page"]).read_text(encoding="utf-8")
     assert '<img src=x' not in page and '&lt;img src=x' in page
     assert 'href="javascript:' not in page
@@ -155,28 +155,28 @@ def test_plan_html_escapes_input_and_discloses_glass_mismatch(zea_home, example_
 
 
 @pytest.mark.parametrize("file", ["index.html", "spec.json", "plan.json"])
-def test_changed_artifacts_cannot_be_confirmed(zea_home, example_library, tmp_path, file):
-    job, result = create_plan(zea_home, example_library, tmp_path)
+def test_changed_artifacts_cannot_be_confirmed(saos_home, example_library, tmp_path, file):
+    job, result = create_plan(saos_home, example_library, tmp_path)
     p = Path(result["page"]).with_name(file)
     p.write_text(p.read_text(encoding="utf-8") + " ", encoding="utf-8")
-    with pytest.raises(ZeaError, match="变化"):
+    with pytest.raises(SaosError, match="变化"):
         plan.confirm(job.id, result["revision"], "确认")
 
 
-def test_new_version_supersedes_old_and_missing_structure_blocks_confirmation(zea_home, example_library):
+def test_new_version_supersedes_old_and_missing_structure_blocks_confirmation(saos_home, example_library):
     job = jobs.create_job("versions")
     first = plan.create(job.id, FIXTURE, "TEST-e1", "理由一")
     second = plan.create(job.id, FIXTURE, None)
-    with pytest.raises(ZeaError, match="最新版本"):
+    with pytest.raises(SaosError, match="最新版本"):
         plan.confirm(job.id, first["revision"], "确认")
-    with pytest.raises(ZeaError, match="尚未选定"):
+    with pytest.raises(SaosError, match="尚未选定"):
         plan.confirm(job.id, second["revision"], "确认")
 
 
-def test_evaluator_change_requires_new_review(zea_home, example_library, tmp_path, monkeypatch):
-    job, result = create_plan(zea_home, example_library, tmp_path)
+def test_evaluator_change_requires_new_review(saos_home, example_library, tmp_path, monkeypatch):
+    job, result = create_plan(saos_home, example_library, tmp_path)
     monkeypatch.setattr(acceptance, "ZERN_MAX_TERM", acceptance.ZERN_MAX_TERM + 1)
-    with pytest.raises(ZeaError, match="评估器"):
+    with pytest.raises(SaosError, match="评估器"):
         plan.confirm(job.id, result["revision"], "确认")
 
 

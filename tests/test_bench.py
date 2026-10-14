@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-from zea.bench import runner as bench
+from saos.bench import runner as bench
 
 
 @pytest.fixture
 def lib(tmp_path, monkeypatch):
-    monkeypatch.setenv("ZEA_LIBRARY", str(tmp_path / "library"))
+    monkeypatch.setenv("SAOS_LIBRARY", str(tmp_path / "library"))
     return tmp_path / "library"
 
 
@@ -49,7 +49,7 @@ def test_stretched_spec_scales_measured_values():
 
 def test_first_targeted_round_already_escalates(monkeypatch):
     case = object.__new__(bench.Case)
-    case.spec = __import__("zea.spec", fromlist=["parse_spec"]).parse_spec(
+    case.spec = __import__("saos.spec", fromlist=["parse_spec"]).parse_spec(
         {"spec_version": 1, "correction_class": "achromat", "magnification": 20, "na": 0.4, "limits": {"working_distance_min": 10}}
     )
     monkeypatch.setattr(case, "req", lambda op, **a: {"value": 0.0}, raising=False)
@@ -84,18 +84,18 @@ def _case_with_history(tmp_path, history, recorded):
 
 
 def test_resume_rejects_other_policy_and_out_of_sync_rounds(tmp_path):
-    from zea.protocol import ZeaError
+    from saos.protocol import SaosError
 
     old = [{"round": 0, "policy": "reference-v2", "spec_shortfall": 3.0, "items": {"osc": 3.0}, "file": "rounds/r000.zmx"}]
-    with pytest.raises(ZeaError, match="其他版本"):
+    with pytest.raises(SaosError, match="其他版本"):
         _case_with_history(tmp_path, old, [0]).run(5)
     cur = [{**old[0], "policy": bench.POLICY}]
-    with pytest.raises(ZeaError, match="不一致"):
+    with pytest.raises(SaosError, match="不一致"):
         _case_with_history(tmp_path, cur, [0, 1]).run(5)
 
 
-def test_prepare_does_not_discard_by_default(lib, zea_home, monkeypatch):
-    from zea import library as lib_mod
+def test_prepare_does_not_discard_by_default(lib, saos_home, monkeypatch):
+    from saos import library as lib_mod
 
     lib_mod.save_entry("X", {"id": "X", "status": "admitted", "metrics": {}})
     lib_mod.write_file("X", "prescription.json", {"title": "x"})
@@ -117,11 +117,11 @@ limits:
 """
 
 
-def test_observe_rounds_keep_freeze_but_do_not_stop(zea_home, fake_lens_file, monkeypatch):
-    from zea import jobs
-    from zea.backend.fake import FakeBackend
-    from zea.daemon import Daemon
-    from zea.protocol import ErrorCode, ZeaError
+def test_observe_rounds_keep_freeze_but_do_not_stop(saos_home, fake_lens_file, monkeypatch):
+    from saos import jobs
+    from saos.backend.fake import FakeBackend
+    from saos.daemon import Daemon
+    from saos.protocol import ErrorCode, SaosError
 
     backend = FakeBackend()
     daemon = Daemon(backend, backend.start(), "standalone")
@@ -137,11 +137,11 @@ def test_observe_rounds_keep_freeze_but_do_not_stop(zea_home, fake_lens_file, mo
     assert out["decision"]["status"] == "stagnated" and out["record"]["round"] == 3
     out = daemon.op_round({"job": job.id, "spec": "spec/b.yaml", "observe": True})  # 停机后仍可观察
     assert out["record"]["round"] == 4 and out["record"]["observe"] is True
-    with pytest.raises(ZeaError) as exc:  # 不加 observe 时照常拒绝
+    with pytest.raises(SaosError) as exc:  # 不加 observe 时照常拒绝
         daemon.op_round({"job": job.id})
     assert exc.value.code == ErrorCode.BAD_ARGS
     (job.spec_dir / "b.yaml").write_text(SPEC.format(wd=12), encoding="utf-8")
-    with pytest.raises(ZeaError) as exc:  # observe 也不能绕过冻结
+    with pytest.raises(SaosError) as exc:  # observe 也不能绕过冻结
         daemon.op_round({"job": job.id, "spec": "spec/b.yaml", "observe": True})
     assert exc.value.code == ErrorCode.SPEC_CHANGED
 

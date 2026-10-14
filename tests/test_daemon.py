@@ -6,14 +6,14 @@ import json
 
 import pytest
 
-from zea import jobs
-from zea.backend.fake import FakeBackend
-from zea.daemon import Daemon, compare_surfaces
-from zea.protocol import ErrorCode
+from saos import jobs
+from saos.backend.fake import FakeBackend
+from saos.daemon import Daemon, compare_surfaces
+from saos.protocol import ErrorCode
 
 
 @pytest.fixture
-def daemon(zea_home):
+def daemon(saos_home):
     backend = FakeBackend()
     info = backend.start()
     return Daemon(backend, info, "standalone")

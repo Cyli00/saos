@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from zea.paraxial import Surface, back_focal_distance, effective_focal_length, front_focal_distance
+from saos.paraxial import Surface, back_focal_distance, effective_focal_length, front_focal_distance
 
 
 def test_thick_biconvex_lens():

@@ -1,11 +1,11 @@
-"""镜头处方：从零搭建一个序列系统所需的全部数据，以及 zea 的标准设计布局。
+"""镜头处方：从零搭建一个序列系统所需的全部数据，以及 saos 的标准设计布局。
 
 标准设计布局（lens build 生成，验收评估据此找出物镜部分）：
 
-    面 0      物面（有盖玻片时介质为盖玻片，厚度为盖玻片厚度）       注释 zea:object
-    面 1      盖玻片上表面，厚度为工作距离间隔（仅有盖玻片时）       注释 zea:cover_top
-    ...       物镜各面（可含注释为 zea:stop 的虚拟光阑面）
-    面 k      参考筒镜：Paraxial 面，焦距 f_TL，后接 f_TL 到像面      注释 zea:tube
+    面 0      物面（有盖玻片时介质为盖玻片，厚度为盖玻片厚度）       注释 saos:object
+    面 1      盖玻片上表面，厚度为工作距离间隔（仅有盖玻片时）       注释 saos:cover_top
+    ...       物镜各面（可含注释为 saos:stop 的虚拟光阑面）
+    面 k      参考筒镜：Paraxial 面，焦距 f_TL，后接 f_TL 到像面      注释 saos:tube
     面 k+1    像面
 
 没有盖玻片时，物面厚度就是工作距离间隔。
@@ -16,18 +16,18 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from zea.protocol import ErrorCode, ZeaError
+from saos.protocol import ErrorCode, SaosError
 
-TAG_OBJECT = "zea:object"
-TAG_COVER_TOP = "zea:cover_top"
-TAG_STOP = "zea:stop"
-TAG_TUBE = "zea:tube"
+TAG_OBJECT = "saos:object"
+TAG_COVER_TOP = "saos:cover_top"
+TAG_STOP = "saos:stop"
+TAG_TUBE = "saos:tube"
 
 RAY_AIMING = ("off", "paraxial", "real")
 
 
-def _bad(message: str) -> ZeaError:
-    return ZeaError(ErrorCode.BAD_ARGS, f"处方错误：{message}")
+def _bad(message: str) -> SaosError:
+    return SaosError(ErrorCode.BAD_ARGS, f"处方错误：{message}")
 
 
 def _number(value: Any, name: str) -> float:
@@ -125,14 +125,14 @@ def objective_block(rows: list[dict[str, Any]]) -> tuple[int, int]:
     """在标准设计布局的面列表中找出物镜部分，返回 [first, last]（面序号，含两端）。"""
     comments = [str(r.get("comment", "")) for r in rows]
     if not comments or comments[0] != TAG_OBJECT:
-        raise ZeaError(ErrorCode.BAD_ARGS, "不是 zea 标准设计布局：物面注释不是 zea:object")
+        raise SaosError(ErrorCode.BAD_ARGS, "不是 saos 标准设计布局：物面注释不是 saos:object")
     try:
         tube = comments.index(TAG_TUBE)
     except ValueError as exc:
-        raise ZeaError(ErrorCode.BAD_ARGS, "不是 zea 标准设计布局：找不到 zea:tube 参考筒镜") from exc
+        raise SaosError(ErrorCode.BAD_ARGS, "不是 saos 标准设计布局：找不到 saos:tube 参考筒镜") from exc
     first = 2 if len(comments) > 1 and comments[1] == TAG_COVER_TOP else 1
     if tube <= first:
-        raise ZeaError(ErrorCode.BAD_ARGS, "标准设计布局中物镜部分为空")
+        raise SaosError(ErrorCode.BAD_ARGS, "标准设计布局中物镜部分为空")
     return first, tube - 1
 
 

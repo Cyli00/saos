@@ -1,5 +1,5 @@
 import sys
 
-from zea.cli import main
+from saos.cli import main
 
 sys.exit(main())

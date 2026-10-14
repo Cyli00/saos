@@ -1,4 +1,4 @@
-"""zea 命令行。所有命令都向标准输出打印一个 JSON 对象：
+"""saos 命令行。所有命令都向标准输出打印一个 JSON 对象：
 
     成功：{"ok": true, "result": ...}，退出码 0
     失败：{"ok": false, "error": {"code", "message", "details"}}，退出码 1
@@ -14,9 +14,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from zea import client, jobs
-from zea.protocol import ErrorCode, ZeaError, fail, jsonable, ok
-from zea.protocol import read_json as _read_json
+from saos import client, jobs
+from saos.protocol import ErrorCode, SaosError, fail, jsonable, ok
+from saos.protocol import read_json as _read_json
 
 
 def _lens_request(op: str, args: argparse.Namespace, payload: dict[str, Any]) -> Any:
@@ -114,7 +114,7 @@ def cmd_opt(args: argparse.Namespace) -> Any:
             payload["settings"] = _read_json(args.file) if args.file else {}
         elif args.merit_action == "add":
             if not args.file:
-                raise ZeaError(ErrorCode.BAD_ARGS, "merit add 需要 --file 给出操作数列表 JSON")
+                raise SaosError(ErrorCode.BAD_ARGS, "merit add 需要 --file 给出操作数列表 JSON")
             payload["rows"] = _read_json(args.file)
         return client.request("opt.merit", payload, timeout=args.timeout)
     if args.action == "local":
@@ -137,7 +137,7 @@ def cmd_eval(args: argparse.Namespace) -> Any:
 
 
 def cmd_adapt(args: argparse.Namespace) -> Any:
-    from zea import adapt
+    from saos import adapt
 
     extract = _read_json(args.extract)
     out = adapt.from_extraction(
@@ -163,12 +163,12 @@ class _Parser(argparse.ArgumentParser):
     """参数错误也按统一 JSON 格式输出，方便 agent 解析。"""
 
     def error(self, message: str) -> None:  # type: ignore[override]
-        _emit(fail(ZeaError(ErrorCode.BAD_ARGS, message, {"usage": self.format_usage().strip()})))
+        _emit(fail(SaosError(ErrorCode.BAD_ARGS, message, {"usage": self.format_usage().strip()})))
         sys.exit(2)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = _Parser(prog="zea", description="由 agent 驱动 Zemax OpticStudio")
+    parser = _Parser(prog="saos", description="由 agent 驱动 Zemax OpticStudio")
     sub = parser.add_subparsers(dest="group", required=True, parser_class=_Parser)
 
     daemon = sub.add_parser("daemon", help="后台进程")
@@ -284,8 +284,8 @@ def build_parser() -> argparse.ArgumentParser:
     rec.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     rd.set_defaults(func=cmd_round)
 
-    from zea import library_cli, plan_cli
-    from zea.bench import cli as bench_cli
+    from saos import library_cli, plan_cli
+    from saos.bench import cli as bench_cli
 
     library_cli.register(sub, _Parser, client.DEFAULT_REQUEST_TIMEOUT_S)
     bench_cli.register(sub, _Parser, client.DEFAULT_REQUEST_TIMEOUT_S)
@@ -317,16 +317,16 @@ def main(argv: list[str] | None = None) -> int:
         pass
     args = build_parser().parse_args(argv)
     if args.group == "daemon" and args.action == "run":
-        from zea.daemon import serve
+        from saos.daemon import serve
 
         return serve(args.mode, args.token)
     try:
         result = args.func(args)
-    except ZeaError as exc:
+    except SaosError as exc:
         _emit(fail(exc))
         return 1
     except Exception as exc:  # noqa: BLE001
-        _emit(fail(ZeaError(ErrorCode.INTERNAL_ERROR, f"{type(exc).__name__}: {exc}")))
+        _emit(fail(SaosError(ErrorCode.INTERNAL_ERROR, f"{type(exc).__name__}: {exc}")))
         return 1
     _emit(ok(result))
     return 0

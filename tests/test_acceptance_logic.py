@@ -6,10 +6,10 @@ import math
 
 import pytest
 
-from zea import jobs, rounds
-from zea.acceptance import Evaluator, acceptance_config, config_hash, field_wfe
-from zea.protocol import ErrorCode, ZeaError
-from zea.spec import Item, load_spec, parse_spec
+from saos import jobs, rounds
+from saos.acceptance import Evaluator, acceptance_config, config_hash, field_wfe
+from saos.protocol import ErrorCode, SaosError
+from saos.spec import Item, load_spec, parse_spec
 
 SPEC_YAML = """\
 spec_version: 1
@@ -97,7 +97,7 @@ def test_infinite_air_gap_means_no_gaps_and_is_valid():
 
 def test_item_rejects_bad_threshold_or_scale_and_nan_gap():
     for threshold, scale in ((math.nan, 1.0), (1.0, 0.0), (1.0, math.inf), (math.inf, 1.0)):
-        with pytest.raises(ZeaError):
+        with pytest.raises(SaosError):
             Item("x", "target", "upper", threshold, scale, "")
     with pytest.raises(ValueError):
         Item("x", "target", "upper", 1.0, 1.0, "").gap(math.nan)
@@ -108,11 +108,11 @@ def test_spec_with_nan_threshold_is_rejected():
 
     data = yaml.safe_load(SPEC_YAML.format(cls="achromat", basis="x"))
     data["limits"]["working_distance_min"] = float("nan")
-    with pytest.raises(ZeaError):
+    with pytest.raises(SaosError):
         parse_spec(data)
     data["limits"]["working_distance_min"] = 10.6
     data["magnification"] = float("nan")
-    with pytest.raises(ZeaError):
+    with pytest.raises(SaosError):
         parse_spec(data)
 
 
@@ -130,7 +130,7 @@ def frozen_check(job, name):
     rounds.check_frozen(job, name, config, config_hash(config))
 
 
-def test_changed_threshold_is_detected(zea_home):
+def test_changed_threshold_is_detected(saos_home):
     job = jobs.create_job("freeze")
     name = write_spec(job, SPEC_YAML.format(cls="achromat", basis="first"))
     config = acceptance_config(load_spec(job.root / name))
@@ -143,19 +143,19 @@ def test_changed_threshold_is_detected(zea_home):
 
     # 原地改阈值：必须拒绝
     write_spec(job, SPEC_YAML.format(cls="achromat", basis="x").replace("10.6", "11.0"))
-    with pytest.raises(ZeaError) as exc:
+    with pytest.raises(SaosError) as exc:
         frozen_check(job, name)
     assert exc.value.code == ErrorCode.SPEC_CHANGED
     assert "items" in exc.value.details["changed_keys"]
 
 
-def test_changed_spec_path_is_detected(zea_home):
+def test_changed_spec_path_is_detected(saos_home):
     job = jobs.create_job("freeze")
     name = write_spec(job, SPEC_YAML.format(cls="achromat", basis="x"))
     other = write_spec(job, SPEC_YAML.format(cls="achromat", basis="x"), "other.yaml")
     config = acceptance_config(load_spec(job.root / name))
     rounds.freeze(job, name, config, config_hash(config))
-    with pytest.raises(ZeaError) as exc:
+    with pytest.raises(SaosError) as exc:
         frozen_check(job, other)
     assert exc.value.code == ErrorCode.SPEC_CHANGED
 
@@ -169,7 +169,7 @@ def test_config_includes_evaluator_constants():
 
 # ---- 3b. 原始测量值在参与运算之前检查 ----
 
-from zea.acceptance import InvalidEvaluation, focus_on_axis, residual_rms  # noqa: E402
+from saos.acceptance import InvalidEvaluation, focus_on_axis, residual_rms  # noqa: E402
 
 
 @pytest.mark.parametrize("plan", [False, True])
@@ -311,7 +311,7 @@ FOCUS_ARGS = {"gap": 0, "wave": 2, "field": 1, "lam_um": 0.546, "na_image": 0.02
 
 def unguarded_focus_positions(backend):
     """不加光线保护的割线调焦（改动前的算法），返回每次拟合时的厚度，用来核对正常镜头的试探序列不变。"""
-    from zea.acceptance import FOCUS_MAX_ITER
+    from saos.acceptance import FOCUS_MAX_ITER
 
     def c4():
         return backend.zernike(wave=2, field=1, samp=3, max_term=66, terms=(4,))[4]
@@ -364,7 +364,7 @@ def test_focus_invalid_when_start_and_paraxial_focus_both_fail():
     (lambda t: 1.998 + 1e6 * (t - 12.0) ** 2, 12.0),
 ])
 def test_paraxial_focus_requires_pary_near_zero(pary, t_start):
-    from zea.acceptance import paraxial_focus
+    from saos.acceptance import paraxial_focus
 
     backend = FocusBackend(t=t_start, focus=12.24, paraxial=12.02)
     backend.operand = lambda name, int1, int2, data: pary(backend.t)
@@ -374,7 +374,7 @@ def test_paraxial_focus_requires_pary_near_zero(pary, t_start):
 
 
 def test_paraxial_focus_converges_with_small_residual():
-    from zea.acceptance import paraxial_focus
+    from saos.acceptance import paraxial_focus
 
     backend = FocusBackend(t=10.19, focus=12.24, paraxial=12.02)
     t = paraxial_focus(backend, gap=0, wave=2, t_start=10.19, tol_mm=4e-5, na_image=0.025, magnification=10)

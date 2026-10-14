@@ -7,11 +7,11 @@ import subprocess
 
 import pytest
 
-from zea import client, config
+from saos import client, config
 
 
 @pytest.mark.parametrize("deny_breakaway", [False, True])
-def test_spawn_without_console_preserves_output(zea_home, monkeypatch, deny_breakaway):
+def test_spawn_without_console_preserves_output(saos_home, monkeypatch, deny_breakaway):
     original_popen = subprocess.Popen
     attempts = 0
     probe = """
@@ -49,7 +49,7 @@ print("stderr-ok", file=sys.stderr, flush=True)
 
 def test_spawn_resolves_relative_home_before_changing_cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv('ZEA_HOME', 'relative-work')
+    monkeypatch.setenv('SAOS_HOME', 'relative-work')
     captured = {}
 
     def launch(cmd, **kwargs):
@@ -60,4 +60,4 @@ def test_spawn_resolves_relative_home_before_changing_cwd(tmp_path, monkeypatch)
     client._spawn('standalone', 'relative-home-test')
     expected = str((tmp_path / 'relative-work').resolve())
     assert captured['cwd'] == expected
-    assert captured['env']['ZEA_HOME'] == expected
+    assert captured['env']['SAOS_HOME'] == expected

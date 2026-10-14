@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from zea.native_ui import choose_window, require_ready
-from zea.protocol import ZeaError
+from saos.native_ui import choose_window, require_ready
+from saos.protocol import SaosError
 
 
 @pytest.mark.parametrize(
@@ -17,7 +17,7 @@ from zea.protocol import ZeaError
     ],
 )
 def test_extension_preflight_fails_closed(dialogs):
-    with pytest.raises(ZeaError):
+    with pytest.raises(SaosError):
         require_ready(dialogs)
 
 
@@ -33,9 +33,9 @@ def test_extension_preflight_preserves_explicit_instance():
 
 def test_window_selection_requires_unambiguous_target():
     windows = [{"pid": 1, "hwnd": 11}, {"pid": 2, "hwnd": 22}]
-    with pytest.raises(ZeaError):
+    with pytest.raises(SaosError):
         choose_window(windows)
-    with pytest.raises(ZeaError):
+    with pytest.raises(SaosError):
         choose_window(windows, 3)
     assert choose_window(windows, 2) == windows[1]
     assert choose_window(windows[:1]) == windows[0]

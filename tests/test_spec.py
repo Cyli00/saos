@@ -4,8 +4,8 @@ import math
 
 import pytest
 
-from zea.protocol import ZeaError
-from zea.spec import berek_check, parse_spec, sample_points
+from saos.protocol import SaosError
+from saos.spec import berek_check, parse_spec, sample_points
 
 
 def base(**overrides):
@@ -50,7 +50,7 @@ def test_achromat_defaults_have_no_field_targets():
 
 
 def test_achromat_field_wfe_requires_range_and_keeps_astig():
-    with pytest.raises(ZeaError):
+    with pytest.raises(SaosError):
         parse_spec(base(correction_class="achromat", targets={"field_rms_wfe": {}}))
     spec = parse_spec(base(correction_class="achromat", targets={"field_rms_wfe": {"range": 0.6}}))
     item = spec.item("field_rms_wfe")
@@ -61,12 +61,12 @@ def test_achromat_field_wfe_requires_range_and_keeps_astig():
 def test_camera_enables_mtf_at_pixel_nyquist():
     spec = parse_spec(base(receiver="camera", pixel_size=6.5))
     assert spec.item("mtf").params["frequency"] == pytest.approx(500 / 6.5)
-    with pytest.raises(ZeaError):
+    with pytest.raises(SaosError):
         parse_spec(base(receiver="camera"))
 
 
 def test_zero_threshold_needs_positive_scale():
-    with pytest.raises(ZeaError):
+    with pytest.raises(SaosError):
         parse_spec(base(limits={"working_distance_min": 1, "min_air_gap": {"value": 0, "scale": 0}}))
     spec = parse_spec(base())
     gap = spec.item("air_gap")
@@ -77,9 +77,9 @@ def test_zero_threshold_needs_positive_scale():
 
 def test_rejects_out_of_scope():
     for bad in (base(na=0.8), base(correction_class="plan_apochromat"), base(spec_version=2)):
-        with pytest.raises(ZeaError):
+        with pytest.raises(SaosError):
             parse_spec(bad)
-    with pytest.raises(ZeaError):
+    with pytest.raises(SaosError):
         parse_spec(base(wavelengths={"um": [0.4861, 0.5876, 0.6563]}))
 
 

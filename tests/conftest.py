@@ -5,15 +5,15 @@ from pathlib import Path
 
 import pytest
 
-from zea.backend.fake import fake_surface
+from saos.backend.fake import fake_surface
 
 
 @pytest.fixture
-def zea_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+def saos_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home = tmp_path / "home"
     home.mkdir()
-    monkeypatch.setenv("ZEA_HOME", str(home))
-    monkeypatch.setenv("ZEA_BACKEND", "fake")
+    monkeypatch.setenv("SAOS_HOME", str(home))
+    monkeypatch.setenv("SAOS_BACKEND", "fake")
     return home
 
 

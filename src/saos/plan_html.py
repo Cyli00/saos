@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from zea.interview import ITEM_NAMES
+from saos.interview import ITEM_NAMES
 
 
 def e(value: Any) -> str:
@@ -41,7 +41,7 @@ def section_svg(prescription: dict[str, Any]) -> str:
     x = float(prescription["object"]["thickness"])
     positions = []
     for s in surfaces:
-        if s.get("comment") in ("zea:stop", "zea:tube"):
+        if s.get("comment") in ("saos:stop", "saos:tube"):
             break
         positions.append((x, s))
         x += float(s.get("thickness", 0))
@@ -132,7 +132,7 @@ def render(payload: dict[str, Any], revision: str) -> str:
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
 <title>设计计划 · {e(payload['job'])}</title><style>{css}</style></head><body>
 <a class="skip" href="#content">跳到设计计划</a>
-<header><a class="brand" href="#content">zea <span>显微物镜设计</span></a><span class="status">{state}</span></header>
+<header><a class="brand" href="#content">saos <span>显微物镜设计</span></a><span class="status">{state}</span></header>
 <main id="content"><section class="intro"><p class="eyebrow">设计计划 / 审阅副本</p>
 <h1>{e(value_text(spec['magnification']))}× {e(value_text(spec['correction_class']))}物镜</h1>
 <p class="lead">{e(result['request'])}</p>
@@ -150,4 +150,4 @@ def render(payload: dict[str, Any], revision: str) -> str:
 <div class="table-wrap"><table><thead><tr><th scope="col">检查项</th><th scope="col">达标线</th><th scope="col">范围与说明</th></tr></thead><tbody>{''.join(thresholds)}</tbody></table></div>
 <p class="caption">第一版范围：干物镜、无限远校正、球面或平面，评估使用理想参考筒镜。机械齐焦兼容性和公差分析不在本次验收内；不会保证当前初始结构已经满足以上要求。</p></section>
 <section class="confirmation"><h2>回到对话中确认</h2><p>认可时说明“确认这个版本”；需要修改时直接指出字段或描述。确认后保留本版本，后续要求变化另建任务。</p><p class="revision">版本 {e(revision)}</p><p class="caption">任务 {e(payload['job'])} · 生成时间 {e(payload['created_at'])}。此页面是生成时的审阅副本，当前确认状态以对话中的记录为准。</p></section></main>
-<footer>zea · 从用户需求到可检验的光学规格</footer></body></html>'''
+<footer>saos · 从用户需求到可检验的光学规格</footer></body></html>'''

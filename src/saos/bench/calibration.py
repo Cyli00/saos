@@ -13,8 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from zea import config, library, rounds
-from zea.protocol import ErrorCode, ZeaError
+from saos import config, library, rounds
+from saos.protocol import ErrorCode, SaosError
 
 OBSERVE_ROUNDS = 20  # 正式样本必须完整观察的轮数（或在此之前通过）
 GRID_N = (2, 3, 4, 5, 6)
@@ -36,7 +36,7 @@ def calibration_dir() -> Path:
 
 def manifest_path(batch: str) -> Path:
     if not batch or any(c not in library.ENTRY_ID_CHARS for c in batch):
-        raise ZeaError(ErrorCode.BAD_ARGS, f"批次编号只能含字母、数字和 -_.：{batch!r}")
+        raise SaosError(ErrorCode.BAD_ARGS, f"批次编号只能含字母、数字和 -_.：{batch!r}")
     return calibration_dir() / f"{batch}.json"
 
 
@@ -77,7 +77,7 @@ def effective_spec(entry: str, stretch: dict[str, float]) -> dict[str, Any]:
     """任务实际使用的光学规格：库中基准规格，拉伸规格时按原结构实测值改界限。"""
     import yaml
 
-    from zea.bench import runner
+    from saos.bench import runner
 
     spec = yaml.safe_load((library.entry_dir(entry) / "benchmark.yaml").read_text(encoding="utf-8"))
     return runner.stretched_spec(spec, library.load_entry(entry)["metrics"], stretch) if stretch else spec
@@ -87,8 +87,8 @@ def task_inputs(entry: str, stretch: dict[str, float]) -> dict[str, str]:
     """实验输入的指纹：处方、库中基准规格文件，以及任务实际规格推出的完整验收配置。
 
     代码固定不等于输入固定：运行和准入时都按这些哈希核对，库文件被改过就拒绝。"""
-    from zea import acceptance
-    from zea.spec import parse_spec
+    from saos import acceptance
+    from saos.spec import parse_spec
 
     d = library.entry_dir(entry)
     config_ = acceptance.acceptance_config(parse_spec(effective_spec(entry, stretch)))
@@ -102,7 +102,7 @@ def task_inputs(entry: str, stretch: dict[str, float]) -> dict[str, str]:
 def write_plan(batch: str, policy: str) -> dict[str, Any]:
     path = manifest_path(batch)
     if path.exists():
-        raise ZeaError(ErrorCode.FILE_EXISTS, f"实验清单已存在，不能覆盖：{path}")
+        raise SaosError(ErrorCode.FILE_EXISTS, f"实验清单已存在，不能覆盖：{path}")
     data = plan(batch, policy)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -112,14 +112,14 @@ def write_plan(batch: str, policy: str) -> dict[str, Any]:
 def load_plan(batch: str) -> dict[str, Any]:
     path = manifest_path(batch)
     if not path.is_file():
-        raise ZeaError(ErrorCode.FILE_NOT_FOUND, f"没有实验清单：{path}")
+        raise SaosError(ErrorCode.FILE_NOT_FOUND, f"没有实验清单：{path}")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def task_of(manifest: dict[str, Any], task_id: str) -> dict[str, Any]:
     task = next((t for t in manifest["tasks"] if t["task"] == task_id), None)
     if task is None:
-        raise ZeaError(ErrorCode.BAD_ARGS, f"清单 {manifest['batch']} 中没有任务 {task_id}")
+        raise SaosError(ErrorCode.BAD_ARGS, f"清单 {manifest['batch']} 中没有任务 {task_id}")
     return task
 
 
@@ -131,7 +131,7 @@ def sha_file(path: Path) -> str | None:
 
 
 def find_jobs(homes: list[Path], batch: str) -> dict[str, list[Path]]:
-    """各 ZEA_HOME 下属于该批次的任务目录：清单任务编号 → 按创建时间排序的任务目录。"""
+    """各 SAOS_HOME 下属于该批次的任务目录：清单任务编号 → 按创建时间排序的任务目录。"""
     out: dict[str, list[Path]] = {}
     for home in homes:
         for state_file in (Path(home) / "jobs").glob("*/job.json"):
@@ -146,7 +146,7 @@ def find_jobs(homes: list[Path], batch: str) -> dict[str, list[Path]]:
 
 def audit(job_dir: Path, manifest: dict[str, Any], task: dict[str, Any]) -> dict[str, Any]:
     """一个正式任务的轨迹是否合格；不合格时给出全部原因。"""
-    from zea import acceptance
+    from saos import acceptance
 
     reasons: list[str] = []
     state = json.loads((job_dir / "job.json").read_text(encoding="utf-8"))
@@ -190,7 +190,7 @@ def audit(job_dir: Path, manifest: dict[str, Any], task: dict[str, Any]) -> dict
         reasons.append("规格文件缺失")
     else:
         # 归档规格与计算记录必须一致：从任务实际规格重新生成验收配置，与冻结值和清单比较
-        from zea.spec import load_spec
+        from saos.spec import load_spec
 
         try:
             spec_hash = acceptance.config_hash(acceptance.acceptance_config(load_spec(spec_file)))

@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from zea import adapt
-from zea.protocol import ZeaError
+from saos import adapt
+from saos.protocol import SaosError
 
 FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "us4521083" / "extract.json").read_text(encoding="utf-8"))
 CATALOGS = ["OHARA", "SCHOTT", "HOYA", "SUMITA"]
@@ -66,7 +66,7 @@ def test_cover_glass_gap_uses_apparent_thickness():
     p = out["prescription"]
     ffd = out["report"]["paraxial"]["front_focal_distance_mm"]
     assert p["object"]["thickness"] == pytest.approx(0.17)
-    assert p["surfaces"][0]["comment"] == "zea:cover_top"
+    assert p["surfaces"][0]["comment"] == "saos:cover_top"
     assert p["surfaces"][0]["thickness"] == pytest.approx(ffd - 0.17 / 1.5255)
 
 
@@ -103,7 +103,7 @@ def test_partial_cover_defaults_preserve_printed_values(cover):
 
 
 def test_check_and_adapt_use_the_same_assumed_cover():
-    from zea.library_cli import check_extract
+    from saos.library_cli import check_extract
 
     ex = adapt.upgrade(copy.deepcopy(FIXTURE))
     ex["cover_glass"] = {"thickness": None, "n": 1.5255, "nu": 56.0}
@@ -115,7 +115,7 @@ def test_check_and_adapt_use_the_same_assumed_cover():
 
 
 def test_check_printed_cover_does_not_require_native_scale():
-    from zea.library_cli import check_extract
+    from saos.library_cli import check_extract
 
     ex = adapt.upgrade(copy.deepcopy(FIXTURE))
     ex["cover_glass"] = {"thickness": 0.017, "n": 1.5255, "nu": 56.0}
@@ -137,7 +137,7 @@ def test_printed_glass_name_is_used_when_consistent():
 def test_aspheric_surfaces_are_rejected():
     ex2 = adapt.upgrade(copy.deepcopy(FIXTURE))
     ex2["surfaces"][3]["aspheric"] = True
-    with pytest.raises(ZeaError):
+    with pytest.raises(SaosError):
         adapt.from_extraction(ex2, catalogs=CATALOGS, focal_length_mm=10)
 
 

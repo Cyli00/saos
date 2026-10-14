@@ -1,4 +1,4 @@
-"""优化基准命令：zea bench split / plan / calibrate / run。"""
+"""优化基准命令：saos bench split / plan / calibrate / run。"""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from zea import library
-from zea.bench import calibration, runner
-from zea.protocol import ErrorCode, ZeaError, write_json
+from saos import library
+from saos.bench import calibration, runner
+from saos.protocol import ErrorCode, SaosError, write_json
 
 
 def cmd_split(args: argparse.Namespace) -> Any:
@@ -50,10 +50,10 @@ def cmd_bench_calibrate(args: argparse.Namespace) -> Any:
 def cmd_bench_run(args: argparse.Namespace) -> Any:
     if args.batch:
         if not args.task:
-            raise ZeaError(ErrorCode.BAD_ARGS, "--batch 需要同时给出 --task")
+            raise SaosError(ErrorCode.BAD_ARGS, "--batch 需要同时给出 --task")
         return runner.run_task(args.batch, args.task, args.timeout, args.cores, args.discard)
     if not args.entry:
-        raise ZeaError(ErrorCode.BAD_ARGS, "需要条目编号，或用 --batch/--task 运行正式任务")
+        raise SaosError(ErrorCode.BAD_ARGS, "需要条目编号，或用 --batch/--task 运行正式任务")
     stretch = {k: float(v) for k, v in (x.split("=", 1) for x in args.stretch)}
     return runner.run_case(
         args.entry, args.seed, args.radius_rel, args.thickness_rel, args.max_rounds, args.timeout, args.job, not args.no_amplify, stretch, args.cores, args.discard
@@ -70,7 +70,7 @@ def register(sub, parser_class, default_timeout: float) -> None:
     p.set_defaults(func=cmd_bench_plan)
     p = bsub.add_parser("calibrate", help="按实验清单准入正式轨迹，在调参组上选停机参数；给出 --validate 时在验证组上检验")
     p.add_argument("--batch", required=True)
-    p.add_argument("--homes", nargs="+", required=True, help="运行过该批次的各 ZEA_HOME")
+    p.add_argument("--homes", nargs="+", required=True, help="运行过该批次的各 SAOS_HOME")
     p.add_argument("--validate", nargs=3, metavar=("N", "REL", "CAP"), help="固定的停机参数，例如 3 0.01 20")
     p.set_defaults(func=cmd_bench_calibrate)
     p = bsub.add_parser("run", help="受控扰动后按参考策略逐轮优化，记录完整轨迹（需要后台进程）")

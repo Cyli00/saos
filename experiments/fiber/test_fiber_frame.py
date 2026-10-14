@@ -7,10 +7,10 @@ import os
 import pytest
 
 import fiber_frame
-from zea.backend.zos import ZosBackend
-from zea.protocol import ZeaError, jsonable
+from saos.backend.zos import ZosBackend
+from saos.protocol import SaosError, jsonable
 
-zemax = pytest.mark.skipif(os.getenv("ZEA_RUN_ZEMAX") != "1", reason="需要显式启用真实 Zemax")
+zemax = pytest.mark.skipif(os.getenv("SAOS_RUN_ZEMAX") != "1", reason="需要显式启用真实 Zemax")
 
 
 def test_geometry_uses_global_distance_and_detects_wrong_fold():
@@ -37,7 +37,7 @@ def test_geometry_uses_global_distance_and_detects_wrong_fold():
 
 
 def test_invalid_medium_is_rejected_before_build():
-    with pytest.raises(ZeaError):
+    with pytest.raises(SaosError):
         fiber_frame.build(None, "oil")
 
 
@@ -62,7 +62,7 @@ def test_hemiellipsoid_sag_returns_to_bond_plane_at_equator():
     "diameter,height", [(0.501, 0.09), (0.4, 0.1), (0.4, 0), (float("nan"), 0.09)]
 )
 def test_invalid_ellipsoid_rejected_before_build(diameter, height):
-    with pytest.raises(ZeaError):
+    with pytest.raises(SaosError):
         fiber_frame.build(None, "air", diameter, height)
 
 

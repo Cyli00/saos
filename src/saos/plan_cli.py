@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from zea import interview, plan
+from saos import interview, plan
 
 
 def register(sub, parser_class) -> None:

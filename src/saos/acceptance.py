@@ -12,10 +12,10 @@ import math
 import time
 from typing import Any
 
-from zea import glasscat, prescription
-from zea.backend import Backend
-from zea.protocol import ErrorCode, ZeaError
-from zea.spec import LAMBDA_E_UM, PFR_GRID, Spec, sample_points
+from saos import glasscat, prescription
+from saos.backend import Backend
+from saos.protocol import ErrorCode, SaosError
+from saos.spec import LAMBDA_E_UM, PFR_GRID, Spec, sample_points
 
 ZERN_SAMP = 3  # 128×128
 ZERN_MAX_TERM = 66  # 含 ρ¹⁰ 球差项；37 项时离轴点残差约 0.005λ，见第 3 步记录
@@ -291,7 +291,7 @@ class Evaluator:
             {"surface": r["index"], "aperture": r["aperture"]} for r in design if r.get("aperture", "None") != "None"
         ]
         if not any(r["stop"] for r in self.objective) and not tube["stop"]:
-            raise ZeaError(ErrorCode.BAD_ARGS, "设计文件的物镜部分和参考筒镜上都没有光阑")
+            raise SaosError(ErrorCode.BAD_ARGS, "设计文件的物镜部分和参考筒镜上都没有光阑")
 
         surfaces: list[dict[str, Any]] = []
         if spec.cover_glass:
@@ -316,7 +316,7 @@ class Evaluator:
         catalogs = list(dict.fromkeys([c.upper() for c in self.design_catalogs] + list(spec.glass_catalogs)))
         acc = prescription.normalize(
             {
-                "title": "zea acceptance model",
+                "title": "saos acceptance model",
                 "aperture": {"type": "object_na", "value": spec.na},
                 "fields": {"type": "object_height", "y": [r * radius for r in self.fields]},
                 "wavelengths": {"um": list(spec.wavelengths_um), "weights": list(spec.wavelength_weights), "primary": WAVE_E},

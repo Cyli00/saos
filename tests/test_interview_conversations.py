@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from zea import interview
+from saos import interview
 
 SCENARIOS = json.loads(
     (Path(__file__).parent / "fixtures/interview/conversations.json").read_text(

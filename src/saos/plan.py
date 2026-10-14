@@ -7,10 +7,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from zea import acceptance, interview, jobs, library
-from zea import protocol
-from zea.protocol import ErrorCode, ZeaError, read_json
-from zea.spec import Spec, parse_spec
+from saos import acceptance, interview, jobs, library
+from saos import protocol
+from saos.protocol import ErrorCode, SaosError, read_json
+from saos.spec import Spec, parse_spec
 
 
 def digest(data: Any) -> str:
@@ -24,9 +24,9 @@ def write_json(path: Path, data: Any) -> None:
 def _draft_job(job: jobs.Job) -> None:
     state = job.read_state()
     if state.get("frozen") or (job.root / "rounds.jsonl").exists() or (job.root / "bench.jsonl").exists():
-        raise ZeaError(ErrorCode.BAD_ARGS, "已有优化或基准记录的任务不能用来创建／确认新的设计计划，请新建任务")
+        raise SaosError(ErrorCode.BAD_ARGS, "已有优化或基准记录的任务不能用来创建／确认新的设计计划，请新建任务")
     if state.get("plan", {}).get("approved"):
-        raise ZeaError(ErrorCode.BAD_ARGS, "此任务的设计计划已确认，修改要求请新建任务")
+        raise SaosError(ErrorCode.BAD_ARGS, "此任务的设计计划已确认，修改要求请新建任务")
 
 
 def _query(spec: Spec, limit: int) -> list[dict[str, Any]]:
@@ -63,14 +63,14 @@ def starting_design(entry_id: str, result: dict[str, Any], rationale: str) -> di
 
 
 def create(job_id: str, draft_path: Path, entry_id: str | None, rationale: str = "") -> dict[str, Any]:
-    from zea.plan_html import render
+    from saos.plan_html import render
 
     job = jobs.get_job(job_id)
     _draft_job(job)
     draft = interview.read_draft(draft_path)
     result = interview.check(draft)
     if not result["ready"]:
-        raise ZeaError(ErrorCode.BAD_ARGS, "需求访谈尚未完成，请先补充待问问题", {"questions": result["questions"]})
+        raise SaosError(ErrorCode.BAD_ARGS, "需求访谈尚未完成，请先补充待问问题", {"questions": result["questions"]})
     spec = parse_spec(result["spec"])
     config = acceptance.acceptance_config(spec)
     payload = {"schema": 1, "job": job.id, "created_at": jobs.now_iso(), "interview": draft, "review": result,
@@ -100,20 +100,20 @@ def inspect(job_id: str, revision: str | None = None) -> dict[str, Any]:
     if not isinstance(revision, str) or len(revision) != 64 or any(c not in "0123456789abcdef" for c in revision):
         interview.bad("设计计划版本必须为完整 SHA-256")
     if revision != pointer["revision"]:
-        raise ZeaError(ErrorCode.SPEC_CHANGED, "这不是当前设计计划，请重新审阅最新版本")
+        raise SaosError(ErrorCode.SPEC_CHANGED, "这不是当前设计计划，请重新审阅最新版本")
     directory = job.root / "plan" / revision
     payload = read_json(directory / "plan.json")
     if digest(payload) != revision or payload.get("job") != job.id:
-        raise ZeaError(ErrorCode.SPEC_CHANGED, "设计计划内容已变化，请重新生成并审阅")
+        raise SaosError(ErrorCode.SPEC_CHANGED, "设计计划内容已变化，请重新生成并审阅")
     artifacts = read_json(directory / "artifacts.json")
     for name in ("plan.json", "spec.json", "index.html"):
         if not (directory / name).is_file() or hashlib.sha256((directory / name).read_bytes()).hexdigest() != artifacts.get(name):
-            raise ZeaError(ErrorCode.SPEC_CHANGED, f"设计计划文件 {name} 已变化，请重新生成并审阅")
+            raise SaosError(ErrorCode.SPEC_CHANGED, f"设计计划文件 {name} 已变化，请重新生成并审阅")
     if read_json(directory / "spec.json") != payload["review"]["spec"]:
-        raise ZeaError(ErrorCode.SPEC_CHANGED, "计划展示的规格与待交接规格不一致")
+        raise SaosError(ErrorCode.SPEC_CHANGED, "计划展示的规格与待交接规格不一致")
     live_config = acceptance.acceptance_config(parse_spec(payload["review"]["spec"]))
     if live_config != payload["acceptance_config"]:
-        raise ZeaError(ErrorCode.SPEC_CHANGED, "当前评估器口径与计划不一致，请重新生成并审阅")
+        raise SaosError(ErrorCode.SPEC_CHANGED, "当前评估器口径与计划不一致，请重新生成并审阅")
     return {"job": job.id, "revision": revision, "state": pointer["state"], "approved": pointer["approved"],
             "page": str(directory / "index.html"), "payload": payload}
 
@@ -148,7 +148,7 @@ def handoff(job_id: str) -> dict[str, Any]:
     job = jobs.get_job(job_id)
     approval = read_json(job.root / "plan" / reviewed["revision"] / "approval.json")
     if job.read_state().get("spec") != approval["spec"] or read_json(job.root / approval["spec"]) != reviewed["payload"]["review"]["spec"]:
-        raise ZeaError(ErrorCode.SPEC_CHANGED, "任务规格已偏离用户确认的设计计划")
+        raise SaosError(ErrorCode.SPEC_CHANGED, "任务规格已偏离用户确认的设计计划")
     return {"job": job_id, "revision": reviewed["revision"], "spec": approval["spec"],
             "config_sha256": approval["config_sha256"], "starting_design": reviewed["payload"]["starting_design"],
             "note": "此处方是库中原结构快照，尚未按用户规格重新适配，不能把原库验收当作本任务验收。"}

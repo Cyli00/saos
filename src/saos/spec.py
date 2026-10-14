@@ -15,7 +15,7 @@ from typing import Any
 
 import yaml
 
-from zea.protocol import ErrorCode, ZeaError
+from saos.protocol import ErrorCode, SaosError
 
 SPEC_VERSION = 1
 LAMBDA_E_UM = 0.54607
@@ -36,11 +36,11 @@ def _value(raw: Any) -> Any:
 def _need(data: dict[str, Any], key: str, kind: type | tuple[type, ...]) -> Any:
     value = _value(data.get(key))
     if value is None:
-        raise ZeaError(ErrorCode.BAD_ARGS, f"光学规格缺少字段 {key}")
+        raise SaosError(ErrorCode.BAD_ARGS, f"光学规格缺少字段 {key}")
     if kind is float and isinstance(value, int) and not isinstance(value, bool):
         value = float(value)
     if not isinstance(value, kind):
-        raise ZeaError(ErrorCode.BAD_ARGS, f"光学规格字段 {key} 类型错误：{value!r}")
+        raise SaosError(ErrorCode.BAD_ARGS, f"光学规格字段 {key} 类型错误：{value!r}")
     return value
 
 
@@ -65,11 +65,11 @@ class Item:
 
     def __post_init__(self) -> None:
         if self.kind not in ("upper", "lower", "count"):
-            raise ZeaError(ErrorCode.BAD_ARGS, f"{self.id} 的判定形式未知：{self.kind}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"{self.id} 的判定形式未知：{self.kind}")
         if not math.isfinite(self.threshold):
-            raise ZeaError(ErrorCode.BAD_ARGS, f"{self.id} 的达标线必须是有限数，收到 {self.threshold}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"{self.id} 的达标线必须是有限数，收到 {self.threshold}")
         if not (math.isfinite(self.scale) and self.scale > 0):
-            raise ZeaError(ErrorCode.BAD_ARGS, f"{self.id} 的归一化尺度必须是正的有限数，收到 {self.scale}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"{self.id} 的归一化尺度必须是正的有限数，收到 {self.scale}")
 
     def valid_value(self, value: Any) -> bool:
         """测量值能否用于判定：必须是有限实数。唯一的例外是显式标记 inf_means_absent 的项
@@ -162,39 +162,39 @@ def load_spec(path: Path) -> Spec:
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as exc:
-        raise ZeaError(ErrorCode.BAD_ARGS, f"无法读取光学规格 {path}：{exc}") from exc
+        raise SaosError(ErrorCode.BAD_ARGS, f"无法读取光学规格 {path}：{exc}") from exc
     if not isinstance(data, dict):
-        raise ZeaError(ErrorCode.BAD_ARGS, "光学规格必须是 YAML 映射")
+        raise SaosError(ErrorCode.BAD_ARGS, "光学规格必须是 YAML 映射")
     return parse_spec(data)
 
 
 def parse_spec(data: dict[str, Any]) -> Spec:
     if _value(data.get("spec_version")) != SPEC_VERSION:
-        raise ZeaError(ErrorCode.BAD_ARGS, f"spec_version 必须为 {SPEC_VERSION}")
+        raise SaosError(ErrorCode.BAD_ARGS, f"spec_version 必须为 {SPEC_VERSION}")
     cls = _need(data, "correction_class", str)
     if cls not in ("achromat", "plan_achromat"):
-        raise ZeaError(ErrorCode.BAD_ARGS, f"第一版只支持 achromat / plan_achromat，收到 {cls}")
+        raise SaosError(ErrorCode.BAD_ARGS, f"第一版只支持 achromat / plan_achromat，收到 {cls}")
     m = _need(data, "magnification", float)
     na = _need(data, "na", float)
     if not 0 < na <= 0.65:
-        raise ZeaError(ErrorCode.BAD_ARGS, f"第一版只支持干物镜 NA ≤ 0.65，收到 {na}")
+        raise SaosError(ErrorCode.BAD_ARGS, f"第一版只支持干物镜 NA ≤ 0.65，收到 {na}")
     f_tl = float(_opt(data, "tube_lens_focal_length", REFERENCE_TUBE_MM))
     ofn = float(_opt(data, "objective_field_number", 22.0 if cls == "plan_achromat" else 18.0))
     for name, value in (("magnification", m), ("tube_lens_focal_length", f_tl), ("objective_field_number", ofn)):
         if not (math.isfinite(value) and value > 0):
-            raise ZeaError(ErrorCode.BAD_ARGS, f"{name} 必须是正的有限数，收到 {value}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"{name} 必须是正的有限数，收到 {value}")
     receiver = _opt(data, "receiver", "visual")
     pixel = _opt(data, "pixel_size", None)
     if receiver not in ("visual", "camera"):
-        raise ZeaError(ErrorCode.BAD_ARGS, f"receiver 只能是 visual / camera，收到 {receiver}")
+        raise SaosError(ErrorCode.BAD_ARGS, f"receiver 只能是 visual / camera，收到 {receiver}")
     if receiver == "camera" and not pixel:
-        raise ZeaError(ErrorCode.BAD_ARGS, "接收器为相机时必须给出 pixel_size")
+        raise SaosError(ErrorCode.BAD_ARGS, "接收器为相机时必须给出 pixel_size")
 
     waves = data.get("wavelengths") or {}
     um = tuple(float(x) for x in _opt(waves, "um", WAVELENGTHS_UM))
     weights = tuple(float(x) for x in _opt(waves, "weights", [1.0] * len(um)))
     if um != WAVELENGTHS_UM:
-        raise ZeaError(ErrorCode.BAD_ARGS, "第一版的验收口径固定使用 F′、e、C′ 三条谱线")
+        raise SaosError(ErrorCode.BAD_ARGS, "第一版的验收口径固定使用 F′、e、C′ 三条谱线")
 
     cover = _value(data.get("cover_glass"))
     if cover is not None:
@@ -213,7 +213,7 @@ def parse_spec(data: dict[str, Any]) -> Spec:
     c(Item("magnification", "constraint", "upper", tol, tol, "比例"))
     wd_min = _opt(limits, "working_distance_min", None)
     if wd_min is None:
-        raise ZeaError(ErrorCode.BAD_ARGS, "光学规格缺少 limits.working_distance_min")
+        raise SaosError(ErrorCode.BAD_ARGS, "光学规格缺少 limits.working_distance_min")
     c(Item("working_distance", "constraint", "lower", float(wd_min), float(wd_min), "mm"))
     length = float(_opt(limits, "optical_length_max", 45.0))
     c(Item("optical_length", "constraint", "upper", length, length, "mm"))
@@ -229,7 +229,7 @@ def parse_spec(data: dict[str, Any]) -> Spec:
     gap_value = float(_value(gap) if not isinstance(gap, dict) else gap.get("value", 0.0))
     gap_scale = float(gap.get("scale", gap_value) if isinstance(gap, dict) else gap_value)
     if gap_scale <= 0:
-        raise ZeaError(ErrorCode.BAD_ARGS, "min_air_gap 为 0 时必须给出大于 0 的 scale")
+        raise SaosError(ErrorCode.BAD_ARGS, "min_air_gap 为 0 时必须给出大于 0 的 scale")
     c(Item("air_gap", "constraint", "lower", gap_value, gap_scale, "mm", {"inf_means_absent": True}))
     max_el = _opt(limits, "max_elements", None)
     if max_el is not None:
@@ -251,7 +251,7 @@ def parse_spec(data: dict[str, Any]) -> Spec:
         fw = fw or {}
         r_up = float(_opt(fw, "range", 0.85 if plan else None) or 0)
         if r_up <= 0:
-            raise ZeaError(ErrorCode.BAD_ARGS, "消色差物镜启用视场波像差时必须给出 range")
+            raise SaosError(ErrorCode.BAD_ARGS, "消色差物镜启用视场波像差时必须给出 range")
         thr = float(_opt(fw, "threshold", MARECHAL_WFE))
         c(Item("field_rms_wfe", "target", "upper", thr, thr, "λe", {"range": r_up, "remove_defocus_astig": plan}))
     lc = _value(targets.get("lateral_color"))
@@ -267,14 +267,14 @@ def parse_spec(data: dict[str, Any]) -> Spec:
         if _opt(mtf, "plane", "image") == "object":
             freq = freq / m
         if freq <= 0:
-            raise ZeaError(ErrorCode.BAD_ARGS, "MTF 需要频率")
+            raise SaosError(ErrorCode.BAD_ARGS, "MTF 需要频率")
         thr = float(_opt(mtf, "threshold", 0.3))
         c(Item("mtf", "target", "lower", thr, thr, "—", {"frequency": freq, "range": float(_opt(mtf, "range", 1.0))}))
     dist = _value(targets.get("distortion"))
     if dist is not None:
         thr = float(_need(dist, "threshold_pct", float))
         if thr <= 0:
-            raise ZeaError(ErrorCode.BAD_ARGS, "畸变阈值必须大于 0")
+            raise SaosError(ErrorCode.BAD_ARGS, "畸变阈值必须大于 0")
         c(Item("distortion", "target", "upper", thr, thr, "%", {"range": float(_opt(dist, "range", 1.0))}))
 
     return Spec(

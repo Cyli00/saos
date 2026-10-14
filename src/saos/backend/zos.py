@@ -10,15 +10,15 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from zea import config
-from zea.backend.base import (
+from saos import config
+from saos.backend.base import (
     NUMERIC_PARAMS,
     SURFACE_PARAMS,
     Backend,
     parse_numeric,
     same_number,
 )
-from zea.protocol import ErrorCode, ZeaError
+from saos.protocol import ErrorCode, SaosError
 
 _ZOSAPI = None
 
@@ -29,14 +29,14 @@ def _load_zosapi(root: str):
         return _ZOSAPI
     for dll in ("ZOSAPI_NetHelper.dll", "ZOSAPI.dll", "ZOSAPI_Interfaces.dll"):
         if not os.path.isfile(os.path.join(root, dll)):
-            raise ZeaError(ErrorCode.ZOS_ERROR, f"在 {root} 中找不到 {dll}", {"opticstudio_dir": root})
+            raise SaosError(ErrorCode.ZOS_ERROR, f"在 {root} 中找不到 {dll}", {"opticstudio_dir": root})
     import clr  # pythonnet
 
     clr.AddReference(os.path.join(root, "ZOSAPI_NetHelper.dll"))
     import ZOSAPI_NetHelper
 
     if not ZOSAPI_NetHelper.ZOSAPI_Initializer.Initialize(root):
-        raise ZeaError(ErrorCode.ZOS_ERROR, f"ZOSAPI_Initializer 初始化失败：{root}")
+        raise SaosError(ErrorCode.ZOS_ERROR, f"ZOSAPI_Initializer 初始化失败：{root}")
     clr.AddReference(os.path.join(root, "ZOSAPI.dll"))
     clr.AddReference(os.path.join(root, "ZOSAPI_Interfaces.dll"))
     import ZOSAPI
@@ -48,7 +48,7 @@ def _load_zosapi(root: str):
 class ZosBackend(Backend):
     def __init__(self, mode: str = "standalone"):
         if mode not in ("standalone", "extension"):
-            raise ZeaError(ErrorCode.BAD_ARGS, f"未知的连接方式：{mode}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"未知的连接方式：{mode}")
         self.mode = mode
         self.root = config.opticstudio_dir()
         self.app = None
@@ -63,17 +63,17 @@ class ZosBackend(Backend):
         if self.mode == "standalone":
             app = conn.CreateNewApplication()
         else:
-            from zea.native_ui import ensure_extension
+            from saos.native_ui import ensure_extension
 
             self.extension_ui = ensure_extension()
             app = conn.ConnectAsExtension(self.extension_ui["instance"])
         hint = "在 OpticStudio 中点 Programming → Interactive Extension，使它处于等待连接状态" if self.mode == "extension" else ""
         if app is None:
-            raise ZeaError(ErrorCode.ZOS_ERROR, f"无法连接 OpticStudio（{self.mode}）。{hint}")
+            raise SaosError(ErrorCode.ZOS_ERROR, f"无法连接 OpticStudio（{self.mode}）。{hint}")
         if self.mode == "extension" and not self._extension_ready(app):
             # 实测 2024 R1：上一个扩展客户端断开后，窗口退出扩展状态，ConnectAsExtension 仍返回对象，
             # 但没有 PrimarySystem，许可检查为 False，ProgramDir 抛 ArgumentNullException
-            raise ZeaError(ErrorCode.ZOS_ERROR, f"OpticStudio 窗口没有处于 Interactive Extension 状态。{hint}；每次后台进程退出后都要重新点一次")
+            raise SaosError(ErrorCode.ZOS_ERROR, f"OpticStudio 窗口没有处于 Interactive Extension 状态。{hint}；每次后台进程退出后都要重新点一次")
         self.app = app
         version = (int(app.ZOSMajorVersion), int(app.ZOSMinorVersion), int(app.ZOSSPVersion))
         info = {
@@ -86,11 +86,11 @@ class ZosBackend(Backend):
             info.update(extension_ui=self.extension_ui, initial_file=str(app.PrimarySystem.SystemFile), initial_needs_save=bool(app.PrimarySystem.NeedsSave))
         if not app.IsValidLicenseForAPI:
             self.close()
-            raise ZeaError(ErrorCode.ZOS_LICENSE, "许可证不支持 ZOS-API", info)
+            raise SaosError(ErrorCode.ZOS_LICENSE, "许可证不支持 ZOS-API", info)
         if version != config.EXPECTED_ZOS_VERSION:
             self.close()
             expected = ".".join(map(str, config.EXPECTED_ZOS_VERSION))
-            raise ZeaError(ErrorCode.ZOS_VERSION_MISMATCH, f"OpticStudio 版本为 {info['version']}，项目锁定 {expected}", info)
+            raise SaosError(ErrorCode.ZOS_VERSION_MISMATCH, f"OpticStudio 版本为 {info['version']}，项目锁定 {expected}", info)
         return info
 
     @contextmanager
@@ -137,7 +137,7 @@ class ZosBackend(Backend):
     @property
     def system(self):
         if self.app is None:
-            raise ZeaError(ErrorCode.ZOS_CONNECTION_LOST, "未连接 OpticStudio")
+            raise SaosError(ErrorCode.ZOS_CONNECTION_LOST, "未连接 OpticStudio")
         return self.app.PrimarySystem
 
     def has_unsaved_changes(self) -> bool:
@@ -161,7 +161,7 @@ class ZosBackend(Backend):
             existing[str(analysis.AnalysisType)] = analysis
         opened = []
         for name in self._ANALYSES:
-            self.app.ProgressMessage = f"zea：刷新 {name}"
+            self.app.ProgressMessage = f"saos：刷新 {name}"
             analysis = existing.get(name) or system.Analyses.New_Analysis_SettingsFirst(getattr(zosapi.Analysis.AnalysisIDM, name))
             settings = analysis.GetSettings()
             number = 1 if name in self._AXIS_ONLY else 0
@@ -173,7 +173,7 @@ class ZosBackend(Backend):
             opened.append({"analysis": name, "message": None if message is None else str(message), "title": str(analysis.Title)})
         system.UpdateMode = zosapi.LensUpdateMode.AllWindows
         status = str(system.UpdateStatus())
-        self.app.ProgressMessage = "zea：分析窗口已刷新"
+        self.app.ProgressMessage = "saos：分析窗口已刷新"
         return {"update_mode": str(system.UpdateMode), "system_status": status, "analyses": opened}
 
     # ---- 文件 ----
@@ -181,14 +181,14 @@ class ZosBackend(Backend):
     def load(self, path: Path) -> None:
         path = Path(path).resolve()
         if not self.system.LoadFile(str(path), False):
-            raise ZeaError(ErrorCode.ZOS_LOAD_FAILED, f"OpticStudio 无法加载 {path}")
+            raise SaosError(ErrorCode.ZOS_LOAD_FAILED, f"OpticStudio 无法加载 {path}")
         self._material_cache.clear()
 
     def save_as(self, path: Path) -> None:
         path = Path(path).resolve()
         self.system.SaveAs(str(path))
         if not path.is_file():
-            raise ZeaError(ErrorCode.ZOS_SAVE_FAILED, f"保存后找不到文件 {path}")
+            raise SaosError(ErrorCode.ZOS_SAVE_FAILED, f"保存后找不到文件 {path}")
 
     def new_system(self) -> None:
         self.system.New(False)
@@ -265,10 +265,10 @@ class ZosBackend(Backend):
 
     def set_surface(self, index: int, param: str, value: Any) -> dict[str, Any]:
         if param not in SURFACE_PARAMS:
-            raise ZeaError(ErrorCode.BAD_ARGS, f"不支持的面参数 {param!r}，可用：{', '.join(SURFACE_PARAMS)}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"不支持的面参数 {param!r}，可用：{', '.join(SURFACE_PARAMS)}")
         lde = self.system.LDE
         if not isinstance(index, int) or not 0 <= index < lde.NumberOfSurfaces:
-            raise ZeaError(ErrorCode.BAD_ARGS, f"面序号 {index!r} 超出范围 0–{lde.NumberOfSurfaces - 1}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"面序号 {index!r} 超出范围 0–{lde.NumberOfSurfaces - 1}")
         surf = lde.GetSurfaceAt(index)
         attr = self._ATTR[param]
 
@@ -284,7 +284,7 @@ class ZosBackend(Backend):
         applied = same_number(float(actual), target) if param in NUMERIC_PARAMS else str(actual) == target
         if not applied:
             cell = getattr(surf, f"{attr}Cell")
-            raise ZeaError(
+            raise SaosError(
                 ErrorCode.VALUE_NOT_APPLIED,
                 f"面 {index} 的 {param} 没有变成目标值，可能被求解或自动设置覆盖",
                 {"requested": target, "actual": actual, "solve": str(cell.GetSolveData().Type)},
@@ -307,7 +307,7 @@ class ZosBackend(Backend):
             self._material_cache[catalogs] = names
         upper = name.upper()
         if upper not in self._material_cache[catalogs]:
-            raise ZeaError(
+            raise SaosError(
                 ErrorCode.BAD_ARGS,
                 f"当前使用的玻璃目录中没有 {name!r}",
                 {"catalogs": list(catalogs)},
@@ -329,8 +329,8 @@ class ZosBackend(Backend):
             return
         try:
             row.Material = self._check_material(material)
-        except ZeaError as exc:
-            raise ZeaError(exc.code, f"{label}：{exc.message}", exc.details) from exc
+        except SaosError as exc:
+            raise SaosError(exc.code, f"{label}：{exc.message}", exc.details) from exc
 
     def build(self, prescription: dict[str, Any]) -> None:
         zosapi = _load_zosapi(self.root)
@@ -351,7 +351,7 @@ class ZosBackend(Backend):
                 mc.RemoveCatalog(cat)
         missing = [c for c in wanted if c not in [str(x).upper() for x in mc.GetCatalogsInUse()]]
         if missing:
-            raise ZeaError(ErrorCode.BAD_ARGS, f"无法加载玻璃目录 {missing}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"无法加载玻璃目录 {missing}")
 
         sd.Aperture.ApertureType = zosapi.SystemData.ZemaxApertureType.ObjectSpaceNA
         sd.Aperture.ApertureValue = p["aperture"]["value"]
@@ -495,12 +495,12 @@ class ZosBackend(Backend):
 
     def vary(self, surface: int, param: str, on: bool) -> str:
         if param not in self._CELLS:
-            raise ZeaError(ErrorCode.BAD_ARGS, f"只能把 {', '.join(self._CELLS)} 设为变量")
+            raise SaosError(ErrorCode.BAD_ARGS, f"只能把 {', '.join(self._CELLS)} 设为变量")
         lde = self.system.LDE
         # 物面只允许厚度（无盖玻片时即工作距离间隔）设为变量
         allowed = 0 < surface < lde.NumberOfSurfaces - 1 or (surface == 0 and param == "thickness")
         if not allowed:
-            raise ZeaError(ErrorCode.BAD_ARGS, f"面 {surface} 的 {param} 不能设变量")
+            raise SaosError(ErrorCode.BAD_ARGS, f"面 {surface} 的 {param} 不能设变量")
         cell = getattr(lde.GetSurfaceAt(surface), self._CELLS[param])
         cell.MakeSolveVariable() if on else cell.MakeSolveFixed()
         return str(cell.GetSolveData().Type)
@@ -513,7 +513,7 @@ class ZosBackend(Backend):
             for i, n in enumerate(names):
                 if n.replace(" ", "").lower() == wanted.replace(" ", "").lower():
                     return i
-            raise ZeaError(ErrorCode.BAD_ARGS, f"优化向导的 {name} 只能是 {names}，收到 {wanted!r}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"优化向导的 {name} 只能是 {names}，收到 {wanted!r}")
 
         wiz.Type = pick("type", "NumberOfTypes", "GetTypeAt", settings.get("type", "RMS"))
         wiz.Data = pick("data", "NumberOfDataTypes", "GetDataTypeAt", settings.get("data", "Wavefront"))
@@ -541,7 +541,7 @@ class ZosBackend(Backend):
         for spec in rows:
             op_type = getattr(zosapi.Editors.MFE.MeritOperandType, str(spec["type"]).upper(), None)
             if op_type is None:
-                raise ZeaError(ErrorCode.BAD_ARGS, f"未知的操作数 {spec['type']!r}")
+                raise SaosError(ErrorCode.BAD_ARGS, f"未知的操作数 {spec['type']!r}")
             # 新行插在开头，避免被默认评价函数（从 DMFS 起）重建时覆盖
             row = mfe.InsertNewOperandAt(1)
             row.ChangeType(op_type)
@@ -578,7 +578,7 @@ class ZosBackend(Backend):
         zosapi = _load_zosapi(self.root)
         names = {"auto": "Automatic", "1": "Fixed_1_Cycle", "5": "Fixed_5_Cycles", "10": "Fixed_10_Cycles", "50": "Fixed_50_Cycles"}
         if cycles not in names:
-            raise ZeaError(ErrorCode.BAD_ARGS, f"cycles 只能是 {list(names)}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"cycles 只能是 {list(names)}")
         tool = self.system.Tools.OpenLocalOptimization()
         try:
             tool.Algorithm = zosapi.Tools.Optimization.OptimizationAlgorithm.DampedLeastSquares
@@ -625,8 +625,8 @@ class ZosBackend(Backend):
         zosapi = _load_zosapi(self.root)
         op_type = getattr(zosapi.Editors.MFE.MeritOperandType, name.upper(), None)
         if op_type is None:
-            raise ZeaError(ErrorCode.BAD_ARGS, f"未知的操作数 {name!r}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"未知的操作数 {name!r}")
         if len(data) > 6:
-            raise ZeaError(ErrorCode.BAD_ARGS, "操作数最多 6 个浮点参数")
+            raise SaosError(ErrorCode.BAD_ARGS, "操作数最多 6 个浮点参数")
         padded = [float(x) for x in data] + [0.0] * (6 - len(data))
         return float(self.system.MFE.GetOperandValue(op_type, int(int1), int(int2), *padded))

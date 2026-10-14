@@ -36,7 +36,7 @@
   "object": {
     "thickness": 16.30262312335979,
     "material": "",
-    "comment": "zea:object"
+    "comment": "saos:object"
   },
   "surfaces": [
     {
@@ -112,7 +112,7 @@
     {
       "radius": "inf",
       "thickness": 0.0,
-      "comment": "zea:stop",
+      "comment": "saos:stop",
       "stop": true
     },
     {
@@ -120,7 +120,7 @@
       "focal_length": 200.0,
       "opd_mode": 1,
       "thickness": 200.0,
-      "comment": "zea:tube"
+      "comment": "saos:tube"
     }
   ]
 }

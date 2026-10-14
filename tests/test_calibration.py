@@ -5,9 +5,9 @@ import json
 import pytest
 import yaml
 
-from zea import acceptance
-from zea.bench import calibration as cal
-from zea.spec import parse_spec
+from saos import acceptance
+from saos.bench import calibration as cal
+from saos.spec import parse_spec
 
 CODE = "c0de"
 MANIFEST = {"batch": "B", "policy": "reference-v3", "code_sha256": CODE, "mode": "standalone", "observe_rounds": 20}
@@ -199,8 +199,8 @@ def test_validation_requires_complete_manifest_and_no_false_stop():
 
 
 def _library(tmp_path, monkeypatch):
-    monkeypatch.setenv("ZEA_LIBRARY", str(tmp_path / "lib"))
-    from zea import library
+    monkeypatch.setenv("SAOS_LIBRARY", str(tmp_path / "lib"))
+    from saos import library
 
     groups = {"tuning": [f"T{k}" for k in range(7)], "validation": [f"V{k}" for k in range(6)]}
     spec = "spec_version: 1\ncorrection_class: achromat\nmagnification: 20\nna: 0.4\nlimits:\n  working_distance_min: 10\n  optical_length_max: 50\n"
@@ -229,15 +229,15 @@ def test_plan_counts_task_ids_and_binds_inputs(tmp_path, monkeypatch):
 
 
 def test_run_task_refuses_when_inputs_changed(tmp_path, monkeypatch):
-    from zea import config
-    from zea.bench import runner as bench
-    from zea.protocol import ZeaError
+    from saos import config
+    from saos.bench import runner as bench
+    from saos.protocol import SaosError
 
     library = _library(tmp_path, monkeypatch)
     data = cal.write_plan("b1", bench.POLICY)
     monkeypatch.setattr(bench.client, "request", lambda op, args, timeout: {"mode": "standalone", "code_sha256": config.code_sha256()})
     library.write_file("T0", "prescription.json", {"title": "changed"})
-    with pytest.raises(ZeaError) as exc:
+    with pytest.raises(SaosError) as exc:
         bench.run_task("b1", data["tasks"][0]["task"], 10)
     assert exc.value.details == {"inputs": True}
 

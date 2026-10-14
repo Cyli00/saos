@@ -1,15 +1,15 @@
 ---
-name: zea-interview
-description: 在 Claude Code 或 Codex 对话中访谈显微物镜用户，整理可追溯的光学规格，选择已收录初始结构并生成 HTML 设计计划，记录用户确认。用于 zea 新设计任务的需求访谈和计划审阅。
+name: saos-interview
+description: 在 Claude Code 或 Codex 对话中访谈显微物镜用户，整理可追溯的光学规格，选择已收录初始结构并生成 HTML 设计计划，记录用户确认。用于 saos 新设计任务的需求访谈和计划审阅。
 ---
 
 # 需求访谈与设计计划
 
-在 zea 仓库内使用。先读 `DESIGN.md`、`GLOSSARY.md` 和 `docs/interview-and-plan.md`；专业字段的补全依据在 `docs/optical-spec-and-acceptance.md`。文件路径相对仓库根目录。工具命令通过 `uv run zea` 执行。
+在 saos 仓库内使用。先读 `DESIGN.md`、`GLOSSARY.md` 和 `docs/interview-and-plan.md`；专业字段的补全依据在 `docs/optical-spec-and-acceptance.md`。文件路径相对仓库根目录。工具命令通过 `uv run saos` 执行。
 
 ## 访谈
 
-访谈直接在现有对话中进行，HTML 页面只供审阅，用户回到对话中确认。开始访谈时就执行 `uv run zea job create --name <名>`，之后所有需求文档都写入这个任务，不写进仓库的 `docs/` 或根目录。根据用户的背景组织问题，不要求按字段顺序问完一张表；用户已经说明的条件不要重复询问。
+访谈直接在现有对话中进行，HTML 页面只供审阅，用户回到对话中确认。开始访谈时就执行 `uv run saos job create --name <名>`，之后所有需求文档都写入这个任务，不写进仓库的 `docs/` 或根目录。根据用户的背景组织问题，不要求按字段顺序问完一张表；用户已经说明的条件不要重复询问。
 
 先理解观察什么、目视还是相机、倍率或所需观察范围、盖玻片和安装空间。用户不熟悉 NA、MTF 时先解释实际含义，再提出有依据的假设。标称倍率必须问出；相机需要像素尺寸。4× 工作距离没有已核实的默认值，必须澄清。测量用途要落实畸变要求；“整个视场都清楚”要明确范围与性能要求，不能只填写物镜视场数。
 

@@ -41,13 +41,13 @@
         "dpgf": 0.0
       }
     },
-    "comment": "zea:object"
+    "comment": "saos:object"
   },
   "surfaces": [
     {
       "radius": "inf",
       "thickness": 3.6615318893129105,
-      "comment": "zea:cover_top"
+      "comment": "saos:cover_top"
     },
     {
       "radius": -9.2228,
@@ -157,7 +157,7 @@
     {
       "radius": "inf",
       "thickness": 0.0,
-      "comment": "zea:stop",
+      "comment": "saos:stop",
       "stop": true
     },
     {
@@ -165,7 +165,7 @@
       "focal_length": 200.0,
       "opd_mode": 1,
       "thickness": 200.0,
-      "comment": "zea:tube"
+      "comment": "saos:tube"
     }
   ]
 }

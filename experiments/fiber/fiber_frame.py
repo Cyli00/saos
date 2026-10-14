@@ -1,10 +1,10 @@
 """光纤侧视的初始序列框架（实验，第一版范围之外，见 TODO.md）；不调用显微物镜验收器。
 
-不属于 zea 包，也不接入后台进程协议。自己连接一个 standalone OpticStudio，搭建并检查框架后保存：
+不属于 saos 包，也不接入后台进程协议。自己连接一个 standalone OpticStudio，搭建并检查框架后保存：
 
     uv run python experiments/fiber/fiber_frame.py --medium air --out <路径>.zmx
 
-需要在原生窗口中查看时，用 zea lens import 导入任务，再 lens load、lens view。
+需要在原生窗口中查看时，用 saos lens import 导入任务，再 lens load、lens view。
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ import json
 import math
 from pathlib import Path
 
-from zea.backend.zos import ZosBackend, _load_zosapi
-from zea.protocol import ErrorCode, ZeaError, jsonable
+from saos.backend.zos import ZosBackend, _load_zosapi
+from saos.protocol import ErrorCode, SaosError, jsonable
 
 ASSUMPTIONS = [
     "胶层厚 5 µm，n=1.49；组织 n=1.36，水 n=1.333；三者暂忽略色散和吸收。",
@@ -29,14 +29,14 @@ ASSUMPTIONS = [
 
 def validate_medium(medium):
     if medium not in ("air", "water"):
-        raise ZeaError(ErrorCode.BAD_ARGS, "medium 只能为 air 或 water")
+        raise SaosError(ErrorCode.BAD_ARGS, "medium 只能为 air 或 water")
 
 
 def hemiellipsoid(diameter_mm, height_mm):
     if not all(math.isfinite(v) and v > 0 for v in (diameter_mm, height_mm)):
-        raise ZeaError(ErrorCode.BAD_ARGS, "半椭球直径、高度必须为有限正数")
+        raise SaosError(ErrorCode.BAD_ARGS, "半椭球直径、高度必须为有限正数")
     if diameter_mm > 0.5 or height_mm >= 0.1:
-        raise ZeaError(ErrorCode.BAD_ARGS, "当前布局要求直径 ≤0.5 mm、高度 <0.1 mm")
+        raise SaosError(ErrorCode.BAD_ARGS, "当前布局要求直径 ≤0.5 mm、高度 <0.1 mm")
     b, a = diameter_mm / 2, height_mm
     # 完整半椭球在赤道处回到贴合平面，R、k 和中心厚不能独立改变。
     return {
@@ -143,7 +143,7 @@ def build(backend, medium, diameter_mm=None, height_mm=0.09):
     lde.GetSurfaceAt(8).SemiDiameter = 0.20
     message = lde.RunTool_AddFoldMirror(2, z.Editors.LDE.TiltType.YTilt, 90.0)
     if message is not None:
-        raise ZeaError(ErrorCode.ZOS_ERROR, "添加折转面失败", {"message": str(message)})
+        raise SaosError(ErrorCode.ZOS_ERROR, "添加折转面失败", {"message": str(message)})
     lde.GetSurfaceAt(2).Comment = "折转前坐标系"
     lde.GetSurfaceAt(3).Comment = "棱镜斜面／理想反射"
     lde.GetSurfaceAt(4).Comment = "折转后坐标系"
@@ -183,7 +183,7 @@ def inspect_model(backend):
             ]
         matrix = sys.LDE.GetGlobalMatrix(i, *([0.0] * 12))
         if not matrix[0]:
-            raise ZeaError(ErrorCode.ZOS_ERROR, f"无法读取面 {i} 的全局坐标")
+            raise SaosError(ErrorCode.ZOS_ERROR, f"无法读取面 {i} 的全局坐标")
         positions.append([float(v) for v in matrix[-3:]])
     info = backend.system_info()
     info.pop("file", None)
@@ -198,7 +198,7 @@ def geometry_checks(snapshot):
         or rows[8]["type"] != "Biconic"
         or rows[9]["type"] != "Biconic"
     ):
-        raise ZeaError(ErrorCode.BAD_ARGS, "当前不是 11 面的光纤侧视框架")
+        raise SaosError(ErrorCode.BAD_ARGS, "当前不是 11 面的光纤侧视框架")
     p = snapshot["positions_mm"]
 
     def vector(a, b):
@@ -270,7 +270,7 @@ def focus_probe(backend):
                     or result[3]
                     or not all(math.isfinite(float(v)) for v in result[4:7])
                 ):
-                    raise ZeaError(
+                    raise SaosError(
                         ErrorCode.ZOS_ERROR,
                         "近轴焦点探针光线无效",
                         {"surface": surface, "result": result},
@@ -314,7 +314,7 @@ def check(backend, path):
     backend.load(path)
     after = inspect_model(backend)
     if jsonable(before) != jsonable(after):
-        raise ZeaError(ErrorCode.VERIFY_FAILED, "重载后光纤框架发生变化")
+        raise SaosError(ErrorCode.VERIFY_FAILED, "重载后光纤框架发生变化")
     rays = [
         (w, x, y, px, py)
         for w in (1, 2)
@@ -323,7 +323,7 @@ def check(backend, path):
     ]
     try:
         focus = focus_probe(backend)
-    except ZeaError as exc:
+    except SaosError as exc:
         focus = {"all_forward_converging": False, "error": str(exc)}
     return {
         "reload_equal": True,

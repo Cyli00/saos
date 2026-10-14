@@ -1,4 +1,4 @@
-"""结构库的命令行编排：zea library …。
+"""结构库的命令行编排：saos library …。
 
 verify 通过后台进程完成搭建、复现校验和两次验收评估，结果写回结构库条目。
 """
@@ -10,8 +10,8 @@ from typing import Any
 
 import yaml
 
-from zea import adapt, client, jobs, library
-from zea.protocol import read_json as _read_json
+from saos import adapt, client, jobs, library
+from saos.protocol import read_json as _read_json
 
 
 def claimed_class_to_spec(claimed: str | None) -> str:
@@ -56,7 +56,7 @@ def cmd_add(args: argparse.Namespace) -> Any:
 
 def check_extract(extract: dict[str, Any]) -> dict[str, Any]:
     """入库前核对提取结果：用独立近轴计算比较焦距和前焦距（无限远物镜的工作距离）与原文表头。"""
-    from zea import paraxial
+    from saos import paraxial
 
     ex = adapt.upgrade(extract)
     rows = adapt.oriented_rows(ex)

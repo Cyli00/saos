@@ -1,6 +1,6 @@
 """初始结构库：条目的存储、指标、基准规格推导、查询与优化基准分组。
 
-    <ZEA_LIBRARY>/
+    <SAOS_LIBRARY>/
         entries/<id>/
             entry.json          元数据、状态（extracted / admitted / rejected）、标度无关指标
             extract.json        子 agent 的提取结果（schema 2）
@@ -25,9 +25,9 @@ from typing import Any
 
 import yaml
 
-from zea import config
-from zea.protocol import ErrorCode, ZeaError, read_json, write_json
-from zea.spec import REFERENCE_TUBE_MM
+from saos import config
+from saos.protocol import ErrorCode, SaosError, read_json, write_json
+from saos.spec import REFERENCE_TUBE_MM
 
 ENTRY_ID_CHARS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.")
 # 第 1 步格式默认值；基准规格从测量值推导时的出发点
@@ -43,19 +43,19 @@ MAX_PER_PATENT = 2
 
 
 def library_dir() -> Path:
-    return Path(os.environ.get("ZEA_LIBRARY", config.REPO_ROOT / "library")).resolve()
+    return Path(os.environ.get("SAOS_LIBRARY", config.REPO_ROOT / "library")).resolve()
 
 
 def entry_dir(entry_id: str) -> Path:
     if not entry_id or not set(entry_id) <= ENTRY_ID_CHARS:
-        raise ZeaError(ErrorCode.BAD_ARGS, f"条目编号只能包含字母、数字和 -_.：{entry_id!r}")
+        raise SaosError(ErrorCode.BAD_ARGS, f"条目编号只能包含字母、数字和 -_.：{entry_id!r}")
     return library_dir() / "entries" / entry_id
 
 
 def load_entry(entry_id: str) -> dict[str, Any]:
     path = entry_dir(entry_id) / "entry.json"
     if not path.is_file():
-        raise ZeaError(ErrorCode.FILE_NOT_FOUND, f"结构库中没有条目 {entry_id}")
+        raise SaosError(ErrorCode.FILE_NOT_FOUND, f"结构库中没有条目 {entry_id}")
     return read_json(path)
 
 
@@ -191,7 +191,7 @@ def derive_benchmark_spec(entry: dict[str, Any], probe: dict[str, Any], correcti
         "eligible": not failed_fixed,
         "failed_fixed_items": {i: {"value": items[i]["value"], "threshold": items[i]["threshold"]} for i in failed_fixed},
         "calibration_evidence": evidence,
-        "note": f"基准专用规格，由 {entry['id']} 在格式默认规格下的验收结果推导（zea.library.derive_benchmark_spec）",
+        "note": f"基准专用规格，由 {entry['id']} 在格式默认规格下的验收结果推导（saos.library.derive_benchmark_spec）",
         "perturbation": PERTURBATION,
         "_metrics_at_derivation": {"focal_length_mm": m["focal_length_mm"]},
     }

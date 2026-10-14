@@ -2,7 +2,7 @@
 
 每个设计任务一个目录：
 
-    <ZEA_HOME>/jobs/<job_id>/        （ZEA_HOME 默认 work/main，其他实例为 work/<实例名>）
+    <SAOS_HOME>/jobs/<job_id>/        （SAOS_HOME 默认 work/main，其他实例为 work/<实例名>）
         job.json     任务状态（原子写入）
         spec/        光学规格文件
         sources/     输入材料，含用户需求访谈（interview.md、interview.yaml）
@@ -20,8 +20,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from zea import config
-from zea.protocol import ErrorCode, ZeaError, write_json
+from saos import config
+from saos.protocol import ErrorCode, SaosError, write_json
 
 JOB_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$")
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$")
@@ -71,19 +71,19 @@ class Job:
     def resolve_lens(self, name: str, *, must_exist: bool) -> Path:
         """把相对 lenses/ 的文件名解析成绝对路径，拒绝任何越出本任务目录的路径。"""
         if not name or Path(name).is_absolute() or Path(name).drive:
-            raise ZeaError(ErrorCode.PATH_OUTSIDE_JOB, f"镜头文件必须是相对 lenses/ 的路径：{name!r}")
+            raise SaosError(ErrorCode.PATH_OUTSIDE_JOB, f"镜头文件必须是相对 lenses/ 的路径：{name!r}")
         path = (self.lenses_dir / name).resolve()
         lenses = self.lenses_dir.resolve()
         if lenses not in path.parents:
-            raise ZeaError(
+            raise SaosError(
                 ErrorCode.PATH_OUTSIDE_JOB,
                 f"路径越出任务 {self.id} 的 lenses/ 目录：{name!r}",
                 {"job": self.id, "path": str(path)},
             )
         if path.suffix.lower() != LENS_SUFFIX:
-            raise ZeaError(ErrorCode.BAD_ARGS, f"镜头文件必须是 {LENS_SUFFIX}：{name!r}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"镜头文件必须是 {LENS_SUFFIX}：{name!r}")
         if must_exist and not path.is_file():
-            raise ZeaError(ErrorCode.FILE_NOT_FOUND, f"任务 {self.id} 中没有镜头文件 {name!r}")
+            raise SaosError(ErrorCode.FILE_NOT_FOUND, f"任务 {self.id} 中没有镜头文件 {name!r}")
         return path
 
     def relative_lens(self, path: Path) -> str:
@@ -92,28 +92,28 @@ class Job:
 
 def get_job(job_id: str) -> Job:
     if not isinstance(job_id, str) or not JOB_ID_RE.match(job_id):
-        raise ZeaError(ErrorCode.BAD_ARGS, f"任务编号格式不正确：{job_id!r}")
+        raise SaosError(ErrorCode.BAD_ARGS, f"任务编号格式不正确：{job_id!r}")
     root = config.jobs_dir() / job_id
     if not (root / "job.json").is_file():
-        raise ZeaError(ErrorCode.JOB_NOT_FOUND, f"没有设计任务 {job_id}")
+        raise SaosError(ErrorCode.JOB_NOT_FOUND, f"没有设计任务 {job_id}")
     return Job(job_id, root)
 
 
 def create_job(name: str, spec_path: str | None = None) -> Job:
     if not NAME_RE.match(name or ""):
-        raise ZeaError(ErrorCode.BAD_ARGS, "任务名只能包含字母、数字、- 和 _，长度 1–48，且以字母或数字开头")
+        raise SaosError(ErrorCode.BAD_ARGS, "任务名只能包含字母、数字、- 和 _，长度 1–48，且以字母或数字开头")
     spec_src = None
     if spec_path is not None:
         spec_src = Path(spec_path)
         if not spec_src.is_file():
-            raise ZeaError(ErrorCode.FILE_NOT_FOUND, f"规格文件不存在：{spec_path}")
+            raise SaosError(ErrorCode.FILE_NOT_FOUND, f"规格文件不存在：{spec_path}")
 
     job_id = f"{datetime.now():%Y%m%d-%H%M%S}-{name}"
     root = config.jobs_dir() / job_id
     try:
         root.mkdir(parents=True, exist_ok=False)
     except FileExistsError as exc:
-        raise ZeaError(ErrorCode.JOB_EXISTS, f"设计任务 {job_id} 已存在") from exc
+        raise SaosError(ErrorCode.JOB_EXISTS, f"设计任务 {job_id} 已存在") from exc
 
     job = Job(job_id, root)
     job.spec_dir.mkdir()

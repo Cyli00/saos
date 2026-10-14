@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import pytest
 
-from zea import library
-from zea.spec import parse_spec
+from saos import library
+from saos.spec import parse_spec
 
 
 @pytest.fixture
 def lib(tmp_path, monkeypatch):
-    monkeypatch.setenv("ZEA_LIBRARY", str(tmp_path / "library"))
+    monkeypatch.setenv("SAOS_LIBRARY", str(tmp_path / "library"))
     return tmp_path / "library"
 
 
@@ -119,7 +119,7 @@ def test_negative_edge_air_gap_makes_entry_ineligible():
 def test_every_subcommand_help_renders():
     import argparse
 
-    from zea.cli import build_parser
+    from saos.cli import build_parser
 
     def walk(parser):
         parser.format_help()
@@ -133,14 +133,14 @@ def test_every_subcommand_help_renders():
 
 @pytest.mark.parametrize("other_job", [False, True])
 @pytest.mark.parametrize("discard", [False, True])
-def test_verify_preserves_dirty_lens_unless_discard_is_explicit(lib, zea_home, fake_lens_file, monkeypatch, other_job, discard):
+def test_verify_preserves_dirty_lens_unless_discard_is_explicit(lib, saos_home, fake_lens_file, monkeypatch, other_job, discard):
     import json
 
-    from zea import jobs, library_cli
-    from zea.backend.fake import FakeBackend, fake_surface
-    from zea.cli import build_parser
-    from zea.daemon import Daemon
-    from zea.protocol import ErrorCode, ZeaError
+    from saos import jobs, library_cli
+    from saos.backend.fake import FakeBackend, fake_surface
+    from saos.cli import build_parser
+    from saos.daemon import Daemon
+    from saos.protocol import ErrorCode, SaosError
 
     backend = FakeBackend()
     daemon = Daemon(backend, backend.start(), "standalone")
@@ -178,7 +178,7 @@ def test_verify_preserves_dirty_lens_unless_discard_is_explicit(lib, zea_home, f
         assert daemon.loaded.dirty is False
         assert backend.surfaces()[1]["radius"] == 100.0
     else:
-        with pytest.raises(ZeaError) as exc:
+        with pytest.raises(SaosError) as exc:
             args.func(args)
         assert exc.value.code == ErrorCode.UNSAVED_CHANGES
         assert daemon.loaded.job.id == current.id
