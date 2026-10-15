@@ -1,0 +1,174 @@
+"""saos ui：阶段推断、每轮 viz.json 导出与本机服务的访问控制（假后端，不启动浏览器）。"""
+
+from __future__ import annotations
+
+import json
+import threading
+import urllib.error
+import urllib.request
+
+import pytest
+import yaml
+
+from saos import demand, jobs, report
+from saos.backend.fake import FakeBackend
+from saos.daemon import Daemon
+from saos.ui import server, stage
+
+DEMAND = {
+    "schema": 2,
+    "constants": [{"id": "lens", "description": "the sample singlet", "value": "a.zmx", "source": "user"}],
+    "variables": [{"id": "radii", "description": "both radii are free"}],
+    "objectives": [{"id": "length", "description": "total track", "check": {"operand": {"type": "TOTR"}}, "origin": "user",
+                    "must": {"max": 95.0}, "scale": 5.0, "source": "user"}],
+    "summary": "总长不超过 95 mm。",
+}
+NOTES = {"surfaces": {"0": "object", "1": "lens front", "2": "lens back", "3": "image"}, "assumptions": ["test"], "first_order": ["f = 50 mm"]}
+
+
+def call(daemon, op, **args):
+    return daemon.handle({"op": op, "args": args})
+
+
+def steps(job):
+    snap = stage.snapshot(job)
+    return snap["current"], {s["id"]: s["status"] for s in snap["steps"]}
+
+
+@pytest.fixture
+def flow(saos_home, fake_lens_file):
+    backend = FakeBackend()
+    daemon = Daemon(backend, backend.start(), "extension")
+    job = jobs.create_job("ui")
+    call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx")
+    call(daemon, "lens.load", job=job.id, file="a.zmx")
+    return daemon, job
+
+
+def test_stage_follows_the_workflow_files(flow):
+    daemon, job = flow
+    assert steps(job) == ("interview", {"interview": "active", **dict.fromkeys(stage.STEPS[1:], "pending")})
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
+    current, status = steps(job)
+    assert current == "demand_confirm" and status["interview"] == "done" and status["demand_confirm"] == "waiting"
+    demand.confirm(job.root, "可以")
+    assert steps(job)[0] == "modeling" and steps(job)[1]["modeling"] == "active"
+    folder = call(daemon, "lens.describe", job=job.id, notes=NOTES)["result"]["folder"]
+    snap = stage.snapshot(job)
+    assert snap["current"] == "model_approve" and snap["steps"][3] == {"id": "model_approve", "status": "waiting", "detail": folder}
+    assert call(daemon, "lens.approve", job=job.id, model=folder, quote="模型可以")["ok"]
+    assert steps(job) == ("design", {**dict.fromkeys(stage.STEPS[:4], "done"), "design": "active", "deliver": "pending"})
+
+    r0 = call(daemon, "round.record", job=job.id)["result"]
+    assert r0["viz"]["ok"] and (job.root / r0["viz"]["file"]).is_file()
+    snap = stage.snapshot(job)
+    assert snap["rounds"][0]["viz"] and snap["steps"][4]["detail"]["rounds"] == 1 and snap["decision"]["status"] == "continue"
+    # 需求改动后要重新确认：回到确认需求，带出原因 / a demand change goes back to confirmation
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump({**DEMAND, "objectives": [{**DEMAND["objectives"][0], "must": {"max": 96.0}}]},
+                                                                     allow_unicode=True), encoding="utf-8")
+    snap = stage.snapshot(job)
+    assert snap["current"] == "demand_confirm" and snap["steps"][1]["detail"] == "reconfirm"
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
+
+    daemon.backend.lens["surfaces"][2]["thickness"] = 85.0
+    r1 = call(daemon, "round.record", job=job.id, tier="local", viz=False)["result"]
+    assert r1["decision"]["status"] == "achieved" and "viz" not in r1
+    current, status = steps(job)
+    assert current == "deliver" and status["design"] == "done" and status["deliver"] == "active"
+    assert [r["viz"] for r in stage.snapshot(job)["rounds"]] == [True, False]
+    report.write(job, lang="zh")
+    assert steps(job)[1]["deliver"] == "done"
+    assert not job.verify_seals()
+
+
+def test_blocking_question_marks_the_current_step(flow):
+    daemon, job = flow
+    data = {**DEMAND, "open_questions": [{"question": "样品折射率？", "blocking": True}]}
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    demand.confirm(job.root, "可以")
+    snap = stage.snapshot(job)
+    assert snap["current"] == "modeling" and snap["steps"][2]["status"] == "blocked" and snap["blocking"] == ["样品折射率？"]
+
+
+def test_viz_failure_never_undoes_the_round(flow, monkeypatch):
+    daemon, job = flow
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
+    demand.confirm(job.root, "可以")
+    folder = call(daemon, "lens.describe", job=job.id, notes=NOTES)["result"]["folder"]
+    call(daemon, "lens.approve", job=job.id, model=folder, quote="可以")
+
+    def broken(folder):
+        raise RuntimeError("ray trace failed")
+
+    monkeypatch.setattr(daemon.backend, "viz_data", broken)
+    result = call(daemon, "round.record", job=job.id)["result"]
+    assert result["record"]["round"] == 0 and not result["viz"]["ok"] and "ray trace failed" in result["viz"]["errors"]["viz"]
+    saved = json.loads((job.root / result["viz"]["file"]).read_text(encoding="utf-8"))
+    assert saved["ok"] is False and stage.snapshot(job)["rounds"][0]["viz"]
+
+
+@pytest.fixture
+def ui(flow):
+    srv = server.UiServer()
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    yield flow, srv
+    srv.shutdown()
+    srv.server_close()
+
+
+# 本机可能设了 HTTP_PROXY；访问 127.0.0.1 不走代理 / the machine may set HTTP_PROXY; talk to 127.0.0.1 directly
+DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def get(srv, path, token=True, host=None, data=None):
+    port = srv.server_address[1]
+    headers = {"X-Saos-Token": srv.token if token else "wrong"}
+    if host:
+        headers["Host"] = host
+    body = json.dumps(data).encode() if data is not None else None
+    req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=body, headers=headers)
+    try:
+        with DIRECT.open(req, timeout=5) as resp:
+            raw = resp.read()
+            return resp.status, (json.loads(raw) if path.startswith("/api/") else raw.decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        raw = exc.read()
+        return exc.code, (json.loads(raw) if path.startswith("/api/") else raw.decode("utf-8"))
+
+
+def test_server_serves_state_and_viz_behind_the_token(ui):
+    (daemon, job), srv = ui
+    code, html = get(srv, "/")
+    assert code == 200 and "app.js" in html
+    assert get(srv, "/static/app.js")[0] == 200 and get(srv, "/static/../server.py")[0] == 404
+    assert get(srv, f"/api/state?job={job.id}", token=False)[0] == 403
+    assert get(srv, f"/api/state?job={job.id}", host="evil.example:80")[0] == 403
+    code, msg = get(srv, f"/api/state?job={job.id}")
+    assert code == 200 and msg["ok"] and msg["result"]["current"] == "interview"
+
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
+    demand.confirm(job.root, "可以")
+    folder = call(daemon, "lens.describe", job=job.id, notes=NOTES)["result"]["folder"]
+    call(daemon, "lens.approve", job=job.id, model=folder, quote="可以")
+    call(daemon, "round.record", job=job.id)
+    msg = get(srv, f"/api/viz?job={job.id}&round=0")[1]
+    assert msg["ok"] and msg["result"]["surfaces"] and msg["result"]["spot"]["fields"]
+    assert get(srv, f"/api/viz?job={job.id}&round=7")[1]["error"]["code"] == "BAD_ARGS"
+    # 后台进程没在跑：窗口控制直接拒绝，不会去连接 / no daemon: window controls are refused
+    refused = get(srv, f"/api/view?job={job.id}", data={"analysis": "StandardSpot"})[1]
+    assert refused["error"]["code"] == "DAEMON_NOT_RUNNING"
+
+
+def test_window_controls_only_forward_whitelisted_view_ops(ui, monkeypatch):
+    (daemon, job), srv = ui
+    monkeypatch.setattr(stage, "_daemon", lambda: {"running": True, "mode": "extension"})
+    sent = []
+    monkeypatch.setattr(server.client, "request", lambda op, args, **kw: sent.append((op, args)) or {"done": op})
+    assert get(srv, f"/api/view?job={job.id}", data={"analysis": "FftMtf"})[1]["result"] == {"done": "lens.view"}
+    assert get(srv, f"/api/view?job={job.id}", data={"viewer": "3d"})[1]["ok"]
+    assert get(srv, f"/api/view?job={job.id}", data={"analysis": "../../evil"})[1]["error"]["code"] == "BAD_ARGS"
+    assert get(srv, f"/api/view?job={job.id}", data={"viewer": "x"})[1]["error"]["code"] == "BAD_ARGS"
+    assert sent == [("lens.view", {"job": job.id, "analysis": "FftMtf"}), ("lens.view", {"job": job.id, "viewer": "3d"})]
+    monkeypatch.setattr(stage, "_daemon", lambda: {"running": True, "mode": "standalone"})
+    assert get(srv, f"/api/view?job={job.id}", data={"viewer": "3d"})[1]["error"]["code"] == "BAD_ARGS"

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>saos</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="logo"></span><span>saos</span><span class="job" id="job-name"></span></div>
+    <div class="chips">
+      <span class="chip" id="mode-chip"></span>
+      <span class="chip run" id="run-chip" hidden><span class="spinner"></span><span id="run-text"></span></span>
+    </div>
+  </header>
+  <main class="layout">
+    <aside class="flow" aria-label="workflow">
+      <svg id="flow" viewBox="0 0 300 640" preserveAspectRatio="xMidYMin meet"></svg>
+      <div class="flow-note" id="flow-note"></div>
+    </aside>
+    <section class="panel">
+      <nav class="tabs">
+        <div class="tab-list" id="tabs" role="tablist"></div>
+        <div class="tab-tools">
+          <div class="seg" id="dim-seg" hidden>
+            <button data-dim="2d">2D</button><button data-dim="3d" class="on">3D</button>
+          </div>
+          <select id="round-select" aria-label="round" hidden></select>
+        </div>
+      </nav>
+      <div class="view" id="view"></div>
+    </section>
+  </main>
+  <div class="toast" id="toast" hidden></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

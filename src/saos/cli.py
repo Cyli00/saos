@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -207,15 +208,31 @@ def cmd_demand(args: argparse.Namespace) -> Any:
 
     root = jobs.get_job(args.job).root
     if args.action == "confirm":
-        return demand.confirm(root, args.quote)
+        result = demand.confirm(root, args.quote)
+        # 需求确认后打开流程图小窗口；SAOS_UI=0 时不开（测试、无界面环境）/ open the workflow window once the demand is confirmed
+        if os.environ.get("SAOS_UI") != "0":
+            from saos import ui
+
+            try:
+                result["ui"] = ui.open_window(args.job)
+            except SaosError as exc:
+                result["ui"] = {"error": exc.to_dict()}
+        return result
     return demand.show(root)
+
+
+def cmd_ui(args: argparse.Namespace) -> Any:
+    from saos import ui
+
+    return ui.open_window(args.job, window=not args.no_window)
 
 
 def cmd_round(args: argparse.Namespace) -> Any:
     # 传输时 NaN 会变成 null、inf 变成字符串，所以发送前就要拒绝 / NaN would travel as null and inf as a string, so refuse them before sending
     if args.merit is not None and not math.isfinite(args.merit):
         raise SaosError(ErrorCode.BAD_ARGS, f"--merit must be a finite number (got {args.merit})")
-    return client.request("round.record", {"job": args.job, "tier": args.tier, "note": args.note, "merit": args.merit}, timeout=args.timeout)
+    return client.request("round.record", {"job": args.job, "tier": args.tier, "note": args.note, "merit": args.merit, "viz": not args.no_viz},
+                          timeout=args.timeout)
 
 
 def cmd_report(args: argparse.Namespace) -> Any:
@@ -385,6 +402,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--note", default="", help="what this round changed")
     p.add_argument("--merit", type=float, default=None,
                    help="value of the objective you actually optimised, when you optimised outside the OpticStudio merit function; recorded instead of the lens's merit function value")
+    p.add_argument("--no-viz", action="store_true", help="skip the spot / layout / MTF export for saos ui (evaluations/NNN/viz.json)")
     p.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     p.set_defaults(func=cmd_round)
     p = sub.add_parser("rule-out", help="rule out strategy tiers that your evidence says cannot help, so the stop rule does not wait for them (holds until the next clear gain; no OpticStudio needed)")
@@ -401,6 +419,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--job", required=True)
     p.add_argument("--lang", choices=["en", "zh"], help="report language (default: demand lang, then SAOS_LANG, then the system UI language)")
     p.set_defaults(func=cmd_report)
+
+    p = sub.add_parser("ui", help="open the workflow window for the user (flowchart, window controls in explicit debugging, per-round spot / layout / MTF); also opened by demand confirm")
+    usub = p.add_subparsers(dest="action", required=True, parser_class=_Parser)
+    q = usub.add_parser("open", help="start the local ui service if needed and open the window")
+    q.add_argument("--job", required=True)
+    q.add_argument("--no-window", action="store_true", help="only start the service and print the URL")
+    usub.add_parser("serve", help="run the ui service in the foreground (used by open)")
+    p.set_defaults(func=cmd_ui)
 
     from saos.recipes.microscope import cli as microscope_cli
 
@@ -422,6 +448,10 @@ def main(argv: list[str] | None = None) -> int:
         from saos.daemon import serve
 
         return serve(args.mode, args.token)
+    if args.group == "ui" and args.action == "serve":
+        from saos.ui.server import serve as serve_ui
+
+        return serve_ui()
     try:
         result = args.func(args)
     except SaosError as exc:

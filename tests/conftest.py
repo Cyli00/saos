@@ -14,6 +14,7 @@ def saos_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home.mkdir()
     monkeypatch.setenv("SAOS_HOME", str(home))
     monkeypatch.setenv("SAOS_BACKEND", "fake")
+    monkeypatch.setenv("SAOS_UI", "0")
     return home
 
 

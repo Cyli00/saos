@@ -52,7 +52,7 @@ def ok(out):
 
 def write_demand(home, job, data, quote):
     (home / "jobs" / job / "sources" / "demand.yaml").write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
-    ok(saos("demand", "confirm", "--job", job, "--quote", quote, env={**os.environ, "SAOS_HOME": str(home)}))
+    ok(saos("demand", "confirm", "--job", job, "--quote", quote, env={**os.environ, "SAOS_HOME": str(home), "SAOS_UI": "0"}))
 
 
 def test_workflow_until_achieved_or_exhausted_with_reports(saos_home, tmp_path):
