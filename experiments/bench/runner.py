@@ -1,4 +1,4 @@
-"""优化基准的驱动（DESIGN.md 实现顺序第 5 步）。
+"""优化基准的驱动（原 zea 实现顺序第 5 步，记录见 docs/recipes/microscope/step5-calibration.md）。
 
 对一个基准案例：搭建收录结构 → 受控扰动 → 第 0 轮验收 → 按参考策略逐轮优化并验收，
 记录每轮的规格差距，写入任务目录的 bench.jsonl。
@@ -31,12 +31,15 @@ import yaml
 
 from saos import client, config, jobs
 
-from saos.recipes.microscope import calls, layout, library, rounds
+import rounds
+from saos.recipes.microscope import calls, layout, library
 from saos.protocol import ErrorCode, SaosError, jsonable
 from saos.recipes.microscope.spec import Spec, load_spec
 
 POLICY = "reference-v3"
-MICROSCOPE_OPS = {"round.record": "record_round", "lens.perturb": "perturb", "eval.accept": "accept"}
+MICROSCOPE_OPS = {"lens.perturb": "perturb", "eval.accept": "accept"}
+# 基准自己的轮次规则（rounds.py）作为脚本送进后台进程执行 / the benchmark's own round rule runs in the daemon as a script
+ROUNDS_SCRIPT = Path(__file__).with_name("rounds.py")
 MARECHAL = 1 / 14
 ESCALATION = 3.0
 MAX_ESCALATION_STEPS = 5
@@ -65,6 +68,9 @@ class Case:
         self.log_path = job.root / "bench.jsonl"
 
     def req(self, op: str, **args: Any) -> Any:
+        if op == "round.record":
+            payload = {"job": self.job.id, "name": "bench-round", "source": ROUNDS_SCRIPT.read_text(encoding="utf-8"), "args": args, "quiet": True}
+            return client.request("script.exec", payload, timeout=self.timeout)["result"]
         if op in MICROSCOPE_OPS:
             # 原后台进程操作已移入显微物镜配方，改由脚本执行调用
             return calls.call(MICROSCOPE_OPS[op], self.job.id, self.timeout, **args)

@@ -1,4 +1,4 @@
-"""停机参数校准的正式实验：实验清单、样本准入、参数选择与验证（DESIGN.md 实现顺序第 5 步）。
+"""停机参数校准的正式实验：实验清单、样本准入、参数选择与验证（原 zea 实现顺序第 5 步，记录见 docs/recipes/microscope/step5-calibration.md）。
 
 与 runner.py 分开：runner.py 负责按参考策略跑出完整轨迹；本模块决定哪些轨迹算正式样本，
 以及按事先冻结的规则从候选参数中选择、在独立验证组上检验。规则见 docs/recipes/microscope/step5-calibration.md 第 2 节。
@@ -15,7 +15,8 @@ from typing import Any
 
 from saos import config
 
-from saos.recipes.microscope import library, rounds
+import rounds
+from saos.recipes.microscope import library
 from saos.protocol import ErrorCode, SaosError
 
 OBSERVE_ROUNDS = 20  # 正式样本必须完整观察的轮数（或在此之前通过）

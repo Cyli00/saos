@@ -1,4 +1,4 @@
-"""显微物镜配方的命令行：saos microscope …（原 zea 的 lens repro/perturb、eval、round、adapt、library、interview、plan）。"""
+"""显微物镜配方的命令行：saos microscope …（复现、验收、扰动、适配、结构库）。"""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from saos.protocol import read_json, write_json
-from saos.recipes.microscope import calls, library_cli, plan_cli
+from saos.recipes.microscope import calls, library_cli
 
 
 def cmd_op(args: argparse.Namespace) -> Any:
@@ -18,10 +18,7 @@ def cmd_op(args: argparse.Namespace) -> Any:
         kwargs["spec"] = args.spec
     elif args.action == "perturb":
         kwargs.update(seed=args.seed, radius_rel=args.radius_rel, thickness_rel=args.thickness_rel)
-    elif args.action == "round":
-        kwargs.update(spec=args.spec, note=args.note)
-    fn = "record_round" if args.action == "round" else args.action
-    return calls.call(fn, args.job, args.timeout, **kwargs)
+    return calls.call(args.action, args.job, args.timeout, **kwargs)
 
 
 def cmd_adapt(args: argparse.Namespace) -> Any:
@@ -63,9 +60,6 @@ def register(sub, parser_class, default_timeout: float) -> None:
     p.add_argument("--seed", type=int, required=True)
     p.add_argument("--radius-rel", type=float, required=True, help="relative curvature change limit, e.g. 0.01")
     p.add_argument("--thickness-rel", type=float, default=0.0)
-    p = op_cmd("round", "save the lens as the next adjustment round, evaluate it and decide whether to stop")
-    p.add_argument("--spec", help="required for round 0; later rounds reuse it and cannot change it")
-    p.add_argument("--note", default="", help="what this round changed")
 
     p = msub.add_parser("adapt", help="patent/textbook extraction → standard-layout prescription + expected values")
     p.add_argument("extract", help="extraction JSON")
@@ -79,4 +73,3 @@ def register(sub, parser_class, default_timeout: float) -> None:
     p.set_defaults(func=cmd_adapt)
 
     library_cli.register(msub, parser_class, default_timeout)
-    plan_cli.register(msub, parser_class)

@@ -5,7 +5,7 @@
     <SAOS_HOME>/jobs/<job_id>/        （SAOS_HOME 默认 work/main，其他实例为 work/<实例名>）
         job.json     任务状态（原子写入）
         spec/        显微物镜配方的光学规格文件（只在用到时创建）
-        sources/     输入材料，含用户需求访谈（interview.md、interview.yaml）
+        sources/     输入材料，含用户需求访谈（interview.md）
         lenses/      镜头文件副本，所有 .zmx 读写都限制在这里
         log.jsonl    执行记录，每行一条
 """

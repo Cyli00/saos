@@ -1,4 +1,4 @@
-"""验收评估中不依赖 Zemax 的部分：视场波像差的扣除规则、无效测量值、验收配置冻结。"""
+"""验收评估中不依赖 Zemax 的部分：视场波像差的扣除规则、无效测量值。"""
 
 from __future__ import annotations
 
@@ -6,12 +6,10 @@ import math
 
 import pytest
 
-from saos import jobs
 
-from saos.recipes.microscope import rounds
 from saos.recipes.microscope.acceptance import Evaluator, acceptance_config, config_hash, field_wfe
-from saos.protocol import ErrorCode, SaosError
-from saos.recipes.microscope.spec import Item, load_spec, parse_spec
+from saos.protocol import SaosError
+from saos.recipes.microscope.spec import Item, parse_spec
 
 SPEC_YAML = """\
 spec_version: 1
@@ -116,51 +114,6 @@ def test_spec_with_nan_threshold_is_rejected():
     data["magnification"] = float("nan")
     with pytest.raises(SaosError):
         parse_spec(data)
-
-
-# ---- 2. 验收配置冻结 ----
-
-
-def write_spec(job, text, name="spec.yaml"):
-    job.spec_dir.mkdir(exist_ok=True)
-    (job.spec_dir / name).write_text(text, encoding="utf-8")
-    return f"spec/{name}"
-
-
-def frozen_check(job, name):
-    spec = load_spec(job.root / name)
-    config = acceptance_config(spec)
-    rounds.check_frozen(job, name, config, config_hash(config))
-
-
-def test_changed_threshold_is_detected(saos_home):
-    job = jobs.create_job("freeze")
-    name = write_spec(job, SPEC_YAML.format(cls="achromat", basis="first"))
-    config = acceptance_config(load_spec(job.root / name))
-    rounds.freeze(job, name, config, config_hash(config))
-    frozen_check(job, name)  # 未改动
-
-    # 只改说明文字：补全后的验收配置不变，允许
-    write_spec(job, SPEC_YAML.format(cls="achromat", basis="edited note"))
-    frozen_check(job, name)
-
-    # 原地改阈值：必须拒绝
-    write_spec(job, SPEC_YAML.format(cls="achromat", basis="x").replace("10.6", "11.0"))
-    with pytest.raises(SaosError) as exc:
-        frozen_check(job, name)
-    assert exc.value.code == ErrorCode.SPEC_CHANGED
-    assert "items" in exc.value.details["changed_keys"]
-
-
-def test_changed_spec_path_is_detected(saos_home):
-    job = jobs.create_job("freeze")
-    name = write_spec(job, SPEC_YAML.format(cls="achromat", basis="x"))
-    other = write_spec(job, SPEC_YAML.format(cls="achromat", basis="x"), "other.yaml")
-    config = acceptance_config(load_spec(job.root / name))
-    rounds.freeze(job, name, config, config_hash(config))
-    with pytest.raises(SaosError) as exc:
-        frozen_check(job, other)
-    assert exc.value.code == ErrorCode.SPEC_CHANGED
 
 
 def test_config_includes_evaluator_constants():

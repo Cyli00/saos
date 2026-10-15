@@ -1,6 +1,6 @@
-"""显微物镜配方的后台操作：复现校验、验收评估、受控扰动、调整轮次。
+"""显微物镜配方的后台操作：复现校验、验收评估、受控扰动。
 
-原来是后台进程的 lens.repro、eval.accept、lens.perturb、round.record，逻辑不变，改为在脚本执行中调用：
+原来是后台进程的 lens.repro、eval.accept、lens.perturb，逻辑不变，改为在脚本执行中调用：
 
     from saos.recipes.microscope import ops
 
@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import json
 import math
 import random
 from pathlib import Path
@@ -18,7 +17,7 @@ from typing import Any
 
 from saos import jobs
 from saos.protocol import ErrorCode, SaosError, jsonable, write_json
-from saos.recipes.microscope import acceptance, layout, rounds
+from saos.recipes.microscope import acceptance, layout
 from saos.recipes.microscope.spec import Spec, load_spec
 
 
@@ -126,54 +125,3 @@ def perturb(ctx, seed: int, radius_rel: float, thickness_rel: float = 0.0) -> di
             changes.append({"surface": i, "param": "thickness", "before": r["thickness"], "after": new_t})
     ctx.mark_dirty()
     return {**ctx.describe(), "seed": seed, "radius_rel": radius_rel, "thickness_rel": thickness_rel, "changes": changes}
-
-
-def record_round(ctx, spec: str | None = None, note: str = "", observe: bool = False) -> dict[str, Any]:
-    """记录一个调整轮次：把当前镜头存为 rounds/rNNN.zmx，做验收评估，给出是否停机。
-
-    observe=True 用于校准停机规则：照常冻结并核对验收配置，但停机判断只记录、不执行，轨迹可以走到停机之后。"""
-    _lens(ctx)
-    job = ctx.job
-    log_path = job.root / "rounds.jsonl"
-    history = rounds.load(log_path)
-    frozen = job.read_state().get("frozen") if history else None
-    spec_name = spec or (frozen or {}).get("spec")
-    if not spec_name:
-        raise SaosError(ErrorCode.BAD_ARGS, "round 0 needs a spec; later rounds reuse it")
-    spec_obj = _job_spec(job, spec_name)
-    config = acceptance.acceptance_config(spec_obj)
-    digest = acceptance.config_hash(config)
-    if history:
-        # 每轮都按当前规格文件重新补全，与第 0 轮冻结的完整验收配置逐项比较
-        rounds.check_frozen(job, spec_name, config, digest)
-        status = rounds.decide([float(h["spec_shortfall"]) for h in history])["status"]
-        if status != "continue" and not observe:
-            raise SaosError(ErrorCode.BAD_ARGS, f"rounds already stopped ({status}); cannot record more", {"status": status})
-    else:
-        rounds.freeze(job, spec_name, config, digest)
-    number = len(history)
-    merit = ctx.backend.merit_value()
-    # 归档目录只由工具写入；归档后回到工作文件，之后的 lens save 不会改写归档
-    # only the tools write the archive; switch back to the working file so a later lens save cannot rewrite it
-    working = ctx.lens
-    rel = ctx.save_as(f"rounds/r{number:03d}.zmx", overwrite=True, archive=True)
-    if working is not None and not job.is_archive_lens(working):
-        ctx.save_as(job.relative_lens(working), overwrite=True)
-    result = _accept(ctx, spec_name, spec_obj)
-    record = {
-        "round": number,
-        "file": rel,
-        "verdict": result["verdict"],
-        "spec_shortfall": result["spec_shortfall"],
-        "items": {i["id"]: i["shortfall"] for i in result["items"] if i["shortfall"] > 0},
-        "merit": merit,
-        "note": str(note),
-        "observe": bool(observe),
-        "config_sha256": digest,
-        "time": jobs.now_iso(),
-    }
-    with log_path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(jsonable(record), ensure_ascii=False) + "\n")
-    decision = rounds.decide([float(h["spec_shortfall"]) for h in history] + [float(result["spec_shortfall"])])
-    job.update_state(current_lens=rel, last_saved=rel, round=number, round_status=decision["status"])
-    return {"record": record, "decision": decision, "evaluation": result}

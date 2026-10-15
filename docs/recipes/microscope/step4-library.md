@@ -1,6 +1,8 @@
 # 第 4 步：扩充初始结构库，划分优化基准
 
-对应 DESIGN.md「实现顺序」第 4 步。收录规则、命令和基准规格的推导见 [library.md](./library.md)。结论：
+> 历史记录：本文写于原 zea 项目。「实现顺序」和文中的 DESIGN.md 指 zea 当时的设计文档；`src/zea/…` 是当时的路径，现为 `src/saos/recipes/microscope/…` 与 `experiments/bench/`（calibration.py、runner.py、rounds.py）。文件哈希等实验记录保持原样。
+
+对应原 zea「实现顺序」第 4 步。收录规则、命令和基准规格的推导见 [library.md](./library.md)。结论：
 
 - 两本教材里没有可收录的结构，第一版的结构全部来自专利。
 - 提取了 11 篇专利的 34 个实施例。收录 25 个，来自 7 篇专利；其余 9 个在近轴核对阶段被判为有限共轭或数据自相矛盾，没有入库。

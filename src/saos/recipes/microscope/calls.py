@@ -12,7 +12,7 @@ SOURCE = """from saos.recipes.microscope import ops
 def run(ctx):
     return ops.{fn}(ctx, **ctx.args)
 """
-OPS = ("repro", "accept", "perturb", "record_round")
+OPS = ("repro", "accept", "perturb")
 
 
 def call(fn: str, job: str, timeout: float = client.DEFAULT_REQUEST_TIMEOUT_S, **kwargs: Any) -> Any:

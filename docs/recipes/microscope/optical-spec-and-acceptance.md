@@ -1,6 +1,8 @@
 # 显微物镜的光学规格格式与验收口径（第一版）
 
-状态：第 1 步审阅已结束。第 3 步在 US 4521083 实施例 1 上实测后，修订了 3.1、3.3 节的实现细节（Zernike 改为一次拟合 66 项；物方远心设置随设计文件沿用），并在 5.4、5.5 节记录了实测结果，详见 [step3-minimal-loop.md](./step3-minimal-loop.md)。对应 DESIGN.md「实现顺序」第 1 步。
+> 历史记录：本文写于原 zea 项目。「实现顺序」和文中的 DESIGN.md 指 zea 当时的设计文档；`src/zea/…` 是当时的路径，现为 `src/saos/recipes/microscope/…` 与 `experiments/bench/`（calibration.py、runner.py、rounds.py）。文件哈希等实验记录保持原样。
+
+状态：第 1 步审阅已结束。第 3 步在 US 4521083 实施例 1 上实测后，修订了 3.1、3.3 节的实现细节（Zernike 改为一次拟合 66 项；物方远心设置随设计文件沿用），并在 5.4、5.5 节记录了实测结果，详见 [step3-minimal-loop.md](./step3-minimal-loop.md)。对应原 zea「实现顺序」第 1 步。
 
 适用范围：第一版的干物镜，无限远校正，数值孔径不超过 0.65，校正等级为消色差或平场消色差。术语以 [GLOSSARY.md](../../../GLOSSARY.md) 为准。
 

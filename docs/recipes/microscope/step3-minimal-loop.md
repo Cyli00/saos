@@ -1,6 +1,8 @@
 # 第 3 步：最小闭环（US 4521083 实施例 1）
 
-对应 DESIGN.md「实现顺序」第 3 步。结论：
+> 历史记录：本文写于原 zea 项目。「实现顺序」和文中的 DESIGN.md 指 zea 当时的设计文档；`src/zea/…` 是当时的路径，现为 `src/saos/recipes/microscope/…` 与 `experiments/bench/`（calibration.py、runner.py、rounds.py）。文件哈希等实验记录保持原样。
+
+对应原 zea「实现顺序」第 3 步。结论：
 
 - 一个完整的显微物镜专利实施例走通了全流程：提取 → 适配 → 加载 → 复现校验 → 独立验收 → 受控扰动 → 优化恢复到通过验收。
 - 回归测试 `tests/test_zemax_loop.py` 在本机 OpticStudio 2024 R1 上通过，全程约 60 s。
@@ -12,7 +14,7 @@
 
 提取交给 Haiku 子 agent，它读的是专利页面图像（用 PyMuPDF 渲染，本机没有 poppler）。它报告了 4 处疑点。其中 r1 是 −1.740 还是 −2.740（OCR 文字层），用表头 r1/(n1−1) = −2.936 反算可以确定为 −1.740。
 
-提取结果用不依赖 Zemax 的近轴计算核对（`src/zea/paraxial.py`）：
+提取结果用不依赖 Zemax 的近轴计算核对（`src/saos/recipes/microscope/paraxial.py`）：
 
 | 核对项 | 专利值 | 计算值 |
 |---|---|---|
