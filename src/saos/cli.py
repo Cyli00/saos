@@ -322,7 +322,7 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--file", help="wizard settings JSON, or the operand list JSON for add")
     q = opt_cmd("local", "run local optimization (damped least squares)")
     q.add_argument("--cycles", default="auto", choices=("auto", "1", "5", "10", "50"))
-    q.add_argument("--cores", type=int)
+    q.add_argument("--cores", type=int, help="CPU cores for OpticStudio (default: all logical cores but 2)")
     op.set_defaults(func=cmd_opt)
 
     dm = sub.add_parser("demand", help="the job's demand (sources/demand.yaml); no OpticStudio needed")

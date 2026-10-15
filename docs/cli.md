@@ -45,7 +45,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `saos microscope accept --job J [--spec FILE]` | 按光学规格做验收评估，结果和验收模型存到任务的 eval/。结果的 `focus_trace` 列出调焦的每个试探位置（波长、厚度、轴上光线失败数、c4、拟合残差） |
 | `saos opt vary --job J --param radius\|thickness\|conic --surfaces 1-16 [--off]` | 设变量或取消变量。物面只允许厚度（即无盖玻片时的工作距离间隔） |
 | `saos opt merit --job J clear\|wizard\|add\|show [--file JSON]` | 评价函数：清空；按向导生成默认评价函数（type、data、reference、rings、arms 等）；追加操作数列表；查看 |
-| `saos opt local --job J [--cycles auto\|1\|5\|10\|50]` | 局部优化（阻尼最小二乘）。开始前做与 round 相同的需求单检查（已确认、没有 blocking 问题） |
+| `saos opt local --job J [--cycles auto\|1\|5\|10\|50] [--cores N]` | 局部优化（阻尼最小二乘），默认用全部逻辑核减 2。开始前做与 round 相同的需求单检查（已确认、没有 blocking 问题） |
 | `saos microscope round --job J [--spec FILE] [--note TEXT]` | 记录一个调整轮次：存为 lenses/rounds/rNNN.zmx，做验收评估，返回停机判断（pass / stagnated / limit / continue）。第 0 轮时冻结光学规格，之后不能更换。后台协议另有 `observe` 参数，供基准实验使用：照常冻结和核对，停机判断只记录不执行 |
 | `saos microscope library check EXTRACT` | 入库前用近轴计算核对提取结果：焦距和工作距离的印刷值落在印刷精度的舍入包络内，或与计算值相差不超过 1%，即为一致（不经后台进程） |
 | `saos microscope library add ID --extract FILE [--catalogs …] [--focal-length F] [--field-number N] [--stop rear_focal\|printed\|r<面号>]` | 把提取结果适配成处方，写入 `library/microscope/entries/ID/`，状态为 extracted（不经后台进程） |

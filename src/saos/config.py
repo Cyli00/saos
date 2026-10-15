@@ -14,6 +14,14 @@ DEFAULT_OPTICSTUDIO_DIR = r"C:\Program Files\Ansys Zemax OpticStudio 2024 R1.00"
 EXPECTED_ZOS_VERSION = (24, 1, 0)
 
 
+# 计算时给用户留下的逻辑核数，其余都可以用 / logical cores left to the user during computation; the rest may be used
+RESERVED_CORES = 2
+
+
+def compute_cores() -> int:
+    return max(1, (os.cpu_count() or 1) - RESERVED_CORES)
+
+
 WORK_ROOT = REPO_ROOT / "work"
 DEFAULT_INSTANCE = "main"
 INSTANCE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$")

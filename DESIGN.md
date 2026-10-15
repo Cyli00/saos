@@ -48,7 +48,7 @@ OpticStudio 2024 R1 Premium 加 ZOS-API 能建模的系统都在范围内，包�
 ## 环境
 
 - Zemax 版本锁定为 **Ansys Zemax OpticStudio 2024 R1.00**，许可证为 Premium 版，支持 ZOS-API。
-- 计算资源（2026-10-14 实测，见光纤任务 `explore/2026-10-14-lens-structure/gpu-bench/`）：CPU 12 个逻辑核，并行最多用一半；GPU 为 GTX 1060 6GB（Pascal），只能用 `cupy-cuda12x`（CUDA 13 不支持 Pascal），常驻程序已占约 4.3 GB 显存，自用不超过 1 GB。833 条光线、27 个设计（一次有限差分雅可比）：CPU 4 进程 14.9 ms，逐元素 CuPy 约 48 ms，融合 CUDA 核 float32 0.74 ms、float64 2.18 ms；float32 位置偏差 ≤ 0.004 µm，有限差分步长取 1e-5。
+- 计算资源（2026-10-14 实测，见光纤任务 `explore/2026-10-14-lens-structure/gpu-bench/`）：CPU 12 个逻辑核，计算时给用户留 2 个，其余都可以用（`saos opt local` 默认如此），自起的长时间进程用低于正常的优先级；GPU 为 GTX 1060 6GB（Pascal），只能用 `cupy-cuda12x`（CUDA 13 不支持 Pascal），常驻程序已占约 4.3 GB 显存，自用不超过 1 GB。833 条光线、27 个设计（一次有限差分雅可比）：CPU 4 进程 14.9 ms，逐元素 CuPy 约 48 ms，融合 CUDA 核 float32 0.74 ms、float64 2.18 ms；float32 位置偏差 ≤ 0.004 µm，有限差分步长取 1e-5。
 - Python 一律通过 uv 运行。C# 部分用系统自带的 .NET Framework 4.8 编译器即可编译，等需要更新的语言特性时再安装 .NET SDK。
 
 ## 参考资料

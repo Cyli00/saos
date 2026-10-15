@@ -69,7 +69,7 @@ If `skills/recipes/<system>/SKILL.md` matches, read it. Recipes are experience, 
 
 - OpticStudio is the reference. Write your own tracer or search code only when the number of evaluations makes ZOS-API too slow, and only after the model is approved. Compare it ray by ray with OpticStudio on the same lens and archive the comparison; hand its results back to OpticStudio for refinement and every delivered number.
 - Before heavy numerics, check what the machine offers (`nvidia-smi`, CuPy); DESIGN.md "环境" has measured numbers for this machine. A GPU pays off only with a fused kernel over a batch of designs × rays.
-- Never saturate the machine: at most half the logical cores, low priority. A long run writes a progress file, and you tell the user what is running, where and until when.
+- Leave 2 logical cores to the user and use the rest (`saos opt local` does this by default); start your own long-running processes at below-normal priority so the user's work stays responsive. A long run writes a progress file, and you tell the user what is running, where and until when.
 
 ## Explicit debugging (on-screen)
 

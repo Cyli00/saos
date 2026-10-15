@@ -492,7 +492,7 @@ class Daemon:
         # 优化可能跑很久：需求未确认或有 blocking 问题时先问用户，不进入优化
         # an optimisation may run for a long time: with an unconfirmed demand or a blocking question, ask the user first
         workflow.preflight(job.root)
-        result = self.backend.optimize(str(args.get("cycles", "auto")), args.get("cores"))
+        result = self.backend.optimize(str(args.get("cycles", "auto")), args.get("cores") or config.compute_cores())
         loaded.dirty = True
         return {**loaded.describe(), **result}
 
