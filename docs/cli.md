@@ -5,11 +5,9 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 - 成功：`{"ok": true, "result": ...}`，退出码 0
 - 失败：`{"ok": false, "error": {"code", "message", "details"}}`，退出码 1；命令行参数错误时退出码为 2，格式相同
 
-`daemon`、`job` 命令在命令行进程内执行；`lens`、`opt`、`exec` 命令转发给常驻后台进程，由它持有 OpticStudio 连接（ADR-0002）。`microscope` 下是显微物镜配方的命令，其中复现、验收、扰动、轮次通过 `exec` 在后台执行。
+`daemon`、`job` 命令在命令行进程内执行；`lens`、`opt`、`exec` 命令转发给常驻后台进程，由它持有 OpticStudio 连接（ADR-0002）。`microscope` 下是显微物镜配方的命令，其中复现、验收、扰动通过 `exec` 在后台执行。
 
 ## 命令
-
-需求访谈和只读设计计划新增 `microscope interview check`、`microscope plan create/show/confirm/handoff`，均不连接 Zemax。访谈记录格式、参数及用户确认流程见 [interview-and-plan.md](./recipes/microscope/interview-and-plan.md)。
 
 | 命令 | 作用 |
 |---|---|
@@ -26,19 +24,20 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `saos job verify <job>` | 检查工具写入并封存的证据文件（`seals.jsonl`）有没有被改动或删除；返回 `intact` 和 `problems` |
 | `saos lens approve --job J --model models/NNN-<镜头> --quote "<用户原话>"` | 记录用户对这份建模说明的确认（`approval.json`，含结构指纹和当时仍在的自动检查结果）。之后 `saos round` 只接受结构与某份已确认说明一致的镜头 |
 | `saos lens describe --job J [--notes N.json] [--lang zh\|en]` | 建模说明：写 `models/NNN-<镜头>/index.html`、`model.json` 和布局图（3D 三个视角，轴对称系统另有截面）。逐面列出面型、所有非零附加参数、材料来源与各波长折射率（INDX 实测）、孔径、求解和顶点全局位置，并给出系统孔径、物方远心、光线瞄准、视场、波长。N.json 写每个面代表的实物、假设和一阶分析：`{"surfaces": {"3": "…"}, "assumptions": ["…"], "first_order": ["…"]}`。返回值的 `warnings` 是自动检查的问题（模型玻璃、目录外材料、无色散介质、非平面的菲涅尔基底、物方 NA 未设远心、渐晕因子、缺少面说明或一阶分析） |
-| `saos lens set --job J --surface N --param P --value V` | 修改一个面参数：radius、thickness、conic、semi_diameter、material、comment。数值可写 `inf` |
+| `saos lens set --job J --surface N --param P --value V` | 修改一个面参数：radius、thickness、conic、semi_diameter、material、comment，或面型参数列 `par<N>`（非球面系数、坐标断点的偏心与倾斜等，列号见建模说明页）。数值可写 `inf` |
 | `saos lens save --job J [--as NAME] [--overwrite] [--no-verify]` | 保存；默认保存后从磁盘重新加载，与保存前逐面核对 |
 | `saos lens operand --job J TYPE [--int1 --int2 --d1 … --d6]` | 计算一个优化操作数，例如 `EFFL --int2 2` |
 | `saos lens analysis --job J TYPE [--set KEY=VALUE …] [--keep-open]` / `--list` | 运行一个 OpticStudio 分析（AnalysisIDM 名称，如 StandardSpot、FftMtf、RayFan、WavefrontMap、FieldCurvatureAndDistortion），导出数据序列、网格（超过 256×256 时降采样）、点列图 RMS/GEO 半径和表头，存为任务的 `analyses/NNN-TYPE.json`，并保存 OpticStudio 的文本全文 `.txt`。设置名取自分析的设置对象，Field、Wavelength、Surface 用编号或 `all`；枚举按成员名。返回值省略网格本体，只给统计量 |
-| `saos lens view --job J [--viewer lde\|cross-section\|3d\|shaded] [--analysis TYPE] [--set KEY=VALUE …]` | 显性调试：打开 Lens Data 或一种 System Viewer，加一个像质分析（默认 StandardSpot，按系统最看重的像质选），按当前镜头刷新。选择会被记住；之后 load、set、build、opt local、exec、round 结束时自动刷新已打开的分析窗口。连接 extension 后自动按默认选择打开 |
+| `saos lens view --job J [--viewer cross-section\|3d\|shaded] [--analysis TYPE] [--set KEY=VALUE …]` | 显性调试：打开 Lens Data 和布局窗口（默认剖面图，非轴对称或非序列系统改用 3D Viewer），按需再开一个分析（默认不开，按系统最看重的像质选），按当前镜头刷新。选择会被记住；之后 load、set、build、opt local、exec、round 结束时自动刷新已打开的窗口，建模阶段还会重开被关掉的 Lens Data 和布局窗口。连接 extension 后自动按默认选择打开 |
 | `saos lens screenshot --job J [--label L]` | 显性调试：把 OpticStudio 的可见窗口截成 PNG，存为任务的 `screens/NNN-L-K.png`（PrintWindow，被遮挡也能截；最小化的窗口跳过） |
 | `saos demand show --job J` | 校验需求单 `sources/demand.yaml`，给出版本哈希、确认记录、待确认问题和访谈总结，不连接 OpticStudio |
 | `saos demand confirm --job J --quote "<用户原话>"` | 记录用户对当前需求单版本的确认，写入 `confirmations.jsonl` |
-| `saos probe --job J --plan PLAN.json` | 扰动诊断：按 agent 事先写下的预测，对 1–6 个变量（至少一个阴性对照）各取 ±delta，带补偿量（`quick_focus` 或任务内脚本）实测需求单各项，给出按目标影响排序、预测与实测不符的项和审视提醒。每次都从同一份基准副本重新加载，结束后恢复镜头；计划、基准副本和每次测量存到 `probes/NNN/` 并封存。不需要需求单已确认。格式见 `skills/saos/SKILL.md`「Diagnose before you escalate」 |
+| `saos probe --job J --plan PLAN.json` | 扰动诊断：按 agent 事先写下的预测，对 1–6 个变量（建议含阴性对照，没有时 review 会提示）各取 ±delta；内置参数为 radius、thickness、conic、`par<N>`，带补偿量（`quick_focus` 或任务内脚本）实测需求单各项，给出按目标影响排序、预测与实测不符的项和审视提醒。每次都从同一份基准副本重新加载，结束后恢复镜头；计划、基准副本和每次测量存到 `probes/NNN/` 并封存。不需要需求单已确认。格式见 `skills/saos/SKILL.md`「Diagnose before you escalate」 |
+| `saos rule-out --job J --tier T [--tier T…] --reason TEXT` | 带证据排除帮不上的手段层级（`ruled_out.jsonl`），终止判断不再等它；只到下一次明显进步为止。必须先在当前需求版本下记录过轮次。不连接 OpticStudio |
 | `saos stop --job J --reason TEXT --quote "<用户原话>"` | 记录用户的停止决定（`stops.jsonl`）：当前需求单版本下不再记录轮次，报告显示“按用户决定停止”、理由和原话。必须先在当前版本下记录过轮次。不连接 OpticStudio |
 | `saos job cancel <job>` | 请求正在运行的计算在下一个安全点停止（写 `cancel.request`）：`opt local` 调用 Cancel，`probe` 在下一次扰动前停止并返回 `CANCELLED`，脚本通过 `ctx.progress()` 的返回值或 `ctx.cancel_requested()` 得知。不经过后台进程，正忙时也能用 |
 | `saos check --job J` | 按需求单对当前镜头逐项实测和判定，不记录。需求单未确认时也能用，便于整理需求时先看数值 |
-| `saos round --job J [--tier local\|variables\|materials\|global\|structure] [--note TEXT]` | 记录一个调试轮次：存为 `lenses/rounds/rNNN.zmx`，逐项实测判定（全文存为 `evaluations/NNN/result.json`），写入 `ledger.jsonl`，返回终止判断（continue / achieved / exhausted / limit）、还没试过的层级和需求提要 `brief`。第 0 轮不填 tier。当前需求单版本未确认（`DEMAND_NOT_CONFIRMED`）、有 blocking 待确认问题（`DEMAND_BLOCKED`）、已经终止、或镜头结构与已确认的建模说明不一致（`MODEL_NOT_APPROVED`）时拒绝。每轮记下所用材料；含模型玻璃或不满足常量、变量范围的轮次不能交付 |
+| `saos round --job J [--tier T[,T…]] [--note TEXT] [--merit V]` | 记录一个调试轮次（T 为 local、variables、materials、global、structure，一轮用了几个就写几个）：存为 `lenses/rounds/rNNN.zmx`，逐项实测判定（全文存为 `evaluations/NNN/result.json`），写入 `ledger.jsonl`，返回终止判断（continue / achieved / exhausted / limit / stopped）、既没试过也没排除的层级和需求提要 `brief`。第 0 轮不填 tier。当前需求单版本未确认（`DEMAND_NOT_CONFIRMED`）、有 blocking 待确认问题（`DEMAND_BLOCKED`）、已经终止、或镜头结构与已确认的建模说明不一致（`MODEL_NOT_APPROVED`）时拒绝。每轮记下所用材料；含模型玻璃或不满足常量、变量范围的轮次不能交付 |
 | `saos report --job J [--lang zh\|en]` | 由需求单和 ledger 生成交付报告 `report/index.html`，不连接 OpticStudio；语言见「报告语言」 |
 | `saos exec SCRIPT --job J [--arg K=V …] [--args-file JSON] [--name N] [--quiet]` | 在后台进程内执行脚本（ADR-0007），见下文「脚本执行」 |
 | `saos microscope adapt EXTRACT --focal-length F --field-number N [--tube-lens 200] [--catalogs …] [--stop rear_focal\|r<面号>] --out DIR` | 把子 agent 提取的面数据适配成标准设计布局的处方，输出 prescription.json、expect.json、adapt_report.json（不经后台进程） |
@@ -46,10 +45,9 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `saos microscope repro --job J EXPECT` | 复现校验：焦距、物方 NA、顶点工作距离、f_TL/EFL 与期望值比较。每项允许的偏差取相对误差 1% 与 EXPECT 中 `tolerance_mm`（原文印刷精度的舍入包络半宽）的较大者。只临时调焦，结束后恢复 |
 | `saos microscope perturb --job J --seed S --radius-rel A [--thickness-rel B]` | 受控扰动：物镜各面曲率、厚度按固定随机种子均匀改变 |
 | `saos microscope accept --job J [--spec FILE]` | 按光学规格做验收评估，结果和验收模型存到任务的 eval/。结果的 `focus_trace` 列出调焦的每个试探位置（波长、厚度、轴上光线失败数、c4、拟合残差） |
-| `saos opt vary --job J --param radius\|thickness\|conic --surfaces 1-16 [--off]` | 设变量或取消变量。物面只允许厚度（即无盖玻片时的工作距离间隔） |
+| `saos opt vary --job J --param radius\|thickness\|conic\|par<N>\|material --surfaces 1-16 [--mode model\|substitute] [--catalog C] [--off]` | 设变量或取消变量。物面只允许厚度（即无盖玻片时的工作距离间隔）。`par<N>` 为面型参数列；`material` 需要 `--mode`：`model` 把玻璃换成 nd、νd 可变的模型玻璃（起点取当前玻璃，只用于探索，不能交付），`substitute` 让 Hammer、全局优化在目录内替换真实玻璃（`--catalog` 不给时用全部在用目录）。`--off` 对模型玻璃保留当前 nd、νd 并停止变化。变量、边界条件和工艺约束见 `skills/saos/design-practice.md` |
 | `saos opt merit --job J clear\|wizard\|add\|show [--file JSON]` | 评价函数：清空；按向导生成默认评价函数（type、data、reference、rings、arms 等）；追加操作数列表；查看 |
 | `saos opt local --job J [--cycles auto\|1\|5\|10\|50] [--cores N] [--max-seconds S]` | 局部优化（阻尼最小二乘），默认用全部逻辑核减 2。异步运行，进度写进 `progress.json`；超过 `--max-seconds` 或收到 `job cancel` 时调用 OpticStudio 的 Cancel，保留已经得到的结果（返回 `stopped_by`）。开始前做与 round 相同的需求单检查（已确认、没有 blocking 问题） |
-| `saos microscope round --job J [--spec FILE] [--note TEXT]` | 记录一个调整轮次：存为 lenses/rounds/rNNN.zmx，做验收评估，返回停机判断（pass / stagnated / limit / continue）。第 0 轮时冻结光学规格，之后不能更换。后台协议另有 `observe` 参数，供基准实验使用：照常冻结和核对，停机判断只记录不执行 |
 | `saos microscope library check EXTRACT` | 入库前用近轴计算核对提取结果：焦距和工作距离的印刷值落在印刷精度的舍入包络内，或与计算值相差不超过 1%，即为一致（不经后台进程） |
 | `saos microscope library add ID --extract FILE [--catalogs …] [--focal-length F] [--field-number N] [--stop rear_focal\|printed\|r<面号>]` | 把提取结果适配成处方，写入 `library/microscope/entries/ID/`，状态为 extracted（不经后台进程） |
 | `saos microscope library verify ID --job J [--discard]` | 搭建、复现校验、探测验收、推导基准规格并确认原结构 G = 0，结果写回条目。当前镜头有未保存修改时返回 UNSAVED_CHANGES；显式加 `--discard` 才会丢弃，包括其他任务的修改。复现不通过的条目状态为 rejected |
@@ -69,7 +67,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 
 `sources/demand.yaml` 的格式、目标差距的算法和终止规则以英文写在 [skills/saos/demand.md](../skills/saos/demand.md)，agent 直接读那一份；这里不再重复。
 
-要点：只收 `constants`、`variables`、`objectives`、`open_questions`、`summary`、`lang`、`stop`，其他字段一律拒绝；判定方法三选一（operand、analysis、script）；界限写有限数值的 `max`、`min` 或 `equals` + `tol`；访谈总结最后一句固定；版本只取三类条目和 `stop` 的哈希，改写总结、待确认问题或 `lang` 不需要重新确认；确认只能由 `saos demand confirm` 记录用户原话。旧格式 `sources/harness.yaml` 不会自动转换，只有它时命令返回 `FILE_NOT_FOUND` 并提示改写。
+要点：只收 `constants`、`variables`、`objectives`、`open_questions`、`summary`、`notes`、`lang`、`stop`，其他字段一律拒绝；每个界限都要写 `source`，`demand show` 的 `weak_basis` 列出没有来源或只是 agent 假设的界限，`demand confirm` 拒绝没有来源的界限；判定方法三选一（operand、analysis、script）；界限写有限数值的 `max`、`min` 或 `equals` + `tol`；版本只取三类条目和 `stop` 的哈希，改写总结、待确认问题或 `lang` 不需要重新确认；确认只能由 `saos demand confirm` 记录用户原话。旧格式 `sources/harness.yaml` 不会自动转换，只有它时命令返回 `FILE_NOT_FOUND` 并提示改写。
 
 每次检查的快照和证据存在新的 `evaluations/NNN/`，返回的 `evidence_file` 指向完整结果。修改检查脚本会开始新的判定方法版本，旧轮次不再参与进展比较和交付选择；需求单或脚本改动后还没记录新轮次时，`saos report` 返回 `SPEC_CHANGED`。脚本版本只跟踪直接指定的源码，不跟踪它导入的模块。
 
@@ -84,6 +82,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 - `ctx.system`：OpticStudio 的 PrimarySystem；`ctx.zosapi`：ZOSAPI 命名空间；`ctx.backend`：saos 后端；
 - `ctx.job`、`ctx.args`（`--arg` 和 `--args-file` 合并后的字典）、`ctx.lens`（当前加载的镜头路径，可能为 None）、`ctx.dirty`；
 - `ctx.load(name)`、`ctx.save_as(name, overwrite=False)`：切换或保存镜头时必须用它们，后台进程才能跟踪当前文件；`ctx.load` 换掉窗口内容前会把未保存的窗口内容存成副本（`ctx.capture_window()` 也可单独调用，副本路径列在执行结果的 `captured`）；`ctx.mark_dirty()`；`ctx.path(rel)`：任务目录内的路径。
+- `ctx.parallel(script, items, workers=4, reset=True)`：并发评估。`script` 是任务内定义 `work(wctx, item)` 的文件；每个 worker 开一个 standalone 实例，加载已保存的当前镜头的副本（有未保存修改时返回 `UNSAVED_CHANGES`），`reset` 时每个条目前重新加载。`wctx` 提供 `system`、`zosapi`、`backend`、`path(rel)`、`worker`、`reload()`。返回按条目顺序的 `results`、出错条目的 `errors`、各 worker 的启动时间和处理数；许可证拒绝的 worker 记为 `unavailable`，全部不可用时报 `ZOS_ERROR`。计划、脚本副本和结果存到 `parallel/NNN/` 并封存，`saos job cancel` 会在当前条目完成后停止
 
 每次执行都把脚本副本和结果存为任务的 `scripts/NNN-<名>.py` 与 `.json`，交付的数值可以追溯到具体脚本。脚本抛出异常时返回 `SCRIPT_ERROR`（含 traceback），后台进程继续运行；连接已中断时按连接中断处理。执行结束后若 OpticStudio 的 NeedsSave 置位，当前镜头记为有未保存修改；只读的 Zernike 拟合也会置位，所以这一判断偏保守。`--quiet` 在 extension 模式下暂停窗口刷新，显微物镜的验收类命令默认带上。
 
@@ -114,9 +113,10 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `ZOS_ERROR` | OpticStudio 操作抛出异常，连接仍正常，后台进程继续运行 |
 | `ZOS_LOAD_FAILED` / `ZOS_SAVE_FAILED` | OpticStudio 无法加载或保存文件 |
 | `VERIFY_FAILED` | 保存后重新加载与保存前不一致，`details.diffs` 列出差异 |
+| `EXTENSION_REQUIRED` | 建模阶段（需求已确认、还没有获确认的建模说明）或 `lens describe` / `lens approve` 在 standalone 后台进程上执行；`saos daemon stop` 后用 `saos daemon start --mode extension` 重启 |
 | `UI_BLOCKED` | extension 模式下 OpticStudio 窗口被模态对话框挡住（如自动保存恢复提示、错误消息框），`details.dialogs` 列出标题；在窗口中关闭后重试 |
 | `SCRIPT_ERROR` | `exec` 的脚本抛出异常，`details` 给出脚本存档路径和 traceback；后台进程继续运行 |
-| `SPEC_CHANGED` | 调整轮次中，规格路径或补全后的验收配置与第 0 轮冻结的不一致；需要新建任务 |
+| `SPEC_CHANGED` | 需求单或检查脚本改动后还没有新轮次时生成报告；优化基准（experiments/bench）的轮次中，规格路径或补全后的验收配置与第 0 轮冻结的不一致 |
 | `VALUE_NOT_APPLIED` | 修改没有生效（例如被求解覆盖），`details` 给出目标值、实际值和求解类型 |
 | `LENS_MODIFIED_BY_CHECK` | 记录轮次时，判定脚本改动了镜头（取值前后的镜头内容不同）；本轮不记录。把判定改成只读后重试 |
 | `DUPLICATE_ROUND` | 同一镜头在同一需求和判定版本下已经记过一轮（多为超时后的重试）；`details` 给出已有的轮次 |
@@ -183,7 +183,8 @@ work/<实例名>/
 ## 显性调试命令
 
 - `saos lens capture --job J --as backup.zmx`：将窗口当前内容另存到任务，不覆盖源文件或已有副本；可保留连接前尚未保存的修改。
-- `saos lens view --job J [--viewer …] [--analysis TYPE]`：extension 模式下打开 Lens Data 或一种 System Viewer，加一个像质分析，并刷新；UpdateMode 设为 EditorsOnly，分析窗口由 saos 在改动后刷新。standalone 模式下返回 BAD_ARGS。
+- `saos lens view --job J [--viewer cross-section|3d|shaded] [--analysis TYPE]`：extension 模式下打开 Lens Data 和布局窗口（默认剖面图，画不了时改用 3D Viewer，`layout.fallback_reason` 给出原因），按需再开一个分析，并刷新；关掉的窗口重新打开；UpdateMode 设为 EditorsOnly，分析窗口由 saos 在改动后刷新。standalone 模式下返回 BAD_ARGS。
+- 建模阶段（需求已确认、还没有获确认的建模说明）只能用 extension 模式，standalone 下该任务的操作返回 `EXTENSION_REQUIRED`；`lens describe`、`lens approve` 任何时候都要 extension 模式。这一阶段每条改动镜头的命令之后，saos 保证 Lens Data 和布局窗口开着。
 - `saos lens screenshot --job J [--label L]`：截取 OpticStudio 窗口 PNG。
 
 extension 模式下，`lens load`、`lens unload`、`lens build` 换掉窗口内容前，若 OpticStudio 的 NeedsSave 置位（分析窗口的刷新也会置位，无法与用户修改区分），先把窗口内容存成 `lenses/captures/NNN-unsaved.zmx`，返回值 `captured` 给出路径，然后继续。脚本中的 `ctx.load` 和显微物镜配方的 accept、repro 同样先存副本，返回值带 `captured`。agent 自己未保存的修改（后台 dirty）仍返回 UNSAVED_CHANGES，先 `lens save` 或加 `--discard`；`--discard` 只放弃 agent 自己的修改，窗口内容照样先存副本。
