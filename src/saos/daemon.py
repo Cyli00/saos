@@ -498,8 +498,6 @@ class Daemon:
         record = {"type": name, "lens": loaded.describe(), "time": jobs.now_iso(), **data}
         write_json(folder / f"{stem}.json", record)
         job.seal(*(p for p in (folder / f"{stem}.json", folder / f"{stem}.txt") if p.is_file()))
-        if args.get("keep_open"):
-            self.backend.tile_windows()
         rel = (folder / f"{stem}.json").relative_to(job.root).as_posix()
         # 返回值省略网格本体，只留统计量；完整数据在存档文件里
         brief = {**record, "grids": [{k: v for k, v in g.items() if k != "values"} for g in data["grids"]]}

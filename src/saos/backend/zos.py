@@ -284,20 +284,7 @@ class ZosBackend(Backend):
         system.UpdateMode = zosapi.LensUpdateMode.EditorsOnly
         self.app.ProgressMessage = f"saos: lens data + {layout['viewer']}" + (f" + {watch['analysis']}" if watch["analysis"] else "")
         return {"watch": watch, "layout": {k: layout[k] for k in ("viewer", "fallback_reason")}, "opened": layout["new"],
-                "message": str(message) if message else None, "update_mode": str(system.UpdateMode), "windows": self.window_list(),
-                # 只在新开了窗口时重新平铺，不打乱用户已经摆好的窗口
-                "tiled": self.tile_windows() if layout["new"] else []}
-
-    def tile_windows(self) -> list[dict[str, Any]]:
-        from saos import native_ui
-
-        pid = (self.extension_ui or {}).get("pid") if self.mode == "extension" else None
-        if not pid:
-            return []
-        try:
-            return native_ui.tile_windows(int(pid))
-        except Exception as exc:  # noqa: BLE001 - 排布失败不影响计算
-            return [{"error": str(exc)[:200]}]
+                "message": str(message) if message else None, "update_mode": str(system.UpdateMode), "windows": self.window_list()}
 
     def window_list(self) -> list[dict[str, str]]:
         return [{"type": str(a.AnalysisType), "title": str(a.Title)} for a in self._open_analyses().values()]

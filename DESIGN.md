@@ -82,7 +82,7 @@ OpticStudio 2024 R1 Premium 加 ZOS-API 能建模的系统都在范围内，包�
 
 - 必须通过 Interactive Extension 连接用户打开的 OpticStudio 窗口。连接前由程序用 UI Automation 打开 Interactive Extension 并取消勾选 "Auto close on disconnect"；有多个候选窗口时用环境变量指定，不接管已连接到其他扩展的窗口。
 - 从需求确认到建模说明获确认（建模与选材阶段），必须在显性调试下进行：standalone 后台进程对该任务的操作一律返回 `EXTENSION_REQUIRED`；`lens describe`、`lens approve` 在任何阶段都要 extension 模式。建模说明获确认后，长时间的优化可以改用 standalone。
-- 连接后自动打开 Lens Data 和一个布局窗口。布局默认用剖面图（Cross-Section）；序列模式下 `IsNonAxial` 为真或系统是非序列时剖面图画不了（实测折转的光纤模型报 "Cannot perform 2D Layout on non-axial system!"），改用 3D Viewer，剖面图刷新报错时同样改用。像质分析由 agent 按需用 `lens view --analysis` 加开，默认不开。之后每条会改动镜头的命令执行完都刷新这些窗口；建模阶段被用户关掉的 Lens Data 和布局窗口会重新打开，模型确认后只刷新已打开的窗口，关掉的等 agent 下次 `lens view` 时再开。
+- 连接后自动打开 Lens Data 和一个布局窗口。布局默认用剖面图（Cross-Section）；序列模式下 `IsNonAxial` 为真或系统是非序列时剖面图画不了（实测折转的光纤模型报 "Cannot perform 2D Layout on non-axial system!"），改用 3D Viewer，剖面图刷新报错时同样改用。像质分析由 agent 按需用 `lens view --analysis` 加开，默认不开。saos 不排布窗口，位置由用户自己拖动（2026-10-15 决定：自动平铺在 UI Automation 移动新开的分析窗口时不稳定，不再维护）。之后每条会改动镜头的命令执行完都刷新这些窗口；建模阶段被用户关掉的 Lens Data 和布局窗口会重新打开，模型确认后只刷新已打开的窗口，关掉的等 agent 下次 `lens view` 时再开。
 - agent 看不到窗口：数值导出优先；显性调试下另外可以截取窗口 PNG，给有视觉能力的 agent 和用户对照。
 - 用户在窗口里有未保存的修改时，agent 不能覆盖。OpticStudio 的 NeedsSave 标志也会被 saos 自己的动作置位（实测打开或刷新分析窗口、Zernike 拟合、把参数写回相同的值都会置位），而面数据和系统概况读不全评价函数和面型专有参数，无法区分用户修改与这些副作用。所以 load、unload、build 换掉窗口内容前，只要 NeedsSave 置位（或连接时窗口已有未保存内容），saos 先把窗口内容存成任务内的 `lenses/captures/NNN-unsaved.zmx` 再继续，返回值的 `captured` 给出路径；不阻断，也不要求 agent 加 `--discard`。脚本的 `ctx.load` 和配方中会重建窗口的操作走同一步。agent 自己未保存的修改仍按后台 dirty 拒绝，先保存或显式放弃；显式放弃只放弃 agent 自己的修改，不跳过窗口副本。
 - OpticStudio 只自动更新编辑器（UpdateMode 为 EditorsOnly）；分析窗口由 saos 在每次改动镜头的命令后显式刷新。实测 AllWindows 会在改动后异步重算分析窗口，与 API 读取竞争：读到空结果，或与等待循环互相卡住。

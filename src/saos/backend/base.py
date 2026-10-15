@@ -119,10 +119,6 @@ class Backend(ABC):
         """显性调试：在连接的窗口中打开 Lens Data 和一个布局窗口（剖面图画不了时用 3D 视图），按需再开一个像质分析。"""
         raise SaosError(ErrorCode.BAD_ARGS, "explicit debugging windows need extension mode (saos daemon start --mode extension)")
 
-    def tile_windows(self) -> list[dict[str, Any]]:
-        """显性调试：把浮动窗口平铺开，互不遮挡；隐式运行时什么也不做。"""
-        return []
-
     def refresh_windows(self) -> dict[str, Any] | None:
         """改动镜头后刷新显性调试的窗口；隐式运行时什么也不做。"""
         return None
