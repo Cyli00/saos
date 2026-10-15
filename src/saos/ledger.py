@@ -27,6 +27,8 @@ has also been escalated. Tiers, low to high:
     exhausted  自最后一次明显进步（G 比此前最好值至少再小 rel）以来，允许的每个层级都至少试过一轮，仍没有明显进步
                since the last significant gain (G at least rel below the best so far) every allowed tier was tried;
                只说明试过的手段不再见效，不证明物理上不可达 / says the strategies stopped working, not that the goal is physically out of reach
+    stopped    用户决定停止（saos stop，带理由和用户原话）；停止也是一种结论
+               the user decided to stop (saos stop, with a reason and the user's words); stopping is a conclusion too
     continue   其他情况；给出最后一次进步以来还没试过的最低层级 / otherwise; suggests the lowest untried tier
 需求的实质内容一变（哈希不同），G 的定义就变了，进步从改动后的第一轮重新算起。
 When the demand content changes (different hash), G means something else and progress is counted afresh.
@@ -39,10 +41,12 @@ import math
 from pathlib import Path
 from typing import Any
 
+from saos import jobs
 from saos.demand import TIERS
-from saos.protocol import jsonable
+from saos.protocol import ErrorCode, SaosError, jsonable
 
 LEDGER_FILE = "ledger.jsonl"
+STOPS_FILE = "stops.jsonl"
 
 
 def load(path: Path) -> list[dict[str, Any]]:
@@ -57,6 +61,33 @@ def load(path: Path) -> list[dict[str, Any]]:
 def append(path: Path, record: dict[str, Any]) -> None:
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(jsonable(record), ensure_ascii=False) + "\n")
+
+
+def stops(root: Path) -> list[dict[str, Any]]:
+    path = root / STOPS_FILE
+    if not path.is_file():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def stop_for(root: Path, demand_sha: str) -> dict[str, Any] | None:
+    """这一版需求下最近一次停止决定；需求改了版本就不再适用。
+    The latest stop decision under this demand version; a new version starts afresh."""
+    return next((s for s in reversed(stops(root)) if s.get("demand_sha") == demand_sha), None)
+
+
+def record_stop(root: Path, demand_sha: str, reason: str, quote: str) -> dict[str, Any]:
+    """记录用户的停止决定。停止等于接受达不到需求，所以必须有用户原话。
+    Record the user's decision to stop. Stopping accepts that the demand is not met, so it needs the user's words."""
+    reason, quote = str(reason or "").strip(), str(quote or "").strip()
+    if not reason or not quote:
+        raise SaosError(ErrorCode.BAD_ARGS, "a stop needs --reason (why, with the evidence) and --quote (the user's own words deciding to stop)")
+    rounds = load(root / LEDGER_FILE)
+    if not rounds or version(rounds[-1])[0] != demand_sha:
+        raise SaosError(ErrorCode.BAD_ARGS, "record a round under the current demand before stopping; the stop refers to the last round")
+    record = {"round": int(rounds[-1]["round"]), "demand_sha": demand_sha, "reason": reason, "quote": quote, "time": jobs.now_iso()}
+    append(root / STOPS_FILE, record)
+    return record
 
 
 def significant(best: float, g: float, rel: float) -> bool:
@@ -89,9 +120,10 @@ def deliverable(record: dict[str, Any]) -> bool:
     return not record.get("model_glass") and valid(record) and not record.get("hard_failing")
 
 
-def decide(rounds: list[dict[str, Any]], stop: dict[str, Any]) -> dict[str, Any]:
-    """rounds 为 ledger 中的全部轮次（含第 0 轮）。返回状态、理由和建议的下一层级。
-    rounds: every round in the ledger (round 0 included). Returns the status, the reason and the suggested next tier."""
+def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str, Any] | None = None) -> dict[str, Any]:
+    """rounds 为 ledger 中的全部轮次（含第 0 轮）；stopped 为这一版需求下用户的停止决定。返回状态、理由和建议的下一层级。
+    rounds: every round in the ledger (round 0 included); stopped: the user's stop decision under this demand version.
+    Returns the status, the reason and the suggested next tier."""
     if not rounds:
         raise ValueError("ledger has no rounds")
     rel, cap, tiers = float(stop["rel"]), int(stop["max_rounds"]), [t for t in TIERS if t in stop["tiers"]]
@@ -121,6 +153,9 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any]) -> dict[str, Any]
     }
     if current.get("achieved") and deliverable(current):
         return {**base, "status": "achieved", "reason": "every constant, variable range and objective pass line is met"}
+    if stopped is not None and int(stopped["round"]) >= int(window[0]["round"]):
+        return {**base, "status": "stopped", "stopped": stopped,
+                "reason": f"the user decided to stop after round {stopped['round']}: {stopped['reason']}"}
     if len(window) - 1 >= cap:
         return {**base, "status": "limit", "reason": f"reached max_rounds = {cap} for this demand version"}
     if not valid(current):

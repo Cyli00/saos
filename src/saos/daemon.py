@@ -34,6 +34,9 @@ def _t(zh: str, en: str) -> str:
 
 REQUEST_READ_TIMEOUT_S = 30
 # 显性调试：这些操作可能改变镜头，结束后刷新已打开的分析窗口
+# 可能跑很久的操作：开始和结束都写进 progress.json，开始前清掉旧的取消请求
+# operations that may run long: their start and end go to progress.json; a stale cancel request is cleared first
+LONG_OPS = frozenset({"opt.local", "script.exec", "round.record", "probe.run", "demand.check"})
 REFRESH_AFTER = frozenset({"lens.load", "lens.set", "lens.build", "opt.local", "script.exec", "round.record"})
 COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
 COMPARED_NUMBER_KEYS = ("radius", "thickness", "conic", "semi_diameter")
@@ -143,6 +146,7 @@ class Daemon:
                     )
             # 连接手动打开的窗口时，带 quiet 的脚本执行期间暂停界面刷新，结束后窗口显示最终状态；SAOS_UI_LIVE=1 时全程刷新
             quiet = op == "script.exec" and bool(args.get("quiet")) and os.environ.get("SAOS_UI_LIVE") != "1"
+            self._progress_start(op, args)
             with self.backend.activity(f"saos {op}", quiet):
                 result = handler(args)
             if op in REFRESH_AFTER:
@@ -153,8 +157,34 @@ class Daemon:
             log.exception(_t("操作 %s 出现未预期异常", "unexpected error in op %s"), op)
             error = self._unexpected(exc)
         duration_ms = round((time.perf_counter() - started) * 1000, 1)
+        if op in LONG_OPS:
+            self._progress_end(args, error, duration_ms)
         self._log_to_job(op, args, error, duration_ms)
         return fail(error) if error else ok(result)
+
+    def _progress_start(self, op: str, args: dict[str, Any]) -> jobs.Job | None:
+        if op not in LONG_OPS or not isinstance(args.get("job"), str):
+            return None
+        try:
+            job = jobs.get_job(args["job"])
+        except SaosError:
+            return None
+        job.clear_cancel()
+        detail = args.get("name") if op == "script.exec" else args.get("tier") if op == "round.record" else None
+        (job.root / jobs.PROGRESS_FILE).unlink(missing_ok=True)
+        job.write_progress(op=op, detail=detail, status="running", started=jobs.now_iso(), daemon_pid=os.getpid())
+        return job
+
+    def _progress_end(self, args: dict[str, Any], error: SaosError | None, duration_ms: float) -> None:
+        try:
+            job = jobs.get_job(str(args.get("job")))
+        except SaosError:
+            return
+        if job.read_progress() is None:
+            return
+        status = "cancelled" if error is not None and error.code == ErrorCode.CANCELLED else "failed" if error else "done"
+        job.write_progress(status=status, duration_s=round(duration_ms / 1000, 1), error=error.code if error else None)
+        job.clear_cancel()
 
     def _window_edited(self) -> bool:
         # 部分面参数无法完整读取；宁可让只读分析的副作用要求保存，也不把用户修改误判为安全。
@@ -493,7 +523,12 @@ class Daemon:
         # 优化可能跑很久：需求未确认或有 blocking 问题时先问用户，不进入优化
         # an optimisation may run for a long time: with an unconfirmed demand or a blocking question, ask the user first
         workflow.preflight(job.root)
-        result = self.backend.optimize(str(args.get("cycles", "auto")), args.get("cores") or config.compute_cores())
+        result = self.backend.optimize(str(args.get("cycles", "auto")), args.get("cores") or config.compute_cores(),
+                                       max_seconds=_arg(args, "max_seconds", (int, float), default=None),
+                                       on_progress=lambda data: job.write_progress(stage="opt.local", **data),
+                                       should_cancel=job.cancel_requested)
+        if result.get("stopped_by"):
+            job.write_progress(stopped_by=result["stopped_by"])
         loaded.dirty = True
         return {**loaded.describe(), **result}
 
@@ -529,7 +564,8 @@ class Daemon:
         job = self._job(args)
         self._require_loaded(job)
         ctx = scripting.ScriptContext(self, job, {})
-        return workflow.record_round(ctx, _arg(args, "tier", str, default=None), str(args.get("note", "")))
+        return workflow.record_round(ctx, _arg(args, "tier", str, default=None), str(args.get("note", "")),
+                                     merit=_arg(args, "merit", (int, float), default=None))
 
     def op_operand(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))

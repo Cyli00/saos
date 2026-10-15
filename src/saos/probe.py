@@ -139,6 +139,9 @@ def run(ctx, plan: dict[str, Any]) -> dict[str, Any]:
     comp_run = _load_script(ctx, compensate["script"], folder, "compensate") if isinstance(compensate, dict) else None
 
     def trial(name: str, apply=None) -> dict[str, Any]:
+        if ctx.job.cancel_requested():
+            raise SaosError(ErrorCode.CANCELLED, f"probe cancelled before {name}; finished trials are in {folder.relative_to(ctx.job.root).as_posix()}")
+        ctx.job.write_progress(stage=f"probe {name}")
         ctx.backend.load(base)
         if apply is not None:
             apply()
@@ -162,6 +165,16 @@ def run(ctx, plan: dict[str, Any]) -> dict[str, Any]:
     try:
         baseline = trial("base")
         results = []
+        if baseline["values"][plan["target"]] is None:
+            # 前提不成立（例如没有实焦点、零件交叠）时，扰动出的变化没有意义；先确认可行性
+            # without a valid baseline value (no real focus, overlapping parts) changes mean nothing: establish feasibility first
+            result = {"folder": folder.relative_to(ctx.job.root).as_posix(), "target": plan["target"], "baseline": baseline, "probes": [],
+                      "ranking": [], "lens_unchanged": True,  # finally 里重新加载基准副本 / the base copy is reloaded in finally
+                      "review": [f"{plan['target']} has no valid value on the base lens, so no perturbation can be read; "
+                                 "go through the feasibility ladder first (invariants, an on-axis point under all real constraints, then the full field)"]}
+            write_json(folder / "result.json", result)
+            ctx.job.seal(folder)
+            return result
         for p in plan["probes"]:
             row: dict[str, Any] = {"id": p["id"], "control": bool(p.get("control")), "prediction": p["prediction"], "delta": p["delta"]}
             change_run = _load_script(ctx, p["script"], folder, f"change-{p['id']}") if "script" in p else None

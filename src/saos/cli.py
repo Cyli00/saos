@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -63,7 +64,12 @@ def cmd_job(args: argparse.Namespace) -> Any:
             "lenses": sorted(p.relative_to(job.lenses_dir).as_posix() for p in job.lenses_dir.rglob("*.zmx")),
             "spec": sorted(p.name for p in job.spec_dir.iterdir()) if job.spec_dir.is_dir() else [],
             "log_tail": [json.loads(line) for line in lines[-args.log:]] if args.log > 0 else [],
+            # 直接读文件，后台进程正忙时也能看 / read from the file, so it works while the daemon is busy
+            "progress": job.read_progress(),
+            "cancel_requested": job.cancel_requested(),
         }
+    if args.action == "cancel":
+        return jobs.get_job(args.job).request_cancel()
     if args.action == "verify":
         job = jobs.get_job(args.job)
         problems = job.verify_seals()
@@ -153,7 +159,7 @@ def cmd_opt(args: argparse.Namespace) -> Any:
             payload["rows"] = _read_json(args.file)
         return client.request("opt.merit", payload, timeout=args.timeout)
     if args.action == "local":
-        return client.request("opt.local", {"job": args.job, "cycles": args.cycles, "cores": args.cores}, timeout=args.timeout)
+        return client.request("opt.local", {"job": args.job, "cycles": args.cycles, "cores": args.cores, "max_seconds": args.max_seconds}, timeout=args.timeout)
     raise AssertionError(args.action)
 
 
@@ -180,6 +186,13 @@ def cmd_probe(args: argparse.Namespace) -> Any:
     return client.request("probe.run", {"job": args.job, "plan": _read_json(args.plan)}, timeout=args.timeout)
 
 
+def cmd_stop(args: argparse.Namespace) -> Any:
+    from saos import demand, ledger
+
+    root = jobs.get_job(args.job).root
+    return ledger.record_stop(root, demand.digest(demand.load_job(root)), args.reason, args.quote)
+
+
 def cmd_demand(args: argparse.Namespace) -> Any:
     from saos import demand
 
@@ -190,7 +203,10 @@ def cmd_demand(args: argparse.Namespace) -> Any:
 
 
 def cmd_round(args: argparse.Namespace) -> Any:
-    return client.request("round.record", {"job": args.job, "tier": args.tier, "note": args.note}, timeout=args.timeout)
+    # 传输时 NaN 会变成 null、inf 变成字符串，所以发送前就要拒绝 / NaN would travel as null and inf as a string, so refuse them before sending
+    if args.merit is not None and not math.isfinite(args.merit):
+        raise SaosError(ErrorCode.BAD_ARGS, f"--merit must be a finite number (got {args.merit})")
+    return client.request("round.record", {"job": args.job, "tier": args.tier, "note": args.note, "merit": args.merit}, timeout=args.timeout)
 
 
 def cmd_report(args: argparse.Namespace) -> Any:
@@ -231,11 +247,13 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--name", required=True)
     create.add_argument("--spec", help="a spec file to copy into the job (microscope recipe)")
     jsub.add_parser("list", help="list design jobs")
-    show = jsub.add_parser("show", help="show a design job")
+    show = jsub.add_parser("show", help="show a design job, including the progress of a running computation (works while the daemon is busy)")
     show.add_argument("job")
     show.add_argument("--log", type=int, default=10, help="number of recent log records to show")
     verify = jsub.add_parser("verify", help="check that no evidence file written by the tools was changed or deleted (seals.jsonl)")
     verify.add_argument("job")
+    cancel = jsub.add_parser("cancel", help="ask the running computation of a job to stop at its next safe point (opt local, probe, scripts that call ctx.progress); works while the daemon is busy")
+    cancel.add_argument("job")
     job.set_defaults(func=cmd_job)
 
     lens = sub.add_parser("lens", help="lens operations (run by the daemon)")
@@ -327,6 +345,7 @@ def build_parser() -> argparse.ArgumentParser:
     q = opt_cmd("local", "run local optimization (damped least squares)")
     q.add_argument("--cycles", default="auto", choices=("auto", "1", "5", "10", "50"))
     q.add_argument("--cores", type=int, help="CPU cores for OpticStudio (default: all logical cores but 2)")
+    q.add_argument("--max-seconds", type=float, help="cancel the optimisation after this many seconds and keep what it reached")
     op.set_defaults(func=cmd_opt)
 
     dm = sub.add_parser("demand", help="the job's demand (sources/demand.yaml); no OpticStudio needed")
@@ -352,8 +371,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--job", required=True)
     p.add_argument("--tier", choices=("local", "variables", "materials", "global", "structure"), help="strategy tier used in this round; omit for round 0")
     p.add_argument("--note", default="", help="what this round changed")
+    p.add_argument("--merit", type=float, default=None,
+                   help="value of the objective you actually optimised, when you optimised outside the OpticStudio merit function; recorded instead of the lens's merit function value")
     p.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     p.set_defaults(func=cmd_round)
+    p = sub.add_parser("stop", help="record the user's decision to stop the rounds of the current demand version, with the reason and the user's words (no OpticStudio needed)")
+    p.add_argument("--job", required=True)
+    p.add_argument("--reason", required=True, help="why the rounds stop, with the evidence (e.g. probes/NNN, notes/findings.md F20)")
+    p.add_argument("--quote", required=True, help="the user's own words deciding to stop, including the full text of any option they chose")
+    p.set_defaults(func=cmd_stop)
     p = sub.add_parser("report", help="write the delivery report report/index.html from the demand and the ledger (no OpticStudio needed)")
     p.add_argument("--job", required=True)
     p.add_argument("--lang", choices=["en", "zh"], help="report language (default: demand lang, then SAOS_LANG, then the system UI language)")

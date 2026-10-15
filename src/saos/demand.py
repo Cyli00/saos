@@ -325,12 +325,15 @@ def confirm(root: Path, quote: str) -> dict[str, Any]:
     quote = str(quote or "").strip()
     if not quote:
         raise SaosError(ErrorCode.BAD_ARGS, "--quote must hold the user's own words of approval")
-    d = load_job(root)
+    path = path_of(root)
+    d = load(path)
     sha = digest(d)
-    record = {"demand_sha": sha, "quote": quote, "time": jobs.now_iso()}
+    # 存下用户确认时看到的全文（含总结和待确认问题），之后改写总结也能追溯
+    # keep the full text the user saw (summary and open questions included), so later rewording stays traceable
+    record = {"demand_sha": sha, "quote": quote, "time": jobs.now_iso(), "content": path.read_text(encoding="utf-8")}
     with (root / CONFIRMATIONS_FILE).open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(record, ensure_ascii=False) + "\n")
-    return {**record, "blocking_questions": blocking_questions(d)}
+    return {**{k: v for k, v in record.items() if k != "content"}, "blocking_questions": blocking_questions(d)}
 
 
 def show(root: Path) -> dict[str, Any]:

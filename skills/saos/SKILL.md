@@ -37,7 +37,7 @@ Otherwise keep working without asking. Write a question whose answer could chang
 
 Create the job: `uv run saos job create --name <name>`. Grill the user in rounds: ask every question you can ask now, numbered, each with your recommended answer, worded so "yes" accepts it. Explain optics terms in plain words. Look facts up yourself (files, `ref/docs`, the OpticStudio manual, the web) instead of asking. Keep every round, with the user's answers verbatim, in `sources/interview.md`.
 
-Write `sources/demand.yaml` ([demand.md](demand.md)): the fixed `constants`, the `variables` you may adjust and their ranges, the `objectives` with their pass lines (`must`) and hoped-for values (`wish`), `open_questions`, and a short `summary` of the interview that ends with `发现任何这个demand可能存在的问题，要大胆质疑和询问。` Classifying each condition is your judgement; an unknown real-world fact is an open question, never a variable. Keep it short: no verbatim conversation, no literature details, no restated global rules. Every check must measure the real quantity; never special-case a surface type or setting to skip a measurement. Checks are read-only: work on a copy or restore the lens, otherwise the round is refused (`LENS_MODIFIED_BY_CHECK`). When the design gives no valid value, return `inf`; raise only when the check itself cannot run. Show the demand in plain language, get explicit approval of its content, and record their words with `uv run saos demand confirm --job J --quote "..."`.
+Write `sources/demand.yaml` ([demand.md](demand.md)): the fixed `constants`, the `variables` you may adjust and their ranges, the `objectives` with their pass lines (`must`) and hoped-for values (`wish`), `open_questions`, and a short `summary` of the interview that ends with `发现任何这个demand可能存在的问题，要大胆质疑和询问。` Classifying each condition is your judgement; an unknown real-world fact is an open question, never a variable. Keep it short: no verbatim conversation, no literature details, no restated global rules. Every check must measure the real quantity; never special-case a surface type or setting to skip a measurement. Every check states its preconditions (parts do not intersect, the image is real, enough rays arrive, the quantity covers the whole beam and not only the surviving rays) and returns `inf` when one fails: a number from an invalid state is worse than no number. Checks are read-only: work on a copy or restore the lens, otherwise the round is refused (`LENS_MODIFIED_BY_CHECK`). When the design gives no valid value, return `inf`; raise only when the check itself cannot run. Show the demand in plain language, get explicit approval of its content, and record their words with `uv run saos demand confirm --job J --quote "..."`; the tools keep the full demand text the user saw. When the user answers by choosing an option, the quote must contain the full text of the options shown and the one chosen, not just "c".
 
 ## 2. Recipes
 
@@ -45,11 +45,12 @@ If `skills/recipes/<system>/SKILL.md` matches, read it. Recipes are experience, 
 
 ## 3. Model, understand, describe
 
+- Before you build, check the external preconditions once: the material catalogs the lens needs are installed (`lens describe` warns about materials outside the catalogs), OpticStudio started with the expected licence (`daemon start` reports it), and the tools you plan to use exist. Ask the user once when one is missing; do not work around it silently.
 - Build the lens however suits the system: `lens import`, `lens build`, or `exec` a ZOS-API script that calls `ctx.save_as(...)`.
-- Materials: look in OpticStudio catalogs and `library/` first; if neither has what the design needs, search the web (WebSearch/WebFetch) for datasheets or papers. Record every material's source in `sources/materials.yaml` (format in `src/saos/materials_record.py`; a library entry or an OpticStudio vendor catalog counts as a source). Never invent dispersion or let one index stand for several wavelengths.
+- Materials: look in OpticStudio catalogs and `library/` first; if neither has what the design needs, search the web (WebSearch/WebFetch) for datasheets or papers. Record every material's source in `sources/materials.yaml` (format in `src/saos/materials_record.py`; a library entry or an OpticStudio vendor catalog counts as a source). Never invent dispersion or let one index stand for several wavelengths. Only the parts this design makes must be real catalog or library materials. The sample, immersion media and bought-in parts are environment: declare their surfaces in the notes (`"environment": [indices]`) so a sourced model medium there does not block delivery, and still record their data source and dispersion. Never change the physical setting (for example tissue to water) just to pass a gate.
 - Know what OpticStudio does with every surface type and system setting you rely on; when unsure, read the manual or probe it (`lens operand`, ray traces) before trusting a result.
 - Do a first-order analysis before optimising: whatever this system needs to show that the structure can reach the objectives (for example magnification, stop and pupils, beam sizes at the apertures, the bending each surface must do, what must be given up). If it cannot, go back to the user now.
-- Write notes (`{"surfaces": {"<index>": "what it physically is"}, "assumptions": [...], "first_order": [...]}`) and run `uv run saos lens describe --job J --notes notes.json`; the tools keep them as `notes/model-NNN.json`, and approval needs them. The page (`models/NNN-<lens>/index.html`) lists every surface, material source and index per wavelength, apertures, fields, wavelengths, ray aiming, your notes, layout pictures and automatic warnings. Resolve the warnings or explain them, give the user the page, and after their approval run `uv run saos lens approve --job J --model models/NNN-<lens> --quote "<their words>"`.
+- Write notes (`{"surfaces": {"<index>": "what it physically is"}, "environment": [<indices>], "assumptions": [...], "first_order": [...]}`) and run `uv run saos lens describe --job J --notes notes.json`; the tools keep them as `notes/model-NNN.json`, and approval needs them. The page (`models/NNN-<lens>/index.html`) lists every surface, material source and index per wavelength, apertures, fields, wavelengths, ray aiming, your notes, layout pictures and automatic warnings. Resolve the warnings or explain them, give the user the page, and after their approval run `uv run saos lens approve --job J --model models/NNN-<lens> --quote "<their words>"`.
 
 ## 4. Design in rounds
 
@@ -57,13 +58,23 @@ If `skills/recipes/<system>/SKILL.md` matches, read it. Recipes are experience, 
 - Tools: `lens surfaces/set/save/operand`, `opt vary/merit/local`, `lens analysis TYPE --set KEY=VALUE`, and `exec SCRIPT` for anything ZOS-API can do (`ctx.system`, `ctx.zosapi`, `ctx.args`, `ctx.load`, `ctx.save_as`, `ctx.mark_dirty`, `ctx.path`).
 - Prefer OpticStudio's own optimisers (local DLS, Hammer, global search) and merit operands; make sure the merit function measures what the demand means and cannot be satisfied by a loophole (for example by discarding light or leaving the physical part).
 - Optimise on smooth proxies (RMS spot or wavefront operands, Seidel terms, real-ray constraints); use the demand checks to judge. Step-like checks (ray counts, a field scanned in steps) give an optimiser almost no gradient.
+- An optimiser exploits whatever the target leaves open. Physically impossible states (intersecting parts, a virtual focus, rays missing the image, light leaving the part) must make the target invalid, not cost a linear penalty. A merit value OpticStudio cannot compute (for example 9e+09 when rays fail by total internal reflection) is a diagnosis signal: find the cause before going on, never skip it as noise.
+- When you optimise outside the OpticStudio merit function, record the value you actually optimised with `saos round --merit <value>`; otherwise the ledger shows whatever merit function the lens file holds.
 - Weigh the merit function the way the demand weighs the objectives: one structure rarely meets everything, and the compromise should favour the user's objectives.
 - Record a round after each adjustment: `uv run saos round --job J --tier <tier> --note "<what you did>"`. Tiers, low to high: `local`, `variables`, `materials` (substitute sourced materials), `global`, `structure`. Read the decision (`achieved`, `exhausted`, `limit`, `continue` with `next_tier`); compare rounds by the shortfall, never by the merit value.
 - If the structure must change in a way the approved description does not cover, describe the new model and get it approved before recording rounds on it.
 
 ### Diagnose before you escalate
 
-Before the first optimisation, and again before you move to a higher tier or when a round `brief` sets `review`, think from geometrical optics instead of trying everything:
+Before the first optimisation, and again before you move to a higher tier or when a round `brief` sets `review`, think from geometrical optics instead of trying everything.
+
+First check that the target is reachable at all, in this order; when a step fails, it is a structure question and optimising higher up is wasted:
+
+- conserved quantities and invariants can be met: étendue, the Lagrange invariant, the Petzval sum;
+- one point on axis can be imaged well under every real constraint (apertures, clearances, pass rate, TIR);
+- the full field can be imaged well.
+
+Then find which variables move the target:
 
 1. Name the objective with the largest weighted gap and the mechanism behind it: which aberration or limit (spherical, coma, astigmatism, field curvature, distortion, axial or lateral colour, vignetting, aperture, Lagrange invariant), seen in Seidel terms, ray fans, field curves or pass rates.
 2. Reason which parts of the structure can change that mechanism and which cannot. Some quantities are invariant to whole classes of variables: the Petzval sum depends only on surface powers and indices, so aspheric and freeform terms only trade field curvature for astigmatism. Pick the 3–4 variables your reasoning ranks highest, plus at least one control that should not move the target.
@@ -86,13 +97,18 @@ A built-in change is `surface` + `param` (`radius`, `thickness`, `conic`); anyth
 
 ## 5. Deliver
 
-`uv run saos report --job J` writes `report/index.html` in the user's language: status, the delivered lens (the first achieved round, else the smallest shortfall among deliverable rounds), its materials, and for each unmet goal how far it is off. Give the user the path and say that a tolerance analysis can follow.
+`uv run saos report --job J` writes `report/index.html` in the user's language: status, the delivered lens (the first achieved round, else the smallest shortfall among deliverable rounds), its materials, and for each unmet goal how far it is off. With no valid round it says so instead of naming a "best" lens. Give the user the path and say that a tolerance analysis can follow.
+
+Stopping is a conclusion too. When the evidence says the demand cannot be met with what is allowed, show the user the evidence and the options; when they decide to stop, record it with `uv run saos stop --job J --reason "<why, citing the evidence>" --quote "<their words, with the option text>"`. Only the user's decision stops the rounds; the report then shows the reason and their words.
 
 ## Compute
 
 - OpticStudio is the reference. Write your own tracer or search code only when the number of evaluations makes ZOS-API too slow, and only after the model is approved. Compare it ray by ray with OpticStudio on the same lens and archive the comparison; hand its results back to OpticStudio for refinement and every delivered number.
+- Every number you base a decision on uses one definition: optimisation targets, your own evaluators, first-order estimates and the merit value in the ledger use the same sampling, constraints and definition as the demand checks, or have been compared with the checks on the same lens before you draw a conclusion. A reduced or simplified model (1-D, paraxial, coarse grid) states which constraints it drops, and its key prediction is tested on the real lens before you act on it.
+- Times and numbers in notes and messages come from tool output (results, logs, `saos job show`), never from memory or estimate; label an estimate as one.
 - Before heavy numerics, check what the machine offers (`nvidia-smi`, CuPy); DESIGN.md "环境" has measured numbers for this machine. A GPU pays off only with a fused kernel over a batch of designs × rays.
-- Leave 2 logical cores to the user and use the rest (`saos opt local` does this by default); start your own long-running processes at below-normal priority so the user's work stays responsive. A long run writes a progress file, and you tell the user what is running, where and until when.
+- Leave 2 logical cores to the user and use the rest (`saos opt local` does this by default); start your own long-running processes at below-normal priority so the user's work stays responsive.
+- Long runs are visible and stoppable. `opt local`, `round`, `check`, `probe` and `exec` write the job's `progress.json`; `uv run saos job show <job>` reads it while the daemon is busy. Give `opt local` a `--max-seconds` budget. In a long script call `ctx.progress(stage, **numbers)` at checkpoints; it returns True after `uv run saos job cancel <job>`, and the script then stops at a safe point and keeps what it has (`ctx.cancel_requested()` checks without reporting). A client timeout only stops waiting; the daemon keeps computing until it finishes or is cancelled. Tell the user what is running, where and how to follow it; cut a run short when it stalls instead of holding the instance.
 
 ## Explicit debugging (on-screen)
 

@@ -105,6 +105,17 @@ class ScriptContext:
         self.job.update_state(current_lens=rel, last_saved=rel)
         return rel
 
+    def progress(self, stage: str, **data: Any) -> bool:
+        """长脚本报告进度（写进任务的 progress.json，saos job show 可见）；返回是否收到了取消请求。
+        Report progress from a long script (job's progress.json, shown by saos job show); returns whether a cancel was requested."""
+        self.job.write_progress(stage=str(stage), data=jsonable(data))
+        return self.job.cancel_requested()
+
+    def cancel_requested(self) -> bool:
+        """用户或 agent 执行了 saos job cancel；脚本应在下一个安全点结束并保存已有结果。
+        saos job cancel was run; the script should stop at the next safe point and keep what it has."""
+        return self.job.cancel_requested()
+
     def path(self, rel: str) -> Path:
         """任务目录内的路径；越出任务目录时拒绝。"""
         path = (self.job.root / rel).resolve()

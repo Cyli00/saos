@@ -22,6 +22,7 @@ TEXT: dict[str, tuple[str, str]] = {
     "status.exhausted": ("无法再优化", "Cannot improve further"),
     "status.limit": ("达到轮次上限", "Round limit reached"),
     "status.continue": ("进行中", "In progress"),
+    "status.stopped": ("按用户决定停止", "Stopped by the user"),
     "summary.achieved": ("所有常量、变量范围和目标达标线都已满足。", "Every constant, variable range and objective pass line is met."),
     "summary.exhausted": (
         "自最后一次明显进步以来，允许的每一级手段都试过，目标差距没有再明显缩小。下表列出未达标的项和差距。",
@@ -29,6 +30,8 @@ TEXT: dict[str, tuple[str, str]] = {
     ),
     "summary.limit": ("轮次用完时仍有未达标的项。下表列出差距。", "Some goals were still unmet when the rounds ran out. The table lists the gaps."),
     "summary.continue": ("设计尚未结束，以下是截至最后一轮的状态。", "The design is not finished; this is the state as of the last round."),
+    "summary.stopped": ("用户根据下面的理由决定停止，需求没有全部满足。下表列出未达标的项和差距。",
+                        "The user decided to stop for the reason below; the demand is not fully met. The table lists the unmet items and their gaps."),
     "tier.baseline": ("初始", "Start"),
     "tier.local": ("局部优化", "Local optimisation"),
     "tier.variables": ("放开变量", "More variables"),
@@ -54,6 +57,7 @@ TEXT: dict[str, tuple[str, str]] = {
     "chart.label": ("目标差距随轮次的变化", "Shortfall by round"),
     "chart.round": ("第 {n} 轮", "Round {n}"),
     "chart.x": ("轮次", "Round"),
+    "chart.inf": ("∞：无有效值", "∞: no valid value"),
     "judge.achieved": ("第 {n} 轮所有带达标线的项都已满足", "every item with a pass line is met in round {n}"),
     "judge.limit": ("已用完轮次上限 max_rounds = {cap}", "used up max_rounds = {cap}"),
     "judge.exhausted": (
@@ -61,6 +65,7 @@ TEXT: dict[str, tuple[str, str]] = {
         "G has not shrunk by {rel:.0%} or more since round {n}, and every allowed tier ({tiers}) was tried",
     ),
     "judge.continue": ("尚未终止；当前手段不再见效时，下一个要试的是{tier}", "not finished; when the current approach stops gaining, try {tier} next"),
+    "judge.stopped": ("第 {n} 轮后按用户决定停止。理由：{reason}。用户原话：{quote}", "stopped after round {n} by the user's decision. Reason: {reason}. The user's words: {quote}"),
     "progress": (
         "<b>最后一次明显进步</b>：第 {n} 轮；之后 {k} 轮没有明显进步，还没试过的手段：{untried}",
         "<b>Last clear gain</b>: round {n}; {k} round(s) since without a clear gain; tiers not yet tried: {untried}",
@@ -69,6 +74,10 @@ TEXT: dict[str, tuple[str, str]] = {
     "byline": ("saos 设计报告 · 任务 {job} · 生成于 {time}", "saos design report · job {job} · generated {time}"),
     "deliver": ("<b>交付镜头</b>：{lens}（第 {n} 轮，目标差距 G = {g}）", "<b>Delivered lens</b>: {lens} (round {n}, shortfall G = {g})"),
     "best_so_far": ("<b>目前最好的镜头</b>：{lens}（第 {n} 轮，目标差距 G = {g}）", "<b>Best lens so far</b>: {lens} (round {n}, shortfall G = {g})"),
+    "best_blocked": ("<b>差距最小但不可交付的镜头</b>：{lens}（第 {n} 轮，目标差距 G = {g}），原因见下。",
+                     "<b>Smallest gap, not deliverable</b>: {lens} (round {n}, shortfall G = {g}); see below why."),
+    "no_valid": ("<b>没有有效的设计</b>：所有轮次的目标差距都是 ∞，至少有一项测量的前提不成立（例如没有实焦点、零件交叠、光线到不了像面）。下面列出最后一轮 {lens}（第 {n} 轮）供诊断，它不是可用的设计。",
+                 "<b>No valid design</b>: every round has an infinite shortfall; at least one measurement's precondition fails (no real focus, overlapping parts, rays missing the image). The last round {lens} (round {n}) is listed for diagnosis only; it is not a usable design."),
     "judgement": ("<b>终止判断</b>：{text}", "<b>Stop decision</b>: {text}"),
     "h.demand": ("需求", "Demand"),
     "h.summary": ("需求访谈总结", "Interview summary"),
@@ -83,6 +92,7 @@ TEXT: dict[str, tuple[str, str]] = {
     "th.materials": ("面|材料|来源|各波长折射率", "Surface|Material|Source|Index per wavelength"),
     "mat.model": ("模型玻璃 nd {nd}，Vd {vd}（不是真实材料）", "model glass nd {nd}, Vd {vd} (not a real material)"),
     "mat.catalog": ("目录 {cats}", "catalog {cats}"),
+    "mat.env": ("（环境或外购件）", " (environment or bought-in)"),
     "blocked": ("<b>没有可交付的镜头</b>：所有轮次都还含模型玻璃（第 {surfaces} 面），下面列的是探索中最好的一轮，不能作为设计交付。",
                 "<b>No deliverable lens</b>: every round still uses a model glass (surfaces {surfaces}); the round below is the best exploration result and is not a deliverable design."),
     "blocked.hard": ("<b>没有可交付的镜头</b>：下面这一轮不满足常量或变量范围（{ids}），只是探索中最好的结果，不能作为设计交付。",
@@ -99,10 +109,11 @@ TEXT: dict[str, tuple[str, str]] = {
         "The shortfall G is the weighted sum of the normalised gaps of every item with a pass line; the user's objectives weigh more than those the agent added. Wishes are reported only and do not decide whether the demand is met. A round that breaks a constant or variable range is not deliverable.",
     ),
     "h.process": ("调试过程", "Rounds"),
+    "merit.agent": ("（agent 报告）", " (reported by agent)"),
     "th.rounds": ("轮次|手段|说明|G|评价函数|镜头", "Round|Tier|Note|G|Merit function|Lens"),
     "note.merit": (
-        "评价函数每轮可能被调整，不能跨轮比较；判断进展只看 G。",
-        "The merit function may change between rounds and is not comparable across them; progress is judged by G only.",
+        "评价函数每轮可能被调整，不能跨轮比较；判断进展只看 G。标“agent 报告”的值是 agent 在 OpticStudio 评价函数之外实际优化的目标值，不是 OpticStudio 实测。",
+        "The merit function may change between rounds and is not comparable across them; progress is judged by G only. Values marked \"reported by agent\" are the objective the agent actually optimised outside the OpticStudio merit function, not OpticStudio measurements.",
     ),
     "h.evidence": ("实测依据", "Evidence"),
     "ev.analyses": ("分析导出（{n}）", "Analysis exports ({n})"),
@@ -135,12 +146,12 @@ CSS = """
 main{max-width:1080px;margin:0 auto;padding:24px 16px 64px}h1{font-size:24px;margin:0 0 4px}h2{font-size:18px;margin:32px 0 8px;border-bottom:1px solid var(--line);padding-bottom:4px}
 .muted{color:var(--muted)}.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;margin:12px 0}
 .status{display:inline-block;padding:2px 10px;border-radius:999px;font-weight:600;border:1px solid currentColor}
-.achieved{color:var(--ok)}.exhausted,.limit{color:var(--bad)}.continue{color:var(--warn)}
+.achieved{color:var(--ok)}.exhausted,.limit,.stopped{color:var(--bad)}.continue{color:var(--warn)}
 table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
 th{color:var(--muted);font-weight:600}.num{font-variant-numeric:tabular-nums;white-space:nowrap}.nowrap,th{white-space:nowrap}.pass{color:var(--ok);font-weight:600}.fail{color:var(--bad);font-weight:600}
 blockquote{margin:8px 0;padding:8px 12px;border-left:3px solid var(--accent);background:var(--card)}code{font-size:13px}
 .wrap{overflow-x:auto}svg text{fill:var(--muted);font-size:11px}svg .line{stroke:var(--accent);fill:none;stroke-width:2}svg .axis{stroke:var(--line)}
-svg .dot{fill:var(--accent)}svg .dot.ok{fill:var(--ok)}img{max-width:100%;border:1px solid var(--line);border-radius:6px}
+svg .dot{fill:var(--accent)}svg .dot.ok{fill:var(--ok)}svg .dot.inf{fill:var(--bg);stroke:var(--bad);stroke-width:2}img{max-width:100%;border:1px solid var(--line);border-radius:6px}
 """
 
 
@@ -202,35 +213,51 @@ def evidence_text(item: dict[str, Any], t: Tr) -> str:
 
 
 def chart(rounds: list[dict[str, Any]], t: Tr) -> str:
-    """目标差距 G 随轮次的折线；G = ∞（无法取值）的轮次画在顶部。"""
+    """目标差距 G 随轮次的折线；G = ∞（无有效值）的轮次画在顶部单独的一条带里，空心点，不和有限值混在同一高度。"""
     if not rounds:
         return ""
-    width, height, left, bottom, top = 760, 240, 52, 34, 14
+    width, height, left, bottom, top, band = 760, 240, 52, 34, 14, 22
     finite = [r["shortfall"] for r in rounds if math.isfinite(r["shortfall"])]
     peak = max(finite) if finite else 1.0
     peak = peak if peak > 0 else 1.0
     n = max(len(rounds) - 1, 1)
+    has_inf = len(finite) < len(rounds)
+    # 有 ∞ 时顶部留出一条带 / reserve a band at the top when some rounds are infinite
+    low = top + (band if has_inf else 0)
 
     def x(k: int) -> float:
         return left + (width - left - 16) * k / n
 
     def y(g: float) -> float:
-        g = peak if not math.isfinite(g) else g
-        return top + (height - top - bottom) * (1 - g / peak)
+        if not math.isfinite(g):
+            return top
+        return low + (height - low - bottom) * (1 - g / peak)
 
-    points = " ".join(f"{x(k):.1f},{y(r['shortfall']):.1f}" for k, r in enumerate(rounds))
+    segments, current = [], []
+    for k, r in enumerate(rounds):
+        if math.isfinite(r["shortfall"]):
+            current.append(f"{x(k):.1f},{y(r['shortfall']):.1f}")
+        elif current:
+            segments.append(current)
+            current = []
+    if current:
+        segments.append(current)
+    lines = "".join(f'<polyline class="line" points="{" ".join(seg)}"/>' for seg in segments if len(seg) > 1)
     dots = "".join(
-        f'<circle class="dot{" ok" if r.get("achieved") else ""}" cx="{x(k):.1f}" cy="{y(r["shortfall"]):.1f}" r="4">'
+        f'<circle class="dot{" ok" if r.get("achieved") else ""}{" inf" if not math.isfinite(r["shortfall"]) else ""}" cx="{x(k):.1f}" cy="{y(r["shortfall"]):.1f}" r="4">'
         f'<title>{t("chart.round", n=r["round"])} · {e(t.tier(r.get("tier")))} · G = {fmt(r["shortfall"])}</title></circle>'
         f'<text x="{x(k):.1f}" y="{height - 18}" text-anchor="middle">{r["round"]}</text>'
         for k, r in enumerate(rounds)
     )
+    inf_axis = (f'<text x="{left - 6}" y="{top + 4}" text-anchor="end">∞</text>'
+                f'<line class="axis" x1="{left}" y1="{low - band / 2:.1f}" x2="{width - 8}" y2="{low - band / 2:.1f}" stroke-dasharray="4 4"/>') if has_inf else ""
+    legend = f'<text x="{width - 8}" y="{top + 4}" text-anchor="end">{t("chart.inf")}</text>' if has_inf else ""
     return (
         f'<svg viewBox="0 0 {width} {height}" width="100%" role="img" aria-label="{t("chart.label")}">'
         f'<line class="axis" x1="{left}" y1="{height - bottom}" x2="{width - 8}" y2="{height - bottom}"/>'
-        f'<line class="axis" x1="{left}" y1="{top}" x2="{left}" y2="{height - bottom}"/>'
-        f'<text x="{left - 6}" y="{top + 4}" text-anchor="end">{fmt(peak)}</text><text x="{left - 6}" y="{height - bottom}" text-anchor="end">0</text>'
-        f'<polyline class="line" points="{points}"/>{dots}<text x="{(width + left) / 2}" y="{height - 2}" text-anchor="middle">{t("chart.x")}</text></svg>'
+        f'<line class="axis" x1="{left}" y1="{top}" x2="{left}" y2="{height - bottom}"/>{inf_axis}{legend}'
+        f'<text x="{left - 6}" y="{low + 4}" text-anchor="end">{fmt(peak)}</text><text x="{left - 6}" y="{height - bottom}" text-anchor="end">0</text>'
+        f'{lines}{dots}<text x="{(width + left) / 2}" y="{height - 2}" text-anchor="middle">{t("chart.x")}</text></svg>'
     )
 
 
@@ -241,6 +268,9 @@ def judgement(decision: dict[str, Any], stop: dict[str, Any], t: Tr) -> str:
         return t("judge.achieved", n=decision["round"])
     if status == "limit":
         return t("judge.limit", cap=stop["max_rounds"])
+    if status == "stopped":
+        s = decision["stopped"]
+        return t("judge.stopped", n=s["round"], reason=s["reason"], quote=s["quote"])
     if status == "exhausted":
         tiers = t("list_sep").join(t.tier(x) for x in ledger.TIERS if x in stop["tiers"])
         return t("judge.exhausted", n=decision["last_gain_round"], rel=stop["rel"], tiers=tiers)
@@ -261,13 +291,16 @@ def build(job: jobs.Job) -> dict[str, Any]:
     if ledger.version(rounds[-1]) != current:
         raise SaosError(ErrorCode.SPEC_CHANGED, "no round matches the current demand and check scripts; record a new round before reporting")
     rounds = ledger.current_window(rounds)
-    decision = ledger.decide(rounds, d["stop"])
+    decision = ledger.decide(rounds, d["stop"], ledger.stop_for(job.root, current[0]))
     final = rounds[-1]
     # 只交付不含模型玻璃、满足硬条件的轮次；都不满足时取最好的一轮并标明不可交付
     # only rounds without a model glass that keep the hard conditions are deliverable; otherwise show the best one marked as not deliverable
     candidates = [r for r in rounds if ledger.deliverable(r)] or rounds
     best = min(candidates, key=lambda r: (r["shortfall"], r["round"]))
     deliver = final if final.get("achieved") and ledger.deliverable(final) else best
+    if not math.isfinite(deliver["shortfall"]):
+        # 没有任何有效轮次时，列最后一轮供诊断，而不是挑一个"最好"的 / with no valid round, show the last one for diagnosis instead of a "best"
+        deliver = final
     eval_file = job.root / deliver["evaluation"]
     if not eval_file.is_file():
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"missing evaluation for round {deliver['round']}")
@@ -277,6 +310,15 @@ def build(job: jobs.Job) -> dict[str, Any]:
     shown = {**evaluation["demand"], "summary": d["summary"], "open_questions": d.get("open_questions") or [], "lang": d.get("lang")}
     return {"demand": shown, "confirmed": demand.confirmation_for(job.root, current[0]), "rounds": rounds, "decision": decision,
             "deliver": deliver, "items": evaluation["items"], "blocked": not ledger.deliverable(deliver)}
+
+
+def headline(status: str, deliver: dict[str, Any], blocked: bool | None) -> str:
+    """报告开头那一行：交付、目前最好、不可交付或没有有效设计。"""
+    if not math.isfinite(deliver["shortfall"]):
+        return "no_valid"
+    if blocked:
+        return "best_blocked"
+    return "best_so_far" if status == "continue" else "deliver"
 
 
 def header_row(spec: str) -> str:
@@ -338,7 +380,7 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
         )
     round_rows = "".join(
         f'<tr><td class="num">{r["round"]}</td><td>{e(t.tier(r.get("tier")))}</td><td>{e(r.get("note", ""))}</td>'
-        f'<td class="num">{fmt(r["shortfall"])}</td><td class="num">{fmt(r.get("merit"))}</td><td><a href="../lenses/{e(r["file"])}">{e(r["file"])}</a></td></tr>'
+        f'<td class="num">{fmt(r["shortfall"])}</td><td class="num">{fmt(r.get("merit"))}{t("merit.agent") if r.get("merit_source") == "agent" else ""}</td><td><a href="../lenses/{e(r["file"])}">{e(r["file"])}</a></td></tr>'
         for r in rounds
     )
     confirmed = (data.get("confirmed") or {}).get("quote", "")
@@ -375,6 +417,8 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
         else:
             name, source = m.get("name") or "", t("mat.catalog", cats=", ".join(m.get("catalogs") or []))
         n = " / ".join(f"{v:.6f}" for v in m.get("n") or [])
+        if m["surface"] in (deliver.get("environment") or []):
+            source += t("mat.env")
         mat_rows.append(f'<tr><td class="num">{m["surface"]}</td><td>{e(name)}</td><td>{e(source)}</td><td class="num">{e(n)}</td></tr>')
     model_line = f'<p class="muted">{t("model_ok", model=e(deliver["model"]))}</p>' if deliver.get("model") else ""
     materials = (f'<div class="wrap"><table><thead><tr>{header_row(t("th.materials"))}</tr></thead><tbody>{"".join(mat_rows)}</tbody></table></div>'
@@ -384,7 +428,7 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
 <p class="muted">{t('byline', job=e(job.id), time=e(jobs.now_iso()))}</p>
 <h1>{e(job.read_state().get('name', job.id))} <span class="status {status}">{t('status.' + status)}</span></h1>
 <p>{t('summary.' + status)}</p>
-<div class="card">{t('best_so_far' if status == 'continue' else 'deliver', lens=lens_link, n=deliver['round'], g=fmt(deliver['shortfall']))}
+<div class="card">{t(headline(status, deliver, data.get('blocked')), lens=lens_link, n=deliver['round'], g=fmt(deliver['shortfall']))}
 <br>{t('judgement', text=e(judgement(decision, h['stop'], t)))}{progress}</div>
 {blocked}
 <h2>{t('h.materials', n=deliver['round'])}</h2>{materials}

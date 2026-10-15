@@ -126,7 +126,8 @@ def approvals(job: jobs.Job) -> list[dict[str, Any]]:
     for f in sorted(root.glob(f"*/{APPROVAL_FILE}")) if root.is_dir() else []:
         record = json.loads(f.read_text(encoding="utf-8"))
         model = json.loads((f.parent / "model.json").read_text(encoding="utf-8"))
-        out.append({**record, "fingerprint": model["fingerprint"]})
+        env = ((model.get("notes") or {}).get("environment")) or []
+        out.append({**record, "fingerprint": model["fingerprint"], "environment": [int(i) for i in env]})
     return out
 
 
@@ -138,7 +139,7 @@ def require_approved(job: jobs.Job, desc: dict[str, Any]) -> dict[str, Any]:
     found = approvals(job)
     for record in reversed(found):
         if record["fingerprint_sha"] == sha:
-            return {"model": record["model"], "fingerprint_sha": sha}
+            return {"model": record["model"], "fingerprint_sha": sha, "environment": record["environment"]}
     details: dict[str, Any] = {"fingerprint_sha": sha}
     if found:
         details["latest_approved"] = found[-1]["model"]

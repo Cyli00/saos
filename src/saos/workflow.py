@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -65,8 +66,8 @@ def brief(d: dict[str, Any], evaluation: dict[str, Any], decision: dict[str, Any
     stalled = decision.get("rounds_without_gain", 0) >= REVIEW_AFTER
     escalating = decision.get("next_tier") in ("global", "structure")
     review = None
-    if decision["status"] in ("exhausted", "limit") or stalled or escalating:
-        why = (f"rounds stopped ({decision['status']})" if decision["status"] in ("exhausted", "limit")
+    if decision["status"] in ("exhausted", "limit", "stopped") or stalled or escalating:
+        why = (f"rounds stopped ({decision['status']})" if decision["status"] in ("exhausted", "limit", "stopped")
                else f"{decision['rounds_without_gain']} rounds without a clear gain" if stalled
                else f"next tier is {decision['next_tier']}")
         review = (f"{why}. Before spending more compute, reread the demand summary and your first-order analysis. If the demand, "
@@ -98,7 +99,7 @@ def _set_aside(ctx, target) -> None:
         f.rename(folder / f"{f.stem}-{stamp}{f.suffix}")
 
 
-def record_round(ctx, tier: str | None = None, note: str = "") -> dict[str, Any]:
+def record_round(ctx, tier: str | None = None, note: str = "", merit: float | None = None) -> dict[str, Any]:
     if ctx.lens is None:
         raise SaosError(ErrorCode.NO_LENS_LOADED, f"job {ctx.job.id} has no lens loaded")
     h, sha, confirmation = preflight(ctx.job.root)
@@ -117,7 +118,7 @@ def record_round(ctx, tier: str | None = None, note: str = "") -> dict[str, Any]
             raise SaosError(ErrorCode.BAD_ARGS, f"tier must be one of {h['stop']['tiers']} (ladder: {', '.join(TIERS)})")
         last = history[-1]
         if (sha, method_sha) == ledger.version(last):
-            status = ledger.decide(history, h["stop"])["status"]
+            status = ledger.decide(history, h["stop"], ledger.stop_for(ctx.job.root, sha))["status"]
             if status != "continue":
                 raise SaosError(ErrorCode.BAD_ARGS, f"rounds already stopped ({status}); review the demand with the user to continue", {"status": status})
             if last.get("lens_sha") == lens_sha:
@@ -125,10 +126,18 @@ def record_round(ctx, tier: str | None = None, note: str = "") -> dict[str, Any]
                 # the same lens under the same version again: most likely a retry after a timeout; point to the existing round
                 raise SaosError(ErrorCode.DUPLICATE_ROUND, f"round {last['round']} already recorded this lens under the same demand and checks",
                                 {"round": last["round"], "file": last.get("file"), "evaluation": last.get("evaluation")})
-    try:
-        merit = float(ctx.backend.merit_value())
-    except Exception:  # noqa: BLE001 - 没有评价函数或后端不支持时只是不记录 / no merit function: just not recorded
-        merit = None
+    merit_from_agent = merit is not None
+    if merit is not None:
+        # agent 在 OpticStudio 评价函数之外优化时，记录它实际优化的目标值
+        # when the agent optimised outside the OpticStudio merit function, record the value it actually optimised
+        if isinstance(merit, bool) or not isinstance(merit, (int, float)) or not math.isfinite(merit):
+            raise SaosError(ErrorCode.BAD_ARGS, f"--merit must be a finite number (got {merit!r})")
+        merit = float(merit)
+    else:
+        try:
+            merit = float(ctx.backend.merit_value())
+        except Exception:  # noqa: BLE001 - 没有评价函数或后端不支持时只是不记录 / no merit function: just not recorded
+            merit = None
     evaluation = demand.evaluate(ctx, h, scripts)
     # 判定不能改动镜头：否则归档的镜头和测得的数值对不上，本轮不记录
     # checks must not change the lens; otherwise the archived lens would not be the one measured, so no round is recorded
@@ -162,6 +171,7 @@ def record_round(ctx, tier: str | None = None, note: str = "") -> dict[str, Any]
         "values": {i["id"]: i["value"] for i in evaluation["items"]},
         "failing": {i["id"]: i["shortfall"] for i in evaluation["items"] if i.get("shortfall", 0) > 0},
         "merit": merit,
+        **({"merit_source": "agent"} if merit_from_agent else {}),
         "demand_sha": sha,
         "method_sha": method_sha,
         "confirmation": confirmation,
@@ -169,13 +179,15 @@ def record_round(ctx, tier: str | None = None, note: str = "") -> dict[str, Any]
         # 所用材料逐轮留档；含模型玻璃的轮次只是探索，不能交付
         # materials are archived per round; a round with a model glass is exploration only and cannot be delivered
         "materials": model_gate.materials(desc),
-        "model_glass": model_gate.model_glass_surfaces(desc),
+        # 环境面和外购件（建模说明中声明）不受模型玻璃限制 / environment and bought-in surfaces (declared in the approved model) are exempt
+        "model_glass": [i for i in model_gate.model_glass_surfaces(desc) if i not in approved["environment"]],
+        "environment": approved["environment"],
         "time": jobs.now_iso(),
     }
     ctx.job.seal(archived)
     # 写进 ledger 是本轮完成的标志；之前任何一步失败都不留下轮次
     # appending to the ledger is what completes a round; a failure before this leaves no round behind
     ledger.append(path, record)
-    decision = ledger.decide(history + [record], h["stop"])
+    decision = ledger.decide(history + [record], h["stop"], ledger.stop_for(ctx.job.root, sha))
     ctx.job.update_state(round=number, round_status=decision["status"])
     return {"record": record, "decision": decision, "brief": brief(h, evaluation, decision), "evaluation": evaluation}

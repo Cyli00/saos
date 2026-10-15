@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import math
 import json
+import re
 
 import pytest
 import yaml
 
-from saos import demand, jobs, ledger, report
+from saos import config, demand, jobs, ledger, report
 from saos.backend.fake import FakeBackend
 from saos.daemon import Daemon
 from saos.protocol import ErrorCode, SaosError
@@ -461,7 +462,7 @@ def test_blocking_question_stops_rounds_and_optimisation(setup):
         assert refused["code"] == ErrorCode.DEMAND_BLOCKED and refused["details"]["blocking_questions"] == ["目标脑区是哪里？"]
     # 问题不改变需求版本：用户回答后去掉 blocking，原确认仍有效
     write_demand(job, {**asked, "open_questions": asked["open_questions"][1:]}, confirm=None)
-    daemon.backend.optimize = lambda cycles, cores: {"merit": 1.0}  # 假后端没有优化器 / the fake backend has no optimiser
+    daemon.backend.optimize = lambda cycles, cores, **kw: {"merit": 1.0}  # 假后端没有优化器 / the fake backend has no optimiser
     assert call(daemon, "opt.local", job=job.id)["ok"]
     result = call(daemon, "round.record", job=job.id)["result"]
     assert result["brief"]["open_questions"] == ["染料？"] and result["brief"]["reminder"] == LINE
@@ -587,3 +588,136 @@ def test_probe_plan_is_checked(setup, plan):
     daemon, job = setup
     write_demand(job, DEMAND, confirm=None)
     assert call(daemon, "probe.run", job=job.id, plan=plan)["error"]["code"] == ErrorCode.BAD_ARGS
+
+
+def test_probe_stops_when_the_target_has_no_valid_value(setup):
+    """前提不成立（例如没有实焦点）时不做扰动，提示先确认可行性。"""
+    daemon, job = setup
+    (job.root / "checks").mkdir()
+    (job.root / "checks" / "virtual.py").write_text("def run(ctx):\n    return float('inf')\n", encoding="utf-8")
+    write_demand(job, demand_with({**LENGTH, "check": {"script": "checks/virtual.py"}}), confirm=None)
+    result = call(daemon, "probe.run", job=job.id, plan=probe_plan(T1, R1, measure=["length"]))["result"]
+    assert result["probes"] == [] and "feasibility ladder" in result["review"][0]
+
+
+def test_stop_needs_the_users_words_and_ends_the_rounds(setup):
+    daemon, job = setup
+    write_demand(job, DEMAND)
+    with pytest.raises(SaosError):
+        ledger.record_stop(job.root, demand.digest(demand.validate(DEMAND)), "no real focus", "")  # 没有轮次、没有原话
+    call(daemon, "round.record", job=job.id)
+    sha = demand.digest(demand.validate(DEMAND))
+    with pytest.raises(SaosError):
+        ledger.record_stop(job.root, sha, "no real focus", " ")
+    stop = ledger.record_stop(job.root, sha, "F20: no real focus even on axis", "c：保持现结构")
+    assert stop["round"] == 0
+    daemon.backend.lens["surfaces"][1]["radius"] = 45.0
+    refused = call(daemon, "round.record", job=job.id, tier="local")["error"]
+    assert refused["code"] == ErrorCode.BAD_ARGS and refused["details"]["status"] == "stopped"
+    report.write(job, lang="zh")
+    html = (job.root / "report" / "index.html").read_text(encoding="utf-8")
+    assert "按用户决定停止" in html and "F20: no real focus even on axis" in html and "c：保持现结构" in html
+    # 新版本需求重新开始，停止不再适用 / a new demand version starts afresh
+    write_demand(job, demand_with({**LENGTH, "must": {"max": 99.0}}), confirm="改成 99")
+    assert call(daemon, "round.record", job=job.id, tier="local")["ok"]
+
+
+def test_report_says_no_valid_design_and_draws_infinity_apart(setup):
+    daemon, job = setup
+    (job.root / "checks").mkdir()
+    (job.root / "checks" / "virtual.py").write_text("def run(ctx):\n    return float('inf')\n", encoding="utf-8")
+    write_demand(job, demand_with({**LENGTH, "check": {"script": "checks/virtual.py"}}))
+    call(daemon, "round.record", job=job.id)
+    data = report.build(job)
+    assert data["deliver"]["shortfall"] == math.inf
+    html = report.render(job, data, "zh")
+    assert "没有有效的设计" in html and "目前最好的镜头" not in html
+    svg = report.chart(rounds_of([math.inf, 4.0, 2.0], ["baseline", "local", "local"]), report.Tr("en"))
+    assert "∞: no valid value" in svg and 'class="dot inf"' in svg
+    # ∞ 的点在顶部带里，比最大有限值高 / the ∞ dot sits in the top band, above the largest finite value
+    ys = [float(v) for v in re.findall(r'cy="([0-9.]+)"', svg)]
+    assert ys[0] < ys[1] < ys[2]
+
+
+def test_environment_surfaces_do_not_block_delivery(setup):
+    """建模说明中声明为环境的面用模型介质，不阻止交付；要制造的零件用模型玻璃仍然阻止。"""
+    daemon, job = setup
+    write_demand(job, demand_with({**LENGTH, "must": {"max": 120.0}}))
+    daemon.backend.lens["surfaces"][2]["material_source"] = {"kind": "model", "nd": 1.36, "vd": 50.0}
+    notes = {**NOTES, "environment": [2]}
+    folder = daemon.handle({"op": "lens.describe", "args": {"job": job.id, "notes": notes}})["result"]
+    assert any("外购件" in w or "bought-in" in w for w in folder["warnings"])
+    assert call(daemon, "lens.approve", job=job.id, model=folder["folder"], quote="样品介质按模型")["ok"]
+    record = call(daemon, "round.record", job=job.id)["result"]["record"]
+    assert record["model_glass"] == [] and record["environment"] == [2] and ledger.deliverable(record)
+    bad = daemon.handle({"op": "lens.describe", "args": {"job": job.id, "notes": {**NOTES, "environment": [99]}}})
+    assert bad["error"]["code"] == ErrorCode.BAD_ARGS
+
+
+def test_confirmation_keeps_what_the_user_saw(setup):
+    daemon, job = setup
+    write_demand(job, DEMAND)
+    record = demand.confirmations(job.root)[-1]
+    assert "content" in record and "总长不超过 95 mm" in record["content"] and LINE in record["content"]
+
+
+def test_agent_reported_merit_is_marked(setup):
+    daemon, job = setup
+    write_demand(job, DEMAND)
+    r0 = call(daemon, "round.record", job=job.id)["result"]["record"]
+    assert "merit_source" not in r0
+    daemon.backend.lens["surfaces"][1]["radius"] = 45.0
+    r1 = call(daemon, "round.record", job=job.id, tier="local", merit=0.25)["result"]["record"]
+    assert r1["merit"] == 0.25 and r1["merit_source"] == "agent"
+    report.write(job, lang="zh")
+    assert "（agent 报告）" in (job.root / "report" / "index.html").read_text(encoding="utf-8")
+
+
+def test_long_operations_report_progress_and_honour_cancel(setup, monkeypatch):
+    """长操作写 progress.json；旧的取消请求在开始时清掉；脚本、优化和 probe 都能收到取消。"""
+    daemon, job = setup
+    write_demand(job, DEMAND)
+    job.request_cancel()  # 上一次留下的请求，不该影响新操作 / a stale request must not affect a new operation
+    assert call(daemon, "round.record", job=job.id)["ok"]
+    progress = job.read_progress()
+    assert progress["op"] == "round.record" and progress["status"] == "done" and not job.cancel_requested()
+
+    source = "def run(ctx):\n    first = ctx.progress('step', i=1)\n    ctx.job.request_cancel()\n    return [first, ctx.progress('step', i=2)]\n"
+    assert call(daemon, "script.exec", job=job.id, name="steps", source=source, args={})["result"]["result"] == [False, True]
+    assert job.read_progress()["data"] == {"i": 2} and job.read_progress()["status"] == "done"
+
+    seen = {}
+
+    def optimize(cycles, cores, *, max_seconds=None, on_progress=None, should_cancel=None):
+        on_progress({"progress": 10, "merit": 2.0, "elapsed_s": 0.5})
+        job.request_cancel()
+        seen.update(cores=cores, max_seconds=max_seconds, cancel=should_cancel())
+        return {"stopped_by": "cancel"}
+
+    daemon.backend.optimize = optimize
+    assert call(daemon, "opt.local", job=job.id, max_seconds=30)["result"]["stopped_by"] == "cancel"
+    assert seen == {"cores": config.compute_cores(), "max_seconds": 30, "cancel": True}
+    assert job.read_progress()["merit"] == 2.0
+
+    # probe 在第一次扰动开始时收到取消 / the probe gets a cancel as its first perturbation starts
+    original = jobs.Job.write_progress
+
+    def cancel_on_first_probe(self, **fields):
+        if fields.get("stage") == "probe t1-minus":
+            self.request_cancel()
+        return original(self, **fields)
+
+    monkeypatch.setattr(jobs.Job, "write_progress", cancel_on_first_probe)
+    refused = call(daemon, "probe.run", job=job.id, plan=probe_plan(T1, R1))["error"]
+    monkeypatch.setattr(jobs.Job, "write_progress", original)
+    assert refused["code"] == ErrorCode.CANCELLED and job.read_progress()["status"] == "cancelled"
+
+
+def test_job_show_and_cancel_work_without_the_daemon(saos_home):
+    from saos import cli
+
+    job = jobs.create_job("watch")
+    job.write_progress(op="script.exec", status="running", stage="search 3/10")
+    shown = cli.cmd_job(cli.build_parser().parse_args(["job", "show", job.id]))
+    assert shown["progress"]["stage"] == "search 3/10" and shown["cancel_requested"] is False
+    assert cli.cmd_job(cli.build_parser().parse_args(["job", "cancel", job.id]))["cancel_requested"] and job.cancel_requested()

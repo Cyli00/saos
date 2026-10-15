@@ -34,6 +34,10 @@ def now_iso() -> str:
 
 
 SEALS_FILE = "seals.jsonl"
+# 长时间计算的进度和取消请求：工具写、任何时候都能直接读，不经过可能正忙的后台进程
+# progress of a long computation and a cancel request: written by the tools, readable at any time without the busy daemon
+PROGRESS_FILE = "progress.json"
+CANCEL_FILE = "cancel.request"
 # lenses/ 下的归档目录：工具写入一次，之后不再改 / archive folders under lenses/: written once by the tools
 ARCHIVE_LENS_DIRS = ("rounds", "captures")
 
@@ -123,6 +127,30 @@ class Job:
             elif sha256_file(f) != sha:
                 problems.append({"path": rel, "problem": "changed"})
         return problems
+
+    def write_progress(self, **fields: Any) -> dict[str, Any]:
+        """合并写入 progress.json（原子替换）。/ Merge fields into progress.json (atomic replace)."""
+        current = self.read_progress() or {}
+        current.update(fields, updated=now_iso())
+        write_json(self.root / PROGRESS_FILE, current)
+        return current
+
+    def read_progress(self) -> dict[str, Any] | None:
+        path = self.root / PROGRESS_FILE
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    def request_cancel(self) -> dict[str, Any]:
+        (self.root / CANCEL_FILE).write_text(now_iso(), encoding="utf-8")
+        return {"job": self.id, "cancel_requested": True, "progress": self.read_progress()}
+
+    def cancel_requested(self) -> bool:
+        return (self.root / CANCEL_FILE).is_file()
+
+    def clear_cancel(self) -> None:
+        (self.root / CANCEL_FILE).unlink(missing_ok=True)
 
     def append_log(self, record: dict[str, Any]) -> None:
         line = json.dumps({"time": now_iso(), **record}, ensure_ascii=False)

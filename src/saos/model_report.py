@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from saos import i18n, jobs, materials_record, model_gate
+from saos.protocol import ErrorCode, SaosError
 from saos.report import CSS, e, fmt, header_row
 
 TEXT: dict[str, tuple[str, str]] = {
@@ -74,6 +75,11 @@ TEXT: dict[str, tuple[str, str]] = {
         "第 {s} 面用的是模型玻璃（nd {nd}，Vd {vd}），不对应任何真实材料。交付前应换成有来源的牌号（OpticStudio 目录或项目材料库 library/materials/）。",
         "Surface {s} uses a model glass (nd {nd}, Vd {vd}) that is no real material. Replace it with a sourced material (an OpticStudio catalog or library/materials/) before delivery.",
     ),
+    "w.env_model_material": (
+        "第 {s} 面是环境或外购件（不由本设计制造），用的是模型介质（nd {nd}，Vd {vd}）。它不阻止交付，但须在 sources/materials.yaml 写明数据来源，并覆盖各工作波长的色散。",
+        "Surface {s} is environment or a bought-in part (not made by this design) and uses a model medium (nd {nd}, Vd {vd}). It does not block delivery, "
+        "but record its data source in sources/materials.yaml, covering the dispersion at every working wavelength.",
+    ),
     "w.curved_fresnel": (
         "第 {s} 面是 {type}，但基底半径 {r}、圆锥 {k} 不为平面。这类面的半径和圆锥定义的是实际基底形状（光线在弯曲基底上求交），多项式只改变局部折射斜率；若想要平板，应把半径设为无穷、圆锥设为 0，并按实际矢高检查厚度和相交。",
         "Surface {s} is {type} with base radius {r} and conic {k}, i.e. not flat. Radius and conic define the physical substrate (rays intersect the curved base); "
@@ -122,6 +128,13 @@ def _flat(radius: float) -> bool:
     return math.isinf(radius) or abs(radius) > 1e9
 
 
+def environment_surfaces(notes: dict[str, Any] | None) -> list[int]:
+    """notes 里声明为环境或外购件的面（样品、浸没介质、买来的管子等），只有要制造的零件受模型玻璃的交付限制。
+    Surfaces the notes declare as environment or bought-in parts (sample, immersion medium, a bought tube);
+    only the parts this design makes are bound by the model-glass delivery rule."""
+    return [int(i) for i in (notes or {}).get("environment") or []]
+
+
 def checks(desc: dict[str, Any], notes: dict[str, Any] | None = None, recorded: set[str] | None | bool = False) -> list[tuple[str, dict[str, Any]]]:
     """确定性的建模检查，返回 (代码, 参数)。recorded：材料来源记录里的牌号；None 表示没有记录文件，False 表示不检查。
     Deterministic model checks, returning (code, arguments). recorded: names in the material source record;
@@ -138,10 +151,12 @@ def checks(desc: dict[str, Any], notes: dict[str, Any] | None = None, recorded: 
                 out.append(("unrecorded_material", {"list": ", ".join(missing)}))
     surfaces = desc["surfaces"]
     last = len(surfaces) - 1
+    environment = set(environment_surfaces(notes))
     for s in surfaces:
         src = s.get("material_source") or {}
         if src.get("kind") == "model":
-            out.append(("model_material", {"s": s["index"], "nd": fmt(src.get("nd")), "vd": fmt(src.get("vd"))}))
+            code = "env_model_material" if s["index"] in environment else "model_material"
+            out.append((code, {"s": s["index"], "nd": fmt(src.get("nd")), "vd": fmt(src.get("vd"))}))
         if src.get("kind") == "catalog" and not src.get("catalogs"):
             out.append(("uncatalogued", {"s": s["index"], "name": src.get("name")}))
         if "Fresnel" in str(s.get("type")) and (not _flat(float(s["radius"])) or float(s.get("conic", 0.0)) != 0.0):
@@ -300,6 +315,9 @@ def render(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[str, A
 
 
 def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, Any] | None, lens: str, lang: str | None) -> dict[str, Any]:
+    env = (notes or {}).get("environment")
+    if env is not None and not (isinstance(env, list) and all(isinstance(i, int) and not isinstance(i, bool) and 0 <= i < len(desc["surfaces"]) for i in env)):
+        raise SaosError(ErrorCode.BAD_ARGS, f"notes.environment must list surface indices 0–{len(desc['surfaces']) - 1} (environment or bought-in parts)")
     from saos.protocol import write_json
 
     chosen = i18n.resolve(lang, _demand_lang(job))

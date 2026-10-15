@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -851,7 +852,11 @@ class ZosBackend(Backend):
             rows.append({"row": i, "type": kind, "target": float(row.Target), "weight": float(row.Weight), "value": float(row.Value), "contribution": float(row.Contribution)})
         return rows
 
-    def optimize(self, cycles: str, cores: int | None = None) -> dict[str, Any]:
+    def optimize(self, cycles: str, cores: int | None = None, *, max_seconds: float | None = None,
+                 on_progress=None, should_cancel=None) -> dict[str, Any]:
+        """异步运行局部优化：边跑边报告进度，超时或收到取消请求时调用 Cancel，保留已经得到的结果。
+        Run the local optimisation asynchronously: report progress while it runs, call Cancel on a timeout or a cancel
+        request, and keep what it reached."""
         zosapi = _load_zosapi(self.root)
         names = {"auto": "Automatic", "1": "Fixed_1_Cycle", "5": "Fixed_5_Cycles", "10": "Fixed_10_Cycles", "50": "Fixed_50_Cycles"}
         if cycles not in names:
@@ -862,13 +867,29 @@ class ZosBackend(Backend):
             tool.Cycles = getattr(zosapi.Tools.Optimization.OptimizationCycles, names[cycles])
             if cores:
                 tool.NumberOfCores = int(cores)
-            tool.RunAndWaitForCompletion()
+            started = time.monotonic()
+            stopped_by = None
+            tool.Run()
+            while tool.IsRunning:
+                time.sleep(0.5)
+                elapsed = time.monotonic() - started
+                if on_progress is not None:
+                    on_progress({"progress": int(tool.Progress), "merit": float(tool.CurrentMeritFunction), "elapsed_s": round(elapsed, 1)})
+                if stopped_by is None and should_cancel is not None and should_cancel():
+                    stopped_by = "cancel"
+                elif stopped_by is None and max_seconds is not None and elapsed > max_seconds:
+                    stopped_by = "timeout"
+                if stopped_by is not None and tool.CanCancel:
+                    tool.Cancel()
+            tool.WaitForCompletion()
             return {
                 "initial_merit": float(tool.InitialMeritFunction),
                 "final_merit": float(tool.CurrentMeritFunction),
                 "variables": int(tool.Variables),
                 "targets": int(tool.Targets),
                 "succeeded": bool(tool.Succeeded),
+                "stopped_by": stopped_by,
+                "elapsed_s": round(time.monotonic() - started, 1),
             }
         finally:
             tool.Close()
