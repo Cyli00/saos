@@ -34,6 +34,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `saos lens screenshot --job J [--label L]` | 显性调试：把 OpticStudio 的可见窗口截成 PNG，存为任务的 `screens/NNN-L-K.png`（PrintWindow，被遮挡也能截；最小化的窗口跳过） |
 | `saos demand show --job J` | 校验需求单 `sources/demand.yaml`，给出版本哈希、确认记录、待确认问题和访谈总结，不连接 OpticStudio |
 | `saos demand confirm --job J --quote "<用户原话>"` | 记录用户对当前需求单版本的确认，写入 `confirmations.jsonl` |
+| `saos probe --job J --plan PLAN.json` | 扰动诊断：按 agent 事先写下的预测，对 1–6 个变量（至少一个阴性对照）各取 ±delta，带补偿量（`quick_focus` 或任务内脚本）实测需求单各项，给出按目标影响排序、预测与实测不符的项和审视提醒。每次都从同一份基准副本重新加载，结束后恢复镜头；计划、基准副本和每次测量存到 `probes/NNN/` 并封存。不需要需求单已确认。格式见 `skills/saos/SKILL.md`「Diagnose before you escalate」 |
 | `saos check --job J` | 按需求单对当前镜头逐项实测和判定，不记录。需求单未确认时也能用，便于整理需求时先看数值 |
 | `saos round --job J [--tier local\|variables\|materials\|global\|structure] [--note TEXT]` | 记录一个调试轮次：存为 `lenses/rounds/rNNN.zmx`，逐项实测判定（全文存为 `evaluations/NNN/result.json`），写入 `ledger.jsonl`，返回终止判断（continue / achieved / exhausted / limit）、还没试过的层级和需求提要 `brief`。第 0 轮不填 tier。当前需求单版本未确认（`DEMAND_NOT_CONFIRMED`）、有 blocking 待确认问题（`DEMAND_BLOCKED`）、已经终止、或镜头结构与已确认的建模说明不一致（`MODEL_NOT_APPROVED`）时拒绝。每轮记下所用材料；含模型玻璃或不满足常量、变量范围的轮次不能交付 |
 | `saos report --job J [--lang zh\|en]` | 由需求单和 ledger 生成交付报告 `report/index.html`，不连接 OpticStudio；语言见「报告语言」 |

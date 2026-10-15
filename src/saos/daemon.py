@@ -113,6 +113,7 @@ class Daemon:
             "opt.local": self.op_optimize,
             "script.exec": self.op_exec,
             "demand.check": self.op_check,
+            "probe.run": self.op_probe,
             "round.record": self.op_round,
         }
 
@@ -508,6 +509,14 @@ class Daemon:
             # 实测只读的 Zernike 拟合也会让 NeedsSave 置位，所以这样做偏保守
             if self.loaded is not None and self.backend.healthy() and self.backend.needs_save():
                 self.loaded.dirty = True
+
+    def op_probe(self, args: dict[str, Any]) -> dict[str, Any]:
+        """按 agent 写下的预测做扰动诊断，不改动当前镜头。"""
+        from saos import probe
+
+        job = self._job(args)
+        self._require_loaded(job)
+        return probe.run(scripting.ScriptContext(self, job, {}), _arg(args, "plan", dict))
 
     def op_check(self, args: dict[str, Any]) -> dict[str, Any]:
         """按需求对当前镜头逐项取值判定，不记录轮次。"""

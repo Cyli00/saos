@@ -873,6 +873,21 @@ class ZosBackend(Backend):
         finally:
             tool.Close()
 
+    def quick_focus(self) -> dict[str, Any]:
+        """OpticStudio 的 Quick Focus：按 RMS 光斑半径（质心参考）调整像面前一面的厚度。
+        OpticStudio Quick Focus: adjust the thickness before the image surface for the smallest RMS spot radius (centroid)."""
+        zosapi = _load_zosapi(self.root)
+        surface = self.system.LDE.GetSurfaceAt(self.system.LDE.NumberOfSurfaces - 2)
+        before = float(surface.Thickness)
+        tool = self.system.Tools.OpenQuickFocus()
+        try:
+            tool.Criterion = zosapi.Tools.General.QuickFocusCriterion.SpotSizeRadial
+            tool.UseCentroid = True
+            tool.RunAndWaitForCompletion()
+        finally:
+            tool.Close()
+        return {"surface": self.system.LDE.NumberOfSurfaces - 2, "thickness_before": before, "thickness_after": float(surface.Thickness)}
+
     def trace_check(self, rays: list[tuple[int, float, float, float, float]]) -> list[dict[str, Any]]:
         zosapi = _load_zosapi(self.root)
         rt_ns = zosapi.Tools.RayTrace

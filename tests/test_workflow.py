@@ -537,3 +537,53 @@ def test_agent_objectives_weigh_less_in_the_shortfall(setup):
     html = (job.root / "report" / "index.html").read_text(encoding="utf-8")
     assert "用户，权重 2" in html and "agent 补充，权重 0.3" in html
 
+
+def probe_plan(*probes, **kw):
+    return {"target": "length", "mechanism": "the track is the sum of the thicknesses", "compensate": "quick_focus", "probes": list(probes), **kw}
+
+
+T1 = {"id": "t1", "surface": 1, "param": "thickness", "delta": 2.0, "prediction": "longer first gap, longer track", "expect": {"length": "up"}}
+R1 = {"id": "r1", "surface": 1, "param": "radius", "delta": 1.0, "control": True, "prediction": "radius does not enter the track", "expect": {"length": "none"}}
+
+
+def test_probe_ranks_variables_compares_predictions_and_leaves_the_lens(setup):
+    daemon, job = setup
+    write_demand(job, DEMAND, confirm=None)  # 诊断不需要确认 / diagnosis needs no confirmation
+    before = json.dumps(daemon.backend.surfaces(), sort_keys=True)
+    wrong = {**T1, "id": "wrong", "delta": 1.0, "expect": {"length": "down"}}
+    result = call(daemon, "probe.run", job=job.id, plan=probe_plan(T1, R1, wrong))["result"]
+    assert [r["id"] for r in result["ranking"]] == ["t1", "wrong"] and result["ranking"][0]["effect"] == pytest.approx(0.4)
+    rows = {r["id"]: r for r in result["probes"]}
+    assert rows["t1"]["observed"]["length"] == "up" and not rows["t1"]["mismatch"]
+    assert rows["r1"]["observed"]["length"] == "none"
+    assert rows["wrong"]["mismatch"] == {"length": {"expected": "down", "observed": "up"}}
+    assert rows["t1"]["plus"]["values"]["length"] == pytest.approx(102.0) and rows["t1"]["plus"]["compensation"]["surface"] == 2
+    # 假后端的 quick_focus 不动，提醒补偿没起作用 / the fake quick_focus never moves, so the review says nothing was compensated
+    assert len(result["review"]) == 2 and "wrong" in result["review"][0] and "nothing was compensated" in result["review"][1]
+    assert result["lens_unchanged"] and json.dumps(daemon.backend.surfaces(), sort_keys=True) == before
+    folder = job.root / result["folder"]
+    assert (folder / "plan.json").is_file() and (folder / "result.json").is_file() and job.verify_seals() == []
+
+
+def test_probe_flags_a_target_no_variable_can_move(setup):
+    daemon, job = setup
+    write_demand(job, DEMAND, confirm=None)
+    r2 = {**R1, "id": "r2", "control": False, "expect": {}}
+    review = call(daemon, "probe.run", job=job.id, plan=probe_plan(r2, R1))["result"]["review"]
+    assert any("structure question" in line for line in review)
+
+
+@pytest.mark.parametrize("plan", [
+    probe_plan(T1),                                                  # 没有阴性对照
+    probe_plan({**T1, "prediction": ""}, R1),                        # 没有预测
+    probe_plan(T1, R1, target="nothing"),
+    probe_plan(T1, R1, mechanism=" "),
+    probe_plan({**T1, "param": "material"}, R1),
+    probe_plan({**T1, "delta": 0}, R1),
+    probe_plan(T1, R1, compensate="refocus"),
+    probe_plan(*({**T1, "id": f"p{k}"} for k in range(6)), R1),      # 最多 6 个
+])
+def test_probe_plan_is_checked(setup, plan):
+    daemon, job = setup
+    write_demand(job, DEMAND, confirm=None)
+    assert call(daemon, "probe.run", job=job.id, plan=plan)["error"]["code"] == ErrorCode.BAD_ARGS

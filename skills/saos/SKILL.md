@@ -61,6 +61,29 @@ If `skills/recipes/<system>/SKILL.md` matches, read it. Recipes are experience, 
 - Record a round after each adjustment: `uv run saos round --job J --tier <tier> --note "<what you did>"`. Tiers, low to high: `local`, `variables`, `materials` (substitute sourced materials), `global`, `structure`. Read the decision (`achieved`, `exhausted`, `limit`, `continue` with `next_tier`); compare rounds by the shortfall, never by the merit value.
 - If the structure must change in a way the approved description does not cover, describe the new model and get it approved before recording rounds on it.
 
+### Diagnose before you escalate
+
+Before the first optimisation, and again before you move to a higher tier or when a round `brief` sets `review`, think from geometrical optics instead of trying everything:
+
+1. Name the objective with the largest weighted gap and the mechanism behind it: which aberration or limit (spherical, coma, astigmatism, field curvature, distortion, axial or lateral colour, vignetting, aperture, Lagrange invariant), seen in Seidel terms, ray fans, field curves or pass rates.
+2. Reason which parts of the structure can change that mechanism and which cannot. Some quantities are invariant to whole classes of variables: the Petzval sum depends only on surface powers and indices, so aspheric and freeform terms only trade field curvature for astigmatism. Pick the 3–4 variables your reasoning ranks highest, plus at least one control that should not move the target.
+3. Write the predictions first (mechanism, direction, rough size), then run `uv run saos probe --job J --plan plan.json`. Each probe is measured at ±delta from the same base copy, with a compensator (`"compensate": "quick_focus"` or your own script) so that defocus does not hide the aberration (Quick Focus moves the thickness before the image surface and can fail silently on folded or partly failing systems; the result says so when it never moved); choose delta as a meaningful fraction of the variable's allowed range. The lens is left unchanged; everything goes to `probes/NNN/`.
+4. Read `ranking` and `review`. Optimise first on the variables that move the target. If a prediction failed or a control moved, your model of the system is wrong: fix that before optimising. If nothing moves the target and your first-order reasoning agrees, it is a structure question: you may go straight to the `structure` tier or ask the user, citing `probes/NNN` in the round note or the question.
+
+Plan format:
+
+```json
+{"target": "spot", "mechanism": "Petzval field curvature: ~73 um sag at 150 um image height",
+ "compensate": "quick_focus",
+ "probes": [
+   {"id": "l1_rear_r", "surface": 3, "param": "radius", "delta": 0.02,
+    "prediction": "less lens-1 power lowers the Petzval sum; spot down by a few um", "expect": {"spot": "down"}},
+   {"id": "l2_a4", "script": "probes/l2_a4.py", "delta": 0.001, "control": true,
+    "prediction": "trades astigmatism only, Petzval unchanged", "expect": {"spot": "none"}}]}
+```
+
+A built-in change is `surface` + `param` (`radius`, `thickness`, `conic`); anything else is a script under the job defining `run(ctx, delta)`. `measure` (optional) lists the demand items to measure; the default is every item with a bound.
+
 ## 5. Deliver
 
 `uv run saos report --job J` writes `report/index.html` in the user's language: status, the delivered lens (the first achieved round, else the smallest shortfall among deliverable rounds), its materials, and for each unmet goal how far it is off. Give the user the path and say that a tolerance analysis can follow.
@@ -99,6 +122,7 @@ Instance directory `work/<instance>/` holds only `daemon/` and `jobs/`. Files of
 | | `lenses/rounds/orphaned/` | tools | archives left by a failed attempt, moved aside instead of overwritten | kept |
 | | `ledger.jsonl` | tools | per round: shortfall, tier, materials, lens hash, approved model, pointer to `evaluations/NNN/result.json`; appending it completes the round | append only |
 | explicit debugging | `screens/NNN-<label>-*.png`, `lenses/captures/NNN-unsaved.zmx` | tools | screenshots; window content saved before it is replaced | sealed |
+| diagnosis | `probes/NNN/` | tools | `saos probe`: plan with your predictions, base copy, every trial's measurements, `result.json` | sealed |
 | exploration | `explore/<topic>/` with `README.md` | you | code, intermediate lenses, logs run outside `saos exec`; README states purpose, outcome, superseded or not | free |
 | delivery | `report/NNN-rMMM-<status>.html` | tools | every generated report | sealed |
 | | `report/index.html` | tools | the latest report | regenerated |

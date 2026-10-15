@@ -176,6 +176,10 @@ def cmd_check(args: argparse.Namespace) -> Any:
     return client.request("demand.check", {"job": args.job}, timeout=args.timeout)
 
 
+def cmd_probe(args: argparse.Namespace) -> Any:
+    return client.request("probe.run", {"job": args.job, "plan": _read_json(args.plan)}, timeout=args.timeout)
+
+
 def cmd_demand(args: argparse.Namespace) -> Any:
     from saos import demand
 
@@ -333,6 +337,12 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--job", required=True)
     q.add_argument("--quote", required=True, help="the user's own words of approval")
     dm.set_defaults(func=cmd_demand)
+
+    p = sub.add_parser("probe", help="perturbation diagnosis: perturb a few variables by ±delta, compensate, measure, compare with your written predictions (lens left unchanged; archived in probes/NNN/)")
+    p.add_argument("--job", required=True)
+    p.add_argument("--plan", required=True, help="JSON plan: target, mechanism, compensate, probes (with predictions and at least one control); see skills/saos/SKILL.md")
+    p.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
+    p.set_defaults(func=cmd_probe)
 
     p = sub.add_parser("check", help="measure and judge every check of the demand (sources/demand.yaml) on the current lens without recording")
     p.add_argument("--job", required=True)

@@ -127,6 +127,13 @@ class FakeBackend(Backend):
             surface[param] = "" if value is None else str(value)
         return copy.deepcopy(surface)
 
+    def quick_focus(self) -> dict[str, Any]:
+        """假后端不对焦，只报告像面前一面的厚度。/ the fake backend does not refocus; it reports the thickness before the image."""
+        lens = self._require()
+        index = len(lens["surfaces"]) - 2
+        t = lens["surfaces"][index]["thickness"]
+        return {"surface": index, "thickness_before": t, "thickness_after": t}
+
     def analysis_types(self) -> list[str]:
         return ["FakeCurve"]
 
