@@ -150,6 +150,11 @@ class Backend(ABC):
         """一次拟合到 max_term 项（Zernike Standard，参考主光线），返回所需各项；负项号含义同 ZERN。"""
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support zernike")
 
+    def viz_data(self, folder: Path) -> dict[str, Any]:
+        """saos ui 用的一轮数据：逐面全局几何、布局光线、点列图光线和分析导出；OpticStudio 的文本导出写到 folder。
+        One round's data for saos ui: global geometry per surface, layout rays, spot rays and analysis exports."""
+        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support viz_data")
+
     def trace_check(self, rays: list[tuple[int, float, float, float, float]]) -> list[dict[str, Any]]:
         """追迹到像面，返回失败或被截断的光线：(wave, hx, hy, px, py) 及 error/vignette 码。"""
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support trace_check")

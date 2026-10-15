@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import time
 from contextlib import contextmanager
@@ -1053,6 +1054,185 @@ class ZosBackend(Backend):
             return failures
         finally:
             tool.Close()
+
+    # ---- 每轮的可视化数据（saos ui 只读这些导出，不自己算光学量）----
+
+    def _batch(self, rays: list[tuple[int, float, float, float, float]], to_surface: int) -> list[tuple]:
+        """归一化坐标的批量实际光线追迹，返回每条光线在 to_surface 局部坐标中的 (error, vignette, x, y, z, l, m, n)。"""
+        rt = _load_zosapi(self.root).Tools.RayTrace
+        tool = self.system.Tools.OpenBatchRayTrace()
+        try:
+            batch = tool.CreateNormUnpol(len(rays), rt.RaysType.Real, to_surface)
+            none_mode = getattr(rt.OPDMode, "None")
+            for wave, hx, hy, px, py in rays:
+                batch.AddRay(int(wave), float(hx), float(hy), float(px), float(py), none_mode)
+            tool.RunAndWaitForCompletion()
+            batch.StartReadingResults()
+            out = []
+            for _ in rays:
+                r = batch.ReadNextResult(0, 0, 0, *([0.0] * 11))
+                out.append((int(r[2]), int(r[3]), *(float(v) for v in r[4:10])))
+            return out
+        finally:
+            tool.Close()
+
+    def _global(self, index: int) -> tuple[list[float], list[float]] | None:
+        """面 index 的局部→全局变换：3×3 旋转（行优先）和平移。"""
+        m = self.system.LDE.GetGlobalMatrix(index, *([0.0] * 12))
+        if not m[0]:
+            return None
+        return [float(v) for v in m[1:10]], [float(v) for v in m[10:13]]
+
+    def _sag(self, index: int, x: float, y: float) -> float | None:
+        try:
+            r = self.system.LDE.GetSag(index, x, y, 0.0, 0.0)
+        except Exception:  # noqa: BLE001 - 读不到面形时退回平面画法
+            return None
+        return float(r[1]) if r[0] and math.isfinite(float(r[1])) else None
+
+    def viz_data(self, folder: Path, *, pupil_grid: int = 31, fan: int = 7) -> dict[str, Any]:
+        """saos ui 用的一轮数据：逐面全局几何、布局光线、点列图光线、点列图 RMS/GEO 和 FFT MTF。
+        几何与光线坐标都来自 ZOS-API（GetGlobalMatrix、GetSag、批量光线追迹），这里只做坐标变换。"""
+        system = self.system
+        lde = system.LDE
+        info = self.system_info()
+        image = lde.NumberOfSurfaces - 1
+        waves = info["wavelengths"]
+        primary = next((k for k, w in enumerate(waves, start=1) if w["primary"]), 1)
+        fields = info["fields"]["items"]
+        try:
+            normalization = str(system.SystemData.Fields.Normalization)
+        except Exception:  # noqa: BLE001
+            normalization = "Radial"
+        if normalization == "Rectangular":
+            mx, my = max(abs(f["x"]) for f in fields), max(abs(f["y"]) for f in fields)
+            norm = [(f["x"] / mx if mx else 0.0, f["y"] / my if my else 0.0) for f in fields]
+        else:
+            r = max(math.hypot(f["x"], f["y"]) for f in fields)
+            norm = [(f["x"] / r if r else 0.0, f["y"] / r if r else 0.0) for f in fields]
+        timings: dict[str, float] = {}
+        errors: dict[str, str] = {}
+
+        def apply(tf, p):
+            rot, off = tf
+            return [rot[0] * p[0] + rot[1] * p[1] + rot[2] * p[2] + off[0],
+                    rot[3] * p[0] + rot[4] * p[1] + rot[5] * p[2] + off[1],
+                    rot[6] * p[0] + rot[7] * p[1] + rot[8] * p[2] + off[2]]
+
+        def rotate(tf, d):
+            rot = tf[0]
+            return [rot[0] * d[0] + rot[1] * d[1] + rot[2] * d[2], rot[3] * d[0] + rot[4] * d[1] + rot[5] * d[2],
+                    rot[6] * d[0] + rot[7] * d[1] + rot[8] * d[2]]
+
+        started = time.monotonic()
+        transforms = {i: self._global(i) for i in range(1, image + 1)}
+        surfaces = []
+        for i in range(1, image + 1):
+            row = lde.GetSurfaceAt(i)
+            tf = transforms[i]
+            item = {"index": i, "type": str(row.TypeName), "comment": str(row.Comment), "material": str(row.Material),
+                    "semi_diameter": float(row.SemiDiameter), "is_stop": bool(row.IsStop)}
+            sd = item["semi_diameter"]
+            if tf is not None and sd > 0 and "Coordinate" not in item["type"]:
+                item["vertex"] = tf[1]
+                # 子午、弧矢两条截线和边缘一圈，局部点 (x, y, sag) 变换到全局
+                line = [sd * (2 * k / 20 - 1) for k in range(21)]
+                sag_y = [self._sag(i, 0.0, y) for y in line]
+                sag_x = [self._sag(i, x, 0.0) for x in line]
+                angles = [2 * math.pi * k / 32 for k in range(33)]
+                rim = [(sd * math.cos(a), sd * math.sin(a)) for a in angles]
+                sag_rim = [self._sag(i, x, y) for x, y in rim]
+                if any(s is None for s in sag_y + sag_x + sag_rim):
+                    errors.setdefault("sag", f"GetSag unavailable on surface {i}; drawn flat")
+                item["profile_y"] = [apply(tf, (0.0, y, s or 0.0)) for y, s in zip(line, sag_y)]
+                item["profile_x"] = [apply(tf, (x, 0.0, s or 0.0)) for x, s in zip(line, sag_x)]
+                item["rim"] = [apply(tf, (x, y, s or 0.0)) for (x, y), s in zip(rim, sag_rim)]
+            surfaces.append(item)
+        timings["geometry"] = round(time.monotonic() - started, 2)
+
+        # 布局光线：每个视场一条子午扇和一条弧矢扇，主波长
+        started = time.monotonic()
+        steps = [2 * k / (fan - 1) - 1 for k in range(fan)]
+        layout_rays = [(f, primary, hx, hy, 0.0, p) for f, (hx, hy) in enumerate(norm) for p in steps] + \
+                      [(f, primary, hx, hy, p, 0.0) for f, (hx, hy) in enumerate(norm) for p in steps if p != 0.0]
+        traced = {j: self._batch([r[1:] for r in layout_rays], j) for j in range(1, image + 1) if transforms[j] is not None}
+        paths = []
+        for k, (f, _, _, _, px, py) in enumerate(layout_rays):
+            points, first_dir = [], None
+            for j in range(1, image + 1):
+                if j not in traced:
+                    continue
+                err, vig, *xyz_lmn = traced[j][k]
+                if err:
+                    break
+                points.append(apply(transforms[j], xyz_lmn[:3]))
+                if first_dir is None:
+                    first_dir = rotate(transforms[j], xyz_lmn[3:])
+                if vig and vig <= j:
+                    break
+            if points:
+                paths.append({"field": f, "px": px, "py": py, "points": points, "start_dir": first_dir})
+        timings["layout_rays"] = round(time.monotonic() - started, 2)
+
+        # 点列图：方形网格取单位圆内的光瞳点，各视场各波长追到像面，相对主波长主光线
+        started = time.monotonic()
+        grid = [2 * k / (pupil_grid - 1) - 1 for k in range(pupil_grid)]
+        pupil = [(px, py) for py in grid for px in grid if px * px + py * py <= 1.0]
+        spot_rays, chief_rays = [], []
+        for f, (hx, hy) in enumerate(norm):
+            chief_rays.append((primary, hx, hy, 0.0, 0.0))
+            spot_rays += [(w, hx, hy, px, py) for w in range(1, len(waves) + 1) for px, py in pupil]
+        chief = self._batch(chief_rays, image)
+        hits = self._batch(spot_rays, image)
+        spots = []
+        k = 0
+        for f in range(len(norm)):
+            cx, cy = chief[f][2], chief[f][3]
+            per_wave = []
+            for _ in waves:
+                pts = []
+                for _ in pupil:
+                    err, vig, x, y = hits[k][:4]
+                    k += 1
+                    if not err and not vig:
+                        pts.append([round(x - cx, 7), round(y - cy, 7)])
+                per_wave.append(pts)
+            spots.append({"field": f, "chief": [cx, cy] if not chief[f][0] else None, "points": per_wave})
+        timings["spot_rays"] = round(time.monotonic() - started, 2)
+
+        def run(name: str, wanted: dict[str, Any], keep: tuple[str, ...]) -> dict[str, Any] | None:
+            started = time.monotonic()
+            for settings in (wanted, {}):
+                try:
+                    out = self.analysis(name, settings, folder / f"{name}.txt")
+                    timings[name] = round(time.monotonic() - started, 2)
+                    return {"series": out["series"], "spot": out.get("spot"), "settings": {s: out["settings"].get(s) for s in keep}}
+                except SaosError as exc:
+                    if settings:
+                        continue
+                    errors[name] = exc.message
+                except Exception as exc:  # noqa: BLE001 - 一个分析失败不影响其余数据
+                    errors[name] = f"{type(exc).__name__}: {exc}"
+                    break
+            return None
+
+        spot_analysis = run("StandardSpot", {"ReferTo": "ChiefRay"}, ("ReferTo", "Pattern", "RayDensity"))
+        mtf = run("FftMtf", {"ShowDiffractionLimit": True}, ("MaximumFrequency", "SampleSize", "Type", "ShowDiffractionLimit"))
+        stop = next((s for s in surfaces if s["is_stop"]), None)
+        spot_stats = (spot_analysis or {}).get("spot") or {}
+        return {
+            "system": {**{k: info[k] for k in ("title", "lens_units", "aperture", "fields", "wavelengths", "stop_surface")},
+                       "primary_wave": primary, "normalization": normalization, "normalized_fields": norm,
+                       "stop_semi_diameter": stop["semi_diameter"] if stop else None, "image_surface": image},
+            "surfaces": surfaces,
+            "layout": {"wave": primary, "rays": paths},
+            "spot": {"reference": "chief ray, primary wavelength", "pupil_grid": pupil_grid, "fields": spots,
+                     "rms_radius": spot_stats.get("rms_radius"), "geo_radius": spot_stats.get("geo_radius"),
+                     "analysis_settings": (spot_analysis or {}).get("settings")},
+            "mtf": mtf,
+            "timings_s": timings,
+            "errors": errors,
+        }
 
     # ---- 操作数 ----
 

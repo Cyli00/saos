@@ -183,6 +183,32 @@ class FakeBackend(Backend):
         return {"header": ["fake"], "messages": [], "series": [{"description": "line", "x_label": "x", "x": x, "y": {"v": [slope * v for v in x]}}],
                 "grids": [], "text_file": True, "settings": dict(settings), "message": None}
 
+    def viz_data(self, folder: Path) -> dict[str, Any]:
+        """假数据：面沿 z 轴排开，光线平行于轴到像面，只用来测试导出、存档和界面读取。"""
+        lens = self._require()
+        surfaces, z = [], 0.0
+        for s in lens["surfaces"][1:]:
+            sd = float(s.get("semi_diameter") or 0.0)
+            item = {"index": s["index"], "type": s["type"], "comment": s["comment"], "material": s["material"], "semi_diameter": sd,
+                    "is_stop": s["is_stop"], "vertex": [0.0, 0.0, z]}
+            if sd > 0:
+                item["profile_y"] = [[0.0, y, z] for y in (-sd, 0.0, sd)]
+                item["profile_x"] = [[x, 0.0, z] for x in (-sd, 0.0, sd)]
+                item["rim"] = [[sd, 0.0, z], [0.0, sd, z], [-sd, 0.0, z], [0.0, -sd, z], [sd, 0.0, z]]
+            surfaces.append(item)
+            if s["thickness"] != float("inf"):
+                z += s["thickness"]
+        rays = [{"field": 0, "px": 0.0, "py": py, "points": [[0.0, py, v["vertex"][2]] for v in surfaces], "start_dir": [0.0, 0.0, 1.0]}
+                for py in (-1.0, 0.0, 1.0)]
+        return {"system": {**self.system_info(), "primary_wave": 1, "normalization": "Radial", "normalized_fields": [[0.0, 0.0]],
+                           "stop_semi_diameter": 10.0, "image_surface": len(lens["surfaces"]) - 1},
+                "surfaces": surfaces, "layout": {"wave": 1, "rays": rays},
+                "spot": {"reference": "chief ray, primary wavelength", "pupil_grid": 3, "fields": [{"field": 0, "chief": [0.0, 0.0], "points": [[[0.0, 0.0], [0.001, 0.0]]]}],
+                         "rms_radius": [[1.0]], "geo_radius": [[2.0]], "analysis_settings": None},
+                "mtf": {"series": [{"description": "Field: 0.00 (deg)", "x_label": "Spatial Frequency", "x": [0.0, 50.0], "y": {"Tangential": [1.0, 0.5], "Sagittal": [1.0, 0.4]}}],
+                        "spot": None, "settings": {}},
+                "timings_s": {}, "errors": {}}
+
     def operand(self, name: str, int1: int, int2: int, data: list[float]) -> float:
         lens = self._require()
         name = name.upper()
