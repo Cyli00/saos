@@ -17,12 +17,13 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import time
 from pathlib import Path
 from typing import Any
 
 from saos import demand, jobs, ledger, model_gate
 from saos.demand import TIERS
-from saos.protocol import ErrorCode, SaosError, jsonable
+from saos.protocol import ErrorCode, SaosError, jsonable, write_json
 
 # 连续这么多轮没有明显进步，就提醒先审视需求和结构，而不是继续加码
 # after this many rounds without a clear gain, remind the agent to question the demand and structure before escalating
@@ -138,7 +139,28 @@ def _set_aside(ctx, target) -> None:
         f.rename(folder / f"{f.stem}-{stamp}{f.suffix}")
 
 
-def record_round(ctx, tier: str | None = None, note: str = "", merit: float | None = None) -> dict[str, Any]:
+VIZ_FILE = "viz.json"
+
+
+def export_viz(ctx, evidence_dir: str) -> dict[str, Any]:
+    """在本轮证据目录里写 viz.json（saos ui 的点列图、布局和 MTF 数据），OpticStudio 的文本导出放在 viz/。
+    轮次已经写进 ledger 之后才做：失败只记在 viz.json 和返回值里，不影响本轮。
+    Write viz.json (spot, layout and MTF data for saos ui) into the round's evidence folder, with OpticStudio's text
+    exports in viz/. Runs after the round is in the ledger: a failure is noted, never undoes the round."""
+    folder = ctx.job.root / evidence_dir
+    started = time.monotonic()
+    try:
+        data = {"ok": True, **ctx.backend.viz_data(folder / "viz")}
+    except Exception as exc:  # noqa: BLE001 - 界面数据缺失不影响轮次
+        data = {"ok": False, "error": f"{type(exc).__name__}: {getattr(exc, 'message', exc)}"}
+    data["elapsed_s"] = round(time.monotonic() - started, 2)
+    write_json(folder / VIZ_FILE, data)
+    ctx.job.seal(folder / VIZ_FILE, *sorted((folder / "viz").glob("*")) if (folder / "viz").is_dir() else ())
+    return {"file": f"{evidence_dir}/{VIZ_FILE}", "ok": data["ok"], "elapsed_s": data["elapsed_s"],
+            "errors": data.get("errors") or ({"viz": data["error"]} if not data["ok"] else {})}
+
+
+def record_round(ctx, tier: str | None = None, note: str = "", merit: float | None = None, viz: bool = True) -> dict[str, Any]:
     if ctx.lens is None:
         raise SaosError(ErrorCode.NO_LENS_LOADED, f"job {ctx.job.id} has no lens loaded")
     h, sha, confirmation = preflight(ctx.job.root)
@@ -234,5 +256,8 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
     ledger.append(path, record)
     decision = ledger.decide(history + [record], h["stop"], ledger.stop_for(ctx.job.root, sha), ruled)
     ctx.job.update_state(round=number, round_status=decision["status"])
-    return {"record": record, "decision": decision, "brief": brief(h, evaluation, decision, ledger.current_window(history + [record])),
-            "evaluation": evaluation}
+    out = {"record": record, "decision": decision, "brief": brief(h, evaluation, decision, ledger.current_window(history + [record])),
+           "evaluation": evaluation}
+    if viz:
+        out["viz"] = export_viz(ctx, evaluation["evidence_dir"])
+    return out

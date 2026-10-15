@@ -602,7 +602,7 @@ class Daemon:
         self._require_loaded(job)
         ctx = scripting.ScriptContext(self, job, {})
         return workflow.record_round(ctx, _arg(args, "tier", str, default=None), str(args.get("note", "")),
-                                     merit=_arg(args, "merit", (int, float), default=None))
+                                     merit=_arg(args, "merit", (int, float), default=None), viz=_arg(args, "viz", bool, default=True))
 
     def op_operand(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))
