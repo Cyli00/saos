@@ -1,8 +1,8 @@
-"""交付报告：由任务目录中的需求框定和 ledger 生成单文件 HTML（给用户看）。
+"""交付报告：由任务目录中的需求和 ledger 生成单文件 HTML（给用户看）。
 
     saos report --job J [--lang zh|en]     # 写到任务的 report/index.html
 
-语言按 i18n.resolve 选择：--lang > 需求框定的 lang > SAOS_LANG > 系统界面语言。
+语言按 i18n.resolve 选择：--lang > 需求的 lang > SAOS_LANG > 系统界面语言。
 只读取已有记录，不重新计算，也不连接 OpticStudio；所有数值都能追溯到 ledger、analyses/、scripts/。
 """
 
@@ -13,7 +13,7 @@ import math
 from html import escape
 from typing import Any
 
-from saos import harness, i18n, jobs, ledger
+from saos import demand, i18n, jobs, ledger
 from saos.protocol import ErrorCode, SaosError
 
 # 每条文本为 (中文, 英文)，带 {name} 的按 str.format 填参数
@@ -22,7 +22,7 @@ TEXT: dict[str, tuple[str, str]] = {
     "status.exhausted": ("无法再优化", "Cannot improve further"),
     "status.limit": ("达到轮次上限", "Round limit reached"),
     "status.continue": ("进行中", "In progress"),
-    "summary.achieved": ("所有约束和性能指标都已达标。", "Every constraint and performance target is met."),
+    "summary.achieved": ("所有常量、变量范围和目标达标线都已满足。", "Every constant, variable range and objective pass line is met."),
     "summary.exhausted": (
         "自最后一次明显进步以来，允许的每一级手段都试过，目标差距没有再明显缩小。下表列出未达标的项和差距。",
         "Since the last clear gain, every allowed tier of changes was tried and the shortfall did not shrink noticeably. The table lists the unmet goals and their gaps.",
@@ -35,9 +35,12 @@ TEXT: dict[str, tuple[str, str]] = {
     "tier.materials": ("换材料", "Materials"),
     "tier.global": ("全局优化", "Global optimisation"),
     "tier.structure": ("改结构", "Structure"),
-    "kind.constraint": ("约束", "Constraint"),
-    "kind.target": ("性能指标", "Target"),
-    "kind.preference": ("期望项", "Preference"),
+    "kind.constant": ("常量", "Constant"),
+    "kind.variable": ("变量范围", "Variable range"),
+    "kind.objective": ("目标", "Objective"),
+    "origin.user": ("用户", "user"),
+    "origin.agent": ("agent 补充", "added by agent"),
+    "weighted": ("{origin}，权重 {w}", "{origin}, weight {w}"),
     "sep": ("，", ", "),
     "list_sep": ("、", ", "),
     "none": ("无", "none"),
@@ -51,7 +54,7 @@ TEXT: dict[str, tuple[str, str]] = {
     "chart.label": ("目标差距随轮次的变化", "Shortfall by round"),
     "chart.round": ("第 {n} 轮", "Round {n}"),
     "chart.x": ("轮次", "Round"),
-    "judge.achieved": ("第 {n} 轮所有约束和性能指标达标", "every constraint and target is met in round {n}"),
+    "judge.achieved": ("第 {n} 轮所有带达标线的项都已满足", "every item with a pass line is met in round {n}"),
     "judge.limit": ("已用完轮次上限 max_rounds = {cap}", "used up max_rounds = {cap}"),
     "judge.exhausted": (
         "自第 {n} 轮以来 G 没有缩小 {rel:.0%} 以上，允许的手段（{tiers}）都已试过",
@@ -67,22 +70,33 @@ TEXT: dict[str, tuple[str, str]] = {
     "deliver": ("<b>交付镜头</b>：{lens}（第 {n} 轮，目标差距 G = {g}）", "<b>Delivered lens</b>: {lens} (round {n}, shortfall G = {g})"),
     "best_so_far": ("<b>目前最好的镜头</b>：{lens}（第 {n} 轮，目标差距 G = {g}）", "<b>Best lens so far</b>: {lens} (round {n}, shortfall G = {g})"),
     "judgement": ("<b>终止判断</b>：{text}", "<b>Stop decision</b>: {text}"),
-    "h.request": ("需求", "Request"),
+    "h.demand": ("需求", "Demand"),
+    "h.summary": ("需求访谈总结", "Interview summary"),
+    "h.constants": ("已知常量", "Constants"),
+    "th.constants": ("项|内容|来源", "Item|Value|Source"),
+    "h.variables": ("可调变量", "Variables"),
+    "th.variables": ("项|内容|范围或候选", "Item|Description|Range or options"),
+    "h.questions": ("待确认问题", "Open questions"),
+    "blocking": ("（阻塞）", " (blocking)"),
+    "wish": ("期望 {goal}", "wish {goal}"),
     "h.materials": ("交付镜头的材料（第 {n} 轮）", "Materials of the delivered lens (round {n})"),
     "th.materials": ("面|材料|来源|各波长折射率", "Surface|Material|Source|Index per wavelength"),
     "mat.model": ("模型玻璃 nd {nd}，Vd {vd}（不是真实材料）", "model glass nd {nd}, Vd {vd} (not a real material)"),
     "mat.catalog": ("目录 {cats}", "catalog {cats}"),
     "blocked": ("<b>没有可交付的镜头</b>：所有轮次都还含模型玻璃（第 {surfaces} 面），下面列的是探索中最好的一轮，不能作为设计交付。",
                 "<b>No deliverable lens</b>: every round still uses a model glass (surfaces {surfaces}); the round below is the best exploration result and is not a deliverable design."),
+    "blocked.hard": ("<b>没有可交付的镜头</b>：下面这一轮不满足常量或变量范围（{ids}），只是探索中最好的结果，不能作为设计交付。",
+                     "<b>No deliverable lens</b>: the round below breaks a constant or variable range ({ids}); it is the best exploration result and is not a deliverable design."),
+    "blocked.errors": ("<b>没有可交付的镜头</b>：下面这一轮有判定执行出错（{ids}），结论不可信。",
+                       "<b>No deliverable lens</b>: checks of the round below failed to run ({ids}); its result cannot be trusted."),
     "model_ok": ("建模说明：{model}（用户已确认）", "Model description: {model} (approved by the user)"),
     "confirmed": ("用户确认：{quote}", "Confirmed by the user: {quote}"),
     "not_recorded": ("（未记录）", "(not recorded)"),
-    "h.assumptions": ("假设", "Assumptions"),
-    "h.items": ("逐项结果（第 {n} 轮）", "Results by goal (round {n})"),
-    "th.items": ("目标|类别|达标线|实测值|结论|差多少|实测依据", "Goal|Kind|Pass line|Measured|Verdict|Gap|Evidence"),
+    "h.items": ("逐项结果（第 {n} 轮）", "Results by item (round {n})"),
+    "th.items": ("项|类别|达标线|实测值|结论|差多少|实测依据", "Item|Kind|Pass line|Measured|Verdict|Gap|Evidence"),
     "note.g": (
-        "目标差距 G 是约束和性能指标的单项差距之和，每项按其尺度归一化；期望项只报告数值，不决定是否达成。",
-        "The shortfall G is the sum of the normalised gaps of all constraints and targets; preferences are reported only and do not decide whether the need is met.",
+        "目标差距 G 是所有带达标线的项的单项差距按权重的加权和，每项先按其尺度归一化；用户的目标权重高，agent 补充的低。期望值只报告，不决定是否达成。常量或变量范围不满足的轮次不能交付。",
+        "The shortfall G is the weighted sum of the normalised gaps of every item with a pass line; the user's objectives weigh more than those the agent added. Wishes are reported only and do not decide whether the demand is met. A round that breaks a constant or variable range is not deliverable.",
     ),
     "h.process": ("调试过程", "Rounds"),
     "th.rounds": ("轮次|手段|说明|G|评价函数|镜头", "Round|Tier|Note|G|Merit function|Lens"),
@@ -234,10 +248,7 @@ def judgement(decision: dict[str, Any], stop: dict[str, Any], t: Tr) -> str:
 
 
 def build(job: jobs.Job) -> dict[str, Any]:
-    harness_path = job.root / harness.HARNESS_FILE
-    if not harness_path.is_file():
-        raise SaosError(ErrorCode.FILE_NOT_FOUND, f"job {job.id} has no {harness.HARNESS_FILE}")
-    h = harness.load(harness_path)
+    d = demand.load_job(job.root)
     # 报告只引用完好的证据：封存过的文件被改动或删除时拒绝生成
     # a report cites intact evidence only: refuse when a sealed file was changed or deleted
     problems = job.verify_seals()
@@ -246,24 +257,25 @@ def build(job: jobs.Job) -> dict[str, Any]:
     rounds = ledger.load(job.root / ledger.LEDGER_FILE)
     if not rounds:
         raise SaosError(ErrorCode.BAD_ARGS, f"job {job.id} has no recorded rounds; run saos round first")
-    current = (harness.digest(h), harness.method_digest(harness.prepare_scripts(job.root, h)))
+    current = (demand.digest(d), demand.method_digest(demand.prepare_scripts(job.root, d)))
     if ledger.version(rounds[-1]) != current:
-        raise SaosError(ErrorCode.SPEC_CHANGED, "no round matches the current harness and check scripts; record a new round before reporting")
+        raise SaosError(ErrorCode.SPEC_CHANGED, "no round matches the current demand and check scripts; record a new round before reporting")
     rounds = ledger.current_window(rounds)
-    decision = ledger.decide(rounds, h["stop"])
+    decision = ledger.decide(rounds, d["stop"])
     final = rounds[-1]
-    # 只交付不含模型玻璃的轮次；全是探索时取最好的一轮并标明不可交付
-    # only rounds without a model glass are deliverable; if none is, show the best one marked as not deliverable
+    # 只交付不含模型玻璃、满足硬条件的轮次；都不满足时取最好的一轮并标明不可交付
+    # only rounds without a model glass that keep the hard conditions are deliverable; otherwise show the best one marked as not deliverable
     candidates = [r for r in rounds if ledger.deliverable(r)] or rounds
     best = min(candidates, key=lambda r: (r["shortfall"], r["round"]))
     deliver = final if final.get("achieved") and ledger.deliverable(final) else best
-    # 权威记录是 evaluations/NNN/result.json；旧任务的 rounds/rNNN.json 作为后备
-    # the authoritative record is evaluations/NNN/result.json; rounds/rNNN.json of older jobs is the fallback
-    eval_file = job.root / (deliver.get("evaluation") or f"rounds/r{deliver['round']:03d}.json")
+    eval_file = job.root / deliver["evaluation"]
     if not eval_file.is_file():
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"missing evaluation for round {deliver['round']}")
     evaluation = json.loads(eval_file.read_text(encoding="utf-8"))
-    return {"harness": {**evaluation["harness"], "lang": h.get("lang")}, "rounds": rounds, "decision": decision,
+    # 文字部分（总结、待确认问题）取当前文件；三类条目取这一轮实际判定时的版本，两者内容哈希相同
+    # the wording (summary, open questions) comes from the current file; the sections from the judged version, which hashes the same
+    shown = {**evaluation["demand"], "summary": d["summary"], "open_questions": d.get("open_questions") or [], "lang": d.get("lang")}
+    return {"demand": shown, "confirmed": demand.confirmation_for(job.root, current[0]), "rounds": rounds, "decision": decision,
             "deliver": deliver, "items": evaluation["items"], "blocked": not ledger.deliverable(deliver)}
 
 
@@ -271,19 +283,57 @@ def header_row(spec: str) -> str:
     return "".join(f"<th>{c}</th>" for c in spec.split("|"))
 
 
+def kind_note(item: dict[str, Any], t: Tr) -> str:
+    """目标的来源和权重（只对计入 G 的目标显示权重）。"""
+    if item.get("origin") is None:
+        return ""
+    origin = t("origin." + item["origin"])
+    text = t("weighted", origin=origin, w=fmt(item.get("weight"))) if item.get("goal") else origin
+    return f'<div class="muted">{e(text)}</div>'
+
+
+def demand_section(h: dict[str, Any], t: Tr) -> str:
+    """需求：访谈总结、已知常量、可调变量、待确认问题；目标在逐项结果表里。"""
+    summary = e(h.get("summary", "")).replace("\n", "<br>")
+    parts = [f"<h3>{t('h.summary')}</h3><blockquote>{summary}</blockquote>"]
+    constants = h.get("constants") or []
+    if constants:
+        rows = "".join(
+            f'<tr><td>{e(c["id"])}<div class="muted">{e(c.get("description", ""))}</div></td>'
+            f'<td>{e(c["value"]) if "value" in c else goal_text(c.get("goal"), t)} {e(c.get("unit", ""))}</td><td>{e(c.get("source", ""))}</td></tr>'
+            for c in constants)
+        parts.append(f'<h3>{t("h.constants")}</h3><div class="wrap"><table><thead><tr>{header_row(t("th.constants"))}</tr></thead><tbody>{rows}</tbody></table></div>')
+    variables = h.get("variables") or []
+    if variables:
+        def bound(v: dict[str, Any]) -> str:
+            text = (goal_text(v["range"], t) + (f" {e(v['unit'])}" if v.get("unit") else "")) if v.get("range") else ""
+            options = t("list_sep").join(e(o) for o in v.get("options") or [])
+            return "<br>".join(x for x in (text, options) if x) or "—"
+        rows = "".join(f'<tr><td>{e(v["id"])}</td><td>{e(v.get("description", ""))}</td><td>{bound(v)}</td></tr>' for v in variables)
+        parts.append(f'<h3>{t("h.variables")}</h3><div class="wrap"><table><thead><tr>{header_row(t("th.variables"))}</tr></thead><tbody>{rows}</tbody></table></div>')
+    questions = h.get("open_questions") or []
+    if questions:
+        items = "".join(f"<li>{e(q['question'])}{t('blocking') if q.get('blocking') else ''}</li>" for q in questions)
+        parts.append(f"<h3>{t('h.questions')}</h3><ul>{items}</ul>")
+    return "".join(parts)
+
+
 def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
     t = Tr(lang)
-    h, rounds, decision, deliver = data["harness"], data["rounds"], data["decision"], data["deliver"]
+    h, rounds, decision, deliver = data["demand"], data["rounds"], data["decision"], data["deliver"]
     status = decision["status"]
     rows = []
     for item in data["items"]:
         goal = item.get("goal")
-        preference = item["kind"] == "preference"
+        preference = goal is None
         mark = "—" if preference else (f'<span class="pass">{t("met")}</span>' if item.get("passed") else f'<span class="fail">{t("unmet")}</span>')
         gap = "—" if preference else gap_text(goal, item.get("value"), t)
+        line = goal_text(goal, t) if goal else ""
+        if item.get("wish"):
+            line = (line + "<br>" if line else "") + t("wish", goal=goal_text(item["wish"], t))
         rows.append(
-            f'<tr><td>{e(item["id"])}<div class="muted">{e(item.get("description", ""))}</div></td><td class="nowrap">{e(t("kind." + item["kind"]))}</td>'
-            f'<td class="num">{goal_text(goal, t)}</td><td class="num">{fmt(item.get("value"))}</td><td class="nowrap">{mark}</td>'
+            f'<tr><td>{e(item["id"])}<div class="muted">{e(item.get("description", ""))}</div></td><td class="nowrap">{e(t("kind." + item["kind"]))}{kind_note(item, t)}</td>'
+            f'<td class="num">{line or "—"}</td><td class="num">{fmt(item.get("value"))}</td><td class="nowrap">{mark}</td>'
             f'<td class="num">{gap}</td><td>{evidence_text(item, t)}</td></tr>'
         )
     round_rows = "".join(
@@ -291,8 +341,8 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
         f'<td class="num">{fmt(r["shortfall"])}</td><td class="num">{fmt(r.get("merit"))}</td><td><a href="../lenses/{e(r["file"])}">{e(r["file"])}</a></td></tr>'
         for r in rounds
     )
-    assumptions = "".join(f"<li>{e(a)}</li>" for a in h.get("assumptions") or []) or f"<li>{t('none')}</li>"
-    confirmed = (h.get("confirmed") or {}).get("quote", "")
+    confirmed = (data.get("confirmed") or {}).get("quote", "")
+    demand_html = demand_section(h, t)
     evidence = []
     for folder, key in (("analyses", "ev.analyses"), ("scripts", "ev.scripts")):
         files = sorted((job.root / folder).glob("*.json")) if (job.root / folder).is_dir() else []
@@ -309,7 +359,15 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
         else "<br>" + t("progress", n=decision["last_gain_round"], k=decision["rounds_without_gain"], untried=e(untried))
     )
     lens_link = f'<a href="../lenses/{e(deliver["file"])}">{e(deliver["file"])}</a>'
-    blocked = f'<div class="card">{t("blocked", surfaces=e(", ".join(map(str, deliver.get("model_glass") or []))))}</div>' if data.get("blocked") else ""
+    blocked = ""
+    if data.get("blocked"):
+        if deliver.get("measurement_errors"):
+            text = t("blocked.errors", ids=e(", ".join(deliver["measurement_errors"])))
+        elif deliver.get("hard_failing"):
+            text = t("blocked.hard", ids=e(", ".join(deliver["hard_failing"])))
+        else:
+            text = t("blocked", surfaces=e(", ".join(map(str, deliver.get("model_glass") or []))))
+        blocked = f'<div class="card">{text}</div>'
     mat_rows = []
     for m in deliver.get("materials") or []:
         if m["kind"] == "model":
@@ -330,8 +388,8 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
 <br>{t('judgement', text=e(judgement(decision, h['stop'], t)))}{progress}</div>
 {blocked}
 <h2>{t('h.materials', n=deliver['round'])}</h2>{materials}
-<h2>{t('h.request')}</h2><blockquote>{e(h['request'])}</blockquote>
-<p class="muted">{t('confirmed', quote=e(confirmed) or t('not_recorded'))}</p><h3>{t('h.assumptions')}</h3><ul>{assumptions}</ul>
+<h2>{t('h.demand')}</h2>{demand_html}
+<p class="muted">{t('confirmed', quote=e(confirmed) or t('not_recorded'))}</p>
 <h2>{t('h.items', n=deliver['round'])}</h2><div class="wrap"><table><thead><tr>{header_row(t('th.items'))}</tr></thead><tbody>{''.join(rows)}</tbody></table></div>
 <p class="muted">{t('note.g')}</p>
 <h2>{t('h.process')}</h2><div class="card">{chart(rounds, t)}</div>
@@ -344,7 +402,7 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
 
 def write(job: jobs.Job, lang: str | None = None) -> dict[str, Any]:
     data = build(job)
-    chosen = i18n.resolve(lang, data["harness"].get("lang"))
+    chosen = i18n.resolve(lang, data["demand"].get("lang"))
     folder = job.root / "report"
     folder.mkdir(exist_ok=True)
     html = render(job, data, chosen)

@@ -173,7 +173,16 @@ def cmd_exec(args: argparse.Namespace) -> Any:
 
 
 def cmd_check(args: argparse.Namespace) -> Any:
-    return client.request("harness.check", {"job": args.job}, timeout=args.timeout)
+    return client.request("demand.check", {"job": args.job}, timeout=args.timeout)
+
+
+def cmd_demand(args: argparse.Namespace) -> Any:
+    from saos import demand
+
+    root = jobs.get_job(args.job).root
+    if args.action == "confirm":
+        return demand.confirm(root, args.quote)
+    return demand.show(root)
 
 
 def cmd_round(args: argparse.Namespace) -> Any:
@@ -260,7 +269,7 @@ def build_parser() -> argparse.ArgumentParser:
     lens_cmd("surfaces", "surface rows of the Lens Data Editor")
     p = lens_cmd("describe", "model description page for the user (models/NNN-<lens>/index.html): every surface, material source and index per wavelength, apertures, fields, wavelengths, layout, plus automatic modelling checks")
     p.add_argument("--notes", help='JSON file: {"surfaces": {"<index>": "what this surface is"}, "assumptions": ["…"]}')
-    p.add_argument("--lang", choices=("zh", "en"), help="page language (default: the harness lang, then SAOS_LANG, then the system language)")
+    p.add_argument("--lang", choices=("zh", "en"), help="page language (default: the demand lang, then SAOS_LANG, then the system language)")
     p = lens_cmd("approve", "record the user's approval of a model description; rounds need a lens whose structure matches an approved description")
     p.add_argument("--model", required=True, help="the description folder, e.g. models/001-start")
     p.add_argument("--quote", required=True, help="the user's own words of approval")
@@ -316,19 +325,28 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--cores", type=int)
     op.set_defaults(func=cmd_opt)
 
-    p = sub.add_parser("check", help="measure and judge every harness target (sources/harness.yaml) on the current lens without recording")
+    dm = sub.add_parser("demand", help="the job's demand (sources/demand.yaml); no OpticStudio needed")
+    dsub = dm.add_subparsers(dest="action", required=True, parser_class=_Parser)
+    q = dsub.add_parser("show", help="validate the demand; print its version, confirmation, open questions and summary")
+    q.add_argument("--job", required=True)
+    q = dsub.add_parser("confirm", help="record the user's approval of the current demand version (bound to its content hash)")
+    q.add_argument("--job", required=True)
+    q.add_argument("--quote", required=True, help="the user's own words of approval")
+    dm.set_defaults(func=cmd_demand)
+
+    p = sub.add_parser("check", help="measure and judge every check of the demand (sources/demand.yaml) on the current lens without recording")
     p.add_argument("--job", required=True)
     p.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     p.set_defaults(func=cmd_check)
-    p = sub.add_parser("round", help="record a round: save lenses/rounds/rNNN.zmx, measure the harness, append ledger.jsonl and return the stop decision")
+    p = sub.add_parser("round", help="record a round: save lenses/rounds/rNNN.zmx, measure the demand, append ledger.jsonl and return the stop decision with a demand brief")
     p.add_argument("--job", required=True)
     p.add_argument("--tier", choices=("local", "variables", "materials", "global", "structure"), help="strategy tier used in this round; omit for round 0")
     p.add_argument("--note", default="", help="what this round changed")
     p.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     p.set_defaults(func=cmd_round)
-    p = sub.add_parser("report", help="write the delivery report report/index.html from the harness and the ledger (no OpticStudio needed)")
+    p = sub.add_parser("report", help="write the delivery report report/index.html from the demand and the ledger (no OpticStudio needed)")
     p.add_argument("--job", required=True)
-    p.add_argument("--lang", choices=["en", "zh"], help="report language (default: harness lang, then SAOS_LANG, then the system UI language)")
+    p.add_argument("--lang", choices=["en", "zh"], help="report language (default: demand lang, then SAOS_LANG, then the system UI language)")
     p.set_defaults(func=cmd_report)
 
     from saos.recipes.microscope import cli as microscope_cli

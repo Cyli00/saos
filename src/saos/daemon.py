@@ -112,7 +112,7 @@ class Daemon:
             "opt.merit": self.op_merit,
             "opt.local": self.op_optimize,
             "script.exec": self.op_exec,
-            "harness.check": self.op_check,
+            "demand.check": self.op_check,
             "round.record": self.op_round,
         }
 
@@ -487,7 +487,11 @@ class Daemon:
         return {**loaded.describe(), "merit": self.backend.merit_value(), "rows": self.backend.merit_rows()}
 
     def op_optimize(self, args: dict[str, Any]) -> dict[str, Any]:
-        loaded = self._require_loaded(self._job(args))
+        job = self._job(args)
+        loaded = self._require_loaded(job)
+        # 优化可能跑很久：需求未确认或有 blocking 问题时先问用户，不进入优化
+        # an optimisation may run for a long time: with an unconfirmed demand or a blocking question, ask the user first
+        workflow.preflight(job.root)
         result = self.backend.optimize(str(args.get("cycles", "auto")), args.get("cores"))
         loaded.dirty = True
         return {**loaded.describe(), **result}
@@ -506,7 +510,7 @@ class Daemon:
                 self.loaded.dirty = True
 
     def op_check(self, args: dict[str, Any]) -> dict[str, Any]:
-        """按需求框定对当前镜头逐项取值判定，不记录轮次。"""
+        """按需求对当前镜头逐项取值判定，不记录轮次。"""
         job = self._job(args)
         self._require_loaded(job)
         return workflow.check(scripting.ScriptContext(self, job, {}))

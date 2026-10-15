@@ -6,42 +6,69 @@ import json
 import pytest
 import yaml
 
-from saos import harness, jobs, ledger, report
+from saos import demand, jobs, ledger, report
 from saos.backend.fake import FakeBackend
 from saos.daemon import Daemon
 from saos.protocol import ErrorCode, SaosError
 
-HARNESS = {
-    "schema": 1,
-    "request": "总长不超过 95 mm，越短越好",
-    "targets": [
-        {"id": "length", "kind": "constraint", "description": "total track", "check": {"operand": {"type": "TOTR"}}, "goal": {"max": 95.0}, "scale": 5.0},
-        {"id": "short", "kind": "preference", "check": {"operand": {"type": "TOTR"}}},
-    ],
-    "assumptions": ["only the track length matters here"],
-    "confirmed": {"quote": "确认，开始吧"},
+LINE = demand.QUESTION_LINE["zh"]
+LENGTH = {"id": "length", "description": "total track", "check": {"operand": {"type": "TOTR"}}, "origin": "user", "must": {"max": 95.0}, "wish": {"max": 90.0}, "scale": 5.0}
+DEMAND = {
+    "schema": 2,
+    "constants": [{"id": "lens", "description": "the sample singlet", "value": "a.zmx", "source": "user"}],
+    "variables": [{"id": "radii", "description": "both radii are free"}],
+    "objectives": [LENGTH],
+    "summary": f"用户要总长不超过 95 mm，越短越好。{LINE}",
 }
 
 
+def demand_with(*objectives, **top):
+    return {**DEMAND, "objectives": list(objectives), **top}
+
+
 def rounds_of(gs, tiers):
-    return [{"round": k, "shortfall": g, "tier": t, "achieved": g == 0, "harness_sha": "a"} for k, (g, t) in enumerate(zip(gs, tiers))]
+    return [{"round": k, "shortfall": g, "tier": t, "achieved": g == 0, "demand_sha": "a"} for k, (g, t) in enumerate(zip(gs, tiers))]
 
 
-STOP = {"rel": 0.01, "max_rounds": 30, "tiers": list(harness.TIERS)}
+STOP = {"rel": 0.01, "max_rounds": 30, "tiers": list(demand.TIERS)}
 
 
 def test_shortfall_and_validation():
     t = {"goal": {"equals": 50.0, "tol": 0.5}}
-    assert harness.shortfall({**t}, 50.4) == 0 and harness.shortfall(t, 51.5) == pytest.approx(2.0)
-    assert harness.shortfall({"goal": {"min": 0.3}, "scale": 0.1}, 0.25) == pytest.approx(0.5)
-    assert harness.shortfall({"goal": {"max": 1.0}}, None) == math.inf
-    with pytest.raises(SaosError):
-        harness.validate({**HARNESS, "targets": [{"id": "x", "kind": "target", "check": {"operand": {"type": "EFFL"}}, "goal": {"max": 0.0}}]})
-    with pytest.raises(SaosError):
-        harness.validate({**HARNESS, "request": ""})
-    with pytest.raises(SaosError):
-        harness.validate({**HARNESS, "stop": {"tiers": ["magic"]}})
-    assert harness.digest(HARNESS) == harness.digest({**HARNESS, "confirmed": {"quote": "另一次确认"}})
+    assert demand.shortfall({**t}, 50.4) == 0 and demand.shortfall(t, 51.5) == pytest.approx(2.0)
+    assert demand.shortfall({"goal": {"min": 0.3}, "scale": 0.1}, 0.25) == pytest.approx(0.5)
+    assert demand.shortfall({"goal": {"max": 1.0}}, None) == math.inf
+    demand.validate(DEMAND)
+    bad = [
+        demand_with({k: v for k, v in LENGTH.items() if k != "scale"} | {"must": {"max": 0.0}}),  # 界限为 0 时必须给尺度
+        {**DEMAND, "summary": "没有最后那句话"},
+        {**DEMAND, "stop": {"tiers": ["magic"]}},
+        {**DEMAND, "tissue": {"source": "paper"}},                          # 不收需求以外的字段
+        {**DEMAND, "request": "用户原话"},
+        demand_with({**LENGTH, "goal": {"max": 1.0}}),                      # 目标用 must / wish，不用 goal
+        demand_with({k: v for k, v in LENGTH.items() if k != "check"}),     # 目标必须能测
+        {**DEMAND, "constants": [{"id": "na", "description": "fiber NA", "value": 0.5}]},             # 常量要有来源
+        {**DEMAND, "variables": [{"id": "n", "description": "lens index", "range": {"max": 1.6}}]},  # 范围要能测
+        {**DEMAND, "variables": [{"id": "length", "description": "same id as an objective"}]},
+        {**DEMAND, "objectives": []},
+        {**DEMAND, "open_questions": [{"question": "脑区？", "blocking": "yes"}]},
+        demand_with({k: v for k, v in LENGTH.items() if k != "origin"}),   # 目标要写明来源
+        demand_with({**LENGTH, "weight": 0}),
+        demand_with({k: v for k, v in LENGTH.items() if k not in ("must", "scale")} | {"weight": 2.0}),  # 没有达标线就没有权重
+        demand_with(LENGTH, {**LENGTH, "id": "extra", "origin": "agent", "weight": 1.5}),                # agent 的目标不能比用户的重
+    ]
+    for data in bad:
+        with pytest.raises(SaosError):
+            demand.validate(data)
+
+
+def test_digest_covers_meaning_not_wording():
+    """总结、待确认问题和语言不改变需求版本；三类条目变了才变。"""
+    base = demand.digest(demand.validate(DEMAND))
+    reworded = {**DEMAND, "summary": f"换个说法。{LINE}", "lang": "en", "open_questions": [{"question": "染料？", "blocking": False}]}
+    assert demand.digest(demand.validate(reworded)) == base
+    assert demand.digest(demand.validate(demand_with({**LENGTH, "must": {"max": 99.0}}))) != base
+    assert demand.digest(demand.validate({**DEMAND, "constants": [{**DEMAND["constants"][0], "source": "datasheet"}]})) != base
 
 
 def test_stop_rule_requires_escalation_before_exhausted():
@@ -55,17 +82,17 @@ def test_stop_rule_requires_escalation_before_exhausted():
     # 升级后又有明显进步：重新计数，不判停
     d = ledger.decide(rounds_of([10, 5, 5, 5, 5, 3, 3], tiers), STOP)
     assert d["status"] == "continue" and d["last_gain_round"] == 5
-    # 需求框定只允许部分层级时，用完这些层级即可判停
+    # 需求只允许部分层级时，用完这些层级即可判停
     d = ledger.decide(rounds_of([10, 5, 5, 5], ["baseline", "local", "local", "variables"]), {**STOP, "tiers": ["local", "variables"]})
     assert d["status"] == "exhausted"
 
 
-def test_stop_rule_achieved_limit_and_harness_change():
+def test_stop_rule_achieved_limit_and_demand_change():
     assert ledger.decide(rounds_of([10, 0], ["baseline", "local"]), STOP)["status"] == "achieved"
     assert ledger.decide(rounds_of([10, 9, 8], ["baseline", "local", "local"]), {**STOP, "max_rounds": 2})["status"] == "limit"
     assert ledger.decide(rounds_of([math.inf, math.inf, 5], ["baseline", "local", "local"]), STOP)["last_gain_round"] == 2
     rows = rounds_of([10, 5, 5, 5, 5, 5, 5], ["baseline", "local", "variables", "materials", "global", "structure", "local"])
-    rows[-1]["harness_sha"] = "b"  # 需求框定改过：从改动后重新算
+    rows[-1]["demand_sha"] = "b"  # 需求改过：从改动后重新算
     assert ledger.decide(rows, STOP)["status"] == "continue"
 
 
@@ -90,8 +117,10 @@ def approve_model(daemon, job, quote="模型可以"):
 NOTES = {"surfaces": {"0": "object", "1": "lens front", "2": "lens back", "3": "image"}, "assumptions": ["test"], "first_order": ["f = 50 mm"]}
 
 
-def write_harness(job, data):
-    (job.root / "sources" / "harness.yaml").write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+def write_demand(job, data, confirm="确认，开始吧"):
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    if confirm:
+        demand.confirm(job.root, confirm)
 
 
 def call(daemon, op, **args):
@@ -100,12 +129,14 @@ def call(daemon, op, **args):
 
 def test_workflow_rounds_until_achieved_and_report(setup):
     daemon, job = setup
-    assert call(daemon, "harness.check", job=job.id)["error"]["code"] == ErrorCode.FILE_NOT_FOUND
-    write_harness(job, {**HARNESS, "confirmed": None})
-    check = call(daemon, "harness.check", job=job.id)["result"]  # 框定阶段可以先取值
+    assert call(daemon, "demand.check", job=job.id)["error"]["code"] == ErrorCode.FILE_NOT_FOUND
+    write_demand(job, DEMAND, confirm=None)
+    check = call(daemon, "demand.check", job=job.id)["result"]  # 框定阶段可以先取值
     assert check["items"][0]["value"] == 100.0 and check["shortfall"] == pytest.approx(1.0) and not check["achieved"]
-    assert call(daemon, "round.record", job=job.id)["error"]["code"] == ErrorCode.BAD_ARGS  # 未确认不能记录轮次
-    write_harness(job, HARNESS)
+    assert not check["items"][0]["wish_met"]
+    assert call(daemon, "round.record", job=job.id)["error"]["code"] == ErrorCode.DEMAND_NOT_CONFIRMED  # 未确认不能记录轮次
+    assert call(daemon, "opt.local", job=job.id)["error"]["code"] == ErrorCode.DEMAND_NOT_CONFIRMED  # 也不能开始优化
+    demand.confirm(job.root, "确认，开始吧")
     r0 = call(daemon, "round.record", job=job.id, note="start")["result"]
     assert r0["record"]["tier"] == "baseline" and r0["decision"]["status"] == "continue"
     assert call(daemon, "round.record", job=job.id, tier="magic")["error"]["code"] == ErrorCode.BAD_ARGS
@@ -118,42 +149,48 @@ def test_workflow_rounds_until_achieved_and_report(setup):
     out = report.write(job, lang="zh")
     html = (job.root / "report" / "index.html").read_text(encoding="utf-8")
     assert out["status"] == "achieved" and out["deliver"] == "rounds/r001.zmx" and out["lang"] == "zh"
-    assert "达成" in html and "总长不超过 95 mm" in html and "TOTR" in html and "<svg" in html
-    # 语言由需求框定的 lang 决定，--lang 优先；切换语言不改变需求框定的哈希
-    write_harness(job, {**HARNESS, "lang": "en"})
+    assert "达成" in html and "总长不超过 95 mm" in html and "TOTR" in html and "<svg" in html and LINE in html
+    assert "确认，开始吧" in html and "a.zmx" in html and "期望 ≤ 90" in html
+    # 语言由需求的 lang 决定，--lang 优先；切换语言不改变需求的哈希，不需要重新确认
+    write_demand(job, {**DEMAND, "lang": "en"}, confirm=None)
     assert report.write(job)["lang"] == "en"
     html = (job.root / "report" / "index.html").read_text(encoding="utf-8")
     assert 'lang="en"' in html and "Achieved" in html and "达成" not in html and "总长不超过 95 mm" in html
     assert report.write(job, lang="zh")["lang"] == "zh"
 
 
-def test_harness_change_needs_new_confirmation(setup):
+def test_demand_change_needs_new_confirmation(setup):
     daemon, job = setup
-    write_harness(job, HARNESS)
+    write_demand(job, DEMAND)
     call(daemon, "round.record", job=job.id)
-    changed = {**HARNESS, "targets": [{**HARNESS["targets"][0], "goal": {"max": 99.0}}]}
-    write_harness(job, changed)
-    assert call(daemon, "round.record", job=job.id, tier="local")["error"]["code"] == ErrorCode.SPEC_CHANGED
-    write_harness(job, {**changed, "confirmed": {"quote": "改成 99 mm 也可以"}})
+    changed = demand_with({**LENGTH, "must": {"max": 99.0}})
+    write_demand(job, changed, confirm=None)
+    refused = call(daemon, "round.record", job=job.id, tier="local")["error"]
+    assert refused["code"] == ErrorCode.DEMAND_NOT_CONFIRMED and refused["details"]["demand_sha"] == demand.digest(demand.validate(changed))
+    # 只改写总结不需要重新确认 / rewording the summary needs no new confirmation
+    write_demand(job, {**changed, "summary": f"放宽到 99 mm。{LINE}"}, confirm="改成 99 mm 也可以")
+    assert call(daemon, "round.record", job=job.id, tier="local")["ok"]
+    write_demand(job, {**changed, "summary": f"换个说法。{LINE}"}, confirm=None)
+    daemon.backend.lens["surfaces"][1]["radius"] = 45.0
     assert call(daemon, "round.record", job=job.id, tier="local")["ok"]
 
 
 @pytest.mark.parametrize("bound", ["min", "max", "equals"])
 @pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf, True, "50", None])
 def test_invalid_goal_cannot_pass(bound, value):
-    target = {**HARNESS["targets"][0], "goal": {bound: value, "tol": 0.5}, "scale": 5}
+    target = {**LENGTH, "must": {bound: value, "tol": 0.5}, "scale": 5}
     with pytest.raises(SaosError) as exc:
-        harness.validate({**HARNESS, "targets": [target]})
+        demand.validate(demand_with(target))
     assert exc.value.code == ErrorCode.BAD_ARGS
 
 
 def test_report_never_reuses_an_old_requirement_version(setup):
     daemon, job = setup
-    loose = {**HARNESS, "targets": [{**HARNESS["targets"][0], "goal": {"max": 110}}]}
-    write_harness(job, loose)
+    loose = demand_with({**LENGTH, "must": {"max": 110}})
+    write_demand(job, loose)
     assert call(daemon, "round.record", job=job.id)["result"]["record"]["achieved"]
-    tight = {**loose, "targets": [{**loose["targets"][0], "goal": {"max": 50}}], "confirmed": {"quote": "改成50"}}
-    write_harness(job, tight)
+    tight = demand_with({**LENGTH, "must": {"max": 50}})
+    write_demand(job, tight, confirm="改成50")
     with pytest.raises(SaosError) as exc:
         report.build(job)
     assert exc.value.code == ErrorCode.SPEC_CHANGED
@@ -166,14 +203,14 @@ def test_report_never_reuses_an_old_requirement_version(setup):
 
 def test_analysis_evidence_survives_later_rounds_and_checks(setup):
     daemon, job = setup
-    target = {**HARNESS["targets"][0], "check": {"analysis": {"type": "FakeCurve", "path": "series[0].y.v[2]"}}}
-    write_harness(job, {**HARNESS, "targets": [target]})
+    target = {**LENGTH, "check": {"analysis": {"type": "FakeCurve", "path": "series[0].y.v[2]"}}}
+    write_demand(job, demand_with(target))
     first = call(daemon, "round.record", job=job.id)["result"]["evaluation"]
     text_path = job.root / first["items"][0]["evidence"]["text"]
     original = text_path.read_bytes()
     daemon.backend.lens["surfaces"][1]["thickness"] = 105
     second = call(daemon, "round.record", job=job.id, tier="local")["result"]["evaluation"]
-    checked = call(daemon, "harness.check", job=job.id)["result"]
+    checked = call(daemon, "demand.check", job=job.id)["result"]
     paths = {item["items"][0]["evidence"]["text"] for item in (first, second, checked)}
     assert len(paths) == 3 and text_path.read_bytes() == original
     assert json.loads(text_path.with_suffix(".json").read_text())["series"][0]["y"]["v"][-1] == 100
@@ -191,7 +228,7 @@ def test_failed_measurement_still_generates_report(setup, check):
     daemon, job = setup
     (job.root / "checks").mkdir()
     (job.root / "checks" / "broken.py").write_text("def run(ctx):\n    raise RuntimeError('<失败>')\n", encoding="utf-8")
-    write_harness(job, {**HARNESS, "targets": [{**HARNESS["targets"][0], "check": check}]})
+    write_demand(job, demand_with({**LENGTH, "check": check}))
     result = call(daemon, "round.record", job=job.id)["result"]
     assert result["record"]["shortfall"] == math.inf and not result["record"]["achieved"]
     # 判定执行出错：本轮无效，不是设计结论 / the check failed to run: an invalid round, not a design result
@@ -210,8 +247,8 @@ def test_script_versions_reset_comparison_and_preserve_source(setup):
     script = job.root / "checks" / "check.py"
     source = "def run(ctx):\n    return ctx.backend.operand('TOTR', 0, 0, [])\n"
     script.write_text(source, encoding="utf-8")
-    write_harness(job, {**HARNESS, "targets": [{**HARNESS["targets"][0], "check": {"script": "checks/check.py"}}],
-                        "stop": {"tiers": ["local"]}})
+    write_demand(job, demand_with({**LENGTH, "check": {"script": "checks/check.py"}},
+                        stop={"tiers": ["local"]}))
     first = call(daemon, "round.record", job=job.id)["result"]
     # 同一镜头再记一轮被拒绝；改一个不影响总长的半径后再记 / the same lens again is refused; change a radius that leaves the track
     assert call(daemon, "round.record", job=job.id, tier="local")["error"]["code"] == ErrorCode.DUPLICATE_ROUND
@@ -221,7 +258,7 @@ def test_script_versions_reset_comparison_and_preserve_source(setup):
     with pytest.raises(SaosError):
         report.build(job)
     changed = call(daemon, "round.record", job=job.id, tier="local")["result"]
-    assert changed["record"]["harness_sha"] == first["record"]["harness_sha"]
+    assert changed["record"]["demand_sha"] == first["record"]["demand_sha"]
     assert changed["record"]["method_sha"] != first["record"]["method_sha"]
     assert changed["decision"]["status"] == "continue" and changed["decision"]["last_gain_round"] == 2
     assert report.build(job)["deliver"]["round"] == 2
@@ -231,7 +268,7 @@ def test_script_versions_reset_comparison_and_preserve_source(setup):
 
 def test_report_refuses_missing_or_changed_evidence(setup):
     daemon, job = setup
-    write_harness(job, HARNESS)
+    write_demand(job, DEMAND)
     record = call(daemon, "round.record", job=job.id)["result"]["record"]
     (job.root / record["evaluation"]).unlink()
     with pytest.raises(SaosError) as exc:
@@ -242,8 +279,8 @@ def test_report_refuses_missing_or_changed_evidence(setup):
 
 def test_legacy_stopped_round_can_be_remeasured_without_reconfirmation(setup):
     daemon, job = setup
-    h = {**HARNESS, "targets": [{**HARNESS["targets"][0], "goal": {"max": 110}}]}
-    write_harness(job, h)
+    h = demand_with({**LENGTH, "must": {"max": 110}})
+    write_demand(job, h)
     first = call(daemon, "round.record", job=job.id)["result"]["record"]
     legacy = {k: v for k, v in first.items() if k != "method_sha"}
     (job.root / ledger.LEDGER_FILE).write_text(json.dumps(legacy) + "\n", encoding="utf-8")
@@ -255,8 +292,8 @@ def test_legacy_stopped_round_can_be_remeasured_without_reconfirmation(setup):
 
 def test_evidence_names_cannot_collide_on_windows(setup):
     daemon, job = setup
-    target = {**HARNESS["targets"][0], "check": {"analysis": {"type": "FakeCurve", "path": "series[0].y.v[2]"}}}
-    write_harness(job, {**HARNESS, "targets": [{**target, "id": name} for name in ("result", "Result")]})
+    target = {**LENGTH, "check": {"analysis": {"type": "FakeCurve", "path": "series[0].y.v[2]"}}}
+    write_demand(job, demand_with(*({**target, "id": name} for name in ("result", "Result"))))
     evaluation = call(daemon, "round.record", job=job.id)["result"]["evaluation"]
     paths = [(job.root / item["evidence"]["text"]).with_suffix(".json") for item in evaluation["items"]]
     assert len(set(paths)) == 2
@@ -266,7 +303,7 @@ def test_evidence_names_cannot_collide_on_windows(setup):
 
 def test_connection_loss_during_check_does_not_record_an_infinite_round(setup, monkeypatch):
     daemon, job = setup
-    write_harness(job, HARNESS)
+    write_demand(job, DEMAND)
 
     def disconnected(*args):
         daemon.backend.started = False
@@ -285,7 +322,7 @@ def test_rounds_need_an_approved_model_matching_the_structure(saos_home, fake_le
     job = jobs.create_job("gate")
     daemon.handle({"op": "lens.import", "args": {"job": job.id, "src": str(fake_lens_file), "name": "a.zmx"}})
     daemon.handle({"op": "lens.load", "args": {"job": job.id, "file": "a.zmx"}})
-    write_harness(job, HARNESS)
+    write_demand(job, DEMAND)
     refused = call(daemon, "round.record", job=job.id)["error"]
     assert refused["code"] == ErrorCode.MODEL_NOT_APPROVED and "latest_approved" not in refused["details"]
     bare = daemon.handle({"op": "lens.describe", "args": {"job": job.id}})["result"]["folder"]
@@ -316,14 +353,14 @@ def test_model_glass_is_never_achieved_or_delivered():
     rounds[1]["model_glass"] = [3]
     d = ledger.decide(rounds, STOP)
     assert d["status"] == "continue" and d["next_tier"] == "materials" and "[3]" in d["reason"]
-    rounds.append({"round": 2, "shortfall": 0.0, "tier": "materials", "achieved": True, "harness_sha": "a", "model_glass": []})
+    rounds.append({"round": 2, "shortfall": 0.0, "tier": "materials", "achieved": True, "demand_sha": "a", "model_glass": []})
     assert ledger.decide(rounds, STOP)["status"] == "achieved"
     assert ledger.deliverable(rounds[2]) and not ledger.deliverable(rounds[1])
 
 
 def test_report_marks_exploration_only_rounds(setup):
     daemon, job = setup
-    write_harness(job, HARNESS)
+    write_demand(job, DEMAND)
     call(daemon, "round.record", job=job.id)
     # 手工把这一轮标成含模型玻璃，模拟只做了探索 / mark the round as using a model glass
     path = job.root / ledger.LEDGER_FILE
@@ -340,7 +377,7 @@ def test_round_archive_is_write_once_and_sealed(setup):
     """归档镜头只由工具写一次，工作文件仍是当前镜头；封存能发现改动。
     Round archives are written once by the tools, the working file stays current, and seals detect edits."""
     daemon, job = setup
-    write_harness(job, HARNESS)
+    write_demand(job, DEMAND)
     rec = call(daemon, "round.record", job=job.id)["result"]["record"]
     assert rec["file"] == "rounds/r000.zmx"
     assert daemon.loaded.path == job.lenses_dir / "a.zmx"  # 回到工作文件 / back on the working file
@@ -361,8 +398,8 @@ def test_check_that_changes_the_lens_blocks_the_round(setup):
     (job.root / "checks").mkdir()
     (job.root / "checks" / "edit.py").write_text(
         "def run(ctx):\n    ctx.backend.lens['surfaces'][1]['radius'] += 1.0\n    return ctx.backend.operand('TOTR', 0, 0, [])\n", encoding="utf-8")
-    write_harness(job, {**HARNESS, "targets": [{**HARNESS["targets"][0], "check": {"script": "checks/edit.py"}}]})
-    assert call(daemon, "harness.check", job=job.id)["result"]["lens_modified_by_checks"]
+    write_demand(job, demand_with({**LENGTH, "check": {"script": "checks/edit.py"}}))
+    assert call(daemon, "demand.check", job=job.id)["result"]["lens_modified_by_checks"]
     refused = call(daemon, "round.record", job=job.id)["error"]
     assert refused["code"] == ErrorCode.LENS_MODIFIED_BY_CHECK and any("radius" in c for c in refused["details"]["changed"])
     assert not ledger.load(job.root / ledger.LEDGER_FILE)
@@ -379,7 +416,7 @@ def test_support_files_are_versioned_and_copied(setup):
         "def run(ctx):\n"
         "    extra = json.loads(pathlib.Path(__file__).with_name('limits.json').read_text())['extra']\n"
         "    return ctx.backend.operand('TOTR', 0, 0, []) + extra\n", encoding="utf-8")
-    write_harness(job, {**HARNESS, "targets": [{**HARNESS["targets"][0], "check": {"script": "checks/track.py"}}]})
+    write_demand(job, demand_with({**LENGTH, "check": {"script": "checks/track.py"}}))
     first = call(daemon, "round.record", job=job.id)["result"]
     folder = job.root / first["evaluation"]["evidence_dir"]
     assert (folder / "support" / "checks" / "limits.json").is_file()
@@ -392,7 +429,7 @@ def test_support_files_are_versioned_and_copied(setup):
 
 def test_leftover_archive_is_set_aside_not_overwritten(setup):
     daemon, job = setup
-    write_harness(job, HARNESS)
+    write_demand(job, DEMAND)
     leftover = job.lenses_dir / "rounds" / "r000.zmx"
     leftover.parent.mkdir(parents=True)
     leftover.write_text("residue of a failed attempt", encoding="utf-8")
@@ -406,9 +443,97 @@ def test_invalid_rounds_neither_count_as_tried_nor_as_progress():
     rounds[1]["measurement_errors"] = ["length"]
     d = ledger.decide(rounds, {**STOP, "tiers": ["local"]})
     assert d["status"] == "continue" and d["untried_tiers"] == ["local"] and "fix them" in d["reason"]
-    # 轮次上限按需求框定版本计 / the round budget counts per harness version
+    # 轮次上限按需求版本计 / the round budget counts per demand version
     many = rounds_of([5.0] * 4, ["baseline", "local", "local", "local"])
     for r in many[2:]:
-        r["harness_sha"] = "b"
+        r["demand_sha"] = "b"
     assert ledger.decide(many, {**STOP, "max_rounds": 2})["status"] != "limit"
     assert ledger.decide(many + [{**many[-1], "round": 4}], {**STOP, "max_rounds": 2})["status"] == "limit"
+
+
+def test_blocking_question_stops_rounds_and_optimisation(setup):
+    """blocking 的待确认问题：不记录轮次、不跑优化；非阻塞问题不拦。"""
+    daemon, job = setup
+    asked = {**DEMAND, "open_questions": [{"question": "目标脑区是哪里？", "blocking": True}, {"question": "染料？", "blocking": False}]}
+    write_demand(job, asked)
+    for op in ("round.record", "opt.local"):
+        refused = call(daemon, op, job=job.id)["error"]
+        assert refused["code"] == ErrorCode.DEMAND_BLOCKED and refused["details"]["blocking_questions"] == ["目标脑区是哪里？"]
+    # 问题不改变需求版本：用户回答后去掉 blocking，原确认仍有效
+    write_demand(job, {**asked, "open_questions": asked["open_questions"][1:]}, confirm=None)
+    daemon.backend.optimize = lambda cycles, cores: {"merit": 1.0}  # 假后端没有优化器 / the fake backend has no optimiser
+    assert call(daemon, "opt.local", job=job.id)["ok"]
+    result = call(daemon, "round.record", job=job.id)["result"]
+    assert result["brief"]["open_questions"] == ["染料？"] and result["brief"]["reminder"] == LINE
+
+
+def test_broken_constant_or_variable_range_is_never_delivered(setup):
+    """常量、变量范围是硬条件：G 再小也不能交付。"""
+    daemon, job = setup
+    hard = {**DEMAND, "variables": [{"id": "track_cap", "description": "track must stay under 99", "check": {"operand": {"type": "TOTR"}},
+                                     "range": {"max": 99.0}}],
+            "objectives": [{**LENGTH, "must": {"max": 120.0}}]}
+    write_demand(job, hard)
+    result = call(daemon, "round.record", job=job.id)["result"]
+    assert result["record"]["hard_failing"] == ["track_cap"] and not result["record"]["achieved"]
+    assert result["brief"]["hard_failing"] == ["track_cap"]
+    assert not ledger.deliverable(result["record"])
+    report.write(job, lang="zh")
+    html = (job.root / "report" / "index.html").read_text(encoding="utf-8")
+    assert "不满足常量或变量范围（track_cap）" in html and "变量范围" in html
+
+
+def test_nothing_with_a_pass_line_is_never_achieved(setup):
+    daemon, job = setup
+    write_demand(job, demand_with({k: v for k, v in LENGTH.items() if k not in ("must", "scale")}))
+    result = call(daemon, "round.record", job=job.id)["result"]
+    assert result["record"]["shortfall"] == 0 and not result["record"]["achieved"]
+
+
+def test_brief_asks_for_review_when_rounds_stall(setup):
+    """连续两轮没有明显进步时，提要要求先审视需求再加码。"""
+    daemon, job = setup
+    write_demand(job, DEMAND)
+    r0 = call(daemon, "round.record", job=job.id)["result"]
+    assert r0["brief"]["review"] is None and r0["brief"]["objectives"][0]["id"] == "length"
+    for radius in (45.0, 46.0):
+        daemon.backend.lens["surfaces"][1]["radius"] = radius
+        brief = call(daemon, "round.record", job=job.id, tier="local")["result"]["brief"]
+    assert "2 rounds without a clear gain" in brief["review"] and "ask the user" in brief["review"]
+
+
+def test_old_harness_file_is_refused_with_a_pointer(setup):
+    daemon, job = setup
+    (job.root / "sources" / "harness.yaml").write_text("schema: 1\n", encoding="utf-8")
+    refused = call(daemon, "demand.check", job=job.id)["error"]
+    assert refused["code"] == ErrorCode.FILE_NOT_FOUND and "demand.yaml" in refused["message"]
+
+
+def test_demand_show_and_confirm(saos_home):
+    job = jobs.create_job("cli")
+    write_demand(job, {**DEMAND, "open_questions": [{"question": "脑区？", "blocking": True}]}, confirm=None)
+    shown = demand.show(job.root)
+    assert shown["confirmed"] is None and shown["blocking_questions"] == ["脑区？"] and shown["checks"] == ["length"]
+    with pytest.raises(SaosError):
+        demand.confirm(job.root, "  ")
+    confirmed = demand.confirm(job.root, "可以")
+    assert confirmed["demand_sha"] == shown["demand_sha"] and confirmed["blocking_questions"] == ["脑区？"]
+    assert demand.show(job.root)["confirmed"]["quote"] == "可以"
+
+
+def test_agent_objectives_weigh_less_in_the_shortfall(setup):
+    """同样超出达标线，agent 补充的目标对 G 的贡献按默认权重 0.3 计，用户的按 1 计。"""
+    daemon, job = setup
+    agent = {**LENGTH, "id": "agent_track", "origin": "agent", "must": {"max": 95.0}}
+    write_demand(job, demand_with({**LENGTH, "must": {"max": 120.0}}, agent))
+    record = call(daemon, "round.record", job=job.id)["result"]["record"]
+    assert record["shortfall"] == pytest.approx(0.3 * 1.0)  # (100 - 95) / 5 × 0.3
+    write_demand(job, demand_with({**LENGTH, "weight": 2.0}, agent))
+    daemon.backend.lens["surfaces"][1]["radius"] = 45.0
+    result = call(daemon, "round.record", job=job.id, tier="local")["result"]
+    assert result["record"]["shortfall"] == pytest.approx(2.0 * 1.0 + 0.3 * 1.0)
+    assert {o["id"]: o["weight"] for o in result["brief"]["objectives"]} == {"length": 2.0, "agent_track": 0.3}
+    report.write(job, lang="zh")
+    html = (job.root / "report" / "index.html").read_text(encoding="utf-8")
+    assert "用户，权重 2" in html and "agent 补充，权重 0.3" in html
+

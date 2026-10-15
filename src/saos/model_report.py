@@ -302,7 +302,7 @@ def render(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[str, A
 def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, Any] | None, lens: str, lang: str | None) -> dict[str, Any]:
     from saos.protocol import write_json
 
-    chosen = i18n.resolve(lang, _harness_lang(job))
+    chosen = i18n.resolve(lang, _demand_lang(job))
     meta = {"job": job.id, "lens": lens, "time": jobs.now_iso()}
     found = checks(desc, notes, materials_record.recorded_names(job))
     warnings = [i18n.text("en", *TEXT["w." + code]).format(**args) for code, args in found]
@@ -321,8 +321,8 @@ def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, An
     }
 
 
-def _harness_lang(job: jobs.Job) -> str | None:
-    path = job.root / "sources" / "harness.yaml"
+def _demand_lang(job: jobs.Job) -> str | None:
+    path = job.root / "sources" / "demand.yaml"
     if not path.is_file():
         return None
     try:

@@ -142,12 +142,12 @@ def test_explicit_debugging_tools(ui_pid, tmp_path):
         ok(saos("lens", "load", "--job", job, replaced["captured"], "--discard", env=env))
         assert ok(saos("lens", "surfaces", "--job", job, env=env))["surfaces"][2]["thickness"] == pytest.approx(edited)
 
-        # check：未确认的需求框定也能逐项取值，证据写进 evaluations/
-        harness = tmp_path / "home" / "jobs" / job / "sources" / "harness.yaml"
-        harness.parent.mkdir(exist_ok=True)
-        harness.write_text(json.dumps({"schema": 1, "request": "track", "targets": [
-            {"id": "track", "kind": "constraint", "check": {"operand": {"type": "TOTR"}}, "goal": {"max": 1000.0}},
-            {"id": "spot", "kind": "target", "check": {"analysis": {"type": "StandardSpot", "path": "spot.rms_radius[0][1]"}}, "goal": {"max": 1000.0}}]}), encoding="utf-8")
+        # check：未确认的需求也能逐项取值，证据写进 evaluations/
+        demand_file = tmp_path / "home" / "jobs" / job / "sources" / "demand.yaml"
+        demand_file.parent.mkdir(exist_ok=True)
+        demand_file.write_text(json.dumps({"schema": 2, "summary": "track and spot. 发现任何这个demand可能存在的问题，要大胆质疑和询问。", "objectives": [
+            {"id": "track", "description": "total track", "check": {"operand": {"type": "TOTR"}}, "origin": "user", "must": {"max": 1000.0}},
+            {"id": "spot", "description": "on-axis RMS spot radius", "check": {"analysis": {"type": "StandardSpot", "path": "spot.rms_radius[0][1]"}}, "origin": "user", "must": {"max": 1000.0}}]}), encoding="utf-8")
         checked = ok(saos("check", "--job", job, env=env))
         assert checked["achieved"] and all(item["value"] > 0 for item in checked["items"])
         assert (tmp_path / "home" / "jobs" / job / checked["evidence_file"]).is_file()

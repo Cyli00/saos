@@ -1,6 +1,6 @@
 # Recipe authoring standard
 
-A recipe is an optional sub-skill for one family of optical systems. The `saos` entry skill loads it after the harness is confirmed. A recipe never overrides the three invariants in `skills/saos/SKILL.md`.
+A recipe is an optional sub-skill for one family of optical systems. The `saos` entry skill loads it after the demand is confirmed. A recipe never overrides the three invariants in `skills/saos/SKILL.md`.
 
 ## Where recipes come from
 
@@ -15,7 +15,7 @@ Write a recipe only from a design job that was actually completed with saos. Do 
 ## Required sections of SKILL.md
 
 1. **Scope** — which systems this covers and which it does not (conjugates, apertures, spectral range, size).
-2. **Framing questions** — what to ask during the harness interview for this family, with recommended defaults and the source of each default.
+2. **Framing questions** — what to ask during the demand interview for this family, with recommended defaults and the source of each default.
 3. **Checks** — the usual goals and how to measure them in OpticStudio: operand (type and parameters) or analysis (type, settings, `path` into the export), with units.
 4. **Starting designs** — where to get one (library, patents, Zemax samples, first-order synthesis) and how to adapt it to the user's scale.
 5. **Modelling notes** — layout conventions, solves, apertures, pitfalls seen in practice.

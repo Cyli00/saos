@@ -50,8 +50,9 @@ def ok(out):
     return out["result"]
 
 
-def write_harness(home, job, data):
-    (home / "jobs" / job / "sources" / "harness.yaml").write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+def write_demand(home, job, data, quote):
+    (home / "jobs" / job / "sources" / "demand.yaml").write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    ok(saos("demand", "confirm", "--job", job, "--quote", quote, env={**os.environ, "SAOS_HOME": str(home)}))
 
 
 def test_workflow_until_achieved_or_exhausted_with_reports(saos_home, tmp_path):
@@ -70,19 +71,20 @@ def test_workflow_until_achieved_or_exhausted_with_reports(saos_home, tmp_path):
         ok(saos("lens", "set", "--job", job, "--surface", 4, "--param", "radius", "--value", surfaces[4]["radius"] * 0.96, env=env))
         ok(saos("lens", "save", "--job", job, "--as", "start.zmx", env=env))
 
-        write_harness(saos_home, job, {
-            "schema": 1,
-            "request": "焦距保持原样（±1%），轴上像点尽量小，不比原设计差 50% 以上",
-            "targets": [
-                {"id": "efl", "kind": "constraint", "description": "effective focal length", "check": {"operand": {"type": "EFFL"}}, "goal": {"equals": f0, "tol": 0.01 * f0}},
-                {"id": "spot_axis", "kind": "target", "description": "on-axis RMS spot radius (um), primary wave",
-                 "check": {"analysis": {"type": "StandardSpot", "path": "spot.rms_radius[0][1]"}}, "goal": {"max": 1.5 * spot0}},
-                {"id": "track", "kind": "preference", "description": "total track", "check": {"operand": {"type": "TOTR"}}},
+        write_demand(saos_home, job, {
+            "schema": 2,
+            "constants": [{"id": "efl", "description": "effective focal length", "check": {"operand": {"type": "EFFL"}},
+                           "goal": {"equals": f0, "tol": 0.01 * f0}, "source": "user: keep the original focal length within 1 %"},
+                          {"id": "system", "description": "the sample's fields and wavelengths", "value": "as in the sample", "source": "agent assumption: not discussed"}],
+            "variables": [{"id": "radii_thickness", "description": "radii and thicknesses are free"}],
+            "objectives": [
+                {"id": "spot_axis", "description": "on-axis RMS spot radius (um), primary wave",
+                 "check": {"analysis": {"type": "StandardSpot", "path": "spot.rms_radius[0][1]"}}, "origin": "user", "must": {"max": 1.5 * spot0}},
+                {"id": "track", "description": "total track", "check": {"operand": {"type": "TOTR"}}, "origin": "agent"},
             ],
-            "assumptions": ["the sample's field and wavelengths are kept"],
+            "summary": "焦距保持原样（±1%），轴上像点尽量小，不比原设计差 50% 以上。发现任何这个demand可能存在的问题，要大胆质疑和询问。",
             "stop": {"rel": 0.01, "max_rounds": 8, "tiers": ["local", "variables", "global"]},
-            "confirmed": {"quote": "可以，按这个做"},
-        })
+        }, "可以，按这个做")
         # 模型确认：没有确认过的建模说明不能记录轮次 / model gate: no rounds before an approved description
         assert saos("round", "--job", job, env=env)["error"]["code"] == "MODEL_NOT_APPROVED"
         notes = tmp_path / "notes.json"
@@ -117,13 +119,12 @@ def test_workflow_until_achieved_or_exhausted_with_reports(saos_home, tmp_path):
         job2 = ok(saos("job", "create", "--name", "impossible", env=env))["job"]
         ok(saos("lens", "import", "--job", job2, saos_home / "jobs" / job / "lenses" / rep["deliver"], "--as", "start.zmx", env=env))
         ok(saos("lens", "load", "--job", job2, "start.zmx", "--discard", env=env))
-        write_harness(saos_home, job2, {
-            "schema": 1,
-            "request": "总长做到 1 mm 以内",
-            "targets": [{"id": "track", "kind": "constraint", "check": {"operand": {"type": "TOTR"}}, "goal": {"max": 1.0}}],
+        write_demand(saos_home, job2, {
+            "schema": 2,
+            "objectives": [{"id": "track", "description": "total track", "check": {"operand": {"type": "TOTR"}}, "origin": "user", "must": {"max": 1.0}}],
+            "summary": "总长做到 1 mm 以内。发现任何这个demand可能存在的问题，要大胆质疑和询问。",
             "stop": {"rel": 0.01, "max_rounds": 10, "tiers": ["local", "global"]},
-            "confirmed": {"quote": "试试看"},
-        })
+        }, "试试看")
         described = ok(saos("lens", "describe", "--job", job2, "--notes", notes, env=env))
         ok(saos("lens", "approve", "--job", job2, "--model", described["folder"], "--quote", "同一个模型", env=env))
         ok(saos("round", "--job", job2, env=env))

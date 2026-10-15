@@ -32,9 +32,11 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `saos lens analysis --job J TYPE [--set KEY=VALUE …] [--keep-open]` / `--list` | 运行一个 OpticStudio 分析（AnalysisIDM 名称，如 StandardSpot、FftMtf、RayFan、WavefrontMap、FieldCurvatureAndDistortion），导出数据序列、网格（超过 256×256 时降采样）、点列图 RMS/GEO 半径和表头，存为任务的 `analyses/NNN-TYPE.json`，并保存 OpticStudio 的文本全文 `.txt`。设置名取自分析的设置对象，Field、Wavelength、Surface 用编号或 `all`；枚举按成员名。返回值省略网格本体，只给统计量 |
 | `saos lens view --job J [--viewer lde\|cross-section\|3d\|shaded] [--analysis TYPE] [--set KEY=VALUE …]` | 显性调试：打开 Lens Data 或一种 System Viewer，加一个像质分析（默认 StandardSpot，按系统最看重的像质选），按当前镜头刷新。选择会被记住；之后 load、set、build、opt local、exec、round 结束时自动刷新已打开的分析窗口。连接 extension 后自动按默认选择打开 |
 | `saos lens screenshot --job J [--label L]` | 显性调试：把 OpticStudio 的可见窗口截成 PNG，存为任务的 `screens/NNN-L-K.png`（PrintWindow，被遮挡也能截；最小化的窗口跳过） |
-| `saos check --job J` | 按任务的需求框定 `sources/harness.yaml` 对当前镜头逐项实测和判定，不记录。需求框定未确认时也能用，便于框定阶段先看数值 |
-| `saos round --job J [--tier local\|variables\|materials\|global\|structure] [--note TEXT]` | 记录一个调试轮次：存为 `lenses/rounds/rNNN.zmx`，逐项实测判定（全文存为 `rounds/rNNN.json`），写入 `ledger.jsonl`，返回终止判断（continue / achieved / exhausted / limit）及还没试过的层级。第 0 轮不填 tier。需求框定未确认、改动后没有新的确认原话、已经终止、或镜头结构与已确认的建模说明不一致（`MODEL_NOT_APPROVED`）时拒绝。每轮记下所用材料；含模型玻璃的轮次不算达成、不能交付 |
-| `saos report --job J [--lang zh\|en]` | 由需求框定和 ledger 生成交付报告 `report/index.html`，不连接 OpticStudio；语言见「报告语言」 |
+| `saos demand show --job J` | 校验需求单 `sources/demand.yaml`，给出版本哈希、确认记录、待确认问题和访谈总结，不连接 OpticStudio |
+| `saos demand confirm --job J --quote "<用户原话>"` | 记录用户对当前需求单版本的确认，写入 `confirmations.jsonl` |
+| `saos check --job J` | 按需求单对当前镜头逐项实测和判定，不记录。需求单未确认时也能用，便于整理需求时先看数值 |
+| `saos round --job J [--tier local\|variables\|materials\|global\|structure] [--note TEXT]` | 记录一个调试轮次：存为 `lenses/rounds/rNNN.zmx`，逐项实测判定（全文存为 `evaluations/NNN/result.json`），写入 `ledger.jsonl`，返回终止判断（continue / achieved / exhausted / limit）、还没试过的层级和需求提要 `brief`。第 0 轮不填 tier。当前需求单版本未确认（`DEMAND_NOT_CONFIRMED`）、有 blocking 待确认问题（`DEMAND_BLOCKED`）、已经终止、或镜头结构与已确认的建模说明不一致（`MODEL_NOT_APPROVED`）时拒绝。每轮记下所用材料；含模型玻璃或不满足常量、变量范围的轮次不能交付 |
+| `saos report --job J [--lang zh\|en]` | 由需求单和 ledger 生成交付报告 `report/index.html`，不连接 OpticStudio；语言见「报告语言」 |
 | `saos exec SCRIPT --job J [--arg K=V …] [--args-file JSON] [--name N] [--quiet]` | 在后台进程内执行脚本（ADR-0007），见下文「脚本执行」 |
 | `saos microscope adapt EXTRACT --focal-length F --field-number N [--tube-lens 200] [--catalogs …] [--stop rear_focal\|r<面号>] --out DIR` | 把子 agent 提取的面数据适配成标准设计布局的处方，输出 prescription.json、expect.json、adapt_report.json（不经后台进程） |
 | `saos lens build --job J PRESCRIPTION --as NAME [--overwrite]` | 按处方用 ZOS-API 搭建镜头，保存到 lenses/ 并加载 |
@@ -43,7 +45,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `saos microscope accept --job J [--spec FILE]` | 按光学规格做验收评估，结果和验收模型存到任务的 eval/。结果的 `focus_trace` 列出调焦的每个试探位置（波长、厚度、轴上光线失败数、c4、拟合残差） |
 | `saos opt vary --job J --param radius\|thickness\|conic --surfaces 1-16 [--off]` | 设变量或取消变量。物面只允许厚度（即无盖玻片时的工作距离间隔） |
 | `saos opt merit --job J clear\|wizard\|add\|show [--file JSON]` | 评价函数：清空；按向导生成默认评价函数（type、data、reference、rings、arms 等）；追加操作数列表；查看 |
-| `saos opt local --job J [--cycles auto\|1\|5\|10\|50]` | 局部优化（阻尼最小二乘） |
+| `saos opt local --job J [--cycles auto\|1\|5\|10\|50]` | 局部优化（阻尼最小二乘）。开始前做与 round 相同的需求单检查（已确认、没有 blocking 问题） |
 | `saos microscope round --job J [--spec FILE] [--note TEXT]` | 记录一个调整轮次：存为 lenses/rounds/rNNN.zmx，做验收评估，返回停机判断（pass / stagnated / limit / continue）。第 0 轮时冻结光学规格，之后不能更换。后台协议另有 `observe` 参数，供基准实验使用：照常冻结和核对，停机判断只记录不执行 |
 | `saos microscope library check EXTRACT` | 入库前用近轴计算核对提取结果：焦距和工作距离的印刷值落在印刷精度的舍入包络内，或与计算值相差不超过 1%，即为一致（不经后台进程） |
 | `saos microscope library add ID --extract FILE [--catalogs …] [--focal-length F] [--field-number N] [--stop rear_focal\|printed\|r<面号>]` | 把提取结果适配成处方，写入 `library/microscope/entries/ID/`，状态为 extracted（不经后台进程） |
@@ -60,17 +62,17 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 
 `--job` 必须与当前加载的镜头属于同一任务；镜头文件名一律相对该任务的 `lenses/`。
 
-## 需求框定
+## 需求单
 
-`sources/harness.yaml` 的格式、目标差距的算法和终止规则以英文写在 [skills/saos/harness.md](../skills/saos/harness.md)，agent 直接读那一份；这里不再重复。
+`sources/demand.yaml` 的格式、目标差距的算法和终止规则以英文写在 [skills/saos/demand.md](../skills/saos/demand.md)，agent 直接读那一份；这里不再重复。
 
-要点：判定方法三选一（operand、analysis、script）；`goal` 写有限数值的 `max`、`min` 或 `equals` + `tol`；`lang`（`zh`/`en`）决定交付报告的语言，改它不需要重新确认；`confirmed.quote` 只能是用户的原话。
+要点：只收 `constants`、`variables`、`objectives`、`open_questions`、`summary`、`lang`、`stop`，其他字段一律拒绝；判定方法三选一（operand、analysis、script）；界限写有限数值的 `max`、`min` 或 `equals` + `tol`；访谈总结最后一句固定；版本只取三类条目和 `stop` 的哈希，改写总结、待确认问题或 `lang` 不需要重新确认；确认只能由 `saos demand confirm` 记录用户原话。旧格式 `sources/harness.yaml` 不会自动转换，只有它时命令返回 `FILE_NOT_FOUND` 并提示改写。
 
-每次检查的快照和证据存在新的 `evaluations/NNN/`，返回的 `evidence_file` 指向完整结果。修改检查脚本会开始新的判定方法版本，旧轮次不再参与进展比较和交付选择；需求或脚本改动后还没记录新轮次时，`saos report` 返回 `SPEC_CHANGED`。脚本版本只跟踪直接指定的源码，不跟踪它导入的模块。
+每次检查的快照和证据存在新的 `evaluations/NNN/`，返回的 `evidence_file` 指向完整结果。修改检查脚本会开始新的判定方法版本，旧轮次不再参与进展比较和交付选择；需求单或脚本改动后还没记录新轮次时，`saos report` 返回 `SPEC_CHANGED`。脚本版本只跟踪直接指定的源码，不跟踪它导入的模块。
 
 ## 报告语言
 
-`saos report` 的语言按以下顺序选择：`--lang` > 需求框定的 `lang` > 环境变量 `SAOS_LANG` > 系统界面语言（Windows 取 `GetUserDefaultUILanguage`）> 英文。后台日志按 `SAOS_LANG` 和系统界面语言选择。给 agent 读的错误信息和命令帮助只有英文。
+`saos report` 的语言按以下顺序选择：`--lang` > 需求单的 `lang` > 环境变量 `SAOS_LANG` > 系统界面语言（Windows 取 `GetUserDefaultUILanguage`）> 英文。后台日志按 `SAOS_LANG` 和系统界面语言选择。给 agent 读的错误信息和命令帮助只有英文。
 
 ## 脚本执行
 
@@ -116,6 +118,8 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `LENS_MODIFIED_BY_CHECK` | 记录轮次时，判定脚本改动了镜头（取值前后的镜头内容不同）；本轮不记录。把判定改成只读后重试 |
 | `DUPLICATE_ROUND` | 同一镜头在同一需求和判定版本下已经记过一轮（多为超时后的重试）；`details` 给出已有的轮次 |
 | `EVIDENCE_TAMPERED` | 生成报告时发现封存的证据文件被改动或删除（`saos job verify` 可列出） |
+| `DEMAND_NOT_CONFIRMED` | 记录轮次或运行优化时，当前需求单版本没有用户确认；`details.demand_sha` 给出版本。给用户看需求单，再 `demand confirm` |
+| `DEMAND_BLOCKED` | 需求单有 blocking 待确认问题，`details.blocking_questions` 列出；先问用户，回答后改需求单 |
 | `MODEL_NOT_APPROVED` | 记录轮次时，当前镜头的结构与任何已确认的建模说明都不一致（或还没有确认过）；`details.changed` 列出与最近一次确认相比变了什么。重新 `lens describe`、给用户看、`lens approve` |
 | `NO_LENS_LOADED` / `JOB_MISMATCH` | 没有加载镜头；加载的是另一个任务的镜头 |
 | `UNSAVED_CHANGES` | 当前镜头有未保存修改，不能加载其他镜头、卸载或退出 |
@@ -140,8 +144,8 @@ work/<实例名>/
     job.json         任务状态
     log.jsonl        执行记录：每条命令的参数、结果、错误码、耗时
     seals.jsonl      封存文件的哈希（saos job verify 据此检查）
-    sources/         harness.yaml（需求框定）、interview.md（拷问过程）、materials.yaml（材料来源）
-    checks/          需求框定引用的判定脚本
+    sources/         demand.yaml（需求单）、interview.md（拷问过程）、materials.yaml（材料来源）
+    checks/          需求单引用的判定脚本
     lenses/          镜头文件；rounds/rNNN.zmx 与 captures/NNN-unsaved.zmx 是工具写入的归档，lens save 不能写入
     notes/           model-NNN.json（lens describe 的说明输入，工具保存）与 agent 的说明文字
     models/          建模说明 NNN-<镜头>/：index.html、model.json、layout-*.png、approval.json（用户确认）

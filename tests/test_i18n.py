@@ -1,6 +1,6 @@
 import pytest
 
-from saos import harness, i18n
+from saos import demand, i18n
 from saos.protocol import SaosError
 
 
@@ -25,9 +25,10 @@ def test_resolve_priority(monkeypatch):
     assert i18n.resolve() == i18n.DEFAULT
 
 
-def test_harness_lang():
-    base = {"schema": 1, "request": "x", "targets": [{"id": "a", "kind": "preference", "check": {"operand": {"type": "TOTR"}}}]}
-    assert harness.validate({**base, "lang": "zh"})["lang"] == "zh"
+def test_demand_lang():
+    base = {"schema": 2, "objectives": [{"id": "a", "description": "track", "check": {"operand": {"type": "TOTR"}}, "origin": "user"}],
+            "summary": "x. " + demand.QUESTION_LINE["en"]}
+    assert demand.validate({**base, "lang": "zh"})["lang"] == "zh"
     with pytest.raises(SaosError):
-        harness.validate({**base, "lang": "fr"})
-    assert harness.digest({**base, "lang": "zh"}) == harness.digest(base)
+        demand.validate({**base, "lang": "fr"})
+    assert demand.digest({**base, "lang": "zh"}) == demand.digest(base)

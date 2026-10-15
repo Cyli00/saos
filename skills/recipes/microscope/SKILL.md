@@ -1,6 +1,6 @@
 ---
 name: saos-recipe-microscope
-description: Recipe for dry, infinity-corrected microscope objectives (NA ≤ 0.65, achromat or plan achromat, about 4x–40x) evaluated with an ideal reference tube lens. Load after the saos harness is confirmed when the user needs such an objective.
+description: Recipe for dry, infinity-corrected microscope objectives (NA ≤ 0.65, achromat or plan achromat, about 4x–40x) evaluated with an ideal reference tube lens. Load after the saos demand is confirmed when the user needs such an objective.
 ---
 
 # Recipe: microscope objective
@@ -24,7 +24,7 @@ Dry objectives, infinity corrected, all-spherical, NA ≤ 0.65, achromat or plan
 
 ## 3. Checks
 
-The recipe's own acceptance (`ops.accept`, via `saos microscope accept`) builds an acceptance model (objective + cover glass + reference tube lens, apertures and vignetting cleared), focuses by working distance only (on-axis e-line c4 = 0) and judges: magnification, working distance, optical length, clear diameter, glass status, surface types, centre/edge thickness, air gaps, axial RMS WFE ≤ λ/14, axial colour ≤ 2·δob, OSC ≤ 0.0025, plan field ratio ≥ 0.85 (plan achromat), field RMS WFE, lateral colour, MTF, distortion. Details and sources: `docs/recipes/microscope/optical-spec-and-acceptance.md`. To use it inside a saos harness, add a `script` check whose `run(ctx)` calls `ops.accept(ctx, spec=...)` and returns `spec_shortfall`.
+The recipe's own acceptance (`ops.accept`, via `saos microscope accept`) builds an acceptance model (objective + cover glass + reference tube lens, apertures and vignetting cleared), focuses by working distance only (on-axis e-line c4 = 0) and judges: magnification, working distance, optical length, clear diameter, glass status, surface types, centre/edge thickness, air gaps, axial RMS WFE ≤ λ/14, axial colour ≤ 2·δob, OSC ≤ 0.0025, plan field ratio ≥ 0.85 (plan achromat), field RMS WFE, lateral colour, MTF, distortion. Details and sources: `docs/recipes/microscope/optical-spec-and-acceptance.md`. To use it inside a saos demand, add an objective with a `script` check whose `run(ctx)` calls `ops.accept(ctx, spec=...)` and returns `spec_shortfall`.
 
 ## 4. Starting designs
 

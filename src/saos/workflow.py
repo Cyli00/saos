@@ -1,13 +1,14 @@
-"""通用工作流：按需求框定取值判定（check），记录调试轮次并给出终止判断（round）。
-Generic workflow: measure and judge the harness (check), record rounds and return the stop decision (round).
+"""通用工作流：按需求取值判定（check），记录调试轮次并给出终止判断（round）。
+Generic workflow: measure and judge the demand (check), record rounds and return the stop decision (round).
 
     saos check --job J                 # 当前镜头逐项取值判定，不记录 / judge the current lens, no record
     saos round --job J --tier local    # 存为 lenses/rounds/rNNN.zmx，取值判定，写 ledger.jsonl，返回终止判断
                                        # save lenses/rounds/rNNN.zmx, judge, append ledger.jsonl, return the decision
 
-记录轮次有两道关卡 / Two gates before any round is recorded:
-1. 需求框定已由用户确认（confirmed.quote）/ the harness carries the user's approval (confirmed.quote);
-2. 当前镜头的结构与某份已确认的建模说明一致（saos.model_gate）/ the lens matches an approved model description.
+记录轮次和运行优化前的关卡 / Gates before a round is recorded or an optimisation runs:
+1. 当前需求内容有用户的确认（saos demand confirm，绑定内容哈希）/ the current demand content carries the user's confirmation;
+2. 需求里没有 blocking 的待确认问题 / the demand has no blocking open question;
+3. （仅轮次）当前镜头的结构与某份已确认的建模说明一致（saos.model_gate）/ (rounds only) the lens matches an approved model description.
 第 0 轮记录初始状态（tier 为 baseline）。/ Round 0 records the starting state (tier "baseline").
 """
 
@@ -15,25 +16,23 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 from typing import Any
 
-from saos import harness, jobs, ledger, model_gate
-from saos.harness import TIERS
+from saos import demand, jobs, ledger, model_gate
+from saos.demand import TIERS
 from saos.protocol import ErrorCode, SaosError, jsonable
 
-
-def load_harness(ctx) -> dict[str, Any]:
-    path = ctx.path(harness.HARNESS_FILE)
-    if not path.is_file():
-        raise SaosError(ErrorCode.FILE_NOT_FOUND, f"job {ctx.job.id} has no {harness.HARNESS_FILE}; frame the requirements with the user first")
-    return harness.load(path)
+# 连续这么多轮没有明显进步，就提醒先审视需求和结构，而不是继续加码
+# after this many rounds without a clear gain, remind the agent to question the demand and structure before escalating
+REVIEW_AFTER = 2
 
 
 def check(ctx) -> dict[str, Any]:
     if ctx.lens is None:
         raise SaosError(ErrorCode.NO_LENS_LOADED, f"job {ctx.job.id} has no lens loaded")
     before, sha = lens_state(ctx)
-    result = {**ctx.describe(), **harness.evaluate(ctx, load_harness(ctx))}
+    result = {**ctx.describe(), **demand.evaluate(ctx, demand.load_job(ctx.job.root))}
     after, sha_after = lens_state(ctx)
     if sha_after != sha:
         # 只取值时也提示：同样的判定在记录轮次时会被拒绝 / warn here too: the same checks would be refused when recording a round
@@ -41,12 +40,41 @@ def check(ctx) -> dict[str, Any]:
     return result
 
 
-def _confirmation(h: dict[str, Any]) -> str:
-    confirmed = h.get("confirmed") or {}
-    quote = str(confirmed.get("quote", "")).strip() if isinstance(confirmed, dict) else ""
-    if not quote:
-        raise SaosError(ErrorCode.BAD_ARGS, "the harness is not confirmed: add confirmed.quote with the user's own words of approval before recording rounds")
-    return hashlib.sha256(quote.encode("utf-8")).hexdigest()[:16]
+def preflight(root: Path) -> tuple[dict[str, Any], str, str]:
+    """耗时计算之前的统一检查：需求已确认、没有 blocking 问题。返回需求、内容哈希和确认原话的哈希。
+    The common check before any expensive computation: the demand is confirmed and has no blocking question.
+    Returns the demand, its content hash and a hash of the confirming words."""
+    d = demand.load_job(root)
+    sha = demand.digest(d)
+    confirmed = demand.confirmation_for(root, sha)
+    if confirmed is None:
+        raise SaosError(ErrorCode.DEMAND_NOT_CONFIRMED, "this version of the demand has no user confirmation: show it to the user, then record their words with saos demand confirm",
+                        {"demand_sha": sha})
+    blocking = demand.blocking_questions(d)
+    if blocking:
+        raise SaosError(ErrorCode.DEMAND_BLOCKED, "the demand has blocking open questions; ask the user before spending compute", {"blocking_questions": blocking})
+    return d, sha, hashlib.sha256(confirmed["quote"].encode("utf-8")).hexdigest()[:16]
+
+
+def brief(d: dict[str, Any], evaluation: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
+    """每轮返回的需求提要：目标现状、硬条件、待确认问题，以及该停下来审视时的提醒。
+    The demand brief returned with every round: where the objectives stand, hard conditions, open questions,
+    and a prompt to stop and review when the evidence says so."""
+    objectives = [{k: i.get(k) for k in ("id", "origin", "weight", "value", "goal", "wish", "passed", "wish_met") if k in i}
+                  for i in evaluation["items"] if i["kind"] == "objective"]
+    stalled = decision.get("rounds_without_gain", 0) >= REVIEW_AFTER
+    escalating = decision.get("next_tier") in ("global", "structure")
+    review = None
+    if decision["status"] in ("exhausted", "limit") or stalled or escalating:
+        why = (f"rounds stopped ({decision['status']})" if decision["status"] in ("exhausted", "limit")
+               else f"{decision['rounds_without_gain']} rounds without a clear gain" if stalled
+               else f"next tier is {decision['next_tier']}")
+        review = (f"{why}. Before spending more compute, reread the demand summary and your first-order analysis. If the demand, "
+                  "the structure or a measurement looks wrong or unreachable, stop and ask the user, with the evidence, its impact and options.")
+    lang = d.get("lang") or "zh"
+    return {"objectives": objectives, "hard_failing": evaluation.get("hard_failing", []),
+            "open_questions": [q["question"] for q in d.get("open_questions") or []],
+            "review": review, "reminder": demand.QUESTION_LINE.get(lang, demand.QUESTION_LINE["zh"])}
 
 
 def lens_state(ctx) -> tuple[dict[str, Any], str]:
@@ -73,14 +101,12 @@ def _set_aside(ctx, target) -> None:
 def record_round(ctx, tier: str | None = None, note: str = "") -> dict[str, Any]:
     if ctx.lens is None:
         raise SaosError(ErrorCode.NO_LENS_LOADED, f"job {ctx.job.id} has no lens loaded")
-    h = load_harness(ctx)
-    confirmation = _confirmation(h)
+    h, sha, confirmation = preflight(ctx.job.root)
     # 结构核对只读数据、不画布局图 / the structure check reads data only, no layout pictures
     desc, lens_sha = lens_state(ctx)
     approved = model_gate.require_approved(ctx.job, desc)
-    sha = harness.digest(h)
-    scripts = harness.prepare_scripts(ctx.job.root, h)
-    method_sha = harness.method_digest(scripts)
+    scripts = demand.prepare_scripts(ctx.job.root, h)
+    method_sha = demand.method_digest(scripts)
     path = ctx.path(ledger.LEDGER_FILE)
     history = ledger.load(path)
     number = len(history)
@@ -90,22 +116,20 @@ def record_round(ctx, tier: str | None = None, note: str = "") -> dict[str, Any]
         if tier not in h["stop"]["tiers"]:
             raise SaosError(ErrorCode.BAD_ARGS, f"tier must be one of {h['stop']['tiers']} (ladder: {', '.join(TIERS)})")
         last = history[-1]
-        if sha != last.get("harness_sha") and confirmation == last.get("confirmation"):
-            raise SaosError(ErrorCode.SPEC_CHANGED, "the harness changed without a new user confirmation; the shortfall would no longer be comparable")
         if (sha, method_sha) == ledger.version(last):
             status = ledger.decide(history, h["stop"])["status"]
             if status != "continue":
-                raise SaosError(ErrorCode.BAD_ARGS, f"rounds already stopped ({status}); change the harness with the user to continue", {"status": status})
+                raise SaosError(ErrorCode.BAD_ARGS, f"rounds already stopped ({status}); review the demand with the user to continue", {"status": status})
             if last.get("lens_sha") == lens_sha:
                 # 同一镜头、同一需求和判定版本再记一次没有意义；多半是超时后的重试，返回已有的那一轮
                 # the same lens under the same version again: most likely a retry after a timeout; point to the existing round
-                raise SaosError(ErrorCode.DUPLICATE_ROUND, f"round {last['round']} already recorded this lens under the same harness and checks",
+                raise SaosError(ErrorCode.DUPLICATE_ROUND, f"round {last['round']} already recorded this lens under the same demand and checks",
                                 {"round": last["round"], "file": last.get("file"), "evaluation": last.get("evaluation")})
     try:
         merit = float(ctx.backend.merit_value())
     except Exception:  # noqa: BLE001 - 没有评价函数或后端不支持时只是不记录 / no merit function: just not recorded
         merit = None
-    evaluation = harness.evaluate(ctx, h, scripts)
+    evaluation = demand.evaluate(ctx, h, scripts)
     # 判定不能改动镜头：否则归档的镜头和测得的数值对不上，本轮不记录
     # checks must not change the lens; otherwise the archived lens would not be the one measured, so no round is recorded
     desc_after, sha_after = lens_state(ctx)
@@ -133,10 +157,12 @@ def record_round(ctx, tier: str | None = None, note: str = "") -> dict[str, Any]
         "shortfall": evaluation["shortfall"],
         "achieved": evaluation["achieved"],
         "measurement_errors": evaluation["measurement_errors"],
+        # 常量或变量范围不满足的轮次不能交付 / a round that breaks a constant or a variable range is not deliverable
+        "hard_failing": evaluation["hard_failing"],
         "values": {i["id"]: i["value"] for i in evaluation["items"]},
         "failing": {i["id"]: i["shortfall"] for i in evaluation["items"] if i.get("shortfall", 0) > 0},
         "merit": merit,
-        "harness_sha": sha,
+        "demand_sha": sha,
         "method_sha": method_sha,
         "confirmation": confirmation,
         "model": approved["model"],
@@ -152,4 +178,4 @@ def record_round(ctx, tier: str | None = None, note: str = "") -> dict[str, Any]
     ledger.append(path, record)
     decision = ledger.decide(history + [record], h["stop"])
     ctx.job.update_state(round=number, round_status=decision["status"])
-    return {"record": record, "decision": decision, "evaluation": evaluation}
+    return {"record": record, "decision": decision, "brief": brief(h, evaluation, decision), "evaluation": evaluation}

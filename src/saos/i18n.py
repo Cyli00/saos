@@ -1,6 +1,6 @@
 """给人看的输出（交付报告、计划页、后台日志）的语言选择。给 agent 读的错误和提示只用英文，不经过这里。
 
-优先级：显式指定（命令行 --lang、需求框定的 lang）> 环境变量 SAOS_LANG > 系统界面语言 > en。
+优先级：显式指定（命令行 --lang、需求单的 lang）> 环境变量 SAOS_LANG > 系统界面语言 > en。
 """
 
 from __future__ import annotations
