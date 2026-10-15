@@ -77,6 +77,7 @@ OpticStudio 2024 R1 Premium 加 ZOS-API 能建模的系统都在范围内，包�
 - **语言**：给 agent 读的内容一律用英文，包括技能说明、配方、需求单的格式说明（`skills/saos/demand.md`），以及命令返回的错误和提示。程序生成、给人看的输出（交付报告、计划页、后台日志）有中英两个版本，按需求单的 `lang`（agent 按用户使用的语言填写）、`SAOS_LANG`、系统界面语言依次选择。给人看的文档（本文件、TODO、docs/）和代码注释用中文。GLOSSARY 的术语名中英并列。访谈记录中的用户原话按原文保留。
 - **技能**：只有一个入口技能 `saos`，负责需求单、底线、显性调试规则和任务目录约定；配方是按需加载的子技能。同时支持 Claude Code 和 Codex，技能中不使用某一平台独有的功能。仓库内的技能目录通过链接接入 `~/.agents/skills`。
 - 只用调用 ZOS-API 的 Python 脚本，不自写光学算法；并发时开多个 standalone 实例（ADR-0008，取代 ADR-0003）。
+- **流程图窗口**（`saos ui`）：需求确认后打开一个本机网页小窗口，给用户看流程走到哪一步。它是独立的进程，只读任务目录推断步骤，不经过后台进程，所以后台进程忙时照常刷新。显式调试时，右侧面板替代被 Interactive Extension 锁住的工具栏：切换布局窗口、打开分析窗口、只读查看系统设置，都转给后台进程执行（只看不改，后台进程一次处理一个请求，忙时排队）。点列图、布局和 MTF 不在界面里计算：每轮 `saos round` 写入 ledger 后由 OpticStudio 导出 `viz.json`，界面只负责画（2026-10-15 决定，不另开 OpticStudio 实例现算，避免多占许可证和 CPU）。前端是随包分发的手写 HTML/SVG/canvas，不引入 Node 构建链。
 
 ## 显性调试
 
@@ -122,7 +123,7 @@ OpticStudio 2024 R1 Premium 加 ZOS-API 能建模的系统都在范围内，包�
 | | `sources/demand.yaml` | agent | 已知常量、可调变量、目标及判定方法、待确认问题、访谈总结、终止规则 | 三类条目或终止规则改动须用户重新确认 |
 | | `confirmations.jsonl` | 工具 | 用户确认原话，每条绑定一个需求单版本 | 只追加 |
 | | `checks/` | agent | 判定脚本及其辅助模块和数据；判定只能依赖这里的文件 | 任一文件改动即开始新的比较窗口 |
-| | `evaluations/NNN/` | 工具 | 每次 check 或 round 的需求快照、`support/`（`checks/` 全部副本）、分析导出、`result.json`（含代码与 OpticStudio 版本）。`result.json` 是测量结果的唯一权威记录 | 封存 |
+| | `evaluations/NNN/` | 工具 | 每次 check 或 round 的需求快照、`support/`（`checks/` 全部副本）、分析导出、`result.json`（含代码与 OpticStudio 版本）。`result.json` 是测量结果的唯一权威记录；round 另有 `viz.json` 与 `viz/`（流程图窗口显示的几何、光线、点列图和 MTF，不参与判定） | 封存 |
 | 诊断 | `probes/NNN/` | 工具 | `saos probe` 的计划（含 agent 的预测）、基准副本、每次扰动的测量、`result.json` | 封存 |
 | 建模 | `lenses/<名称>.zmx` | agent | 工作镜头 | 可改 |
 | | `sources/materials.yaml` | agent | 每种材料的来源（格式见 `saos.materials_record`，字段沿用 `library/materials`） | 只追加或修正来源 |

@@ -31,13 +31,14 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `saos lens view --job J [--viewer cross-section\|3d\|shaded] [--analysis TYPE] [--set KEY=VALUE …]` | 显性调试：打开 Lens Data 和布局窗口（默认剖面图，非轴对称或非序列系统改用 3D Viewer），按需再开一个分析（默认不开，按系统最看重的像质选），按当前镜头刷新。选择会被记住；之后 load、set、build、opt local、exec、round 结束时自动刷新已打开的窗口，建模阶段还会重开被关掉的 Lens Data 和布局窗口。连接 extension 后自动按默认选择打开 |
 | `saos lens screenshot --job J [--label L]` | 显性调试：把 OpticStudio 的可见窗口截成 PNG，存为任务的 `screens/NNN-L-K.png`（PrintWindow，被遮挡也能截；最小化的窗口跳过） |
 | `saos demand show --job J` | 校验需求单 `sources/demand.yaml`，给出版本哈希、确认记录、待确认问题和访谈总结，不连接 OpticStudio |
-| `saos demand confirm --job J --quote "<用户原话>"` | 记录用户对当前需求单版本的确认，写入 `confirmations.jsonl` |
+| `saos demand confirm --job J --quote "<用户原话>"` | 记录用户对当前需求单版本的确认，写入 `confirmations.jsonl`；随后打开流程图小窗口（同 `saos ui open`，结果在 `ui` 字段，`SAOS_UI=0` 时不开） |
+| `saos ui open --job J [--no-window]` | 打开给用户看的流程图小窗口（Edge 应用窗口，1080×720）：六个步骤的流程图，当前步骤带流光动画，等用户确认的停顿和 blocking 问题另有标识；右侧显式调试时有窗口控制页（切换布局窗口、打开分析窗口、只读查看孔径/视场/波长，经后台进程执行，后台进程忙时排队），任何模式下都可按轮查看布局（2D/3D）、点列图、MTF 和差距曲线。本机服务只读任务目录、只监听 127.0.0.1，15 分钟没有请求自行退出；状态在 `daemon/ui.json`，日志在 `daemon/ui.log` |
 | `saos probe --job J --plan PLAN.json` | 扰动诊断：按 agent 事先写下的预测，对 1–6 个变量（建议含阴性对照，没有时 review 会提示）各取 ±delta；内置参数为 radius、thickness、conic、`par<N>`，带补偿量（`quick_focus` 或任务内脚本）实测需求单各项，给出按目标影响排序、预测与实测不符的项和审视提醒。每次都从同一份基准副本重新加载，结束后恢复镜头；计划、基准副本和每次测量存到 `probes/NNN/` 并封存。不需要需求单已确认。格式见 `skills/saos/SKILL.md`「Diagnose before you escalate」 |
 | `saos rule-out --job J --tier T [--tier T…] --reason TEXT` | 带证据排除帮不上的手段层级（`ruled_out.jsonl`），终止判断不再等它；只到下一次明显进步为止。必须先在当前需求版本下记录过轮次。不连接 OpticStudio |
 | `saos stop --job J --reason TEXT --quote "<用户原话>"` | 记录用户的停止决定（`stops.jsonl`）：当前需求单版本下不再记录轮次，报告显示“按用户决定停止”、理由和原话。必须先在当前版本下记录过轮次。不连接 OpticStudio |
 | `saos job cancel <job>` | 请求正在运行的计算在下一个安全点停止（写 `cancel.request`）：`opt local` 调用 Cancel，`probe` 在下一次扰动前停止并返回 `CANCELLED`，脚本通过 `ctx.progress()` 的返回值或 `ctx.cancel_requested()` 得知。不经过后台进程，正忙时也能用 |
 | `saos check --job J` | 按需求单对当前镜头逐项实测和判定，不记录。需求单未确认时也能用，便于整理需求时先看数值 |
-| `saos round --job J [--tier T[,T…]] [--note TEXT] [--merit V]` | 记录一个调试轮次（T 为 local、variables、materials、global、structure，一轮用了几个就写几个）：存为 `lenses/rounds/rNNN.zmx`，逐项实测判定（全文存为 `evaluations/NNN/result.json`），写入 `ledger.jsonl`，返回终止判断（continue / achieved / exhausted / limit / stopped）、既没试过也没排除的层级和需求提要 `brief`。第 0 轮不填 tier。当前需求单版本未确认（`DEMAND_NOT_CONFIRMED`）、有 blocking 待确认问题（`DEMAND_BLOCKED`）、已经终止、或镜头结构与已确认的建模说明不一致（`MODEL_NOT_APPROVED`）时拒绝。每轮记下所用材料；含模型玻璃或不满足常量、变量范围的轮次不能交付 |
+| `saos round --job J [--tier T[,T…]] [--note TEXT] [--merit V] [--no-viz]` | 记录一个调试轮次（T 为 local、variables、materials、global、structure，一轮用了几个就写几个）：存为 `lenses/rounds/rNNN.zmx`，逐项实测判定（全文存为 `evaluations/NNN/result.json`），写入 `ledger.jsonl`，返回终止判断（continue / achieved / exhausted / limit / stopped）、既没试过也没排除的层级和需求提要 `brief`。第 0 轮不填 tier。当前需求单版本未确认（`DEMAND_NOT_CONFIRMED`）、有 blocking 待确认问题（`DEMAND_BLOCKED`）、已经终止、或镜头结构与已确认的建模说明不一致（`MODEL_NOT_APPROVED`）时拒绝。每轮记下所用材料；含模型玻璃或不满足常量、变量范围的轮次不能交付。写入 ledger 后再导出 `evaluations/NNN/viz.json`（逐面全局几何、布局光线、点列图光线、Standard Spot 的 RMS/GEO、FFT MTF，OpticStudio 文本导出在 `viz/`）供 `saos ui` 显示；导出失败只记在 `viz.json` 和返回值 `viz` 中，不影响本轮。Cooke 三片式实测约 1 s；`--no-viz` 跳过 |
 | `saos report --job J [--lang zh\|en]` | 由需求单和 ledger 生成交付报告 `report/index.html`，不连接 OpticStudio；语言见「报告语言」 |
 | `saos exec SCRIPT --job J [--arg K=V …] [--args-file JSON] [--name N] [--quiet]` | 在后台进程内执行脚本（ADR-0007），见下文「脚本执行」 |
 | `saos microscope adapt EXTRACT --focal-length F --field-number N [--tube-lens 200] [--catalogs …] [--stop rear_focal\|r<面号>] --out DIR` | 把子 agent 提取的面数据适配成标准设计布局的处方，输出 prescription.json、expect.json、adapt_report.json（不经后台进程） |
@@ -143,7 +144,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 
 ```
 work/<实例名>/
-  daemon/            state.json、authkey、daemon.log（后台进程运行时存在）
+  daemon/            state.json、authkey、daemon.log（后台进程运行时存在）；ui.json、ui.log、ui-edge/（saos ui 的服务状态、日志和 Edge 配置目录）
   jobs/<job_id>/     每一步产生哪些文件、谁写、能否改动：见 DESIGN.md「任务目录」
     job.json         任务状态
     log.jsonl        执行记录：每条命令的参数、结果、错误码、耗时
@@ -156,7 +157,7 @@ work/<实例名>/
     scripts/         saos exec 的脚本副本和结果
     analyses/        lens analysis 的数值导出
     screens/         显性调试截图
-    evaluations/     每次 check / round 的需求快照、support/（checks/ 副本）、分析导出、result.json（测量的权威记录）
+    evaluations/     每次 check / round 的需求快照、support/（checks/ 副本）、分析导出、result.json（测量的权威记录）；round 另有 viz.json 与 viz/（saos ui 的数据）
     ledger.jsonl     调试轮次台账（指向 evaluations/NNN/result.json）；旧任务另有 rounds/rNNN.json
     report/          NNN-rMMM-<状态>.html（每次生成的封存副本）与 index.html（最新）
     explore/<主题>/  不经过 saos exec 的探索代码、中间镜头和日志，附 README.md
@@ -173,6 +174,7 @@ work/<实例名>/
 | `SAOS_BACKEND` | `zos` | 测试时设为 `fake`，不启动 Zemax |
 | `SAOS_LIBRARY` | `<仓库>/library/microscope` | 显微物镜配方的初始结构库位置 |
 | `SAOS_LANG` | 未设置 | 给人看的输出（交付报告、后台日志）的语言，`zh` 或 `en`；未设置时取系统界面语言 |
+| `SAOS_UI` | 未设置 | 设为 0 时 `demand confirm` 不打开流程图窗口（测试、无界面环境） |
 | `SAOS_UI_LIVE` | 未设置 | extension 模式下设为 1 时，验收评估等操作期间也实时刷新窗口 |
 
 ## 测试
