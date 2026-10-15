@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from pathlib import Path
@@ -11,6 +12,23 @@ from saos.protocol import ErrorCode, SaosError
 NUMERIC_PARAMS = ("radius", "thickness", "conic", "semi_diameter")
 TEXT_PARAMS = ("material", "comment")
 SURFACE_PARAMS = NUMERIC_PARAMS + TEXT_PARAMS
+# 面型参数列（非球面系数、坐标断点的偏心和倾斜、菲涅尔基底等），按 Lens Data 的 Par 列号
+# surface-type parameter columns (aspheric terms, coordinate-break decenters and tilts, …) by their Lens Data Par number
+PAR_RE = re.compile(r"^par([1-9]\d{0,2})$")
+# 可设为变量的量：曲率半径、厚度与间隔、圆锥、面型参数（李晓彤 17.1：结构参数为曲率半径或非球面系数、厚度和间隔、折射率），以及材料
+# what can vary: radius, thickness and spacing, conic, surface-type parameters (Li Xiaotong 17.1: the structural parameters are
+# the radii or aspheric terms, the thicknesses and spacings and the indices), and the material
+VARY_PARAMS = ("radius", "thickness", "conic", "par<N>", "material")
+MATERIAL_MODES = ("model", "substitute")
+
+
+def is_par(param: str) -> bool:
+    return bool(PAR_RE.match(str(param)))
+
+
+def check_param(param: str, allowed: tuple[str, ...] = SURFACE_PARAMS) -> None:
+    if param not in allowed and not is_par(param):
+        raise SaosError(ErrorCode.BAD_ARGS, f"unsupported surface parameter {param!r}; use one of {', '.join(allowed)} or par<N> (a Lens Data parameter column)")
 
 
 def parse_numeric(param: str, value: Any) -> float:
@@ -88,8 +106,17 @@ class Backend(ABC):
         """运行一个 OpticStudio 分析，返回导出的序列、网格、点列图数据和表头；完整文本写到 text_path。"""
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} has no analyses")
 
+    def surface_value(self, index: int, param: str) -> Any:
+        """单个面参数的当前值（含 par<N> 面型参数）。/ The current value of one surface parameter (par<N> included)."""
+        return self.surfaces()[index].get(param)
+
+    def vary(self, surface: int, param: str, on: bool, mode: str | None = None, catalog: str | None = None) -> str:
+        """设变量或取消变量；material 用 mode 选模型玻璃（nd、νd 可变）或目录内替换。返回求解类型。
+        Make a parameter variable or fixed; for material, mode picks a model glass (nd and Vd vary) or catalog substitution."""
+        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support vary")
+
     def show_windows(self, viewer: str | None = None, analysis: str | None = None, settings: dict[str, Any] | None = None) -> dict[str, Any]:
-        """显性调试：在连接的窗口中打开 Lens Data 或 System Viewer，以及一个像质分析。"""
+        """显性调试：在连接的窗口中打开 Lens Data 和一个布局窗口（剖面图画不了时用 3D 视图），按需再开一个像质分析。"""
         raise SaosError(ErrorCode.BAD_ARGS, "explicit debugging windows need extension mode (saos daemon start --mode extension)")
 
     def tile_windows(self) -> list[dict[str, Any]]:

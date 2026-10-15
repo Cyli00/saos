@@ -24,11 +24,11 @@ JUNK = re.compile(r"\.(log|tmp|bak|orig|zda|pyc)$|(^|/)(~\$|\.~)|\.zmx$", re.I)
 INSTANCE_ENTRIES = {"daemon", "jobs"}
 JOB_ENTRIES = {
     # 工具写入
-    "job.json", "log.jsonl", "ledger.jsonl", "seals.jsonl", "confirmations.jsonl", "stops.jsonl", "progress.json", "cancel.request", "sources", "lenses", "models", "scripts", "analyses", "screens", "evaluations", "rounds", "report", "probes",
+    "job.json", "log.jsonl", "ledger.jsonl", "seals.jsonl", "confirmations.jsonl", "stops.jsonl", "ruled_out.jsonl", "progress.json", "cancel.request", "sources", "lenses", "models", "scripts", "analyses", "screens", "evaluations", "rounds", "report", "probes", "parallel",
     # agent 写入
     "notes", "checks", "explore",
-    # 显微物镜配方
-    "spec", "eval", "plan", "rounds.jsonl", "bench.jsonl",
+    # 显微物镜配方与优化基准（experiments/bench）
+    "spec", "eval", "rounds.jsonl", "bench.jsonl",
 }
 
 

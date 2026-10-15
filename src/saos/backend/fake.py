@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from saos.backend.base import NUMERIC_PARAMS, SURFACE_PARAMS, Backend, parse_numeric
+from saos.backend.base import MATERIAL_MODES, NUMERIC_PARAMS, Backend, check_param, is_par, parse_numeric
 from saos.protocol import ErrorCode, SaosError
 
 FAKE_MATERIALS = {"", "N-BK7", "SF2", "H-K9L", "H-ZF2", "MIRROR"}
@@ -55,7 +55,7 @@ class FakeBackend(Backend):
             surfaces = data["surfaces"]
         except (OSError, ValueError, KeyError, TypeError) as exc:
             raise SaosError(ErrorCode.ZOS_LOAD_FAILED, f"cannot load {path}: {exc}") from exc
-        self.lens = {"title": data.get("title", ""), "surfaces": surfaces}
+        self.lens = {"title": data.get("title", ""), "surfaces": surfaces, **({"non_axial": True} if data.get("non_axial") else {})}
         self.file = path
 
     def save_as(self, path: Path) -> None:
@@ -107,12 +107,16 @@ class FakeBackend(Backend):
 
     def set_surface(self, index: int, param: str, value: Any) -> dict[str, Any]:
         lens = self._require()
-        if param not in SURFACE_PARAMS:
-            raise SaosError(ErrorCode.BAD_ARGS, f"unsupported surface parameter {param!r}")
+        check_param(param)
         if not isinstance(index, int) or not 0 <= index < len(lens["surfaces"]):
             raise SaosError(ErrorCode.BAD_ARGS, f"surface {index!r} out of range")
         surface = lens["surfaces"][index]
-        if param in NUMERIC_PARAMS:
+        if is_par(param):
+            # 假镜头的面型参数直接存在面数据里，键名就是 par<N> / fake surface-type parameters live in the surface under par<N>
+            if param not in surface:
+                raise SaosError(ErrorCode.BAD_ARGS, f"surface {index} has no numeric parameter {param[3:]}")
+            surface[param] = parse_numeric(param, value)
+        elif param in NUMERIC_PARAMS:
             number = parse_numeric(param, value)
             # 模拟求解覆盖：非 Fixed/Variable 的单元格写不进去
             if surface["solves"].get(param) not in ("Fixed", "Variable"):
@@ -126,6 +130,37 @@ class FakeBackend(Backend):
         else:
             surface[param] = "" if value is None else str(value)
         return copy.deepcopy(surface)
+
+    def vary(self, surface: int, param: str, on: bool, mode: str | None = None, catalog: str | None = None) -> str:
+        lens = self._require()
+        if param not in ("radius", "thickness", "conic", "material") and not is_par(param):
+            raise SaosError(ErrorCode.BAD_ARGS, "only radius, thickness, conic, par<N> and material can be variables")
+        if not 0 <= surface < len(lens["surfaces"]):
+            raise SaosError(ErrorCode.BAD_ARGS, f"surface {surface!r} out of range")
+        row = lens["surfaces"][surface]
+        if is_par(param) and param not in row:
+            raise SaosError(ErrorCode.BAD_ARGS, f"surface {surface} has no numeric parameter {param[3:]}")
+        if param == "material" and on:
+            if mode not in MATERIAL_MODES:
+                raise SaosError(ErrorCode.BAD_ARGS, f"material needs --mode {' or '.join(MATERIAL_MODES)}")
+            if row.get("material", "") in ("", "MIRROR"):
+                raise SaosError(ErrorCode.BAD_ARGS, f"surface {surface} has no glass; set a material before making it vary")
+        solve = ("MaterialModel" if mode == "model" else "MaterialSubstitute") if param == "material" and on else "Variable" if on else "Fixed"
+        row.setdefault("solves", {})[param] = solve
+        return solve
+
+    def show_windows(self, viewer: str | None = None, analysis: str | None = None, settings: dict[str, Any] | None = None) -> dict[str, Any]:
+        """假窗口：记下每次要求打开的内容；镜头带 "non_axial": true 时模拟剖面图画不了、改用 3D 视图。"""
+        watch = getattr(self, "watch", {"viewer": "cross-section", "analysis": None, "settings": {}})
+        if viewer is not None:
+            watch["viewer"] = viewer
+        if analysis is not None:
+            watch["analysis"], watch["settings"] = analysis, dict(settings or {})
+        self.watch = watch
+        reason = "non-axial system" if watch["viewer"] == "cross-section" and (self.lens or {}).get("non_axial") else None
+        layout = {"viewer": "3d" if reason else watch["viewer"], "fallback_reason": reason}
+        self.shown = [*getattr(self, "shown", []), {"lens_data": True, **layout, "analysis": watch["analysis"]}]
+        return {"watch": dict(watch), "layout": layout, "opened": [], "windows": []}
 
     def quick_focus(self) -> dict[str, Any]:
         """假后端不对焦，只报告像面前一面的厚度。/ the fake backend does not refocus; it reports the thickness before the image."""

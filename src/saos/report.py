@@ -25,8 +25,8 @@ TEXT: dict[str, tuple[str, str]] = {
     "status.stopped": ("按用户决定停止", "Stopped by the user"),
     "summary.achieved": ("所有常量、变量范围和目标达标线都已满足。", "Every constant, variable range and objective pass line is met."),
     "summary.exhausted": (
-        "自最后一次明显进步以来，允许的每一级手段都试过，目标差距没有再明显缩小。下表列出未达标的项和差距。",
-        "Since the last clear gain, every allowed tier of changes was tried and the shortfall did not shrink noticeably. The table lists the unmet goals and their gaps.",
+        "自最后一次明显进步以来，允许的每一级手段都试过或带证据排除，目标差距没有再明显缩小。下表列出未达标的项和差距。",
+        "Since the last clear gain, every allowed tier of changes was tried or ruled out with evidence and the shortfall did not shrink noticeably. The table lists the unmet goals and their gaps.",
     ),
     "summary.limit": ("轮次用完时仍有未达标的项。下表列出差距。", "Some goals were still unmet when the rounds ran out. The table lists the gaps."),
     "summary.continue": ("设计尚未结束，以下是截至最后一轮的状态。", "The design is not finished; this is the state as of the last round."),
@@ -61,8 +61,8 @@ TEXT: dict[str, tuple[str, str]] = {
     "judge.achieved": ("第 {n} 轮所有带达标线的项都已满足", "every item with a pass line is met in round {n}"),
     "judge.limit": ("已用完轮次上限 max_rounds = {cap}", "used up max_rounds = {cap}"),
     "judge.exhausted": (
-        "自第 {n} 轮以来 G 没有缩小 {rel:.0%} 以上，允许的手段（{tiers}）都已试过",
-        "G has not shrunk by {rel:.0%} or more since round {n}, and every allowed tier ({tiers}) was tried",
+        "自第 {n} 轮以来 G 没有缩小 {rel:.0%} 以上，允许的手段（{tiers}）都已试过或排除",
+        "G has not shrunk by {rel:.0%} or more since round {n}, and every allowed tier ({tiers}) was tried or ruled out",
     ),
     "judge.continue": ("尚未终止；当前手段不再见效时，下一个要试的是{tier}", "not finished; when the current approach stops gaining, try {tier} next"),
     "judge.stopped": ("第 {n} 轮后按用户决定停止。理由：{reason}。用户原话：{quote}", "stopped after round {n} by the user's decision. Reason: {reason}. The user's words: {quote}"),
@@ -137,6 +137,9 @@ class Tr:
 
     def tier(self, tier: Any) -> str:
         return self(f"tier.{tier}") if f"tier.{tier}" in TEXT else str(tier)
+
+    def tiers(self, record: dict[str, Any]) -> str:
+        return self("list_sep").join(self.tier(x) for x in ledger.tiers_of(record))
 
 
 CSS = """
@@ -245,7 +248,7 @@ def chart(rounds: list[dict[str, Any]], t: Tr) -> str:
     lines = "".join(f'<polyline class="line" points="{" ".join(seg)}"/>' for seg in segments if len(seg) > 1)
     dots = "".join(
         f'<circle class="dot{" ok" if r.get("achieved") else ""}{" inf" if not math.isfinite(r["shortfall"]) else ""}" cx="{x(k):.1f}" cy="{y(r["shortfall"]):.1f}" r="4">'
-        f'<title>{t("chart.round", n=r["round"])} · {e(t.tier(r.get("tier")))} · G = {fmt(r["shortfall"])}</title></circle>'
+        f'<title>{t("chart.round", n=r["round"])} · {e(t.tiers(r))} · G = {fmt(r["shortfall"])}</title></circle>'
         f'<text x="{x(k):.1f}" y="{height - 18}" text-anchor="middle">{r["round"]}</text>'
         for k, r in enumerate(rounds)
     )
@@ -291,7 +294,7 @@ def build(job: jobs.Job) -> dict[str, Any]:
     if ledger.version(rounds[-1]) != current:
         raise SaosError(ErrorCode.SPEC_CHANGED, "no round matches the current demand and check scripts; record a new round before reporting")
     rounds = ledger.current_window(rounds)
-    decision = ledger.decide(rounds, d["stop"], ledger.stop_for(job.root, current[0]))
+    decision = ledger.decide(rounds, d["stop"], ledger.stop_for(job.root, current[0]), ledger.ruled_out_for(job.root, current[0]))
     final = rounds[-1]
     # 只交付不含模型玻璃、满足硬条件的轮次；都不满足时取最好的一轮并标明不可交付
     # only rounds without a model glass that keep the hard conditions are deliverable; otherwise show the best one marked as not deliverable
@@ -369,7 +372,8 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
         goal = item.get("goal")
         preference = goal is None
         mark = "—" if preference else (f'<span class="pass">{t("met")}</span>' if item.get("passed") else f'<span class="fail">{t("unmet")}</span>')
-        gap = "—" if preference else gap_text(goal, item.get("value"), t)
+        # 达标与否以判定结果为准（含容差），差多少只对未达标的项写出 / the verdict (with tolerance) decides; gaps only for unmet items
+        gap = "—" if preference else t("met") if item.get("passed") else gap_text(goal, item.get("value"), t)
         line = goal_text(goal, t) if goal else ""
         if item.get("wish"):
             line = (line + "<br>" if line else "") + t("wish", goal=goal_text(item["wish"], t))
@@ -379,7 +383,7 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
             f'<td class="num">{gap}</td><td>{evidence_text(item, t)}</td></tr>'
         )
     round_rows = "".join(
-        f'<tr><td class="num">{r["round"]}</td><td>{e(t.tier(r.get("tier")))}</td><td>{e(r.get("note", ""))}</td>'
+        f'<tr><td class="num">{r["round"]}</td><td>{e(t.tiers(r))}</td><td>{e(r.get("note", ""))}</td>'
         f'<td class="num">{fmt(r["shortfall"])}</td><td class="num">{fmt(r.get("merit"))}{t("merit.agent") if r.get("merit_source") == "agent" else ""}</td><td><a href="../lenses/{e(r["file"])}">{e(r["file"])}</a></td></tr>'
         for r in rounds
     )

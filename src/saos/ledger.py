@@ -17,19 +17,21 @@ has also been escalated. Tiers, low to high:
     local      在现有变量下局部优化 / local optimisation on the current variables
     variables  放开更多变量或调整评价函数的构成与权重 / more variables, or a different merit construction
     materials  在有来源的真实材料之间替换 / substitute among sourced real materials
-    global     全局搜索或 Hammer，也包括自写追迹的粗搜 / global search or Hammer, incl. an own coarse search
+    global     全局搜索或 Hammer，也包括调用 ZOS-API 的多起点扫描 / global search or Hammer, incl. a multi-start scan through ZOS-API
     structure  改结构 / change the structure
 
 判定（按顺序）/ Decision, in this order:
     achieved   本轮所有带界限的条目（常量、变量范围、目标的 must）都达标，且不含模型玻璃
                every bounded item (constants, variable ranges, objectives' must) is met and the lens has no model glass
     limit      当前需求版本下的轮次数达到 max_rounds / rounds of the current demand version reached max_rounds
-    exhausted  自最后一次明显进步（G 比此前最好值至少再小 rel）以来，允许的每个层级都至少试过一轮，仍没有明显进步
-               since the last significant gain (G at least rel below the best so far) every allowed tier was tried;
+    exhausted  自最后一次明显进步（G 比此前最好值至少再小 rel）以来，允许的每个层级都试过一轮或带证据排除（saos rule-out），仍没有明显进步
+               since the last significant gain (G at least rel below the best so far) every allowed tier was tried or ruled out with evidence;
                只说明试过的手段不再见效，不证明物理上不可达 / says the strategies stopped working, not that the goal is physically out of reach
     stopped    用户决定停止（saos stop，带理由和用户原话）；停止也是一种结论
                the user decided to stop (saos stop, with a reason and the user's words); stopping is a conclusion too
-    continue   其他情况；给出最后一次进步以来还没试过的最低层级 / otherwise; suggests the lowest untried tier
+    continue   其他情况；给出最后一次进步以来还没试过、也没排除的最低层级 / otherwise; suggests the lowest tier neither tried nor ruled out
+一轮可以同时用几个层级（tiers）；排除某个层级要写明证据，只对最后一次进步之后有效，有了新进步就要重新判断。
+A round may use several tiers at once; ruling a tier out needs the evidence and holds only until the next gain.
 需求的实质内容一变（哈希不同），G 的定义就变了，进步从改动后的第一轮重新算起。
 When the demand content changes (different hash), G means something else and progress is counted afresh.
 """
@@ -47,6 +49,7 @@ from saos.protocol import ErrorCode, SaosError, jsonable
 
 LEDGER_FILE = "ledger.jsonl"
 STOPS_FILE = "stops.jsonl"
+RULED_OUT_FILE = "ruled_out.jsonl"
 
 
 def load(path: Path) -> list[dict[str, Any]]:
@@ -90,6 +93,36 @@ def record_stop(root: Path, demand_sha: str, reason: str, quote: str) -> dict[st
     return record
 
 
+def tiers_of(record: dict[str, Any]) -> list[str]:
+    """本轮用到的层级；旧记录只有 tier 一个字段。/ the tiers a round used; older records have a single tier."""
+    return [t for t in (record.get("tiers") or [record.get("tier")]) if t]
+
+
+def ruled_out_for(root: Path, demand_sha: str) -> list[dict[str, Any]]:
+    path = root / RULED_OUT_FILE
+    if not path.is_file():
+        return []
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [r for r in rows if r.get("demand_sha") == demand_sha]
+
+
+def record_rule_out(root: Path, demand_sha: str, tiers: list[str], reason: str) -> dict[str, Any]:
+    """带证据排除层级，免得为了走完阶梯去试与诊断结论无关的手段。只对最后一次进步之后有效。
+    Rule tiers out with the evidence, so no round is spent on a tier the diagnosis says cannot help. Holds until the next gain."""
+    reason = str(reason or "").strip()
+    unknown = [t for t in tiers if t not in TIERS]
+    if not tiers or unknown:
+        raise SaosError(ErrorCode.BAD_ARGS, f"--tier must name tiers of the ladder ({', '.join(TIERS)}); got {unknown or tiers}")
+    if not reason:
+        raise SaosError(ErrorCode.BAD_ARGS, "--reason must say why the tier cannot help, citing the evidence (e.g. probes/NNN, a first-order result)")
+    rounds = load(root / LEDGER_FILE)
+    if not rounds or version(rounds[-1])[0] != demand_sha:
+        raise SaosError(ErrorCode.BAD_ARGS, "record a round under the current demand first; a tier is ruled out after a given round")
+    record = {"round": int(rounds[-1]["round"]), "demand_sha": demand_sha, "tiers": list(dict.fromkeys(tiers)), "reason": reason, "time": jobs.now_iso()}
+    append(root / RULED_OUT_FILE, record)
+    return record
+
+
 def significant(best: float, g: float, rel: float) -> bool:
     if not math.isfinite(g):
         return False
@@ -120,9 +153,12 @@ def deliverable(record: dict[str, Any]) -> bool:
     return not record.get("model_glass") and valid(record) and not record.get("hard_failing")
 
 
-def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str, Any] | None = None) -> dict[str, Any]:
-    """rounds 为 ledger 中的全部轮次（含第 0 轮）；stopped 为这一版需求下用户的停止决定。返回状态、理由和建议的下一层级。
-    rounds: every round in the ledger (round 0 included); stopped: the user's stop decision under this demand version.
+def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str, Any] | None = None,
+           ruled: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """rounds 为 ledger 中的全部轮次（含第 0 轮）；stopped 为这一版需求下用户的停止决定；ruled 为这一版需求下的层级排除记录。
+    返回状态、理由和建议的下一层级。
+    rounds: every round in the ledger (round 0 included); stopped: the user's stop decision under this demand version;
+    ruled: the tiers ruled out under this demand version.
     Returns the status, the reason and the suggested next tier."""
     if not rounds:
         raise ValueError("ledger has no rounds")
@@ -137,8 +173,10 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str
             last_gain = k
         best = min(best, r["shortfall"])
     since = window[last_gain + 1 :]
-    tried = {r.get("tier") for r in since if valid(r)}
-    untried = [t for t in tiers if t not in tried]
+    tried = {t for r in since if valid(r) for t in tiers_of(r)}
+    gain_round = int(window[last_gain]["round"])
+    excluded = {t for x in ruled or [] if int(x["round"]) >= gain_round for t in x["tiers"]}
+    untried = [t for t in tiers if t not in tried and t not in excluded]
     current = rounds[-1]
     number = int(current["round"])
     base = {
@@ -147,6 +185,7 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str
         "last_gain_round": int(window[last_gain]["round"]),
         "rounds_without_gain": len(since),
         "tiers_tried_since_gain": sorted(tried & set(tiers), key=TIERS.index),
+        "tiers_ruled_out_since_gain": sorted((excluded - tried) & set(tiers), key=TIERS.index),
         "untried_tiers": untried,
         # 轮次预算按需求版本计：用户确认新版本后重新计数 / the round budget counts per demand version
         "rounds_in_version": len(window) - 1,
@@ -170,6 +209,6 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str
         return {
             **base,
             "status": "exhausted",
-            "reason": f"no gain of at least {rel:.0%} since round {base['last_gain_round']} after trying every allowed tier ({', '.join(tiers)})",
+            "reason": f"no gain of at least {rel:.0%} since round {base['last_gain_round']} after trying or ruling out every allowed tier ({', '.join(tiers)})",
         }
     return {**base, "status": "continue", "reason": f"next escalate to {untried[0]} if the current tier stops gaining", "next_tier": untried[0]}

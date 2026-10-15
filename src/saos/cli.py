@@ -147,7 +147,8 @@ def _surface_list(text: str) -> list[int]:
 
 def cmd_opt(args: argparse.Namespace) -> Any:
     if args.action == "vary":
-        payload = {"job": args.job, "param": args.param, "surfaces": _surface_list(args.surfaces), "on": not args.off}
+        payload = {"job": args.job, "param": args.param, "surfaces": _surface_list(args.surfaces), "on": not args.off,
+                   "mode": args.mode, "catalog": args.catalog}
         return client.request("opt.vary", payload, timeout=args.timeout)
     if args.action == "merit":
         payload: dict[str, Any] = {"job": args.job, "action": args.merit_action}
@@ -184,6 +185,14 @@ def cmd_check(args: argparse.Namespace) -> Any:
 
 def cmd_probe(args: argparse.Namespace) -> Any:
     return client.request("probe.run", {"job": args.job, "plan": _read_json(args.plan)}, timeout=args.timeout)
+
+
+def cmd_rule_out(args: argparse.Namespace) -> Any:
+    from saos import demand, ledger
+
+    root = jobs.get_job(args.job).root
+    tiers = [t.strip() for item in args.tier for t in item.split(",") if t.strip()]
+    return ledger.record_rule_out(root, demand.digest(demand.load_job(root)), tiers, args.reason)
 
 
 def cmd_stop(args: argparse.Namespace) -> Any:
@@ -271,9 +280,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--overwrite", action="store_true")
     p = lens_cmd("capture", "save the current window content as a copy in the job, leaving the original file untouched")
     p.add_argument("--as", dest="as_name", required=True)
-    p = lens_cmd("view", "explicit debugging: open Lens Data or a System Viewer plus one image-quality analysis, and refresh")
-    p.add_argument("--viewer", choices=("lde", "cross-section", "3d", "shaded"), help="default lde")
-    p.add_argument("--analysis", help="AnalysisIDM name of the image-quality analysis (default StandardSpot); pick what matters most for this system")
+    p = lens_cmd("view", "explicit debugging: open Lens Data and a layout window, optionally one analysis, and refresh; reopens closed windows")
+    p.add_argument("--viewer", choices=("cross-section", "3d", "shaded"),
+                   help="layout window (default cross-section; a system it cannot draw, e.g. non-axial or non-sequential, gets the 3D viewer)")
+    p.add_argument("--analysis", help="AnalysisIDM name of an analysis to keep open and refreshed (default none); pick what matters most for this system")
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE", help="settings of that analysis")
     p = lens_cmd("screenshot", "explicit debugging: save PNG screenshots of the OpticStudio windows to the job's screens/")
     p.add_argument("--label", default="window", help="file name label")
@@ -297,7 +307,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--quote", required=True, help="the user's own words of approval")
     p = lens_cmd("set", "change one surface parameter")
     p.add_argument("--surface", type=int, required=True)
-    p.add_argument("--param", required=True, help="radius / thickness / conic / semi_diameter / material / comment")
+    p.add_argument("--param", required=True, help="radius / thickness / conic / semi_diameter / material / comment / par<N> (a Lens Data parameter column)")
     p.add_argument("--value", required=True, help="a number, inf, a material name or comment text")
     p = lens_cmd("save", "save (default: overwrite the current file, then reload and compare)")
     p.add_argument("--as", dest="as_name", help="save as this file name inside lenses/")
@@ -336,7 +346,9 @@ def build_parser() -> argparse.ArgumentParser:
         return q
 
     q = opt_cmd("vary", "make surface parameters variable or fixed")
-    q.add_argument("--param", required=True, choices=("radius", "thickness", "conic"))
+    q.add_argument("--param", required=True, help="radius, thickness, conic, par<N> (a Lens Data parameter column: aspheric terms, tilts, …) or material")
+    q.add_argument("--mode", choices=("model", "substitute"), help="for material: model = a model glass whose nd and Vd vary (exploration, not deliverable); substitute = OpticStudio swaps real glasses (Hammer / global search)")
+    q.add_argument("--catalog", help="for --mode substitute: the catalog to substitute from (default: every catalog in use)")
     q.add_argument("--surfaces", required=True, help="e.g. 1-16 or 1,3,5-7")
     q.add_argument("--off", action="store_true", help="make them fixed")
     q = opt_cmd("merit", "merit function: clear / wizard / add / show")
@@ -369,12 +381,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_check)
     p = sub.add_parser("round", help="record a round: save lenses/rounds/rNNN.zmx, measure the demand, append ledger.jsonl and return the stop decision with a demand brief")
     p.add_argument("--job", required=True)
-    p.add_argument("--tier", choices=("local", "variables", "materials", "global", "structure"), help="strategy tier used in this round; omit for round 0")
+    p.add_argument("--tier", help="strategy tier(s) used in this round, comma-separated when several: local, variables, materials, global, structure; omit for round 0")
     p.add_argument("--note", default="", help="what this round changed")
     p.add_argument("--merit", type=float, default=None,
                    help="value of the objective you actually optimised, when you optimised outside the OpticStudio merit function; recorded instead of the lens's merit function value")
     p.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     p.set_defaults(func=cmd_round)
+    p = sub.add_parser("rule-out", help="rule out strategy tiers that your evidence says cannot help, so the stop rule does not wait for them (holds until the next clear gain; no OpticStudio needed)")
+    p.add_argument("--job", required=True)
+    p.add_argument("--tier", action="append", required=True, help="tier(s) to rule out; repeat or comma-separate")
+    p.add_argument("--reason", required=True, help="why the tier cannot help, citing the evidence (probes/NNN, a first-order result, a measurement)")
+    p.set_defaults(func=cmd_rule_out)
     p = sub.add_parser("stop", help="record the user's decision to stop the rounds of the current demand version, with the reason and the user's words (no OpticStudio needed)")
     p.add_argument("--job", required=True)
     p.add_argument("--reason", required=True, help="why the rounds stop, with the evidence (e.g. probes/NNN, notes/findings.md F20)")

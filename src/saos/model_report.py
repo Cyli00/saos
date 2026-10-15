@@ -281,7 +281,7 @@ def render(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[str, A
         if s.get("tilt_decenter"):
             param_rows.append(f"<tr><td class='num'>{i}</td><td>Tilt/Decenter</td><td>{e('; '.join(f'{k} = {fmt(v)}' for k, v in s['tilt_decenter'].items()))}</td></tr>")
         if s.get("params"):
-            vals = "; ".join(f"{p['name']} = {fmt(p['value'])}" + ("" if p.get("solve") in (None, "Fixed") else f" ({p['solve']})") for p in s["params"])
+            vals = "; ".join(f"par{p['par']} {p['name']} = {fmt(p['value'])}" + ("" if p.get("solve") in (None, "Fixed") else f" ({p['solve']})") for p in s["params"])
             param_rows.append(f"<tr><td class='num'>{i}</td><td>{e(s['type'])}</td><td>{e(vals)}</td></tr>")
     layouts = []
     for key, value in (desc.get("layout") or {}).items():
@@ -324,7 +324,7 @@ def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, An
     meta = {"job": job.id, "lens": lens, "time": jobs.now_iso()}
     found = checks(desc, notes, materials_record.recorded_names(job))
     warnings = [i18n.text("en", *TEXT["w." + code]).format(**args) for code, args in found]
-    fp = model_gate.fingerprint(desc)
+    fp = model_gate.fingerprint(desc, (notes or {}).get("environment") or ())
     write_json(folder / "model.json", {**meta, "notes": notes, "warnings": warnings, "fingerprint": fp,
                                         "fingerprint_sha": model_gate.digest(fp), "model": desc})
     out = folder / "index.html"

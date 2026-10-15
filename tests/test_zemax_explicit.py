@@ -84,15 +84,28 @@ def run(ctx):
 """
 
 
+FOLD = """
+def run(ctx):
+    # 在第 1 面前插入绕 X 轴倾斜 10° 的坐标断点，系统变为非轴对称
+    lde = ctx.zosapi.Editors.LDE
+    row = ctx.system.LDE.InsertNewSurfaceAt(1)
+    row.ChangeType(row.GetSurfaceTypeSettings(lde.SurfaceType.CoordinateBreak))
+    row.GetSurfaceCell(lde.SurfaceColumn.Par3).DoubleValue = 10.0
+    ctx.mark_dirty()
+    return {"non_axial": bool(ctx.system.IsNonAxial)}
+"""
+
+
 def test_explicit_debugging_tools(ui_pid, tmp_path):
     env = {**os.environ, "SAOS_HOME": str(tmp_path / "home"), "SAOS_BACKEND": "zos", "SAOS_UI_PID": str(ui_pid)}
     started = ok(saos("daemon", "start", "--mode", "extension", env=env))
     try:
         ui = started["opticstudio"]["extension_ui"]
         assert ui["pid"] == ui_pid and ui["auto_close"] == "Off"
-        # 连接后按规则打开 Lens Data 和默认像质分析
-        assert started["opticstudio"]["windows"]["watch"]["analysis"] == "StandardSpot"
-        assert any(w["type"] == "StandardSpot" for w in started["opticstudio"]["windows"]["windows"])
+        # 连接后打开 Lens Data 和布局窗口，默认不开像质分析
+        shown = started["opticstudio"]["windows"]
+        assert shown["watch"]["analysis"] is None and shown["layout"]["viewer"] in ("cross-section", "3d")
+        assert {w["type"] for w in shown["windows"]} & {"Draw2D", "Draw3D"}
 
         job = ok(saos("job", "create", "--name", "explicit", env=env))["job"]
         ok(saos("lens", "import", "--job", job, SAMPLE, "--as", "start.zmx", env=env))
@@ -109,6 +122,16 @@ def test_explicit_debugging_tools(ui_pid, tmp_path):
                 assert x1 + w1 <= x2 or x2 + w2 <= x1 or y1 + h1 <= y2 or y2 + h2 <= y1
         assert ok(saos("lens", "view", "--job", job, env=env))["watch"]["analysis"] == "FftMtf"  # 不指定时沿用上次的选择
         assert saos("lens", "view", "--job", job, "--analysis", "NoSuch", env=env)["error"]["code"] == ErrorCode.BAD_ARGS
+
+        # 折转后的系统画不了剖面图：关掉剖面图窗口，改开 3D 视图
+        fold = tmp_path / "fold.py"
+        fold.write_text(FOLD, encoding="utf-8")
+        ok(saos("exec", fold, "--job", job, env=env))
+        folded = ok(saos("lens", "view", "--job", job, env=env))
+        assert folded["layout"]["viewer"] == "3d" and folded["layout"]["fallback_reason"], folded["layout"]
+        assert "Draw3D" in {w["type"] for w in folded["windows"]} and "Draw2D" not in {w["type"] for w in folded["windows"]}
+        ok(saos("lens", "load", "--job", job, "start.zmx", "--discard", env=env))
+        assert ok(saos("lens", "view", "--job", job, "--viewer", "cross-section", env=env))["layout"]["viewer"] == "cross-section"
 
         # 改动镜头后窗口刷新
         surfaces = ok(saos("lens", "surfaces", "--job", job, env=env))["surfaces"]

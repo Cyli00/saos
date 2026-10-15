@@ -111,6 +111,13 @@ class ScriptContext:
         self.job.write_progress(stage=str(stage), data=jsonable(data))
         return self.job.cancel_requested()
 
+    def parallel(self, script: str, items: list[Any], workers: int | None = None, reset: bool = True) -> dict[str, Any]:
+        """在几个 standalone 实例中并发执行任务内 script 的 work(wctx, item)，按条目顺序返回结果（saos.parallel）。
+        Run work(wctx, item) of the job's script over items in several standalone instances at once (saos.parallel)."""
+        from saos import parallel
+
+        return parallel.run(self, script, items, workers, reset)
+
     def cancel_requested(self) -> bool:
         """用户或 agent 执行了 saos job cancel；脚本应在下一个安全点结束并保存已有结果。
         saos job cancel was run; the script should stop at the next safe point and keep what it has."""

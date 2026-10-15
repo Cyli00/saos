@@ -27,6 +27,8 @@ from saos.protocol import ErrorCode, SaosError, jsonable
 # 连续这么多轮没有明显进步，就提醒先审视需求和结构，而不是继续加码
 # after this many rounds without a clear gain, remind the agent to question the demand and structure before escalating
 REVIEW_AFTER = 2
+# 一项连续这么多轮没有有效值、或硬条件这么多轮都没满足，就提出质疑 / raise a doubt after this many rounds without a valid value or a met hard limit
+DOUBT_AFTER = 2
 
 
 def check(ctx) -> dict[str, Any]:
@@ -57,7 +59,40 @@ def preflight(root: Path) -> tuple[dict[str, Any], str, str]:
     return d, sha, hashlib.sha256(confirmed["quote"].encode("utf-8")).hexdigest()[:16]
 
 
-def brief(d: dict[str, Any], evaluation: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
+def doubts(d: dict[str, Any], window: list[dict[str, Any]]) -> list[str]:
+    """由证据触发的质疑：一项连续几轮没有有效值、硬条件在本版本中从未满足、未达标的界限只是 agent 的假设。
+    Doubts raised by evidence: an item without a valid value for several rounds, a hard limit never met in this
+    version, a failing limit that rests only on an agent assumption."""
+    valid = [r for r in window if ledger.valid(r)]
+    if not valid:
+        return []
+    out = []
+    current = valid[-1]
+    weak = {w["id"]: w for w in demand.weak_basis(d)}
+    for item in demand.checked(d):
+        k = item["id"]
+        run = 0
+        for r in reversed(valid):
+            v = (r.get("values") or {}).get(k)
+            if isinstance(v, (int, float)) and math.isfinite(v):
+                break
+            run += 1
+        if run >= DOUBT_AFTER:
+            out.append(f"{k} has had no valid value for {run} rounds: recheck its preconditions and the structure, "
+                       "or whether the demand asks for something this setup cannot give")
+        if item["kind"] in demand.HARD_KINDS and len(valid) >= DOUBT_AFTER and all(k in (r.get("hard_failing") or []) for r in valid):
+            out.append(f"{k} has not been met in any of the {len(valid)} rounds of this demand version: is the limit right (source: {_source(d, k)})?")
+        if k in (current.get("failing") or {}) and k in weak:
+            out.append(f"{k} fails and its limit rests on {weak[k]['source'] or 'no source'}: confirm the limit with the user before spending more compute")
+    return out
+
+
+def _source(d: dict[str, Any], item_id: str) -> str:
+    entry = next((e for s in demand.SECTIONS for e in d.get(s) or [] if e["id"] == item_id), {})
+    return str(entry.get("source") or "none")
+
+
+def brief(d: dict[str, Any], evaluation: dict[str, Any], decision: dict[str, Any], window: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """每轮返回的需求提要：目标现状、硬条件、待确认问题，以及该停下来审视时的提醒。
     The demand brief returned with every round: where the objectives stand, hard conditions, open questions,
     and a prompt to stop and review when the evidence says so."""
@@ -73,9 +108,13 @@ def brief(d: dict[str, Any], evaluation: dict[str, Any], decision: dict[str, Any
         review = (f"{why}. Before spending more compute, reread the demand summary and your first-order analysis. If the demand, "
                   "the structure or a measurement looks wrong or unreachable, stop and ask the user, with the evidence, its impact and options.")
     lang = d.get("lang") or "zh"
-    return {"objectives": objectives, "hard_failing": evaluation.get("hard_failing", []),
-            "open_questions": [q["question"] for q in d.get("open_questions") or []],
-            "review": review, "reminder": demand.QUESTION_LINE.get(lang, demand.QUESTION_LINE["zh"])}
+    found = doubts(d, window or [])
+    out = {"objectives": objectives, "hard_failing": evaluation.get("hard_failing", []),
+           "open_questions": [q["question"] for q in d.get("open_questions") or []], "review": review, "doubts": found}
+    if found:
+        # 只在有证据时提醒质疑需求 / the reminder to question the demand comes only with evidence
+        out["reminder"] = demand.QUESTION_LINE.get(lang, demand.QUESTION_LINE["zh"])
+    return out
 
 
 def lens_state(ctx) -> tuple[dict[str, Any], str]:
@@ -111,14 +150,17 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
     path = ctx.path(ledger.LEDGER_FILE)
     history = ledger.load(path)
     number = len(history)
+    ruled = ledger.ruled_out_for(ctx.job.root, sha)
     if number == 0:
-        tier = "baseline"
+        tiers = ["baseline"]
     else:
-        if tier not in h["stop"]["tiers"]:
-            raise SaosError(ErrorCode.BAD_ARGS, f"tier must be one of {h['stop']['tiers']} (ladder: {', '.join(TIERS)})")
+        # 一轮可以同时用几个层级，例如 "variables,materials" / a round may use several tiers, e.g. "variables,materials"
+        tiers = list(dict.fromkeys(t.strip() for t in str(tier or "").split(",") if t.strip()))
+        if not tiers or any(t not in h["stop"]["tiers"] for t in tiers):
+            raise SaosError(ErrorCode.BAD_ARGS, f"tier must be one or more (comma-separated) of {h['stop']['tiers']} (ladder: {', '.join(TIERS)})")
         last = history[-1]
         if (sha, method_sha) == ledger.version(last):
-            status = ledger.decide(history, h["stop"], ledger.stop_for(ctx.job.root, sha))["status"]
+            status = ledger.decide(history, h["stop"], ledger.stop_for(ctx.job.root, sha), ruled)["status"]
             if status != "continue":
                 raise SaosError(ErrorCode.BAD_ARGS, f"rounds already stopped ({status}); review the demand with the user to continue", {"status": status})
             if last.get("lens_sha") == lens_sha:
@@ -156,7 +198,9 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
         ctx.save_as(ctx.job.relative_lens(working), overwrite=True)
     record = {
         "round": number,
-        "tier": tier,
+        # tier 留第一个层级，兼容旧记录；tiers 是本轮用到的全部层级 / tier keeps the first for older readers; tiers lists them all
+        "tier": tiers[0],
+        "tiers": tiers,
         "note": str(note),
         "file": rel,
         "lens_sha": lens_sha,
@@ -188,6 +232,7 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
     # 写进 ledger 是本轮完成的标志；之前任何一步失败都不留下轮次
     # appending to the ledger is what completes a round; a failure before this leaves no round behind
     ledger.append(path, record)
-    decision = ledger.decide(history + [record], h["stop"], ledger.stop_for(ctx.job.root, sha))
+    decision = ledger.decide(history + [record], h["stop"], ledger.stop_for(ctx.job.root, sha), ruled)
     ctx.job.update_state(round=number, round_status=decision["status"])
-    return {"record": record, "decision": decision, "brief": brief(h, evaluation, decision), "evaluation": evaluation}
+    return {"record": record, "decision": decision, "brief": brief(h, evaluation, decision, ledger.current_window(history + [record])),
+            "evaluation": evaluation}

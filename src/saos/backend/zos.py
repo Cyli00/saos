@@ -13,9 +13,12 @@ from typing import Any
 
 from saos import config
 from saos.backend.base import (
+    MATERIAL_MODES,
     NUMERIC_PARAMS,
-    SURFACE_PARAMS,
+    PAR_RE,
     Backend,
+    check_param,
+    is_par,
     parse_numeric,
     same_number,
 )
@@ -180,9 +183,9 @@ class ZosBackend(Backend):
 
     # ---- 显性调试的观察窗口 ----
 
-    # System Viewer 的几种：剖面图、3D 视图、实体模型；lde 表示 Lens Data 编辑器
-    VIEWERS = {"lde": None, "cross-section": "Draw2D", "3d": "Draw3D", "shaded": "ShadedModel"}
-    DEFAULT_WATCH = {"viewer": "lde", "analysis": "StandardSpot", "settings": {}}
+    # 布局窗口（System Viewer）的几种：剖面图、3D 视图、实体模型；Lens Data 编辑器总是打开
+    VIEWERS = {"cross-section": "Draw2D", "3d": "Draw3D", "shaded": "ShadedModel"}
+    DEFAULT_WATCH = {"viewer": "cross-section", "analysis": None, "settings": {}}
 
     def _require_extension(self) -> None:
         if self.mode != "extension":
@@ -196,40 +199,94 @@ class ZosBackend(Backend):
             found.setdefault(str(analysis.AnalysisType), analysis)
         return found
 
+    def _cross_section_blocker(self) -> str | None:
+        """剖面图只能画序列、轴对称的系统，不能画时返回原因。
+        实测 2024 R1：折转的光纤模型导出剖面图报 "Cannot perform 2D Layout on non-axial system!"。"""
+        system = self.system
+        if str(system.Mode) != "Sequential":
+            return "non-sequential system"
+        if bool(system.IsNonAxial):
+            return "non-axial system (tilts, decenters or non-rotational surfaces)"
+        return None
+
+    @staticmethod
+    def _failure(message) -> str | None:
+        """ApplyAndWaitForCompletion 返回的 IMessage：不是 Success 时返回其内容。"""
+        if message is None:
+            return None
+        try:
+            code = str(message.ErrorCode)
+        except Exception:  # noqa: BLE001 - 读不到错误码时按成功处理，窗口内容仍可见
+            return None
+        return None if code == "Success" else f"{code}: {message.Text}"
+
+    def _show_layout(self, wanted: str, opened: dict[str, Any], zosapi) -> dict[str, Any]:
+        """打开布局窗口；要剖面图而系统画不了时，关掉剖面图窗口，改开 3D 视图。"""
+        from saos.backend import analysis as an
+
+        system = self.system
+        reason = self._cross_section_blocker() if wanted == "cross-section" else None
+        viewer = "3d" if reason else wanted
+        new = []
+        for _ in range(2):
+            name = self.VIEWERS[viewer]
+            run = opened.get(name)
+            if run is None:
+                run = system.Analyses.New_Analysis(an.idm(zosapi, name))
+                opened[name] = run
+                new.append(name)
+            failure = self._failure(run.ApplyAndWaitForCompletion())
+            if failure is None or viewer != "cross-section":
+                break
+            reason, viewer = failure, "3d"
+        if viewer != "cross-section" and reason and "Draw2D" in opened:
+            opened.pop("Draw2D").Close()
+            new = [n for n in new if n != "Draw2D"]
+        return {"viewer": viewer, "fallback_reason": reason, "new": new}
+
     def show_windows(self, viewer: str | None = None, analysis: str | None = None, settings: dict[str, Any] | None = None) -> dict[str, Any]:
-        """显性调试：打开 Lens Data 或一种 System Viewer，再打开一个像质分析；已打开的复用，并按当前镜头刷新。"""
+        """显性调试：总是打开 Lens Data 和一个布局窗口（默认剖面图，画不了时用 3D 视图），按需再开一个像质分析；
+        已打开的复用，关掉的重新打开，并按当前镜头刷新。"""
         from saos.backend import analysis as an
 
         self._require_extension()
-        watch = getattr(self, "watch", dict(self.DEFAULT_WATCH))
+        zosapi = _load_zosapi(self.root)
+        # 先在副本上改并校验，出错时保留上一次的选择 / change a copy and validate it, so an error keeps the previous choice
+        watch = dict(getattr(self, "watch", self.DEFAULT_WATCH))
         if viewer is not None:
             if viewer not in self.VIEWERS:
                 raise SaosError(ErrorCode.BAD_ARGS, f"viewer must be one of {list(self.VIEWERS)}")
             watch["viewer"] = viewer
         if analysis is not None:
+            an.idm(zosapi, analysis)
             watch["analysis"], watch["settings"] = analysis, dict(settings or {})
         elif settings:
             watch["settings"] = dict(settings)
         self.watch = watch
-        zosapi = _load_zosapi(self.root)
         system = self.system
         self.app.ShowChangesInUI = True
         opened = self._open_analyses()
-        if watch["viewer"] == "lde":
+        if str(system.Mode) == "Sequential":
             system.LDE.ShowLDE()
         else:
-            name = self.VIEWERS[watch["viewer"]]
-            run = opened.get(name) or system.Analyses.New_Analysis(an.idm(zosapi, name))
-            run.ApplyAndWaitForCompletion()
-        run = opened.get(watch["analysis"]) or system.Analyses.New_Analysis(an.idm(zosapi, watch["analysis"]))
-        an.apply_settings(an.settings_of(run), watch["settings"])
-        message = run.ApplyAndWaitForCompletion()
+            system.NCE.ShowNCE()
+        layout = self._show_layout(watch["viewer"], opened, zosapi)
+        message = None
+        if watch["analysis"]:
+            run = opened.get(watch["analysis"])
+            if run is None:
+                run = system.Analyses.New_Analysis(an.idm(zosapi, watch["analysis"]))
+                layout["new"].append(watch["analysis"])
+            an.apply_settings(an.settings_of(run), watch["settings"])
+            message = run.ApplyAndWaitForCompletion()
         # 只让 OpticStudio 自动更新编辑器；分析窗口由 saos 在每次改动后显式刷新。
         # 实测 AllWindows 会在改动后异步重算分析窗口，与 API 读取竞争：读到 None，或与等待循环互相卡住
         system.UpdateMode = zosapi.LensUpdateMode.EditorsOnly
-        self.app.ProgressMessage = f"saos: {watch['viewer']} + {watch['analysis']}"
-        return {"watch": watch, "message": str(message) if message else None, "update_mode": str(system.UpdateMode), "windows": self.window_list(),
-                "tiled": self.tile_windows()}
+        self.app.ProgressMessage = f"saos: lens data + {layout['viewer']}" + (f" + {watch['analysis']}" if watch["analysis"] else "")
+        return {"watch": watch, "layout": {k: layout[k] for k in ("viewer", "fallback_reason")}, "opened": layout["new"],
+                "message": str(message) if message else None, "update_mode": str(system.UpdateMode), "windows": self.window_list(),
+                # 只在新开了窗口时重新平铺，不打乱用户已经摆好的窗口
+                "tiled": self.tile_windows() if layout["new"] else []}
 
     def tile_windows(self) -> list[dict[str, Any]]:
         from saos import native_ui
@@ -541,13 +598,43 @@ class ZosBackend(Backend):
         "comment": "Comment",
     }
 
-    def set_surface(self, index: int, param: str, value: Any) -> dict[str, Any]:
-        if param not in SURFACE_PARAMS:
-            raise SaosError(ErrorCode.BAD_ARGS, f"unsupported surface parameter {param!r}; use one of {', '.join(SURFACE_PARAMS)}")
+    def _row(self, index: Any):
         lde = self.system.LDE
-        if not isinstance(index, int) or not 0 <= index < lde.NumberOfSurfaces:
+        if not isinstance(index, int) or isinstance(index, bool) or not 0 <= index < lde.NumberOfSurfaces:
             raise SaosError(ErrorCode.BAD_ARGS, f"surface {index!r} out of range 0–{lde.NumberOfSurfaces - 1}")
-        surf = lde.GetSurfaceAt(index)
+        return lde.GetSurfaceAt(index)
+
+    def _par_cell(self, row, index: int, param: str):
+        """面型参数列 par<N>；该面型没有这一列时报错，不写进无效单元格。"""
+        n = int(PAR_RE.match(param).group(1))
+        col = getattr(_load_zosapi(self.root).Editors.LDE.SurfaceColumn, f"Par{n}", None)
+        cell = None
+        if col is not None:
+            try:
+                cell = row.GetSurfaceCell(col)
+            except Exception:  # noqa: BLE001 - 超出该面型的列 / beyond this surface type's columns
+                cell = None
+        header = str(cell.Header) if cell is not None else ""
+        if cell is None or not header or "unused" in header.lower() or str(cell.DataType) != "Double":
+            raise SaosError(ErrorCode.BAD_ARGS, f"surface {index} ({row.TypeName}) has no numeric parameter {n}")
+        return cell
+
+    def surface_value(self, index: int, param: str) -> Any:
+        if is_par(param):
+            return float(self._par_cell(self._row(index), index, param).DoubleValue)
+        return super().surface_value(index, param)
+
+    def set_surface(self, index: int, param: str, value: Any) -> dict[str, Any]:
+        check_param(param)
+        surf = self._row(index)
+        if is_par(param):
+            cell = self._par_cell(surf, index, param)
+            target = parse_numeric(param, value)
+            cell.DoubleValue = target
+            if not same_number(float(cell.DoubleValue), target):
+                raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"surface {index} {param} did not take the requested value; a solve may override it",
+                                {"requested": target, "actual": float(cell.DoubleValue), "solve": str(cell.GetSolveData().Type)})
+            return {**self._surface_dict(surf, index), param: float(cell.DoubleValue), "header": str(cell.Header)}
         attr = self._ATTR[param]
 
         if param in NUMERIC_PARAMS:
@@ -771,15 +858,63 @@ class ZosBackend(Backend):
 
     _CELLS = {"radius": "RadiusCell", "thickness": "ThicknessCell", "conic": "ConicCell"}
 
-    def vary(self, surface: int, param: str, on: bool) -> str:
-        if param not in self._CELLS:
-            raise SaosError(ErrorCode.BAD_ARGS, f"only {', '.join(self._CELLS)} can be variables")
+    def _glass_constants(self, name: str) -> tuple[float, float]:
+        """目录玻璃的 nd、νd，用作模型玻璃的起点。/ nd and Vd of a catalog glass, the start of a model glass."""
+        mc = self.system.SystemData.MaterialCatalogs
+        catalog = next((c for c in self._catalogs_in_use() if name.upper() in {str(m).upper() for m in mc.GetMaterialsInCatalog(c)}), None)
+        if catalog is None:
+            raise SaosError(ErrorCode.BAD_ARGS, f"{name} is not in the catalogs in use, so it has no nd / Vd to start a model glass from")
+        tool = self.system.Tools.OpenMaterialsCatalog()
+        try:
+            tool.SelectedCatalog = catalog
+            tool.SelectedMaterial = name
+            return float(tool.Nd), float(tool.Vd)
+        finally:
+            tool.Close()
+
+    def _vary_material(self, row, surface: int, on: bool, mode: str | None, catalog: str | None) -> str:
+        zosapi = _load_zosapi(self.root)
+        cell = row.MaterialCell
+        solve = cell.GetSolveData()
+        is_model = str(solve.Type) == "MaterialModel"
+        name = str(row.Material).upper()
+        if not on:
+            if is_model:
+                # 模型玻璃保留当前 nd、νd，只是不再变化 / a model glass keeps its nd and Vd, they just stop varying
+                solve._S_MaterialModel.VaryIndex = False
+                solve._S_MaterialModel.VaryAbbe = False
+                cell.SetSolveData(solve)
+            else:
+                cell.MakeSolveFixed()
+            return str(cell.GetSolveData().Type)
+        if mode not in MATERIAL_MODES:
+            raise SaosError(ErrorCode.BAD_ARGS, f"material needs --mode {' or '.join(MATERIAL_MODES)}")
+        if not is_model and name in ("", "MIRROR", "-"):
+            raise SaosError(ErrorCode.BAD_ARGS, f"surface {surface} has no glass ({name or 'air'}); set a material before making it vary")
+        if mode == "model":
+            nd, vd = (float(solve._S_MaterialModel.IndexNd), float(solve._S_MaterialModel.AbbeVd)) if is_model else self._glass_constants(name)
+            new = cell.CreateSolveType(zosapi.Editors.SolveType.MaterialModel)
+            m = new._S_MaterialModel
+            m.IndexNd, m.AbbeVd, m.VaryIndex, m.VaryAbbe = nd, vd, True, True
+        else:
+            new = cell.CreateSolveType(zosapi.Editors.SolveType.MaterialSubstitute)
+            # 空目录名表示在当前使用的全部目录中替换 / an empty catalog substitutes within every catalog in use
+            new._S_MaterialSubstitute.Catalog = str(catalog or "")
+        cell.SetSolveData(new)
+        return str(cell.GetSolveData().Type)
+
+    def vary(self, surface: int, param: str, on: bool, mode: str | None = None, catalog: str | None = None) -> str:
+        if param not in self._CELLS and param != "material" and not is_par(param):
+            raise SaosError(ErrorCode.BAD_ARGS, f"only {', '.join(self._CELLS)}, par<N> and material can be variables")
         lde = self.system.LDE
+        row = self._row(surface)
         # 物面只允许厚度（无盖玻片时即工作距离间隔）设为变量
         allowed = 0 < surface < lde.NumberOfSurfaces - 1 or (surface == 0 and param == "thickness")
         if not allowed:
             raise SaosError(ErrorCode.BAD_ARGS, f"surface {surface} {param} cannot be a variable")
-        cell = getattr(lde.GetSurfaceAt(surface), self._CELLS[param])
+        if param == "material":
+            return self._vary_material(row, surface, on, mode, catalog)
+        cell = self._par_cell(row, surface, param) if is_par(param) else getattr(row, self._CELLS[param])
         cell.MakeSolveVariable() if on else cell.MakeSolveFixed()
         return str(cell.GetSolveData().Type)
 

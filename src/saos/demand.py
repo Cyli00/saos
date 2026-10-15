@@ -54,11 +54,12 @@ HARD_KINDS = ("constant", "variable")
 # 总结的最后一句（用户指定原文）/ the summary's last sentence (wording fixed by the user)
 QUESTION_LINE = {"zh": "发现任何这个demand可能存在的问题，要大胆质疑和询问。",
                  "en": "If you find any possible problem with this demand, question it boldly and ask."}
-TOP_KEYS = {"schema", *SECTIONS, "open_questions", "summary", "lang", "stop"}
+# notes：不影响设计和判定的背景（来源文件的位置、做过的决定），不进版本 / notes: context that changes neither design nor judgement, not versioned
+TOP_KEYS = {"schema", *SECTIONS, "open_questions", "summary", "notes", "lang", "stop"}
 ITEM_KEYS = {
     "constants": {"id", "description", "value", "unit", "source", "check", "goal", "scale"},
-    "variables": {"id", "description", "range", "options", "unit", "check", "scale"},
-    "objectives": {"id", "description", "unit", "check", "origin", "must", "wish", "weight", "scale"},
+    "variables": {"id", "description", "range", "options", "unit", "check", "scale", "source"},
+    "objectives": {"id", "description", "unit", "check", "origin", "must", "wish", "weight", "scale", "source"},
 }
 # 目标的来源和默认权重：user = 用户给出或明确认可的，agent = agent 补充、用户没有表态的
 # origin of an objective and its default weight: user = stated or explicitly accepted by the user, agent = filled in by the agent
@@ -68,6 +69,9 @@ TIERS = ("local", "variables", "materials", "global", "structure")
 DEFAULT_STOP = {"rel": 0.01, "max_rounds": 30, "tiers": list(TIERS)}
 ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,47}$")
 PATH_RE = re.compile(r"\['[^']*'\]|\[\d+\]|[A-Za-z_][A-Za-z0-9_ ]*")
+# 比较界限时的相对容差：超出量不到尺度的这个比例就算达标，避免 9.999999999999954 µm 被判为没达到 10 µm
+# relative tolerance at a bound: an excess below this fraction of the scale counts as met (9.999999999999954 µm meets ≥ 10 µm)
+BOUND_TOLERANCE = 1e-9
 CHECKS_DIR = "checks"
 SUPPORT_KEY = "_checks_tree"
 
@@ -126,6 +130,26 @@ def checked(demand: dict[str, Any]) -> list[dict[str, Any]]:
                 item["scale"] = entry["scale"]
             items.append(item)
     return items
+
+
+# 来源写成 "agent assumption: …" 表示没有外部依据 / a source starting with "agent assumption" has no outside basis
+ASSUMPTION_RE = re.compile(r"^\s*agent\s+assumption", re.I)
+
+
+def weak_basis(demand: dict[str, Any]) -> list[dict[str, Any]]:
+    """依据薄弱的界限：常量的值或判定、变量范围、目标达标线中，没有来源或只是 agent 假设的。确认前要摆给用户看。
+    Limits on a weak basis: constant values or goals, variable ranges and pass lines without a source or resting
+    only on an agent assumption. The user sees them before confirming."""
+    out = []
+    for section in SECTIONS:
+        for entry in demand.get(section) or []:
+            bound = {"constants": entry.get("goal", entry.get("value")), "variables": entry.get("range"), "objectives": entry.get("must")}[section]
+            if bound is None:
+                continue
+            source = str(entry.get("source") or "").strip()
+            if not source or ASSUMPTION_RE.match(source):
+                out.append({"id": entry["id"], "section": section, "bound": bound, "source": source or None})
+    return out
 
 
 def weight(entry: dict[str, Any]) -> float:
@@ -201,6 +225,9 @@ def validate(data: Any) -> dict[str, Any]:
     if unknown:
         # 只收需求本身；文献细节、过程指令放在 sources/ 的其他文件里引用 / the demand only; literature and process notes live elsewhere in sources/
         raise _bad(f"unknown fields {sorted(unknown)}; allowed: {sorted(TOP_KEYS)}")
+    notes = data.get("notes")
+    if notes is not None and not (isinstance(notes, list) and all(isinstance(n, str) and n.strip() for n in notes)):
+        raise _bad("notes must be a list of non-empty strings")
     seen: set[str] = set()
     for section in SECTIONS:
         entries = data.get(section) or []
@@ -257,8 +284,6 @@ def validate(data: Any) -> dict[str, Any]:
     summary = data.get("summary")
     if not isinstance(summary, str) or not summary.strip():
         raise _bad("summary is required: a short account of the interview")
-    if not any(summary.strip().endswith(line) for line in QUESTION_LINE.values()):
-        raise _bad(f"summary must end with the sentence: {QUESTION_LINE['zh']}")
     if data.get("lang") is not None and data["lang"] not in i18n.LANGS:
         raise _bad(f"lang must be one of {i18n.LANGS} (the language the user writes in)")
     stop = {**DEFAULT_STOP, **(data.get("stop") or {})}
@@ -301,7 +326,8 @@ def shortfall(item: dict[str, Any], value: float | None) -> float:
         return math.inf
     goal = item["goal"]
     scale = float(item.get("scale", _default_scale(goal)))
-    return max(0.0, excess(goal, value)) / scale
+    over = excess(goal, value)
+    return 0.0 if over <= BOUND_TOLERANCE * scale else over / scale
 
 
 # ---------- 确认记录 / confirmations ----------
@@ -328,9 +354,15 @@ def confirm(root: Path, quote: str) -> dict[str, Any]:
     path = path_of(root)
     d = load(path)
     sha = digest(d)
+    weak = weak_basis(d)
+    missing = [w["id"] for w in weak if w["source"] is None]
+    if missing:
+        raise SaosError(ErrorCode.BAD_ARGS, f"every limit needs a source (the user, a datasheet, a paper, a textbook table, or 'agent assumption: <why>'); missing for {missing}",
+                        {"missing_source": missing})
     # 存下用户确认时看到的全文（含总结和待确认问题），之后改写总结也能追溯
     # keep the full text the user saw (summary and open questions included), so later rewording stays traceable
-    record = {"demand_sha": sha, "quote": quote, "time": jobs.now_iso(), "content": path.read_text(encoding="utf-8")}
+    # weak_basis：确认时依据只是 agent 假设的界限，应当已经逐条摆给用户 / limits resting on an agent assumption, which the user should have seen one by one
+    record = {"demand_sha": sha, "quote": quote, "time": jobs.now_iso(), "weak_basis": weak, "content": path.read_text(encoding="utf-8")}
     with (root / CONFIRMATIONS_FILE).open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(record, ensure_ascii=False) + "\n")
     return {**{k: v for k, v in record.items() if k != "content"}, "blocking_questions": blocking_questions(d)}
@@ -345,7 +377,9 @@ def show(root: Path) -> dict[str, Any]:
     return {"demand_sha": sha, "confirmed": confirmed, "blocking_questions": blocking_questions(d),
             "open_questions": [q["question"] for q in d.get("open_questions") or [] if not q.get("blocking")],
             "counts": {s: len(d.get(s) or []) for s in SECTIONS}, "checks": [i["id"] for i in checked(d)],
-            "summary": d["summary"]}
+            "summary": d["summary"], "notes": d.get("notes") or [],
+            # 确认前逐条告诉用户这些界限依据薄弱 / tell the user, item by item, that these limits rest on a weak basis before confirming
+            "weak_basis": weak_basis(d)}
 
 
 # ---------- 取值与判定 / measuring and judging ----------
@@ -437,7 +471,7 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
             item.update(shortfall=g, passed=g == 0)
             total += spec["weight"] * g
         if "wish" in spec:
-            item["wish_met"] = value is not None and excess(spec["wish"], value) <= 0
+            item["wish_met"] = value is not None and excess(spec["wish"], value) <= BOUND_TOLERANCE * (_default_scale(spec["wish"]) or 1.0)
         items.append(item)
     judged = [i for i in items if i["goal"] is not None]
     daemon = getattr(ctx, "_daemon", None)

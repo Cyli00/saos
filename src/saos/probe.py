@@ -26,10 +26,11 @@ import math
 from typing import Any
 
 from saos import demand, jobs
+from saos.backend.base import is_par
 from saos.protocol import ErrorCode, SaosError, write_json
 
 PROBES_DIR = "probes"
-PARAMS = ("radius", "thickness", "conic")
+PARAMS = ("radius", "thickness", "conic", "par<N>")
 DIRECTIONS = ("up", "down", "none")
 MAX_PROBES = 6
 # 归一化变化（Δ/scale）小于这个值算"没有变化" / a normalised change below this counts as "none"
@@ -60,10 +61,6 @@ def validate(plan: Any, d: dict[str, Any]) -> dict[str, Any]:
     probes = plan.get("probes")
     if not isinstance(probes, list) or not 1 <= len(probes) <= MAX_PROBES:
         raise _bad(f"probes: 1 to {MAX_PROBES} entries; pick the few your first-order reasoning ranks highest")
-    if not any(p.get("control") for p in probes if isinstance(p, dict)):
-        # 阴性对照：原理上不该动目标的变量；它若动了，说明理解或测量有问题
-        # a negative control: a variable that in principle should not move the target; if it does, the understanding or the measurement is off
-        raise _bad("add at least one control probe (control: true) that your reasoning says should not move the target")
     seen = set()
     for p in probes:
         if not isinstance(p, dict) or not demand.ID_RE.match(str(p.get("id", ""))) or p["id"] in seen:
@@ -77,7 +74,7 @@ def validate(plan: Any, d: dict[str, Any]) -> dict[str, Any]:
         if "script" in p:
             if "surface" in p or "param" in p:
                 raise _bad(f"{p['id']}: give either script or surface + param")
-        elif not (isinstance(p.get("surface"), int) and p.get("param") in PARAMS):
+        elif not (isinstance(p.get("surface"), int) and (p.get("param") in PARAMS[:3] or is_par(str(p.get("param"))))):
             raise _bad(f"{p['id']}: give surface (int) and param ({', '.join(PARAMS)}), or a script")
         expect = p.get("expect") or {}
         if not isinstance(expect, dict) or any(k not in measure or v not in DIRECTIONS for k, v in expect.items()):
@@ -178,7 +175,7 @@ def run(ctx, plan: dict[str, Any]) -> dict[str, Any]:
         for p in plan["probes"]:
             row: dict[str, Any] = {"id": p["id"], "control": bool(p.get("control")), "prediction": p["prediction"], "delta": p["delta"]}
             change_run = _load_script(ctx, p["script"], folder, f"change-{p['id']}") if "script" in p else None
-            start = None if change_run else ctx.backend.surfaces()[p["surface"]].get(p["param"])
+            start = None if change_run else ctx.backend.surface_value(p["surface"], p["param"])
             for sign, label in ((-1, "minus"), (1, "plus")):
                 step = sign * float(p["delta"])
                 if change_run:
@@ -211,6 +208,10 @@ def run(ctx, plan: dict[str, Any]) -> dict[str, Any]:
     review = []
     if not movers:
         review.append(f"no probed variable moves {target}; if the first-order reasoning agrees, this is a structure question: ask the user")
+    if not any(r["control"] for r in results):
+        # 阴性对照：原理上不该动目标的变量；没有它，排名里的小效应无法和测量噪声区分
+        # a negative control: a variable that in principle should not move the target; without one, small effects cannot be told from noise
+        review.append(f"no control probe: small effects on {target} in the ranking have no null to compare with; add a control when the ranking decides what to optimise")
     if controls_moving:
         review.append(f"control probes {controls_moving} move {target}; recheck the model or the measurement before trusting the ranking")
     if mismatches:

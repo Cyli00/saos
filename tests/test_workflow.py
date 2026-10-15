@@ -7,13 +7,13 @@ import re
 import pytest
 import yaml
 
-from saos import config, demand, jobs, ledger, report
+from saos import config, demand, jobs, ledger, report, workflow
 from saos.backend.fake import FakeBackend
 from saos.daemon import Daemon
 from saos.protocol import ErrorCode, SaosError
 
 LINE = demand.QUESTION_LINE["zh"]
-LENGTH = {"id": "length", "description": "total track", "check": {"operand": {"type": "TOTR"}}, "origin": "user", "must": {"max": 95.0}, "wish": {"max": 90.0}, "scale": 5.0}
+LENGTH = {"id": "length", "description": "total track", "check": {"operand": {"type": "TOTR"}}, "origin": "user", "must": {"max": 95.0}, "wish": {"max": 90.0}, "scale": 5.0, "source": "user"}
 DEMAND = {
     "schema": 2,
     "constants": [{"id": "lens", "description": "the sample singlet", "value": "a.zmx", "source": "user"}],
@@ -42,7 +42,7 @@ def test_shortfall_and_validation():
     demand.validate(DEMAND)
     bad = [
         demand_with({k: v for k, v in LENGTH.items() if k != "scale"} | {"must": {"max": 0.0}}),  # 界限为 0 时必须给尺度
-        {**DEMAND, "summary": "没有最后那句话"},
+        {**DEMAND, "summary": " "},                                          # 总结不能为空
         {**DEMAND, "stop": {"tiers": ["magic"]}},
         {**DEMAND, "tissue": {"source": "paper"}},                          # 不收需求以外的字段
         {**DEMAND, "request": "用户原话"},
@@ -100,7 +100,7 @@ def test_stop_rule_achieved_limit_and_demand_change():
 @pytest.fixture
 def setup(saos_home, fake_lens_file):
     backend = FakeBackend()
-    daemon = Daemon(backend, backend.start(), "standalone")
+    daemon = Daemon(backend, backend.start(), "extension")
     job = jobs.create_job("flow")
     daemon.handle({"op": "lens.import", "args": {"job": job.id, "src": str(fake_lens_file), "name": "a.zmx"}})
     daemon.handle({"op": "lens.load", "args": {"job": job.id, "file": "a.zmx"}})
@@ -319,7 +319,7 @@ def test_connection_loss_during_check_does_not_record_an_infinite_round(setup, m
 def test_rounds_need_an_approved_model_matching_the_structure(saos_home, fake_lens_file):
     """模型确认关卡 / the model gate."""
     backend = FakeBackend()
-    daemon = Daemon(backend, backend.start(), "standalone")
+    daemon = Daemon(backend, backend.start(), "extension")
     job = jobs.create_job("gate")
     daemon.handle({"op": "lens.import", "args": {"job": job.id, "src": str(fake_lens_file), "name": "a.zmx"}})
     daemon.handle({"op": "lens.load", "args": {"job": job.id, "file": "a.zmx"}})
@@ -465,14 +465,14 @@ def test_blocking_question_stops_rounds_and_optimisation(setup):
     daemon.backend.optimize = lambda cycles, cores, **kw: {"merit": 1.0}  # 假后端没有优化器 / the fake backend has no optimiser
     assert call(daemon, "opt.local", job=job.id)["ok"]
     result = call(daemon, "round.record", job=job.id)["result"]
-    assert result["brief"]["open_questions"] == ["染料？"] and result["brief"]["reminder"] == LINE
+    assert result["brief"]["open_questions"] == ["染料？"] and "reminder" not in result["brief"]  # 没有证据就不提醒
 
 
 def test_broken_constant_or_variable_range_is_never_delivered(setup):
     """常量、变量范围是硬条件：G 再小也不能交付。"""
     daemon, job = setup
     hard = {**DEMAND, "variables": [{"id": "track_cap", "description": "track must stay under 99", "check": {"operand": {"type": "TOTR"}},
-                                     "range": {"max": 99.0}}],
+                                     "range": {"max": 99.0}, "source": "user"}],
             "objectives": [{**LENGTH, "must": {"max": 120.0}}]}
     write_demand(job, hard)
     result = call(daemon, "round.record", job=job.id)["result"]
@@ -566,6 +566,13 @@ def test_probe_ranks_variables_compares_predictions_and_leaves_the_lens(setup):
     assert (folder / "plan.json").is_file() and (folder / "result.json").is_file() and job.verify_seals() == []
 
 
+def test_probe_without_a_control_runs_and_says_so(setup):
+    daemon, job = setup
+    write_demand(job, DEMAND, confirm=None)
+    result = call(daemon, "probe.run", job=job.id, plan=probe_plan(T1))["result"]
+    assert result["ranking"] and any("no control probe" in line for line in result["review"])
+
+
 def test_probe_flags_a_target_no_variable_can_move(setup):
     daemon, job = setup
     write_demand(job, DEMAND, confirm=None)
@@ -575,7 +582,6 @@ def test_probe_flags_a_target_no_variable_can_move(setup):
 
 
 @pytest.mark.parametrize("plan", [
-    probe_plan(T1),                                                  # 没有阴性对照
     probe_plan({**T1, "prediction": ""}, R1),                        # 没有预测
     probe_plan(T1, R1, target="nothing"),
     probe_plan(T1, R1, mechanism=" "),
@@ -721,3 +727,186 @@ def test_job_show_and_cancel_work_without_the_daemon(saos_home):
     shown = cli.cmd_job(cli.build_parser().parse_args(["job", "show", job.id]))
     assert shown["progress"]["stage"] == "search 3/10" and shown["cancel_requested"] is False
     assert cli.cmd_job(cli.build_parser().parse_args(["job", "cancel", job.id]))["cancel_requested"] and job.cancel_requested()
+
+
+def test_bounds_tolerate_float_noise():
+    """9.999999999999954 µm 满足 ≥ 10 µm；真正的不足仍然判为不达标。"""
+    item = {"goal": {"min": 10.0}}
+    assert demand.shortfall(item, 9.999999999999954) == 0.0
+    assert demand.shortfall(item, 9.99) == pytest.approx(0.001)
+    assert demand.shortfall({"goal": {"max": 0.0}, "scale": 3.7}, 1e-12) == 0.0
+
+
+def test_modelling_after_the_demand_needs_extension_mode(saos_home, fake_lens_file):
+    """需求确认后、建模说明获确认前，standalone 后台进程拒绝该任务的操作；describe / approve 任何时候都要 extension。"""
+    backend = FakeBackend()
+    daemon = Daemon(backend, backend.start(), "standalone")
+    job = jobs.create_job("watched")
+    assert call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx")["ok"]  # 需求确认前不限制
+    assert call(daemon, "lens.describe", job=job.id, notes=NOTES)["error"]["code"] == ErrorCode.EXTENSION_REQUIRED
+    write_demand(job, DEMAND)
+    refused = call(daemon, "lens.load", job=job.id, file="a.zmx")["error"]
+    assert refused["code"] == ErrorCode.EXTENSION_REQUIRED and refused["details"]["modelling_phase"]
+
+    watched = Daemon(backend, backend.start(), "extension")
+    assert call(watched, "lens.load", job=job.id, file="a.zmx")["ok"]
+    approve_model(watched, job)
+    assert call(daemon, "lens.load", job=job.id, file="a.zmx")["ok"]  # 模型确认后 standalone 可以接着算
+    assert call(daemon, "lens.approve", job=job.id, model="models/001-a", quote="好")["error"]["code"] == ErrorCode.EXTENSION_REQUIRED
+
+
+def test_modelling_keeps_lens_data_and_layout_open(saos_home, fake_lens_file, tmp_path):
+    """建模阶段每次改动镜头后都要打开 Lens Data 和布局窗口；剖面图画不了的系统改用 3D 视图；模型确认后只刷新。"""
+    backend = FakeBackend()
+    daemon = Daemon(backend, backend.start(), "extension")
+    job = jobs.create_job("windows")
+    write_demand(job, DEMAND)
+    folded = tmp_path / "folded.zmx"
+    folded.write_text(json.dumps({**json.loads(fake_lens_file.read_text(encoding="utf-8")), "non_axial": True}), encoding="utf-8")
+    call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx")
+    call(daemon, "lens.import", job=job.id, src=str(folded), name="folded.zmx")
+    assert call(daemon, "lens.load", job=job.id, file="a.zmx")["ok"]
+    assert backend.shown[-1] == {"lens_data": True, "viewer": "cross-section", "fallback_reason": None, "analysis": None}
+    assert call(daemon, "lens.load", job=job.id, file="folded.zmx")["ok"]
+    assert backend.shown[-1]["viewer"] == "3d" and backend.shown[-1]["fallback_reason"] == "non-axial system"
+    view = call(daemon, "lens.view", job=job.id, analysis="FakeCurve")["result"]
+    assert view["layout"]["viewer"] == "3d" and view["watch"]["analysis"] == "FakeCurve"
+    call(daemon, "lens.load", job=job.id, file="a.zmx")
+    approve_model(daemon, job)
+    shown = len(backend.shown)
+    assert call(daemon, "lens.set", job=job.id, surface=1, param="radius", value=60.0)["ok"]
+    assert len(backend.shown) == shown  # 模型确认后不再强制打开窗口
+
+
+def test_rounds_may_use_several_tiers_and_tiers_can_be_ruled_out():
+    """一轮可以同时用几个层级；带证据排除的层级算作处理过，但只到下一次明显进步为止。"""
+    rows = rounds_of([10, 5, 5], ["baseline", "local", "variables"])
+    rows[2]["tiers"] = ["variables", "materials"]
+    d = ledger.decide(rows, STOP)
+    assert d["tiers_tried_since_gain"] == ["variables", "materials"] and d["next_tier"] == "local"
+    ruled = [{"round": 2, "demand_sha": "a", "tiers": ["global", "structure"], "reason": "probes/001"}]
+    rows = rounds_of([10, 5, 5, 5], ["baseline", "local", "local", "variables"])
+    rows[3]["tiers"] = ["variables", "materials"]
+    d = ledger.decide(rows, STOP, ruled=ruled)
+    assert d["status"] == "exhausted" and d["tiers_ruled_out_since_gain"] == ["global", "structure"]
+    # 排除记在最后一次进步之前就不再有效 / a rule-out made before the last gain no longer holds
+    rows = rounds_of([10, 9, 5, 5], ["baseline", "local", "local", "variables"])
+    d = ledger.decide(rows, STOP, ruled=[{**ruled[0], "round": 1}])
+    assert d["last_gain_round"] == 2 and d["tiers_ruled_out_since_gain"] == [] and d["status"] == "continue"
+
+
+def test_rule_out_needs_a_reason_and_feeds_the_round_decision(setup):
+    daemon, job = setup
+    write_demand(job, DEMAND)
+    sha = demand.digest(demand.load_job(job.root))
+    with pytest.raises(SaosError):
+        ledger.record_rule_out(job.root, sha, ["structure"], "probes/001")  # 还没有轮次 / no round yet
+    assert call(daemon, "round.record", job=job.id)["ok"]
+    with pytest.raises(SaosError):
+        ledger.record_rule_out(job.root, sha, ["structure"], " ")
+    with pytest.raises(SaosError):
+        ledger.record_rule_out(job.root, sha, ["fancy"], "x")
+    ledger.record_rule_out(job.root, sha, ["materials", "global", "structure"], "probes/001: no variable moves the target")
+    call(daemon, "lens.set", job=job.id, surface=1, param="radius", value=60.0)
+    out = call(daemon, "round.record", job=job.id, tier="local,variables")["result"]
+    assert out["record"]["tiers"] == ["local", "variables"] and out["record"]["tier"] == "local"
+    # 改半径不改变假后端的 TOTR，没有进步，排除的层级算作处理过 / the radius does not change the fake TOTR: no gain, the rule-out holds
+    d = out["decision"]
+    assert d["last_gain_round"] == 0 and d["tiers_ruled_out_since_gain"] == ["materials", "global", "structure"] and d["status"] == "exhausted"
+    assert call(daemon, "round.record", job=job.id, tier="local,bogus")["error"]["code"] == ErrorCode.BAD_ARGS
+
+
+def test_surface_parameters_and_materials_can_vary(setup):
+    """面型参数 par<N>（非球面系数、倾斜等）可以读写、设变量、做扰动；材料可以设为模型玻璃或目录内替换。"""
+    daemon, job = setup
+    daemon.backend.lens["surfaces"][1]["par4"] = 0.0
+    out = call(daemon, "lens.set", job=job.id, surface=1, param="par4", value=1e-5)["result"]
+    assert out["before"] == 0.0 and out["after"] == 1e-5
+    assert call(daemon, "lens.set", job=job.id, surface=2, param="par4", value=1.0)["error"]["code"] == ErrorCode.BAD_ARGS  # 该面没有这一列
+    assert call(daemon, "lens.set", job=job.id, surface=1, param="parx", value=1.0)["error"]["code"] == ErrorCode.BAD_ARGS
+    assert call(daemon, "opt.vary", job=job.id, param="par4", surfaces=[1])["result"]["solves"] == {1: "Variable"}
+    solves = call(daemon, "opt.vary", job=job.id, param="material", surfaces=[1], mode="model")["result"]["solves"]
+    assert list(solves.values()) == ["MaterialModel"]
+    assert call(daemon, "opt.vary", job=job.id, param="material", surfaces=[1])["error"]["code"] == ErrorCode.BAD_ARGS  # 缺 mode
+    assert call(daemon, "opt.vary", job=job.id, param="material", surfaces=[2], mode="substitute")["error"]["code"] == ErrorCode.BAD_ARGS  # 空气面
+    assert call(daemon, "opt.vary", job=job.id, param="semi_diameter", surfaces=[1])["error"]["code"] == ErrorCode.BAD_ARGS
+    write_demand(job, DEMAND, confirm=None)
+    plan = probe_plan({**T1, "id": "a4", "surface": 1, "param": "par4", "delta": 1e-6, "expect": {}}, R1)
+    result = call(daemon, "probe.run", job=job.id, plan=plan)
+    assert result["ok"], result
+
+
+def test_demand_notes_are_free_and_ranges_can_cite_a_source(saos_home):
+    """notes 不进版本；变量范围和目标可以写来源（例如教材表格）。"""
+    job = jobs.create_job("notes")
+    data = {**DEMAND, "variables": [{"id": "edge", "description": "min edge thickness of lens 1 (mm)", "range": {"min": 0.6},
+                                    "check": {"operand": {"type": "TOTR"}}, "source": "李晓彤 表17-2, 6–10 mm lenses"}]}
+    write_demand(job, data, confirm=None)
+    sha = demand.digest(demand.load_job(job.root))
+    write_demand(job, {**data, "notes": ["mounting method still open; see sources/mount.md"]}, confirm=None)
+    assert demand.digest(demand.load_job(job.root)) == sha and demand.show(job.root)["notes"]
+    write_demand(job, {**data, "notes": "one string"}, confirm=None)
+    with pytest.raises(SaosError):
+        demand.load_job(job.root)
+
+
+def test_confirm_needs_a_source_for_every_limit_and_keeps_the_weak_ones(saos_home):
+    """每个界限都要有来源；只是 agent 假设的界限在 demand show 中列出，并随确认留档。"""
+    job = jobs.create_job("basis")
+    guess = {**LENGTH, "id": "guess", "origin": "agent", "weight": 0.3, "source": "agent assumption: typical tube length"}
+    write_demand(job, demand_with(LENGTH, {k: v for k, v in guess.items() if k != "source"}), confirm=None)
+    with pytest.raises(SaosError) as exc:
+        demand.confirm(job.root, "好")
+    assert exc.value.details["missing_source"] == ["guess"]
+    write_demand(job, demand_with(LENGTH, guess), confirm=None)
+    assert [w["id"] for w in demand.show(job.root)["weak_basis"]] == ["guess"]
+    assert demand.confirm(job.root, "好")["demand_sha"] and demand.confirmations(job.root)[-1]["weak_basis"][0]["id"] == "guess"
+    write_demand(job, {**demand_with(LENGTH, guess), "summary": "不再需要固定结尾。"}, confirm=None)  # 总结不再要求固定句
+
+
+def test_doubts_come_from_evidence_not_every_round(setup):
+    """没有证据时 brief 不提醒；硬条件连续两轮不满足、目标连续两轮无有效值、未达标界限只是假设时提出质疑。"""
+    daemon, job = setup
+    (job.root / "checks").mkdir()
+    (job.root / "checks" / "virtual.py").write_text("def run(ctx):\n    return float('inf')\n", encoding="utf-8")
+    focus = {**LENGTH, "id": "focus", "check": {"script": "checks/virtual.py"}, "origin": "agent", "weight": 0.3, "source": "agent assumption: guess"}
+    hard = {**DEMAND, "variables": [{"id": "track_cap", "description": "track under 99", "check": {"operand": {"type": "TOTR"}},
+                                     "range": {"max": 99.0}, "source": "user"}],
+            "objectives": [{**LENGTH, "must": {"max": 120.0}}, focus]}
+    write_demand(job, hard)
+    first = call(daemon, "round.record", job=job.id)["result"]["brief"]
+    assert any("focus fails and its limit rests on agent assumption" in x for x in first["doubts"]) and "reminder" in first
+    call(daemon, "lens.set", job=job.id, surface=1, param="radius", value=60.0)
+    second = call(daemon, "round.record", job=job.id, tier="local")["result"]["brief"]
+    assert any(x.startswith("focus has had no valid value for 2 rounds") for x in second["doubts"])
+    assert any(x.startswith("track_cap has not been met in any of the 2 rounds") for x in second["doubts"])
+    clean = workflow.brief(demand.validate(DEMAND), {"items": [], "hard_failing": []}, {"status": "continue", "next_tier": "local"}, [])
+    assert clean["doubts"] == [] and "reminder" not in clean
+
+
+WORK = """
+def work(wctx, item):
+    if item.get("boom"):
+        raise ValueError("bad item")
+    wctx.backend.set_surface(1, "thickness", item["t"])
+    return {"t": item["t"], "totr": wctx.backend.operand("TOTR", 0, 0, []), "worker": wctx.worker}
+"""
+
+
+def test_parallel_runs_items_in_several_workers_from_the_saved_lens(setup):
+    """并发评估：每个条目从保存的镜头副本出发，结果按条目顺序返回，出错的条目单独记录，结果封存。"""
+    daemon, job = setup
+    (job.root / "explore").mkdir()
+    (job.root / "explore" / "work.py").write_text(WORK, encoding="utf-8")
+    run = "def run(ctx):\n    return ctx.parallel('explore/work.py', [{'t': 5.0}, {'t': 6.0}, {'boom': True}, {'t': 7.0}], workers=2)\n"
+    out = call(daemon, "script.exec", job=job.id, name="scan", source=run, args={})
+    assert out["ok"], out
+    res = out["result"]["result"]
+    totr = [r["totr"] if r else None for r in res["results"]]
+    # 起点 TOTR = 5 + 95；每个条目只改第 1 面厚度，互不累积 / each item changes only surface 1 from the same start
+    assert totr == [100.0, 101.0, None, 102.0] and "bad item" in res["errors"]["2"] and res["workers_available"] == 2
+    assert {r["worker"] for r in res["results"] if r} <= {0, 1} and job.verify_seals() == []
+    assert (job.root / res["folder"] / "result.json").is_file() and (job.root / res["folder"] / "work.py").is_file()
+    # 有未保存修改时拒绝，worker 只能加载已保存的文件 / refused with unsaved changes: workers load the saved file
+    call(daemon, "lens.set", job=job.id, surface=1, param="radius", value=60.0)
+    assert call(daemon, "script.exec", job=job.id, name="scan", source=run, args={})["error"]["code"] == ErrorCode.UNSAVED_CHANGES

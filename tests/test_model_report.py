@@ -88,7 +88,7 @@ def test_page_lists_materials_indices_fields_and_layout_both_languages():
 
 def test_describe_op_archives_page_json_and_returns_warnings(saos_home, fake_lens_file):
     backend = FakeBackend()
-    daemon = Daemon(backend, backend.start(), "standalone")
+    daemon = Daemon(backend, backend.start(), "extension")
     job = jobs.create_job("a")
     for op, args in (("lens.import", {"src": str(fake_lens_file), "name": "start.zmx"}), ("lens.load", {"file": "start.zmx"})):
         assert daemon.handle({"op": op, "args": {"job": job.id, **args}})["ok"]
@@ -132,24 +132,37 @@ def test_material_record_warnings_and_validation(saos_home):
             materials_record.recorded_names(job)
 
 
-def test_fingerprint_catches_layout_changes():
-    """折转角、偏心、菲涅尔基底变化都算结构改变；半径不算。 / Fold angles, decenters and Fresnel substrates are structure; radii are not."""
+def test_fingerprint_keeps_part_kinds_and_the_environment():
+    """本设计要做的面：倾角、坐标断点参数、半径和材料都是设计变量；基底由平变弯、新增倾斜才算改结构。
+    声明为环境的面（外购件、样品）再锁定参数。视场和波长可以在末尾追加采样点。
+    Surfaces this design makes: tilt angles, break parameters, radii and materials are variables; a flat substrate turning
+    curved or a new tilt is structure. Environment surfaces are locked further. Fields and wavelengths may gain points at the end."""
+    import copy
+
     from saos import model_gate
 
     d = build([("Standard", math.inf, 0.0, AIR, [1.0, 1.0]), ("Coordinate Break", math.inf, 0.0, {"kind": "inherit"}, [1.5, 1.5]),
                ("Generalized Fresnel", math.inf, 0.0, AIR, [1.0, 1.0]), ("Standard", 20.0, 0.0, BK7, [1.52, 1.51])], telecentric=True)
     d["surfaces"][1]["params"] = [{"par": 3, "name": "Tilt About Y", "value": 45.0, "solve": "Fixed"}]
-    base = model_gate.digest(model_gate.fingerprint(d))
 
-    def changed(mutate):
-        import copy
+    def changed(mutate, environment=()):
         x = copy.deepcopy(d)
         mutate(x)
-        return model_gate.digest(model_gate.fingerprint(x)) != base
+        return model_gate.structure_changes(d, x, environment)
 
-    assert changed(lambda x: x["surfaces"][1]["params"][0].update(value=44.0))
-    assert changed(lambda x: x["surfaces"][1].update(thickness=0.2))
-    assert changed(lambda x: x["surfaces"][2].update(radius=0.02))
-    assert changed(lambda x: x["surfaces"][3].update(tilt_decenter={"before_DecenterY": 0.01}))
+    assert not changed(lambda x: x["surfaces"][1]["params"][0].update(value=44.0))   # 折转角是设计变量 / a fold angle is a variable
+    assert not changed(lambda x: x["surfaces"][1].update(thickness=0.2))
+    assert changed(lambda x: x["surfaces"][2].update(radius=0.02)) == ["surfaces[2].substrate_flat"]
+    assert changed(lambda x: x["surfaces"][3].update(tilt_decenter={"before_DecenterY": 0.01})) == ["surfaces[3].tilted"]
+    assert changed(lambda x: x["surfaces"][1]["params"][0].update(value=0.0)) == ["surfaces[1].tilted"]   # 去掉折转 / the fold removed
     assert not changed(lambda x: x["surfaces"][3].update(radius=25.0))
     assert not changed(lambda x: x["surfaces"][3]["material_source"].update(name="SF2"))
+    assert not changed(lambda x: x["surfaces"][3].update(material_source={"kind": "model", "nd": 1.6, "vd": 50.0}))
+    assert changed(lambda x: x["surfaces"][3].update(material_source={"kind": "mirror"})) == ["surfaces[3].medium"]
+    # 外购的折转棱镜声明为环境：折转角和材料都锁定 / a bought-in fold declared as environment: angle and material are locked
+    assert changed(lambda x: x["surfaces"][1]["params"][0].update(value=44.0), environment=[1]) == ["surfaces[1].break.Tilt About Y"]
+    assert changed(lambda x: x["surfaces"][3].update(material="SF2", radius=25.0), environment=[3]) == ["surfaces[3].material", "surfaces[3].radius"]
+    # 视场、波长只能在末尾追加 / fields and wavelengths only gain points at the end
+    assert not changed(lambda x: x["fields"]["items"].append({"x": 0.0, "y": 0.5, "weight": 1.0}))
+    assert changed(lambda x: x["fields"]["items"][0].update(y=0.1)) == ["fields.items[0][1]"]
+    assert not changed(lambda x: x["wavelengths"].append({"um": 0.65, "weight": 1.0, "primary": False}))

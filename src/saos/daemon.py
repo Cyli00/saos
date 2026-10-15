@@ -38,6 +38,9 @@ REQUEST_READ_TIMEOUT_S = 30
 # operations that may run long: their start and end go to progress.json; a stale cancel request is cleared first
 LONG_OPS = frozenset({"opt.local", "script.exec", "round.record", "probe.run", "demand.check"})
 REFRESH_AFTER = frozenset({"lens.load", "lens.set", "lens.build", "opt.local", "script.exec", "round.record"})
+# 建模说明给用户看，任何阶段都要在用户看着的窗口里生成和确认
+# the model description is for the user to watch, so it always needs the connected window
+EXTENSION_ALWAYS = frozenset({"lens.describe", "lens.approve"})
 COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
 COMPARED_NUMBER_KEYS = ("radius", "thickness", "conic", "semi_diameter")
 
@@ -134,6 +137,7 @@ class Daemon:
             handler = self.handlers.get(op)  # type: ignore[arg-type]
             if handler is None:
                 raise SaosError(ErrorCode.UNKNOWN_OP, f"unknown operation {op!r}", {"available": sorted(self.handlers)})
+            self._require_extension(op, args)
             if op not in ("ping", "shutdown") and not self.backend.healthy():
                 raise self._connection_lost({"detected": "connection check before the operation"})
             if op not in ("ping", "shutdown"):
@@ -149,8 +153,8 @@ class Daemon:
             self._progress_start(op, args)
             with self.backend.activity(f"saos {op}", quiet):
                 result = handler(args)
-            if op in REFRESH_AFTER:
-                self._refresh_windows()
+            if op in REFRESH_AFTER or op == "lens.describe":
+                self._refresh_windows(args)
         except SaosError as exc:
             error = exc
         except Exception as exc:  # noqa: BLE001 - 后台进程不能因单个请求崩溃
@@ -190,9 +194,42 @@ class Daemon:
         # 部分面参数无法完整读取；宁可让只读分析的副作用要求保存，也不把用户修改误判为安全。
         return self.window_unsaved or self.backend.has_unsaved_changes()
 
-    def _refresh_windows(self) -> None:
+    def _modeling(self, args: dict[str, Any]) -> bool:
+        """建模阶段：需求已经确认过、还没有任何获确认的建模说明。
+        The modelling phase: the demand was confirmed and no model description is approved yet."""
+        from saos import demand, model_gate
+
+        job_id = args.get("job")
+        if not isinstance(job_id, str):
+            return False
         try:
-            self.backend.refresh_windows()
+            root = jobs.get_job(job_id).root
+        except SaosError:
+            return False
+        return bool(demand.confirmations(root)) and not any((root / "models").glob(f"*/{model_gate.APPROVAL_FILE}"))
+
+    def _require_extension(self, op: str, args: dict[str, Any]) -> None:
+        """从需求确认到建模说明获确认，用户要看着建模和选材，只接受连接到界面窗口的后台进程。"""
+        if self.mode == "extension" or op in ("ping", "shutdown"):
+            return
+        if op in EXTENSION_ALWAYS or self._modeling(args):
+            raise SaosError(
+                ErrorCode.EXTENSION_REQUIRED,
+                f"{op} runs only in extension mode: from the confirmed demand until the user approves a model description, "
+                "and for lens describe / approve at any time, the user watches the model in OpticStudio. "
+                "Run saos daemon stop, then saos daemon start --mode extension",
+                {"mode": self.mode, "modelling_phase": op not in EXTENSION_ALWAYS},
+            )
+
+    def _refresh_windows(self, args: dict[str, Any]) -> None:
+        """改动镜头后刷新窗口；建模阶段还要保证 Lens Data 和布局窗口开着，被关掉的重新打开。"""
+        if self.mode != "extension":
+            return
+        try:
+            if self._modeling(args):
+                self.backend.show_windows()
+            else:
+                self.backend.refresh_windows()
         except Exception:  # noqa: BLE001 - 刷新失败不影响操作结果
             log.exception(_t("刷新显性调试窗口失败", "refreshing the explicit debugging windows failed"))
 
@@ -380,7 +417,7 @@ class Daemon:
         if "value" not in args:
             raise SaosError(ErrorCode.BAD_ARGS, "missing argument value")
         current = self.backend.surfaces()
-        before = current[surface].get(param) if 0 <= surface < len(current) else None
+        before = self.backend.surface_value(surface, param) if 0 <= surface < len(current) else None
         after = self.backend.set_surface(surface, param, args["value"])
         loaded.dirty = True
         return {**loaded.describe(), "surface": surface, "param": param, "before": before, "after": after.get(param)}
@@ -469,7 +506,7 @@ class Daemon:
         return {"file": rel, "text": f"analyses/{stem}.txt" if data.get("text_file") else None, **brief}
 
     def op_view(self, args: dict[str, Any]) -> dict[str, Any]:
-        """显性调试：打开 Lens Data 或 System Viewer，以及一个像质分析，并按当前镜头刷新。"""
+        """显性调试：打开 Lens Data 和布局窗口，按需再开一个分析，并按当前镜头刷新。"""
         loaded = self._require_loaded(self._job(args))
         shown = self.backend.show_windows(
             _arg(args, "viewer", str, default=None), _arg(args, "analysis", str, default=None), _arg(args, "settings", dict, default=None)
@@ -498,7 +535,9 @@ class Daemon:
         param = _arg(args, "param", str)
         surfaces = _arg(args, "surfaces", list)
         on = bool(args.get("on", True))
-        solves = {int(s): self.backend.vary(int(s), param, on) for s in surfaces}
+        mode = _arg(args, "mode", str, default=None)
+        catalog = _arg(args, "catalog", str, default=None)
+        solves = {int(s): self.backend.vary(int(s), param, on, mode, catalog) for s in surfaces}
         loaded.dirty = True
         return {**loaded.describe(), "param": param, "solves": solves}
 
