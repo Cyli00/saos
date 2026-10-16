@@ -8,13 +8,13 @@ const POLL_MS = 1500;
 
 const TEXT = {
   zh: {
-    interview: "需求访谈", demand_confirm: "确认需求单", modeling: "建模与选材", model_approve: "确认建模说明", design: "自主设计", deliver: "交付报告",
+    interview: "访谈与可行性判断", demand_confirm: "确认需求单", modeling: "建模与选材", model_approve: "确认建模说明", design: "自主设计", deliver: "交付报告",
     no_demand: "访谈中，尚无需求单", invalid_demand: "需求单未通过校验", first: "等待用户确认", reconfirm: "需求已改动，待重新确认",
     waiting: "等你确认", blocked: "待回答", active: "进行中", running: "运行中",
     rounds_n: (n) => `第 ${n} 轮`, no_rounds: "尚未记录轮次",
     st_achieved: "已达成", st_exhausted: "无法再优化", st_limit: "达到轮次上限", st_stopped: "按用户决定停止",
     report_ready: "报告已生成", report_todo: "待生成报告",
-    back_demand: "需求变更", back_model: "修改模型",
+    back_demand: "需求变更", back_model: "修改模型", back_reach: "结构不可达", feasibility: "质疑结构 · 可达性判断",
     explicit: "显式调试 · Interactive Extension", standalone: "后台运行 · standalone", no_daemon: "后台进程未运行",
     tab_control: "窗口控制", tab_layout: "布局", tab_spot: "点列图", tab_mtf: "MTF", tab_rounds: "轮次",
     blocking: "blocking 待确认问题：",
@@ -31,13 +31,13 @@ const TEXT = {
     pick_round: "点一行在其他视图中查看该轮", sag_flat: "部分面读不到面形，按平面画。", select_round: (n) => `r${String(n).padStart(3, "0")}`,
   },
   en: {
-    interview: "Interview", demand_confirm: "Confirm demand", modeling: "Model & materials", model_approve: "Approve model", design: "Autonomous design", deliver: "Delivery report",
+    interview: "Interview & feasibility", demand_confirm: "Confirm demand", modeling: "Model & materials", model_approve: "Approve model", design: "Autonomous design", deliver: "Delivery report",
     no_demand: "interviewing, no demand yet", invalid_demand: "demand fails validation", first: "waiting for the user", reconfirm: "demand changed, confirm again",
     waiting: "your turn", blocked: "question", active: "in progress", running: "running",
     rounds_n: (n) => `round ${n}`, no_rounds: "no rounds yet",
     st_achieved: "achieved", st_exhausted: "exhausted", st_limit: "round limit", st_stopped: "stopped by user",
     report_ready: "report written", report_todo: "report pending",
-    back_demand: "demand change", back_model: "revise model",
+    back_demand: "demand change", back_model: "revise model", back_reach: "unreachable", feasibility: "question the structure",
     explicit: "Explicit · Interactive Extension", standalone: "Background · standalone", no_daemon: "daemon not running",
     tab_control: "Window controls", tab_layout: "Layout", tab_spot: "Spot Diagram", tab_mtf: "MTF", tab_rounds: "Rounds",
     blocking: "Blocking questions:",
@@ -118,7 +118,7 @@ const NX = 22, NW = 232;
 
 function nodeSub(step) {
   const d = step.detail;
-  if (step.id === "interview") return d ? t(d) : "sources/demand.yaml";
+  if (step.id === "interview") return d ? t(d) : t("feasibility");
   if (step.id === "demand_confirm") return d ? t(d) : "saos demand confirm";
   if (step.id === "modeling") return step.status === "active" && state.progress ? `${state.progress.op}` : "lens describe";
   if (step.id === "model_approve") return typeof d === "string" ? d : "saos lens approve";
@@ -155,18 +155,20 @@ function renderFlow() {
     }
   }
   // 回退连线（虚线，右侧）
-  const back = (from, to, label, lane) => {
+  const back = (from, to, label, lane, dy1 = 0) => {
     const a = NODES.find((n) => n.id === from), b = NODES.find((n) => n.id === to);
     const xr = NX + NW, x2 = xr + lane;
-    const y1 = a.y + a.h / 2, y2 = b.y + b.h / 2;
+    const y1 = a.y + a.h / 2 + dy1, y2 = b.y + b.h / 2;
     parts.push(`<path class="edge back" d="M${xr},${y1} L${x2},${y1} L${x2},${y2} L${xr + 7},${y2}"/>`);
     parts.push(`<path class="arrow back" d="M${xr + 7},${y2 - 4} L${xr + 7},${y2 + 4} L${xr},${y2} Z"/>`);
     const ly = (y1 + y2) / 2;
     parts.push(`<text class="edge-label" x="${x2 + 3}" y="${ly}" transform="rotate(90 ${x2 + 3} ${ly})" text-anchor="middle">${esc(label)}</text>`);
   };
-  // 两条回退线分走内外两条竖道，避免重叠 / the two return edges use separate lanes so they never overlap
-  back("design", "demand_confirm", t("back_demand"), 32);
-  back("model_approve", "modeling", t("back_model"), 14);
+  // 三条回退线各走一条竖道，避免重叠；指向确认需求的两条在箭头处汇合 / each return edge has its own lane; the two into demand_confirm meet at the arrow
+  // 从建模出发的一条上移 12，免得和进入建模的箭头共用同一段横线 / the edge leaving modeling starts 12 higher so it never shares the stub of the edge entering it
+  back("design", "demand_confirm", t("back_demand"), 36);
+  back("modeling", "demand_confirm", t("back_reach"), 22, -12);
+  back("model_approve", "modeling", t("back_model"), 12);
   // 节点
   NODES.forEach((n, i) => {
     const s = steps[n.id];
