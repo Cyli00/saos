@@ -26,7 +26,8 @@ const TEXT = {
     no_viz: "第 0 轮记录后，这里显示该轮的布局、点列图和 MTF。", viz_missing: "这一轮没有可视化数据（用 --no-viz 记录，或记录早于 saos ui）。",
     viz_failed: "这一轮的可视化导出失败：", spot_foot: (ref) => `点：批量光线追迹，相对主波长主光线，未计被拦光线。RMS / GEO：OpticStudio Standard Spot（参考 ${ref}，全部波长），单位 µm。`,
     mtf_foot: "曲线：OpticStudio FFT MTF 导出。", tangential: "子午 T", sagittal: "弧矢 S", diff: "衍射极限",
-    layout_foot: "几何与光线坐标：ZOS-API（GetGlobalMatrix、GetSag、批量光线追迹）。拖动旋转，滚轮缩放，双击复位。",
+    layout_foot: "几何与光线坐标：ZOS-API（GetGlobalMatrix、GetSag、批量光线追迹）。",
+    layout_hint_3d: "拖动旋转 · Shift 或右键拖动平移 · 滚轮缩放 · 双击复位", layout_hint_2d: "拖动平移 · 滚轮缩放 · 双击复位",
     image_z: "像面 z", round: "轮", tiers: "层级", gap: "目标差距", state: "状态", note: "说明", achieved: "达成", deliverable: "可交付",
     pick_round: "点一行在其他视图中查看该轮", sag_flat: "部分面读不到面形，按平面画。", select_round: (n) => `r${String(n).padStart(3, "0")}`,
   },
@@ -49,7 +50,8 @@ const TEXT = {
     no_viz: "After round 0 is recorded, its layout, spot diagram and MTF appear here.", viz_missing: "This round has no visual data (recorded with --no-viz or before saos ui).",
     viz_failed: "The visual export of this round failed: ", spot_foot: (ref) => `Points: batch ray trace relative to the primary chief ray, vignetted rays left out. RMS / GEO: OpticStudio Standard Spot (reference ${ref}, all wavelengths), in µm.`,
     mtf_foot: "Curves: OpticStudio FFT MTF export.", tangential: "Tangential", sagittal: "Sagittal", diff: "Diff. limit",
-    layout_foot: "Geometry and rays: ZOS-API (GetGlobalMatrix, GetSag, batch ray trace). Drag to rotate, wheel to zoom, double-click to reset.",
+    layout_foot: "Geometry and rays: ZOS-API (GetGlobalMatrix, GetSag, batch ray trace).",
+    layout_hint_3d: "drag to rotate · Shift or right-drag to pan · wheel to zoom · double-click to reset", layout_hint_2d: "drag to pan · wheel to zoom · double-click to reset",
     image_z: "image z", round: "Round", tiers: "Tiers", gap: "Shortfall", state: "State", note: "Note", achieved: "achieved", deliverable: "deliverable",
     pick_round: "Click a row to view that round in the other tabs", sag_flat: "Some surface shapes could not be read; drawn flat.", select_round: (n) => `r${String(n).padStart(3, "0")}`,
   },
@@ -114,7 +116,7 @@ const NODES = [
   { id: "design", y: 362, h: 64 },
   { id: "deliver", y: 462, h: 56 },
 ];
-const NX = 22, NW = 232;
+const NX = 20, NW = 226;
 
 function nodeSub(step) {
   const d = step.detail;
@@ -166,8 +168,8 @@ function renderFlow() {
   };
   // 三条回退线各走一条竖道，避免重叠；指向确认需求的两条在箭头处汇合 / each return edge has its own lane; the two into demand_confirm meet at the arrow
   // 从建模出发的一条上移 12，免得和进入建模的箭头共用同一段横线 / the edge leaving modeling starts 12 higher so it never shares the stub of the edge entering it
-  back("design", "demand_confirm", t("back_demand"), 36);
-  back("modeling", "demand_confirm", t("back_reach"), 22, -12);
+  back("design", "demand_confirm", t("back_demand"), 40);
+  back("modeling", "demand_confirm", t("back_reach"), 26, -12);
   back("model_approve", "modeling", t("back_model"), 12);
   // 节点
   NODES.forEach((n, i) => {
@@ -176,7 +178,7 @@ function renderFlow() {
     const r = n.gate ? n.h / 2 : 10;
     const x = n.gate ? NX + 26 : NX, w = n.gate ? NW - 52 : NW;
     let sub = nodeSub(s);
-    const maxChars = n.gate ? 24 : 30;
+    const maxChars = n.gate ? 23 : 29;
     if (sub.length > maxChars) sub = sub.slice(0, maxChars - 1) + "…";
     parts.push(`<g class="${cls}">`);
     parts.push(`<rect class="glow" x="${x}" y="${n.y}" width="${w}" height="${n.h}" rx="${r}"/>`);
@@ -331,10 +333,12 @@ function waveColors(waves) {
 }
 
 function fieldLabel(sys, f) {
+  // 只有 y 视场时写 H y，否则写 (x, y)，免得 ±x、±y 四个视场同名
   const item = sys.fields.items[f];
-  const v = Math.hypot(item.x, item.y);
-  const unit = sys.fields.type === "Angle" ? "°" : ` ${sys.lens_units === "Millimeters" ? "mm" : ""}`;
-  return `${sys.fields.type === "Angle" ? "FoV" : "H"} ${v.toFixed(1)}${unit}`;
+  const angle = sys.fields.type === "Angle";
+  const unit = angle ? "°" : sys.lens_units === "Millimeters" ? " mm" : "";
+  if (sys.fields.items.every((it) => it.x === 0)) return `${angle ? "FoV" : "H"} ${sig(item.y)}${unit}`;
+  return `(${sig(item.x)}, ${sig(item.y)})${unit}`;
 }
 const toUm = (sys, v) => (sys.lens_units === "Millimeters" ? v * 1000 : sys.lens_units === "Microns" ? v : sys.lens_units === "Inches" ? v * 25400 : v * 10000);
 
@@ -344,20 +348,23 @@ function renderSpot(view) {
   const sys = viz.system, spot = viz.spot;
   const colors = waveColors(sys.wavelengths);
   const cols = spot.fields.length <= 1 ? 1 : spot.fields.length <= 4 ? 2 : 3;
-  view.innerHTML = `<div class="legend">${sys.wavelengths.map((w, i) => `<span><i style="background:${colors[i]}"></i>${Math.round(w.um * 1000)} nm</span>`).join("")}</div>
-    <div class="spot-grid" style="grid-template-columns:repeat(${cols},1fr)"></div>
+  // 每格至少 CELL 宽，视图放不下就横向滚动，而不是把点列图压扁
+  const CELL = 220, GAP = 12;
+  view.innerHTML = `<div class="figure" style="min-width:${cols * CELL + (cols - 1) * GAP + 30}px">
+    <div class="fig-head"><div class="legend">${sys.wavelengths.map((w, i) => `<span><i style="background:${colors[i]}"></i>${Math.round(w.um * 1000)} nm</span>`).join("")}</div></div>
+    <div class="spot-grid" style="grid-template-columns:repeat(${cols},minmax(${CELL}px,1fr))"></div></div>
     <div class="foot">${esc(t("spot_foot", spot.analysis_settings?.ReferTo || "—"))}</div>`;
   const grid = view.querySelector(".spot-grid");
   const pw = sys.primary_wave - 1;
-  const width = (grid.clientWidth - (cols - 1) * 10) / cols;
+  const width = (grid.clientWidth - (cols - 1) * GAP) / cols - 14;
   spot.fields.forEach((fd, f) => {
     const cell = document.createElement("div");
     cell.className = "spot-cell";
     const rms = spot.rms_radius?.[f]?.[pw], geo = spot.geo_radius?.[f]?.[pw];
     // Standard Spot 的 RMS/GEO 以 µm 计；波长设为全部时各波长返回同一个综合值（2024 R1 实测）
-    cell.innerHTML = `<div class="cap">${esc(fieldLabel(sys, f))}${rms != null ? ` · RMS ${sig(rms)} µm · GEO ${sig(geo)} µm` : ""}</div>`;
+    cell.innerHTML = `<div class="cap"><b>${esc(fieldLabel(sys, f))}</b>${rms != null ? `<span>RMS ${sig(rms)} µm · GEO ${sig(geo)} µm</span>` : ""}</div>`;
     grid.appendChild(cell);
-    const size = Math.min(width, 300);
+    const size = Math.min(width, 290);
     const [, g] = canvasIn(cell, width, size);
     let half = 0;
     fd.points.forEach((pts) => pts.forEach(([x, y]) => { half = Math.max(half, Math.abs(x), Math.abs(y)); }));
@@ -400,11 +407,12 @@ function renderMtf(view) {
   });
   const named = mtf.series.filter((s) => !/diff/i.test(s.description)).map((s) => ({ ...s, description: s.description.replace(/^Field:\s*/, "") }));
   const settings = Object.entries(mtf.settings || {}).filter(([, v]) => v != null).map(([k, v]) => `${k} ${v}`).join(" · ");
-  view.innerHTML = `<div class="legend">${named.map((s, i) => `<span><i style="background:${FIELD_COLORS[i % FIELD_COLORS.length]}"></i>${esc(s.description)}</span>`).join("")}
-    <span><i class="line"></i>${esc(t("tangential"))}</span><span><i class="line dash"></i>${esc(t("sagittal"))}</span></div><div id="mtf-plot"></div>
+  view.innerHTML = `<div class="figure plot"><div class="fig-head"><div class="legend">${named.map((s, i) => `<span><i style="background:${FIELD_COLORS[i % FIELD_COLORS.length]}"></i>${esc(s.description)}</span>`).join("")}
+    <span><i class="line"></i>${esc(t("tangential"))}</span><span><i class="line dash"></i>${esc(t("sagittal"))}</span></div></div><div id="mtf-plot"></div></div>
     <div class="foot">${esc(t("mtf_foot"))} ${esc(settings)}</div>`;
   const host = $("mtf-plot");
-  const W = host.clientWidth, H = Math.max(280, Math.min(460, view.clientHeight - 110));
+  const head = view.querySelector(".fig-head").offsetHeight;
+  const W = host.clientWidth, H = Math.max(300, Math.min(520, view.clientHeight - head - 90));
   const [, g] = canvasIn(host, W, H);
   const pad = { l: 46, r: 14, t: 10, b: 38 };
   const xmax = Math.max(...curves.flatMap((c) => c.x));
@@ -446,7 +454,8 @@ function niceStep(raw) {
 
 // ---------------- 布局（2D / 3D）----------------
 
-const camera = { yaw: -0.62, pitch: 0.32, zoom: 1 };
+const CAMERA0 = { yaw: -0.62, pitch: 0.32, zoom: 1, panX: 0, panY: 0 };
+const camera = { ...CAMERA0 };
 
 function elements(surfaces) {
   // 相邻两面之间是玻璃（不是空气、也不是反射镜）就组成一个镜片；胶合面同时属于前后两片
@@ -468,13 +477,17 @@ function renderLayout(view) {
   const image = surfs[surfs.length - 1];
   const stopSd = sys.stop_semi_diameter;
   const unit = sys.lens_units === "Millimeters" ? "mm" : sys.lens_units;
-  view.innerHTML = `<div class="stage"><canvas></canvas>
-    <div class="overlay"><div class="info">λ ${sig(sys.wavelengths[sys.primary_wave - 1].um, 4)} µm${stopSd ? ` · STOP Ø ${(2 * stopSd).toFixed(2)} ${unit}` : ""}${image?.vertex ? ` · ${esc(t("image_z"))} ${image.vertex[2].toFixed(2)} ${unit}` : ""}</div>
-      <div class="legend">${sys.fields.items.map((f, i) => `<span><i class="line" style="border-color:${FIELD_COLORS[i % FIELD_COLORS.length]}"></i>${esc(fieldLabel(sys, i))}</span>`).join("")}</div></div>
-    <div class="overlay-bottom"><div class="legend">${mats.map((m) => `<span><span class="swatch" style="background:${matColor(m)}55;border-color:${matColor(m)}"></span>${esc(m)}</span>`).join("")}</div>
-      <div class="foot ${viz.errors?.sag ? "warn" : ""}">${esc(viz.errors?.sag ? t("sag_flat") + " " : "")}${esc(t("layout_foot"))}</div></div></div>`;
+  // 图例放在画布外，不再盖住光路；画布有最小尺寸，视图放不下时上下、左右滚动
+  view.innerHTML = `<div class="layout-view"><div class="figure">
+    <div class="fig-head"><span class="info">λ ${sig(sys.wavelengths[sys.primary_wave - 1].um, 4)} µm${stopSd ? ` · STOP Ø ${(2 * stopSd).toFixed(2)} ${unit}` : ""}${image?.vertex ? ` · ${esc(t("image_z"))} ${image.vertex[2].toFixed(2)} ${unit}` : ""}</span>
+      <span class="fig-title">${esc(t("select_round", roundShown))}</span></div>
+    <div class="legend">${sys.fields.items.map((f, i) => `<span><i class="line" style="border-color:${FIELD_COLORS[i % FIELD_COLORS.length]}"></i>${esc(fieldLabel(sys, i))}</span>`).join("")}</div>
+    <div class="stage"><canvas></canvas><span class="zoom-chip"></span></div>
+    <div class="legend" style="margin:8px 0 0">${mats.map((m) => `<span><span class="swatch" style="background:${matColor(m)}55;border-color:${matColor(m)}"></span>${esc(m)}</span>`).join("")}</div></div>
+    <div class="foot ${viz.errors?.sag ? "warn" : ""}">${esc(viz.errors?.sag ? t("sag_flat") + " " : "")}${esc(t("layout_foot"))} <span id="layout-hint"></span></div></div>`;
   const stage = view.querySelector(".stage");
   const canvas = stage.querySelector("canvas");
+  const zoomChip = stage.querySelector(".zoom-chip");
 
   // 所有点用于取景；起点按第一面方向往回延长一段
   const verts = surfs.filter((s) => s.vertex).map((s) => s.vertex);
@@ -507,10 +520,13 @@ function renderLayout(view) {
     const P = all.map((p) => project(p, yaw, pitch));
     const spanU = Math.max(...P.map((p) => p[0])) - Math.min(...P.map((p) => p[0])) || 1;
     const spanV = Math.max(...P.map((p) => p[1])) - Math.min(...P.map((p) => p[1])) || 1;
-    const scale = Math.min((W - 120) / spanU, (H - 150) / spanV) * camera.zoom;
+    const scale = Math.min((W - 80) / spanU, (H - 60) / spanV) * camera.zoom;
     const midU = (Math.max(...P.map((p) => p[0])) + Math.min(...P.map((p) => p[0]))) / 2;
     const midV = (Math.max(...P.map((p) => p[1])) + Math.min(...P.map((p) => p[1]))) / 2;
-    const S = (p) => { const [u, v] = project(p, yaw, pitch); return [W / 2 + (u - midU) * scale, H / 2 + 10 - (v - midV) * scale]; };
+    const S = (p) => { const [u, v] = project(p, yaw, pitch); return [W / 2 + camera.panX + (u - midU) * scale, H / 2 + camera.panY - (v - midV) * scale]; };
+    $("layout-hint").textContent = t(dim === "2d" ? "layout_hint_2d" : "layout_hint_3d");
+    zoomChip.textContent = camera.zoom === 1 ? "" : `${Math.round(camera.zoom * 100)} %`;
+    const placed = [];
     const line = (pts, close = false) => { g.beginPath(); pts.forEach((p, i) => { const [x, y] = S(p); i ? g.lineTo(x, y) : g.moveTo(x, y); }); if (close) g.closePath(); };
 
     // 光轴
@@ -563,9 +579,14 @@ function renderLayout(view) {
       // 标签 L1, L2 …（胶合件按片计）
       const topF = e.front.profile_y[e.front.profile_y.length - 1], topB = e.back.profile_y[e.back.profile_y.length - 1];
       const [x1, y1] = S(topF), [x2, y2] = S(topB);
-      g.fillStyle = css("--text-2"); g.font = `600 12px ${css("--font")}`; g.textAlign = "center"; g.textBaseline = "bottom";
-      g.fillText(`L${k + 1}`, (x1 + x2) / 2, Math.min(y1, y2) - 8);
+      // 挤在一起的镜片只标不重叠的标签，免得 L3–L6 叠成一团；标签最后统一画，不被后面镜片的填充盖住
+      const lx = (x1 + x2) / 2, ly = Math.min(y1, y2) - 8, box = [lx - 11, ly - 14, lx + 11, ly];
+      if (placed.some((b) => b.box[0] < box[2] && box[0] < b.box[2] && b.box[1] < box[3] && box[1] < b.box[3])) return;
+      placed.push({ box, text: `L${k + 1}`, x: lx, y: ly });
     });
+    g.font = `600 12px ${css("--font")}`; g.textAlign = "center"; g.textBaseline = "bottom";
+    g.lineWidth = 3; g.lineJoin = "round"; g.strokeStyle = css("--plot-bg"); g.fillStyle = css("--text-2");
+    placed.forEach((p) => { g.strokeText(p.text, p.x, p.y); g.fillText(p.text, p.x, p.y); });
     // 反射镜
     surfs.forEach((s) => {
       if ((s.material || "").toUpperCase() !== "MIRROR" || !s.profile_y) return;
@@ -586,17 +607,27 @@ function renderLayout(view) {
   }
   draw();
   let drag = null;
-  canvas.onpointerdown = (e) => { if (dim === "3d") { drag = [e.clientX, e.clientY]; canvas.setPointerCapture(e.pointerId); } };
+  canvas.oncontextmenu = (e) => e.preventDefault();
+  canvas.onpointerdown = (e) => {
+    // 2D 只能平移；3D 左键旋转，Shift 或右键平移
+    drag = { x: e.clientX, y: e.clientY, pan: dim === "2d" || e.shiftKey || e.button === 2 };
+    canvas.classList.toggle("panning", drag.pan);
+    canvas.setPointerCapture(e.pointerId);
+  };
   canvas.onpointermove = (e) => {
     if (!drag) return;
-    camera.yaw += (e.clientX - drag[0]) * 0.008;
-    camera.pitch = Math.max(-1.45, Math.min(1.45, camera.pitch + (e.clientY - drag[1]) * 0.008));
-    drag = [e.clientX, e.clientY];
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (drag.pan) { camera.panX += dx; camera.panY += dy; }
+    else {
+      camera.yaw += dx * 0.008;
+      camera.pitch = Math.max(-1.45, Math.min(1.45, camera.pitch + dy * 0.008));
+    }
+    drag.x = e.clientX; drag.y = e.clientY;
     draw();
   };
-  canvas.onpointerup = () => (drag = null);
-  canvas.onwheel = (e) => { e.preventDefault(); camera.zoom = Math.max(0.3, Math.min(8, camera.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12))); draw(); };
-  canvas.ondblclick = () => { Object.assign(camera, { yaw: -0.62, pitch: 0.32, zoom: 1 }); draw(); };
+  canvas.onpointerup = () => { drag = null; canvas.classList.remove("panning"); };
+  canvas.onwheel = (e) => { e.preventDefault(); camera.zoom = Math.max(0.3, Math.min(12, camera.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12))); draw(); };
+  canvas.ondblclick = () => { Object.assign(camera, CAMERA0); draw(); };
   renderLayout.redraw = draw;
 }
 
@@ -605,12 +636,12 @@ function renderLayout(view) {
 function renderRounds(view) {
   const rounds = state.rounds;
   if (!rounds.length) { view.innerHTML = `<div class="empty">${esc(t("no_rounds"))}</div>`; return; }
-  view.innerHTML = `<div id="g-plot"></div><div class="foot">${esc(t("pick_round"))}</div>
+  view.innerHTML = `<div class="table-wrap"><div class="figure"><div id="g-plot"></div></div><div class="foot">${esc(t("pick_round"))}</div>
     <table><tr><th>${esc(t("round"))}</th><th>${esc(t("tiers"))}</th><th class="num">${esc(t("gap"))}</th><th>${esc(t("state"))}</th><th>${esc(t("note"))}</th></tr>
     ${rounds.slice().reverse().map((r) => `<tr class="${r.viz ? "pick" : ""} ${r.round === roundShown ? "sel" : ""}" data-round="${r.round}">
       <td class="num" style="text-align:left">${t("select_round", r.round)}</td><td>${r.tiers.map((x) => `<span class="tag">${esc(x)}</span>`).join("")}</td>
       <td class="num">${fmtG(r.shortfall)}</td><td>${r.achieved ? `<span class="tag ok">${esc(t("achieved"))}</span>` : ""}${r.deliverable ? `<span class="tag">${esc(t("deliverable"))}</span>` : ""}</td>
-      <td>${esc(r.note)}</td></tr>`).join("")}</table>`;
+      <td>${esc(r.note)}</td></tr>`).join("")}</table></div>`;
   view.querySelectorAll("tr.pick").forEach((tr) => tr.addEventListener("click", () => {
     pinnedRound = Number(tr.dataset.round);
     tab = "layout";

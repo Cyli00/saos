@@ -36,7 +36,12 @@ Otherwise keep working without asking. Write a question whose answer could chang
 
 ## 1. Frame the need
 
-Create the job: `uv run saos job create --name <name>`. Grill the user in rounds: ask every question you can ask now, numbered, each with your recommended answer, worded so "yes" accepts it. Put the questions whose answer can change the structure or a pass line first and mark them, so the user can answer those even if they skip the rest. Explain optics terms in plain words. Look facts up yourself (files, `ref/docs`, the OpticStudio manual, the web) instead of asking. Keep every round, with the user's answers verbatim, in `sources/interview.md`.
+Create the job: `uv run saos job create --name <name>`. Grill the user in rounds. Prepare a whole round before you ask anything: every question you can ask now, numbered, each with your recommended answer. Put the questions whose answer can change the structure or a pass line first and mark them, so the user can answer those even if they skip the rest. Explain optics terms in plain words. Look facts up yourself (files, `ref/docs`, the OpticStudio manual, the web) instead of asking. Then put the round to the user:
+
+- If you have an ask-user tool (in Claude Code `AskUserQuestion`), ask through it. Your recommendation is the first option and says so; the other options are the realistic alternatives, and a value the user has to type goes into the tool's free-text answer. When the round exceeds one call's limits (Claude Code: 4 questions, 2–4 options each), ask in consecutive calls with the marked questions in the first, and do no other work between them.
+- Otherwise write the round as a numbered list in which each item is a `Question:` line followed by an `Advice:` line (your recommended answer and its reason in one sentence), worded so "yes" accepts the advice.
+
+Keep every round in `sources/interview.md`: the questions, the options or advice you showed, and the user's answers verbatim (the full text of the chosen option and anything they typed).
 
 At the start of every session, before any other work, check the external preconditions once and ask for what is missing in your first reply: the daemon of this instance (mode, which job it holds, whether another session uses it), whether the mode you will need can start (extension mode needs a visible OpticStudio window), how many OpticStudio instances are already open against the licence, and the tools you plan to use. `uv run saos daemon status` reports the machine side in one call (`environment`: the daemon of every instance with its mode and running jobs, OpticStudio processes against the licence, visible windows, and whether extension mode can start and with which window). Do not work around a missing one silently.
 

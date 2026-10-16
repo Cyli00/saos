@@ -32,7 +32,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `saos lens screenshot --job J [--label L]` | 显性调试：把 OpticStudio 的可见窗口截成 PNG，存为任务的 `screens/NNN-L-K.png`（PrintWindow，被遮挡也能截；最小化的窗口跳过） |
 | `saos demand show --job J` | 校验需求单 `sources/demand.yaml`，给出版本哈希、确认记录、待确认问题和访谈总结，不连接 OpticStudio |
 | `saos demand confirm --job J --quote "<用户原话>"` | 记录用户对当前需求单版本的确认，写入 `confirmations.jsonl`；随后打开流程图小窗口（同 `saos ui open`，结果在 `ui` 字段，`SAOS_UI=0` 时不开） |
-| `saos ui open --job J [--no-window]` | 打开给用户看的流程图小窗口（Edge 应用窗口，1080×720）：六个步骤的流程图，当前步骤带流光动画，等用户确认的停顿和 blocking 问题另有标识；右侧显式调试时有窗口控制页（切换布局窗口、打开分析窗口、只读查看孔径/视场/波长，经后台进程执行，后台进程忙时排队），任何模式下都可按轮查看布局（2D/3D）、点列图、MTF 和差距曲线。本机服务只读任务目录、只监听 127.0.0.1，15 分钟没有请求自行退出；状态在 `daemon/ui.json`，日志在 `daemon/ui.log` |
+| `saos ui open --job J [--no-window]` | 打开给用户看的流程图小窗口（Chrome 应用窗口，1080×720；没装 Chrome 时用系统默认浏览器，返回值 `window` 为 `chrome-app` 或 `browser`）：六个步骤的流程图，当前步骤带流光动画，等用户确认的停顿和 blocking 问题另有标识；右侧显式调试时有窗口控制页（切换布局窗口、打开分析窗口、只读查看孔径/视场/波长，经后台进程执行，后台进程忙时排队），任何模式下都可按轮查看布局（2D/3D，可旋转、平移、缩放）、点列图、MTF 和差距曲线，图放不下时右侧面板上下、左右滚动。本机服务只读任务目录、只监听 127.0.0.1，15 分钟没有请求自行退出；状态在 `daemon/ui.json`，日志在 `daemon/ui.log` |
 | `saos probe --job J --plan PLAN.json` | 扰动诊断：按 agent 事先写下的预测，对 1–6 个变量（建议含阴性对照，没有时 review 会提示）各取 ±delta；内置参数为 radius、thickness、conic、`par<N>`，带补偿量（`quick_focus` 或任务内脚本）实测需求单各项，给出按目标影响排序、预测与实测不符的项和审视提醒。每次都从同一份基准副本重新加载，结束后恢复镜头；计划、基准副本和每次测量存到 `probes/NNN/` 并封存。不需要需求单已确认。格式见 `skills/saos/SKILL.md`「Diagnose before you escalate」 |
 | `saos rule-out --job J --tier T [--tier T…] --reason TEXT` | 带证据排除帮不上的手段层级（`ruled_out.jsonl`），终止判断不再等它；只到下一次明显进步为止。必须先在当前需求版本下记录过轮次。不连接 OpticStudio |
 | `saos stop --job J --reason TEXT --quote "<用户原话>"` | 记录用户的停止决定（`stops.jsonl`）：当前需求单版本下不再记录轮次，报告显示“按用户决定停止”、理由和原话。必须先在当前版本下记录过轮次。不连接 OpticStudio |
@@ -144,7 +144,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 
 ```
 work/<实例名>/
-  daemon/            state.json、authkey、daemon.log（后台进程运行时存在）；ui.json、ui.log、ui-edge/（saos ui 的服务状态、日志和 Edge 配置目录）
+  daemon/            state.json、authkey、daemon.log（后台进程运行时存在）；ui.json、ui.log、ui-chrome/（saos ui 的服务状态、日志和 Chrome 配置目录）
   jobs/<job_id>/     每一步产生哪些文件、谁写、能否改动：见 DESIGN.md「任务目录」
     job.json         任务状态
     log.jsonl        执行记录：每条命令的参数、结果、错误码、耗时

@@ -172,3 +172,28 @@ def test_window_controls_only_forward_whitelisted_view_ops(ui, monkeypatch):
     assert sent == [("lens.view", {"job": job.id, "analysis": "FftMtf"}), ("lens.view", {"job": job.id, "viewer": "3d"})]
     monkeypatch.setattr(stage, "_daemon", lambda: {"running": True, "mode": "standalone"})
     assert get(srv, f"/api/view?job={job.id}", data={"viewer": "3d"})[1]["error"]["code"] == "BAD_ARGS"
+
+
+def test_window_prefers_chrome_and_falls_back_to_the_default_browser(tmp_path, monkeypatch):
+    import saos.ui as ui_pkg
+
+    monkeypatch.setattr(ui_pkg.shutil, "which", lambda name: None)
+    for key in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
+        monkeypatch.delenv(key, raising=False)
+    assert ui_pkg._chrome() is None
+    # 按用户安装的 Chrome 在 LOCALAPPDATA 下
+    exe = tmp_path / ui_pkg.CHROME_SUBPATH
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    assert ui_pkg._chrome() == str(exe)
+
+    monkeypatch.setattr(ui_pkg.jobs, "get_job", lambda job_id: type("J", (), {"id": job_id})())
+    monkeypatch.setattr(ui_pkg, "ensure_server", lambda: {"port": 1, "token": "x", "pid": 2, "reused": True})
+    launched, browsed = [], []
+    monkeypatch.setattr(ui_pkg.subprocess, "Popen", lambda cmd, **kw: launched.append(cmd))
+    monkeypatch.setattr(ui_pkg.webbrowser, "open", lambda url: browsed.append(url) or True)
+    assert ui_pkg.open_window("J1")["window"] == "chrome-app"
+    assert launched[0][0] == str(exe) and launched[0][1].startswith("--app=") and not browsed
+    monkeypatch.delenv("LOCALAPPDATA")
+    assert ui_pkg.open_window("J1")["window"] == "browser" and len(launched) == 1 and browsed

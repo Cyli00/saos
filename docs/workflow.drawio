@@ -58,8 +58,8 @@
         <mxCell id="t1" value="&lt;b&gt;saos job create --name &amp;lt;name&amp;gt;&lt;/b&gt;&lt;br&gt;→ job.json · log.jsonl" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
           <mxGeometry x="980" y="137" width="400" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="a2" value="&lt;b&gt;逐轮拷问访谈&lt;/b&gt;&lt;br&gt;问题编号，每题附推荐答案（答“是”即接受）&lt;br&gt;能改结构或达标线的问题放前面并标出&lt;br&gt;能查的事实自己查，术语用白话解释" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="490" y="215" width="320" height="74" as="geometry" />
+        <mxCell id="a2" value="&lt;b&gt;逐轮拷问访谈&lt;/b&gt;&lt;br&gt;每轮问题一次整理好：编号，各附推荐答案&lt;br&gt;能改结构或达标线的问题放前面并标出&lt;br&gt;有提问工具（AskUserQuestion）→ 推荐答案作首个选项&lt;br&gt;没有 → Question + Advice 逐条排列（答“是”即接受）&lt;br&gt;能查的事实自己查，术语用白话解释" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="204" width="320" height="92" as="geometry" />
         </mxCell>
         <mxCell id="u1" value="逐题回答&lt;br&gt;（原话逐轮记录）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="85" y="225" width="240" height="54" as="geometry" />
@@ -85,10 +85,10 @@
         <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a1" target="a2" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e3" value="提问" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0;exitY=0.35;entryX=1;entryY=0.35;" parent="1" source="a2" target="u1" edge="1">
+        <mxCell id="e3" value="提问" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0;exitY=0.434;entryX=1;entryY=0.35;" parent="1" source="a2" target="u1" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e4" value="回答" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.75;entryX=0;entryY=0.75;" parent="1" source="u1" target="a2" edge="1">
+        <mxCell id="e4" value="回答" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.75;entryX=0;entryY=0.668;" parent="1" source="u1" target="a2" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e5" value="记录" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;dashed=1;strokeColor=#888888;fontSize=10;" parent="1" source="a2" target="f1" edge="1">
