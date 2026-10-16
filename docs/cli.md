@@ -12,7 +12,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | 命令 | 作用 |
 |---|---|
 | `saos daemon start [--mode standalone\|extension]` | 启动后台进程并连接 OpticStudio 2024 R1，就绪后返回。本机实测约 6 s。`extension` 自动准备已打开窗口的 Interactive Extension 并连接，见下文 |
-| `saos daemon status` | 是否在运行、连接是否正常、当前加载的镜头 |
+| `saos daemon status [--no-env]` | 是否在运行、连接是否正常、当前加载的镜头；另附 `environment`：各实例后台进程的模式和正在跑的任务（只读状态文件，不连管道）、OpticStudio 进程数与许可余量（上限 8）、可见主窗口、extension 模式现在能否启动及会用哪个窗口。`--no-env` 只查本实例 |
 | `saos daemon stop [--discard] [--force]` | 正常退出，等后台进程和它的 OpticStudio 都退出后才返回。有未保存修改时拒绝退出，除非加 `--discard`；`--force` 在无法正常退出时强制结束 |
 | `saos job create --name N [--spec FILE]` | 新建设计任务，编号为 `时间-名字`，规格文件复制进任务目录 |
 | `saos job list` / `saos job show JOB [--log K]` | 列出任务；查看状态、镜头文件和最近 K 条执行记录 |
@@ -37,7 +37,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `saos rule-out --job J --tier T [--tier T…] --reason TEXT` | 带证据排除帮不上的手段层级（`ruled_out.jsonl`），终止判断不再等它；只到下一次明显进步为止。必须先在当前需求版本下记录过轮次。不连接 OpticStudio |
 | `saos stop --job J --reason TEXT --quote "<用户原话>"` | 记录用户的停止决定（`stops.jsonl`）：当前需求单版本下不再记录轮次，报告显示“按用户决定停止”、理由和原话。必须先在当前版本下记录过轮次。不连接 OpticStudio |
 | `saos job cancel <job>` | 请求正在运行的计算在下一个安全点停止（写 `cancel.request`）：`opt local` 调用 Cancel，`probe` 在下一次扰动前停止并返回 `CANCELLED`，脚本通过 `ctx.progress()` 的返回值或 `ctx.cancel_requested()` 得知。不经过后台进程，正忙时也能用 |
-| `saos check --job J` | 按需求单对当前镜头逐项实测和判定，不记录。需求单未确认时也能用，便于整理需求时先看数值 |
+| `saos check --job J [--only a,b]` | 按需求单对当前镜头逐项实测和判定，不记录。需求单未确认时也能用，便于整理需求时先看数值。每项给出 `duration_s`。`--only` 只测列出的几项，结果标 `partial`、不会判为达成；记录轮次时总是全测 |
 | `saos round --job J [--tier T[,T…]] [--note TEXT] [--merit V] [--no-viz]` | 记录一个调试轮次（T 为 local、variables、materials、global、structure，一轮用了几个就写几个）：存为 `lenses/rounds/rNNN.zmx`，逐项实测判定（全文存为 `evaluations/NNN/result.json`），写入 `ledger.jsonl`，返回终止判断（continue / achieved / exhausted / limit / stopped）、既没试过也没排除的层级和需求提要 `brief`。第 0 轮不填 tier。当前需求单版本未确认（`DEMAND_NOT_CONFIRMED`）、有 blocking 待确认问题（`DEMAND_BLOCKED`）、已经终止、或镜头结构与已确认的建模说明不一致（`MODEL_NOT_APPROVED`）时拒绝。每轮记下所用材料；含模型玻璃或不满足常量、变量范围的轮次不能交付。写入 ledger 后再导出 `evaluations/NNN/viz.json`（逐面全局几何、布局光线、点列图光线、Standard Spot 的 RMS/GEO、FFT MTF，OpticStudio 文本导出在 `viz/`）供 `saos ui` 显示；导出失败只记在 `viz.json` 和返回值 `viz` 中，不影响本轮。Cooke 三片式实测约 1 s；`--no-viz` 跳过 |
 | `saos report --job J [--lang zh\|en]` | 由需求单和 ledger 生成交付报告 `report/index.html`，不连接 OpticStudio；语言见「报告语言」 |
 | `saos exec SCRIPT --job J [--arg K=V …] [--args-file JSON] [--name N] [--quiet]` | 在后台进程内执行脚本（ADR-0007），见下文「脚本执行」 |
