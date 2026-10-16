@@ -32,11 +32,11 @@ REVIEW_AFTER = 2
 DOUBT_AFTER = 2
 
 
-def check(ctx) -> dict[str, Any]:
+def check(ctx, only: list[str] | None = None) -> dict[str, Any]:
     if ctx.lens is None:
         raise SaosError(ErrorCode.NO_LENS_LOADED, f"job {ctx.job.id} has no lens loaded")
     before, sha = lens_state(ctx)
-    result = {**ctx.describe(), **demand.evaluate(ctx, demand.load_job(ctx.job.root))}
+    result = {**ctx.describe(), **demand.evaluate(ctx, demand.load_job(ctx.job.root), only=only)}
     after, sha_after = lens_state(ctx)
     if sha_after != sha:
         # 只取值时也提示：同样的判定在记录轮次时会被拒绝 / warn here too: the same checks would be refused when recording a round

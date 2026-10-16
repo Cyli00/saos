@@ -45,7 +45,9 @@ def cmd_daemon(args: argparse.Namespace) -> Any:
     if args.action == "stop":
         return client.stop(discard=args.discard, force=args.force)
     if args.action == "status":
-        return client.status()
+        if args.no_env:
+            return client.status()
+        return {**client.status(), "environment": client.environment()}
     raise AssertionError(args.action)
 
 
@@ -181,7 +183,10 @@ def cmd_exec(args: argparse.Namespace) -> Any:
 
 
 def cmd_check(args: argparse.Namespace) -> Any:
-    return client.request("demand.check", {"job": args.job}, timeout=args.timeout)
+    payload: dict[str, Any] = {"job": args.job}
+    if args.only:
+        payload["only"] = [x.strip() for x in args.only.split(",") if x.strip()]
+    return client.request("demand.check", payload, timeout=args.timeout)
 
 
 def cmd_probe(args: argparse.Namespace) -> Any:
@@ -261,7 +266,9 @@ def build_parser() -> argparse.ArgumentParser:
     stop = dsub.add_parser("stop", help="stop the daemon")
     stop.add_argument("--discard", action="store_true", help="discard unsaved changes")
     stop.add_argument("--force", action="store_true", help="kill the process if it does not exit normally")
-    dsub.add_parser("status", help="show daemon status")
+    status = dsub.add_parser("status", help="show this instance's daemon and, once per session, the machine: daemons of every instance "
+                             "and their running jobs, OpticStudio processes against the licence, visible windows, whether extension mode can start")
+    status.add_argument("--no-env", action="store_true", help="only this instance's daemon")
     run = dsub.add_parser("run", help="run the daemon in the foreground (used by start; also for debugging)")
     run.add_argument("--mode", choices=("standalone", "extension"), default="standalone")
     run.add_argument("--token", default="", help=argparse.SUPPRESS)
@@ -394,6 +401,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("check", help="measure and judge every check of the demand (sources/demand.yaml) on the current lens without recording")
     p.add_argument("--job", required=True)
+    p.add_argument("--only", help="comma-separated check ids to measure (exploration): the result is partial and never achieved; "
+                                  "rounds always measure every check")
     p.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     p.set_defaults(func=cmd_check)
     p = sub.add_parser("round", help="record a round: save lenses/rounds/rNNN.zmx, measure the demand, append ledger.jsonl and return the stop decision with a demand brief")

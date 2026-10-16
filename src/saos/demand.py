@@ -33,6 +33,7 @@ import hashlib
 import json
 import math
 import re
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -443,10 +444,20 @@ def measure(ctx: ScriptContext, item: dict[str, Any], folder: Path, scripts: dic
     return {"value": value, "evidence": evidence}
 
 
-def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict[str, Any]] | None = None,
+             only: list[str] | None = None) -> dict[str, Any]:
     """逐项取值和判定。目标差距 G 是所有带界限条目的单项差距按权重的加权和；常量或变量范围不满足时记入 hard_failing。
+    only 只测其中几项（探索用）：结果标为 partial，不宣布达成，G 只是这几项之和。
     Measure and judge every check. G is the weighted sum of the shortfalls of every bounded item; broken constants or
-    variable ranges are listed in hard_failing."""
+    variable ranges are listed in hard_failing. With only, measure just those items (exploration): the result is
+    partial, never achieved, and G covers those items alone."""
+    specs = checked(demand)
+    if only is not None:
+        unknown = sorted(set(only) - {s["id"] for s in specs})
+        if unknown or not only:
+            raise SaosError(ErrorCode.BAD_ARGS, f"--only needs ids of checks in the demand; unknown: {unknown}",
+                            {"known": [s["id"] for s in specs]})
+        specs = [s for s in specs if s["id"] in set(only)]
     scripts = prepare_scripts(ctx.job.root, demand) if scripts is None else scripts
     root = ctx.path("evaluations")
     root.mkdir(exist_ok=True)
@@ -460,11 +471,13 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
         target_file.write_bytes((ctx.job.root / rel).read_bytes())
     items = []
     total = 0.0
-    for index, spec in enumerate(checked(demand)):
+    for index, spec in enumerate(specs):
         item_folder = folder / f"{index:03d}-{spec['id']}"
         item_folder.mkdir()
+        started = time.monotonic()
         measured = measure(ctx, spec, item_folder, scripts)
-        item = {k: v for k, v in spec.items() if k != "check"} | measured
+        # 每项耗时写进结果，便于看出哪几项判定最慢、探索时值得单独测哪几项
+        item = {k: v for k, v in spec.items() if k != "check"} | measured | {"duration_s": round(time.monotonic() - started, 2)}
         value = measured["value"]
         if spec["goal"] is not None:
             g = shortfall(spec, value)
@@ -477,7 +490,8 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
     daemon = getattr(ctx, "_daemon", None)
     result = {"shortfall": total,
               # 没有任何带界限的条目时不能宣布达成 / nothing with a pass line means nothing can be declared achieved
-              "achieved": bool(judged) and all(i["passed"] for i in judged), "items": items,
+              "achieved": only is None and bool(judged) and all(i["passed"] for i in judged), "items": items,
+              "partial": only is not None,
               "hard_failing": [i["id"] for i in judged if i["kind"] in HARD_KINDS and not i["passed"]],
               # 执行出错的判定（脚本异常、读不到文件）：这一轮的结论不可信，不能当作设计不达标
               # checks that failed to run: the round says nothing about the design and must not count as a shortfall result

@@ -58,8 +58,10 @@ def test_daemon_lifecycle(env, fake_lens_file):
         code, out = saos("daemon", "stop", "--discard", "--force", env=env)
     assert code == 0 and out["result"]["stopped"] is True
 
-    code, out = saos("daemon", "status", env=env)
+    code, out = saos("daemon", "status", "--no-env", env=env)
     assert out["result"] == {"running": False}
+    code, out = saos("daemon", "status", env=env)
+    assert out["result"]["running"] is False and "licence" in out["result"]["environment"]
 
 
 def test_bad_cli_arguments_return_json(env):

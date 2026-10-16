@@ -56,3 +56,26 @@ def test_gdi_screenshot_png_is_opaque():
             compressed += png[offset + 8:offset + 8 + size]
         offset += size + 12
     assert zlib.decompress(compressed) == bytes([0, 10, 20, 30, 255, 40, 50, 60, 255])
+
+
+def test_extension_readiness_never_raises(monkeypatch):
+    import saos.native_ui as ui
+
+    monkeypatch.delenv("SAOS_UI_PID", raising=False)
+    monkeypatch.setattr(ui, "discover_dialogs", lambda: [])
+    two = [{"pid": 1, "hwnd": 11, "title": "a"}, {"pid": 2, "hwnd": 22, "title": "b"}]
+    assert ui.extension_readiness([])["ready"] is False
+    assert ui.extension_readiness(two)["ready"] is False
+    monkeypatch.setenv("SAOS_UI_PID", "2")
+    assert ui.extension_readiness(two) == {"ready": True, "via": "window", "pid": 2}
+
+    monkeypatch.setattr(ui, "discover_dialogs", lambda: [{"pid": 2, "status": "Connected"}])
+    assert ui.extension_readiness(two)["ready"] is False
+    monkeypatch.setattr(ui, "discover_dialogs", lambda: [{"pid": 2, "status": "Waiting for connection..."}])
+    assert ui.extension_readiness(two) == {"ready": True, "via": "dialog", "pid": 2}
+
+    def broken():
+        raise OSError("no UIA")
+
+    monkeypatch.setattr(ui, "discover_dialogs", broken)
+    assert ui.extension_readiness(two)["ready"] is False

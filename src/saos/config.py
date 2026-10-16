@@ -12,6 +12,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OPTICSTUDIO_DIR = r"C:\Program Files\Ansys Zemax OpticStudio 2024 R1.00"
 # DESIGN.md 锁定 OpticStudio 2024 R1.00
 EXPECTED_ZOS_VERSION = (24, 1, 0)
+# 许可证同时允许的 OpticStudio 实例数，用户手动打开的窗口也计在内（2026-10-15 实测）
+LICENSED_INSTANCES = 8
 
 
 # 计算时给用户留下的逻辑核数，其余都可以用 / logical cores left to the user during computation; the rest may be used

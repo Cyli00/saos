@@ -68,8 +68,8 @@ _kernel32.Process32FirstW.argtypes = (ctypes.c_void_p, ctypes.POINTER(_ProcessEn
 _kernel32.Process32NextW.argtypes = (ctypes.c_void_p, ctypes.POINTER(_ProcessEntry))
 
 
-def child_pids(parent: int, image: str) -> list[int]:
-    """parent 的直接子进程中，映像名为 image 的进程号。"""
+def process_pids(image: str, parent: int | None = None) -> list[int]:
+    """映像名为 image 的进程号；给出 parent 时只看它的直接子进程。"""
     snapshot = _kernel32.CreateToolhelp32Snapshot(0x2, 0)  # TH32CS_SNAPPROCESS
     if not snapshot or snapshot == ctypes.c_void_p(-1).value:
         return []
@@ -79,12 +79,17 @@ def child_pids(parent: int, image: str) -> list[int]:
         found = []
         ok_ = _kernel32.Process32FirstW(snapshot, ctypes.byref(entry))
         while ok_:
-            if entry.th32ParentProcessID == parent and entry.szExeFile.lower() == image.lower():
+            if (parent is None or entry.th32ParentProcessID == parent) and entry.szExeFile.lower() == image.lower():
                 found.append(int(entry.th32ProcessID))
             ok_ = _kernel32.Process32NextW(snapshot, ctypes.byref(entry))
         return found
     finally:
         _kernel32.CloseHandle(snapshot)
+
+
+def child_pids(parent: int, image: str) -> list[int]:
+    """parent 的直接子进程中，映像名为 image 的进程号。"""
+    return process_pids(image, parent)
 
 
 def read_state() -> dict[str, Any] | None:
@@ -164,6 +169,48 @@ def status() -> dict[str, Any]:
         return {"running": True, **request("ping", timeout=10)}
     except SaosError as exc:
         return {"running": True, "responding": False, "pid": state.get("pid"), "error": exc.to_dict()}
+
+
+def instance_daemons() -> list[dict[str, Any]]:
+    """work/ 下每个实例的后台进程（只读状态文件，不连管道，忙着的进程也不会拖慢），以及它正在跑的任务。"""
+    found = []
+    if not config.WORK_ROOT.is_dir():
+        return found
+    current = config.saos_home()
+    for home in sorted(p for p in config.WORK_ROOT.iterdir() if p.is_dir()):
+        try:
+            state = json.loads((home / "daemon" / "state.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        pid = int(state.get("pid", 0))
+        item = {"instance": home.name, "current": home.resolve() == current, "pid": pid, "alive": pid_alive(pid),
+                "mode": state.get("mode"), "started_at": state.get("started_at"), "running_jobs": []}
+        for progress_file in sorted((home / "jobs").glob("*/progress.json")):
+            try:
+                progress = json.loads(progress_file.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if progress.get("status") == "running" and progress.get("daemon_pid") == pid:
+                item["running_jobs"].append({k: progress.get(k) for k in ("op", "detail", "started", "stage")}
+                                            | {"job": progress_file.parent.name})
+        found.append(item)
+    return found
+
+
+def environment() -> dict[str, Any]:
+    """会话开始时一次查清外部条件：各实例的后台进程、OpticStudio 进程占用的许可、可见主窗口、extension 能否启动。"""
+    from saos import native_ui
+
+    opticstudio = process_pids("OpticStudio.exe")
+    windows = native_ui.main_windows()
+    return {
+        "opticstudio_processes": opticstudio,
+        "licence": {"limit": config.LICENSED_INSTANCES, "in_use": len(opticstudio),
+                    "free": max(0, config.LICENSED_INSTANCES - len(opticstudio))},
+        "windows": [{"pid": w["pid"], "title": w["title"]} for w in windows],
+        "extension": native_ui.extension_readiness(windows),
+        "instances": instance_daemons(),
+    }
 
 
 def start(mode: str, timeout: float = DEFAULT_START_TIMEOUT_S) -> dict[str, Any]:

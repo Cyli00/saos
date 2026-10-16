@@ -125,6 +125,30 @@ def _requested_pid() -> int | None:
         raise SaosError(ErrorCode.BAD_ARGS, "SAOS_UI_PID must be a process id") from exc
 
 
+def main_windows() -> list[dict[str, Any]]:
+    """可见的 OpticStudio 主窗口（标题带预期版本号）。"""
+    suffix = _main_title_suffix()
+    return _top_windows(lambda title, visible: visible and suffix in title)
+
+
+def extension_readiness(windows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """不动任何窗口，判断 extension 模式现在能否启动；选择规则与 ensure_extension 相同。"""
+    try:
+        pid = _requested_pid()
+        dialogs = discover_dialogs()
+        if dialogs:
+            dialog = choose_window(dialogs, pid)
+            if not _waiting(dialog):
+                return {"ready": False, "reason": "the Interactive Extension dialog is already connected or in an unknown state", "dialog": dialog}
+            return {"ready": True, "via": "dialog", "pid": dialog["pid"]}
+        target = choose_window(main_windows() if windows is None else windows, pid)
+        return {"ready": True, "via": "window", "pid": target["pid"]}
+    except SaosError as exc:
+        return {"ready": False, "reason": exc.message, "requested_pid": os.environ.get("SAOS_UI_PID")}
+    except Exception as exc:  # noqa: BLE001 - UIA 加载失败也只是"不能启动"，不让状态查询本身失败
+        return {"ready": False, "reason": f"cannot inspect windows: {exc}"}
+
+
 def ensure_extension() -> dict[str, Any]:
     """找到（必要时打开）等待连接的 Interactive Extension 对话框，关闭 Auto Close 后返回其状态。"""
     uia = _uia()
@@ -133,8 +157,7 @@ def ensure_extension() -> dict[str, Any]:
     if dialogs:
         dialog = choose_window(dialogs, pid)
     else:
-        suffix = _main_title_suffix()
-        target = choose_window(_top_windows(lambda title, visible: visible and suffix in title), pid)
+        target = choose_window(main_windows(), pid)
         root = _element(target["hwnd"])
         _control(root, "Programming", uia.ControlType.TabItem).GetCurrentPattern(uia.SelectionItemPattern.Pattern).Select()
         _control(root, DIALOG_TITLE, uia.ControlType.Button).GetCurrentPattern(uia.InvokePattern.Pattern).Invoke()

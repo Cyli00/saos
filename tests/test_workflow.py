@@ -910,3 +910,17 @@ def test_parallel_runs_items_in_several_workers_from_the_saved_lens(setup):
     # 有未保存修改时拒绝，worker 只能加载已保存的文件 / refused with unsaved changes: workers load the saved file
     call(daemon, "lens.set", job=job.id, surface=1, param="radius", value=60.0)
     assert call(daemon, "script.exec", job=job.id, name="scan", source=run, args={})["error"]["code"] == ErrorCode.UNSAVED_CHANGES
+
+
+def test_check_only_measures_the_named_items_and_never_achieves(setup):
+    daemon, job = setup
+    other = {**LENGTH, "id": "length2", "must": {"max": 999.0}}
+    write_demand(job, demand_with(LENGTH, other))
+    full = call(daemon, "demand.check", job=job.id)["result"]
+    assert full["partial"] is False and [i["id"] for i in full["items"]] == ["length", "length2"]
+    assert all(i["duration_s"] >= 0 for i in full["items"])
+    part = call(daemon, "demand.check", job=job.id, only=["length2"])["result"]
+    assert part["partial"] is True and part["achieved"] is False
+    assert [i["id"] for i in part["items"]] == ["length2"] and part["items"][0]["passed"] is True
+    bad = call(daemon, "demand.check", job=job.id, only=["nope"])
+    assert bad["ok"] is False and bad["error"]["code"] == ErrorCode.BAD_ARGS

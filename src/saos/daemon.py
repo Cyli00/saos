@@ -594,7 +594,7 @@ class Daemon:
         """按需求对当前镜头逐项取值判定，不记录轮次。"""
         job = self._job(args)
         self._require_loaded(job)
-        return workflow.check(scripting.ScriptContext(self, job, {}))
+        return workflow.check(scripting.ScriptContext(self, job, {}), only=_arg(args, "only", list, default=None))
 
     def op_round(self, args: dict[str, Any]) -> dict[str, Any]:
         """记录一个调试轮次并给出终止判断（DESIGN.md「终止规则」）。"""

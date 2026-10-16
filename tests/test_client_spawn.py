@@ -61,3 +61,33 @@ def test_spawn_resolves_relative_home_before_changing_cwd(tmp_path, monkeypatch)
     expected = str((tmp_path / 'relative-work').resolve())
     assert captured['cwd'] == expected
     assert captured['env']['SAOS_HOME'] == expected
+
+
+def test_instance_daemons_reads_state_files_only(tmp_path, monkeypatch):
+    import json
+    import os
+
+    from saos import client, config
+
+    work = tmp_path / "work"
+    for name, pid in (("a", os.getpid()), ("b", 0)):
+        (work / name / "daemon").mkdir(parents=True)
+        (work / name / "daemon" / "state.json").write_text(
+            json.dumps({"pid": pid, "token": "secret", "mode": "extension", "started_at": "t"}), encoding="utf-8")
+    (work / "c").mkdir()
+    job = work / "a" / "jobs" / "j1"
+    job.mkdir(parents=True)
+    (job / "progress.json").write_text(json.dumps({"op": "script.exec", "detail": "opt", "status": "running",
+                                                   "daemon_pid": os.getpid(), "started": "s"}), encoding="utf-8")
+    done = work / "a" / "jobs" / "j2"
+    done.mkdir()
+    (done / "progress.json").write_text(json.dumps({"status": "done", "daemon_pid": os.getpid()}), encoding="utf-8")
+    monkeypatch.setattr(config, "WORK_ROOT", work)
+    monkeypatch.setenv("SAOS_HOME", str(work / "a"))
+
+    found = client.instance_daemons()
+    assert [d["instance"] for d in found] == ["a", "b"]
+    a, b = found
+    assert a["current"] and a["alive"] and not b["current"] and not b["alive"]
+    assert "token" not in a
+    assert [j["job"] for j in a["running_jobs"]] == ["j1"] and b["running_jobs"] == []
