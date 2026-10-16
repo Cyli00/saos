@@ -17,8 +17,8 @@ from saos import jobs as jobs_mod
 
 ROOT = Path(__file__).resolve().parents[1]
 
-ROOT_FILES = {"DESIGN.md", "GLOSSARY.md", "TODO.md", "pyproject.toml", "uv.lock", ".gitignore"}
-ROOT_DIRS = {"src", "skills", "docs", "library", "tests", "experiments"}
+ROOT_FILES = {"DESIGN.md", "GLOSSARY.md", "TODO.md", "AGENTS.md", "pyproject.toml", "uv.lock", ".gitignore"}
+ROOT_DIRS = {"src", "skills", "docs", "library", "tests", "experiments", ".claude"}
 JUNK = re.compile(r"\.(log|tmp|bak|orig|zda|pyc)$|(^|/)(~\$|\.~)|\.zmx$", re.I)
 
 INSTANCE_ENTRIES = {"daemon", "jobs"}
@@ -60,11 +60,11 @@ def test_docs_are_cross_job_or_per_recipe():
         if p.parts[0] != "docs":
             continue
         rel = p.parts[1:]
-        ok = rel == ("cli.md",) or (rel[0] == "adr" and len(rel) == 2 and re.match(r"\d{4}-[a-z0-9-]+\.md$", rel[1])) \
+        ok = rel in (("cli.md",), ("workflow.drawio",)) or (rel[0] == "adr" and len(rel) == 2 and re.match(r"\d{4}-[a-z0-9-]+\.md$", rel[1])) \
             or (rel[0] == "recipes" and len(rel) >= 3 and rel[1] in known)
         if not ok:
             bad.append(str(p))
-    assert bad == [], f"docs/ holds cli.md, adr/NNNN-*.md and recipes/<recipe>/ only: {bad}"
+    assert bad == [], f"docs/ holds cli.md, workflow.drawio, adr/NNNN-*.md and recipes/<recipe>/ only: {bad}"
 
 
 @pytest.mark.parametrize("top", ["library", "experiments"])

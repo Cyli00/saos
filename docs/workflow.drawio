@@ -1,0 +1,492 @@
+<mxfile host="Electron" modified="2026-10-16T03:32:23.205Z" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/21.3.7 Chrome/112.0.5615.204 Electron/24.5.0 Safari/537.36" version="21.3.7" etag="U4BbtoHhBsKHdY89aGgM" type="device">
+  <diagram id="saos-workflow" name="saos workflow">
+    <mxGraphModel dx="4476" dy="4760" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="2940" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="band0" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f7f9fc;strokeColor=#d0d7e2;dashed=1;" parent="1" vertex="1">
+          <mxGeometry y="40" width="1410" height="720" as="geometry" />
+        </mxCell>
+        <mxCell id="phase0" value="① 框定需求" style="text;html=1;horizontal=0;align=center;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#34495e;" parent="1" vertex="1">
+          <mxGeometry y="40" width="60" height="720" as="geometry" />
+        </mxCell>
+        <mxCell id="band1" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d0d7e2;dashed=1;" parent="1" vertex="1">
+          <mxGeometry y="760" width="1410" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="phase1" value="② 配方" style="text;html=1;horizontal=0;align=center;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#34495e;" parent="1" vertex="1">
+          <mxGeometry y="760" width="60" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="band2" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f7f9fc;strokeColor=#d0d7e2;dashed=1;" parent="1" vertex="1">
+          <mxGeometry y="870" width="1410" height="645" as="geometry" />
+        </mxCell>
+        <mxCell id="phase2" value="③ 建模与模型确认" style="text;html=1;horizontal=0;align=center;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#34495e;" parent="1" vertex="1">
+          <mxGeometry y="870" width="60" height="645" as="geometry" />
+        </mxCell>
+        <mxCell id="band3" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d0d7e2;dashed=1;" parent="1" vertex="1">
+          <mxGeometry y="1515" width="1410" height="1020" as="geometry" />
+        </mxCell>
+        <mxCell id="phase3" value="④ 轮次设计" style="text;html=1;horizontal=0;align=center;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#34495e;" parent="1" vertex="1">
+          <mxGeometry y="1515" width="60" height="1020" as="geometry" />
+        </mxCell>
+        <mxCell id="band4" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f7f9fc;strokeColor=#d0d7e2;dashed=1;" parent="1" vertex="1">
+          <mxGeometry y="2535" width="1410" height="325" as="geometry" />
+        </mxCell>
+        <mxCell id="phase4" value="⑤ 交付 / 停止" style="text;html=1;horizontal=0;align=center;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#34495e;" parent="1" vertex="1">
+          <mxGeometry y="2535" width="60" height="325" as="geometry" />
+        </mxCell>
+        <mxCell id="laneU" value="用户" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#666666;fontSize=15;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="60" width="290" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="laneU_body" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;" parent="1" vertex="1">
+          <mxGeometry x="60" y="40" width="290" height="2820" as="geometry" />
+        </mxCell>
+        <mxCell id="laneA" value="Agent（设计者）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#666666;fontSize=15;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="350" width="600" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="laneA_body" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;" parent="1" vertex="1">
+          <mxGeometry x="350" y="40" width="600" height="2820" as="geometry" />
+        </mxCell>
+        <mxCell id="laneT" value="saos 工具 / OpticStudio / 任务文件" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#666666;fontSize=15;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="950" width="460" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="laneT_body" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;" parent="1" vertex="1">
+          <mxGeometry x="950" y="40" width="460" height="2820" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" value="创建任务" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="140" width="320" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="t1" value="&lt;b&gt;saos job create --name &amp;lt;name&amp;gt;&lt;/b&gt;&lt;br&gt;→ job.json · log.jsonl" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="980" y="137" width="400" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" value="&lt;b&gt;逐轮拷问访谈&lt;/b&gt;&lt;br&gt;问题编号，每题附推荐答案（答“是”即接受）&lt;br&gt;能改结构或达标线的问题放前面并标出&lt;br&gt;能查的事实自己查，术语用白话解释" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="215" width="320" height="74" as="geometry" />
+        </mxCell>
+        <mxCell id="u1" value="逐题回答&lt;br&gt;（原话逐轮记录）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="85" y="225" width="240" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="f1" value="sources/interview.md&lt;br&gt;（只追加）" style="shape=note;whiteSpace=wrap;html=1;size=12;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="1050" y="227" width="260" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="a3" value="&lt;b&gt;写需求单与检查脚本&lt;/b&gt;&lt;br&gt;constants · variables(范围) · objectives(must / wish)&lt;br&gt;open_questions · summary · stop&lt;br&gt;检查写明前提，前提不成立返回 inf" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="500" width="320" height="92" as="geometry" />
+        </mxCell>
+        <mxCell id="f2" value="sources/demand.yaml&lt;br&gt;checks/" style="shape=note;whiteSpace=wrap;html=1;size=12;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="1050" y="521" width="260" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="u2" value="停顿 ①&lt;br&gt;用户确认需求单内容" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;strokeWidth=3;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="85" y="640" width="240" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t2" value="&lt;b&gt;saos demand confirm --quote &quot;…&quot;&lt;/b&gt;&lt;br&gt;→ confirmations.jsonl&lt;br&gt;绑定需求版本，保存用户所见全文&lt;br&gt;同时打开工作流小窗（saos ui open 可重开）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="980" y="635" width="400" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#82b366;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a1" target="t1" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a1" target="a2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="提问" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0;exitY=0.35;entryX=1;entryY=0.35;" parent="1" source="a2" target="u1" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="回答" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.75;entryX=0;entryY=0.75;" parent="1" source="u1" target="a2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="记录" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;dashed=1;strokeColor=#888888;fontSize=10;" parent="1" source="a2" target="f1" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a2" target="a2b" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;dashed=1;strokeColor=#888888;fontSize=10;" parent="1" source="a3" target="f2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" value="白话展示 + 每项 must 的可行性判断&lt;br&gt;边缘 / 不可达时给出改变界限的替代方案" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=1;entryY=0.5;" parent="1" source="a3" target="u2" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="650" y="675" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e9" value="有异议 → 修改" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#b85450;dashed=1;strokeWidth=1.5;fontSize=11;fontColor=#b85450;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;exitX=0.5;exitY=0;entryX=0;entryY=0.65;" parent="1" source="u2" target="a3" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="205" y="560" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e10" value="同意（原话）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.75;entryX=0;entryY=0.75;jumpStyle=arc;" parent="1" source="u2" target="t2" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a4" value="&lt;b&gt;有匹配的配方就读&lt;/b&gt;&lt;br&gt;skills/recipes/&amp;lt;system&amp;gt;/SKILL.md（经验，不是规则）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="785" width="320" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=1;entryY=0.5;" parent="1" source="t2" target="a4" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1180" y="815" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="a5" value="&lt;b&gt;建模前补查&lt;/b&gt;&lt;br&gt;会话预检看不到的：材料目录 · 许可证&lt;br&gt;缺失时问用户一次，不绕过" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="890" width="320" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="t3" value="&lt;b&gt;saos daemon start --mode extension&lt;/b&gt;&lt;br&gt;需求确认到模型批准期间强制；standalone 返回 EXTENSION_REQUIRED&lt;br&gt;多个窗口时设 SAOS_UI_PID；常开 Lens Data + 剖面图（非轴对称 → 3D Viewer）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="980" y="886" width="400" height="86" as="geometry" />
+        </mxCell>
+        <mxCell id="a6" value="&lt;b&gt;建模&lt;/b&gt;&lt;br&gt;lens import / lens build / exec 脚本 + ctx.save_as" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="980" width="320" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="f3" value="lenses/&amp;lt;name&amp;gt;.zmx" style="shape=note;whiteSpace=wrap;html=1;size=12;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="1050" y="985" width="260" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="a7" value="&lt;b&gt;材料取有来源的真实材料&lt;/b&gt;&lt;br&gt;OpticStudio 目录 → library/ → 厂商数据表/文献&lt;br&gt;外购件选型交给 optic-material-explorer（先按硬条件筛）&lt;br&gt;样品、介质、外购件声明为 environment" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="1060" width="320" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="f4" value="sources/materials.yaml" style="shape=note;whiteSpace=wrap;html=1;size=12;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="1050" y="1075" width="260" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="a8" value="&lt;b&gt;一阶分析&lt;/b&gt;&lt;br&gt;用 OpticStudio 数字&lt;br&gt;复核 ① 的判断：能达到？" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="510" y="1160" width="280" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="u3" value="带证据回到用户&lt;br&gt;（可能改需求单）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="85" y="1187" width="240" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="a9" value="&lt;b&gt;写 notes.json&lt;/b&gt;&lt;br&gt;每个面的物理含义 · environment · 假设 · 一阶分析" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="1295" width="320" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="t4" value="&lt;b&gt;saos lens describe --notes&lt;/b&gt;&lt;br&gt;→ models/NNN-&amp;lt;lens&amp;gt;/index.html&lt;br&gt;model.json（结构指纹）· 自动警告" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="980" y="1285" width="400" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="u4" value="停顿 ②&lt;br&gt;用户认可建模说明&lt;br&gt;&lt;span style=&quot;font-weight:normal;font-size:11px&quot;&gt;不认可 → 回到建模&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;strokeWidth=3;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="85" y="1410" width="240" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="t5" value="&lt;b&gt;saos lens approve --quote &quot;…&quot;&lt;/b&gt;&lt;br&gt;→ approval.json（原话 + 指纹）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="980" y="1425" width="400" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="e12" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a4" target="a5" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#82b366;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a5" target="t3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e14" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a5" target="a6" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e15" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;dashed=1;strokeColor=#888888;fontSize=10;" parent="1" source="a6" target="f3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e16" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a6" target="a7" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e17" value="记录来源" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;dashed=1;strokeColor=#888888;fontSize=10;" parent="1" source="a7" target="f4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e18" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a7" target="a8" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e19" value="否" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#b85450;dashed=1;strokeWidth=1.5;fontSize=11;fontColor=#b85450;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;" parent="1" source="a8" target="u3" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e20" value="改需求 → 重新确认" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#b85450;dashed=1;strokeWidth=1.5;fontSize=11;fontColor=#b85450;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;exitX=0;exitY=0.5;entryX=0;entryY=0.3;" parent="1" source="u3" target="u2" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="78" y="1215" />
+              <mxPoint x="78" y="660" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e21" value="能" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a8" target="a9" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e22" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#82b366;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a9" target="t4" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e23" value="交出说明页面，处理或解释警告" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" parent="1" source="a9" target="u4" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="650" y="1385" />
+              <mxPoint x="205" y="1385" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e24" value="认可（原话）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.6;entryX=0;entryY=0.5;" parent="1" source="u4" target="t5" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a10" value="记录第 0 轮：&lt;b&gt;saos round&lt;/b&gt;（tier = baseline）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="1540" width="320" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="a11" value="&lt;b&gt;诊断：可达性阶梯&lt;/b&gt;&lt;br&gt;守恒量 / 不变量（光展量、Lagrange、Petzval）&lt;br&gt;→ 轴上一点 → 全视场；低一级不成立 = 结构问题" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="1615" width="320" height="76" as="geometry" />
+        </mxCell>
+        <mxCell id="a12" value="&lt;b&gt;找最大加权差距的机理&lt;/b&gt;&lt;br&gt;选 1–6 个变量 + ≥1 个阴性对照&lt;br&gt;先写预测（机理、方向、量级）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="1720" width="320" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t7" value="&lt;b&gt;saos probe --plan plan.json&lt;/b&gt;&lt;br&gt;同一基准 ±delta · quick_focus / 脚本补偿&lt;br&gt;镜头复原 → probes/NNN/（ranking · review）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="980" y="1720" width="400" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="a13" value="&lt;b&gt;读 ranking / review&lt;/b&gt;&lt;br&gt;预测成立？&lt;br&gt;有变量能动目标？" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="510" y="1815" width="280" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="u5" value="&lt;b&gt;停下来问用户&lt;/b&gt;&lt;br&gt;证据 · 影响 · 建议选项&lt;br&gt;用户选：改需求 / 停止 / 继续" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="85" y="1830" width="240" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="a14" value="&lt;b&gt;优化（策略自定）&lt;/b&gt;&lt;br&gt;DLS / Hammer / 全局搜索，平滑代理量作目标&lt;br&gt;物理不可能状态判无效；9e9 先查原因&lt;br&gt;分段检查点：一段收益 &amp;lt; rel 就停，每段报数" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="2150" width="320" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t8" value="&lt;b&gt;saos opt vary / merit / local --max-seconds&lt;/b&gt;&lt;br&gt;lens analysis · exec 脚本&lt;br&gt;→ progress.json（job show / job cancel）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="980" y="2148" width="400" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="a15" value="&lt;b&gt;值得评判时记录轮次&lt;/b&gt;&lt;br&gt;saos round --tier T[,T] --note [--merit]&lt;br&gt;小改动：saos check [--only id,…] 只测受影响项" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="2255" width="320" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="t9" value="核对模型确认 → 取值判定（每项 duration_s）→ 确认未改镜头&lt;br&gt;→ 归档 lenses/rounds/rNNN.zmx → 写 ledger.jsonl&lt;br&gt;evaluations/NNN/ 封存 · viz.json 供工作流小窗&lt;br&gt;blocking 待确认问题未答时拒绝" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="980" y="2240" width="400" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="a16" value="&lt;b&gt;终止判断（brief）&lt;/b&gt;&lt;br&gt;achieved · limit&lt;br&gt;exhausted · continue" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="500" y="2365" width="300" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="n1" value="next_tier = structure 且超出已确认的结构&lt;br&gt;→ 回到 ③ 重新 describe，经停顿 ② 认可" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#ffffff;strokeColor=#9673a6;fontColor=#4d3466;fontSize=11;align=left;spacingLeft=6;" parent="1" vertex="1">
+          <mxGeometry x="980" y="2395" width="400" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="e25" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=1;entryY=0.5;" parent="1" source="t5" target="a10" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1180" y="1563" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e26" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a10" target="a11" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e27" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a11" target="a12" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e28" value="带预测运行" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#82b366;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a12" target="t7" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e29" value="结果" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#82b366;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=1;entryY=0.5;" parent="1" source="t7" target="a13" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1180" y="1875" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e30" value="预测失败 / 对照动了&lt;br&gt;→ 修正对系统的理解" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#b85450;dashed=1;strokeWidth=1.5;fontSize=11;fontColor=#b85450;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;exitX=0.25;exitY=0.25;exitPerimeter=1;entryX=0;entryY=0.5;" parent="1" source="a13" target="a12" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="430" y="1845" />
+              <mxPoint x="430" y="1755" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e31" value="没有变量能动目标（结构问题）&lt;br&gt;saos rule-out 排除无用层级" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#b85450;dashed=1;strokeWidth=1.5;fontSize=11;fontColor=#b85450;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;exitX=0;exitY=0.5;entryX=1;entryY=0.45;" parent="1" source="a13" target="u5" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e32" value="能动目标" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a13" target="a13b" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e33" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#82b366;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a14" target="t8" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e34" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a14" target="a15" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e35" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#82b366;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a15" target="t9" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e36" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a15" target="a16" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e37" value="continue&lt;br&gt;按 next_tier 升级手段" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#d79b00;strokeWidth=2;fontSize=11;fontColor=#b46504;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;exitX=0.25;exitY=0.25;exitPerimeter=1;entryX=0;entryY=0.5;" parent="1" source="a16" target="a11" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="395" y="2397" />
+              <mxPoint x="395" y="1653" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e38" value="brief.review&lt;br&gt;（停滞 / 将升 global、structure）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#b85450;dashed=1;strokeWidth=1.5;fontSize=11;fontColor=#b85450;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;exitX=0;exitY=0.5;entryX=1;entryY=0.85;" parent="1" source="a16" target="u5" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="340" y="2430" />
+              <mxPoint x="340" y="1905" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e39" value="改需求 → 新版本须重新确认&lt;br&gt;轮次重新计数" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#b85450;dashed=1;strokeWidth=1.5;fontSize=11;fontColor=#b85450;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;exitX=0;exitY=0.5;entryX=0;entryY=0.7;" parent="1" source="u5" target="u2" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="68" y="1875" />
+              <mxPoint x="68" y="690" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e40" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;dashed=1;strokeColor=#888888;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" parent="1" source="a16" target="n1" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="u6" value="用户依据证据&lt;br&gt;决定停止" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="85" y="2560" width="240" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="t10" value="&lt;b&gt;saos stop --reason &quot;…&quot; --quote &quot;…&quot;&lt;/b&gt;&lt;br&gt;→ stops.jsonl；ledger 状态 stopped，此版本拒绝后续轮次" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="980" y="2560" width="400" height="56" as="geometry" />
+        </mxCell>
+        <mxCell id="a17" value="&lt;b&gt;生成交付报告&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="2655" width="320" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="t11" value="&lt;b&gt;saos report&lt;/b&gt; → report/index.html（HTML，用户语言）&lt;br&gt;交付：首个 achieved 轮，否则差距最小的可交付轮&lt;br&gt;全无有效轮次时写明“没有有效设计”&lt;br&gt;停止时写明理由与用户原话" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="980" y="2640" width="400" height="96" as="geometry" />
+        </mxCell>
+        <mxCell id="a18" value="把报告路径交给用户&lt;br&gt;说明可接着做公差分析" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="2770" width="320" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="u7" value="阅读交付报告" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="85" y="2775" width="240" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="e41" value="决定停止" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="u5" target="u6" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e42" value="原话 + 选项全文" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="u6" target="t10" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e43" value="achieved / limit / exhausted" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a16" target="a17" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e44" value="报告显示停止理由" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#82b366;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="t10" target="t11" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e45" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#82b366;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a17" target="t11" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e46" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a17" target="a18" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e47" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a18" target="u7" edge="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p1" value="&lt;b style=&quot;font-size:14px&quot;&gt;底线（不可违反）&lt;/b&gt;&lt;br&gt;&lt;br&gt;1. &lt;b&gt;记录需求&lt;/b&gt;：用户原话 → interview.md；当前需求 → demand.yaml&lt;br&gt;2. &lt;b&gt;实测依据&lt;/b&gt;：交付的每个数值来自 OpticStudio 实算并归档；手算估计只用于推理&lt;br&gt;3. &lt;b&gt;不偷偷放宽&lt;/b&gt;：达不到就说差多少；改常量 / 范围 / 目标须用户重新确认&lt;br&gt;4. &lt;b&gt;交付用真实材料&lt;/b&gt;：模型玻璃只用于探索，含模型玻璃的轮次不可交付&lt;br&gt;5. &lt;b&gt;报告统一 HTML&lt;/b&gt;：面向用户的报告一律 .html" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#fdf2f2;strokeColor=#b85450;" parent="1" vertex="1">
+          <mxGeometry x="1450" y="40" width="400" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" value="&lt;b style=&quot;font-size:14px&quot;&gt;手段层级（低 → 高）与终止规则&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;local&lt;/b&gt;　现有变量下局部优化&lt;br&gt;&lt;b&gt;variables&lt;/b&gt;　放开更多变量 / 调整评价函数&lt;br&gt;&lt;b&gt;materials&lt;/b&gt;　换有来源的材料&lt;br&gt;&lt;b&gt;global&lt;/b&gt;　全局搜索或 Hammer&lt;br&gt;&lt;b&gt;structure&lt;/b&gt;　增减镜片、拆分、非球面化&lt;br&gt;&lt;br&gt;判断顺序：&lt;br&gt;① achieved：所有带界限项达标且无模型玻璃&lt;br&gt;② limit：达到轮次上限（默认 30）&lt;br&gt;③ exhausted：最后一次明显进步（≥ rel = 1%）后，允许的每个层级都试过或带证据排除（saos rule-out）仍无进步&lt;br&gt;④ stopped：用户 saos stop&lt;br&gt;⑤ 否则 continue，给出既没试过也没排除的最低层级 next_tier&lt;br&gt;一轮可声明多个层级；层级是记录，不是必走顺序&lt;br&gt;&lt;br&gt;比较轮次看目标差距（shortfall），不看 merit 值" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#fffaf0;strokeColor=#d79b00;" parent="1" vertex="1">
+          <mxGeometry x="1450" y="310" width="400" height="390" as="geometry" />
+        </mxCell>
+        <mxCell id="p3" value="&lt;b style=&quot;font-size:14px&quot;&gt;何时停下来问用户&lt;/b&gt;&lt;br&gt;&lt;br&gt;• 需求自相矛盾，或常量 / 范围 / 达标线依据不足&lt;br&gt;• 测量口径有多种读法且影响结果&lt;br&gt;• 可行性判断或一阶分析表明结构达不到目标，或某项 must 差通过线好几倍&lt;br&gt;• 已有结果不支持继续当前策略（brief.review）&lt;br&gt;• 结构要改成用户没见过的样子&lt;br&gt;&lt;br&gt;会改变需求的问题写成 open_questions（blocking: true），未答时 round / opt local 拒绝运行" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#fffdf0;strokeColor=#d6b656;" parent="1" vertex="1">
+          <mxGeometry x="1450" y="720" width="400" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="p4" value="&lt;b style=&quot;font-size:14px&quot;&gt;长任务与算力&lt;/b&gt;&lt;br&gt;&lt;br&gt;• 光学数值一律经 ZOS-API 计算，不自写追迹 / 近轴计算（ADR-0008）&lt;br&gt;• 大量独立评估用 ctx.parallel 并发多实例；许可上限 8，含用户窗口&lt;br&gt;• opt local / round / check / probe / exec 写 progress.json；job show 看进度，job cancel 停止&lt;br&gt;• opt local 设 --max-seconds；脚本里 ctx.progress 分段，一段收益 &amp;lt; rel 就停&lt;br&gt;• 精度服从可达性：差好几倍时不做收敛审计&lt;br&gt;• 给用户留 2 个逻辑核，自起长进程用低于正常优先级" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f3faf1;strokeColor=#82b366;" parent="1" vertex="1">
+          <mxGeometry x="1450" y="990" width="400" height="260" as="geometry" />
+        </mxCell>
+        <mxCell id="p5" value="&lt;b style=&quot;font-size:14px&quot;&gt;封存与校验&lt;/b&gt;&lt;br&gt;&lt;br&gt;evaluations/、rounds/、models/、probes/、report/NNN-* 等写入 seals.jsonl&lt;br&gt;saos job verify 报告事后改动；有改动时 saos report 拒绝运行" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f5f5f5;strokeColor=#666666;" parent="1" vertex="1">
+          <mxGeometry x="1450" y="1270" width="400" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="lg" value="&lt;b style=&quot;font-size:14px&quot;&gt;图例&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#ffffff;strokeColor=#999999;" parent="1" vertex="1">
+          <mxGeometry x="1450" y="1580" width="400" height="330" as="geometry" />
+        </mxCell>
+        <mxCell id="lg0" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="1466" y="1620" width="60" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="lgt0" value="用户动作" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="1540" y="1620" width="280" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="lg1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="1466" y="1656" width="60" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="lgt1" value="Agent 动作" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="1540" y="1656" width="280" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="lg2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="1466" y="1692" width="60" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="lgt2" value="saos 命令 / 工具行为" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="1540" y="1692" width="280" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="lg3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;strokeWidth=3;fontSize=13;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry x="1466" y="1728" width="60" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="lgt3" value="必经停顿（gate）" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="1540" y="1728" width="280" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="lg4" value="" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="1466" y="1764" width="60" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="lgt4" value="判断" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="1540" y="1764" width="280" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="lg5" value="" style="shape=note;whiteSpace=wrap;html=1;size=12;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="1466" y="1800" width="60" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="lgt5" value="任务文件" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="1540" y="1800" width="280" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="lge0" value="主流程" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;align=left;labelPosition=right;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1466" y="1842" as="sourcePoint" />
+            <mxPoint x="1516" y="1842" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lget0" value="主流程" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="1522" y="1830" width="130" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="lge1" value="调用工具" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#82b366;fontSize=11;labelBackgroundColor=#ffffff;align=left;labelPosition=right;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1656" y="1842" as="sourcePoint" />
+            <mxPoint x="1706" y="1842" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lget1" value="调用工具" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="1712" y="1830" width="130" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="lge2" value="回退 / 求助用户" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#b85450;dashed=1;strokeWidth=1.5;fontSize=11;fontColor=#b85450;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;align=left;labelPosition=right;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1466" y="1872" as="sourcePoint" />
+            <mxPoint x="1516" y="1872" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lget2" value="回退 / 求助用户" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="1522" y="1860" width="130" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="lge3" value="轮次循环" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#d79b00;strokeWidth=2;fontSize=11;fontColor=#b46504;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;align=left;labelPosition=right;" parent="1" edge="1">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1656" y="1872" as="sourcePoint" />
+            <mxPoint x="1706" y="1872" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="lget3" value="轮次循环" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="1712" y="1860" width="130" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="title" value="&lt;b style=&quot;font-size:20px&quot;&gt;saos workflow&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px&quot;&gt;依据 skills/saos/SKILL.md、DESIGN.md、src/saos/workflow.py、daemon.py（分支 saos，2026-10-16 更新）&lt;/span&gt;" style="text;html=1;align=left;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="1450" y="-70" width="500" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="a0" value="&lt;b&gt;会话开始：环境预检&lt;/b&gt;&lt;br&gt;缺什么在第一条回复里就说" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="490" y="60" width="320" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="t0" value="&lt;b&gt;saos daemon status&lt;/b&gt;&lt;br&gt;environment：各实例后台进程 · 模式 · 在跑任务&lt;br&gt;OpticStudio 进程 / 许可余量（上限 8）· 可见窗口 · extension 能否启动" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" vertex="1" parent="1">
+          <mxGeometry x="980" y="52" width="400" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="e0a" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#82b366;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="a0" target="t0">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e0b" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="a0" target="a1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a2b" value="&lt;b&gt;从物理上质疑结构（写需求单之前）&lt;/b&gt;&lt;br&gt;每个元件的作用；增删后其余部分还能否承担&lt;br&gt;优化器动不了的界限：光展量 / 拉氏不变量、Petzval、衍射极限、临界角、空间与口径、自由度 vs 目标数&lt;br&gt;制造工艺做不到什么（镀膜、面形、尺寸、材料）&lt;br&gt;手算估计 + OpticStudio 草图核实关键数 → 每项 must：可达 / 边缘 / 不可达" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="490" y="320" width="320" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="e6b" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="a2b" target="a3">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="a13b" value="&lt;b&gt;差距闸门&lt;/b&gt;&lt;br&gt;预计 &amp;gt;10 min 或 global / structure 前&lt;br&gt;差几倍？已证明有上限？" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="490" y="1970" width="320" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="e32b" value="差距在几成以内、无上限&lt;br&gt;先告诉用户：差多少 · 机理 · 变量 · 预期收益" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="a13b" target="a14">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e32c" value="差通过线好几倍&lt;br&gt;或诊断已证明有上限" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#b85450;dashed=1;strokeWidth=1.5;fontSize=11;fontColor=#b85450;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;exitX=0;exitY=0.5;entryX=0.5;entryY=1;" edge="1" parent="1" source="a13b" target="u5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p6" value="&lt;b style=&quot;font-size:14px&quot;&gt;上下文经济&lt;/b&gt;&lt;br&gt;&lt;br&gt;• 大文件按章节读，辅助库用到时再读&lt;br&gt;• 选型表交给 optic-material-explorer（haiku · effort high），只拿回带出处的表&lt;br&gt;• 待答问题可能推翻的工作，先等答复" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="1450" y="1430" width="400" height="130" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
