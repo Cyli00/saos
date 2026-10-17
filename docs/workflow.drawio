@@ -233,8 +233,8 @@
         <mxCell id="a14" value="&lt;b&gt;优化（策略自定）&lt;/b&gt;&lt;br&gt;DLS / Hammer / 全局搜索，平滑代理量作目标&lt;br&gt;物理不可能状态判无效；9e9 先查原因&lt;br&gt;分段检查点：一段收益 &amp;lt; rel 就停，每段报数" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="2170.0" width="320" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="t8" value="&lt;b&gt;saos opt vary / merit / local --max-seconds&lt;/b&gt;&lt;br&gt;lens analysis · exec 脚本&lt;br&gt;→ progress.json（job show / job cancel）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
-          <mxGeometry x="980" y="2168.0" width="400" height="80" as="geometry" />
+        <mxCell id="t8" value="&lt;b&gt;saos opt vary / merit / local --max-seconds&lt;/b&gt;&lt;br&gt;lens analysis · exec 脚本（kit · ctx.measure · ctx.map）&lt;br&gt;saos scan --plan：网格 / 逐点求解 / 多起点 → scans/NNN/&lt;br&gt;--detach 后台跑、主实例照常用；--show 看进度&lt;br&gt;→ progress.json（job show / job cancel）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="980" y="2138" width="400" height="120" as="geometry" />
         </mxCell>
         <mxCell id="a15" value="&lt;b&gt;值得评判时记录轮次&lt;/b&gt;&lt;br&gt;saos round --tier T[,T] --note [--merit]&lt;br&gt;小改动：saos check [--only id,…] 只测受影响项" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="2275.0" width="320" height="70" as="geometry" />

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from saos import jobs
+from saos.kit import KitMethods
 from saos.protocol import ErrorCode, SaosError, jsonable, write_json
 
 if TYPE_CHECKING:
@@ -24,15 +25,34 @@ NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$")
 TRACEBACK_CHARS = 4000
 
 
-class ScriptContext:
-    """脚本能用的全部入口。镜头切换和保存要经过这里，后台进程才能跟踪当前加载的文件和未保存状态。"""
+class ScriptContext(KitMethods):
+    """脚本能用的全部入口。镜头切换和保存要经过这里，后台进程才能跟踪当前加载的文件和未保存状态。
+    kit 的方法（set、get、spot、trace、op、analysis、kept、restored、lib、memo）也挂在这里，见 saos.kit。"""
 
-    def __init__(self, daemon: Daemon, job: jobs.Job, args: dict[str, Any]):
+    def __init__(self, daemon: Daemon, job: jobs.Job, args: dict[str, Any], cache: dict[Any, Any] | None = None,
+                 script: Path | None = None):
         self._daemon = daemon
         self.job = job
         self.args = args
         self.backend = daemon.backend
         self.captured: list[str] = []
+        # 同一次判定内各判定脚本共享，见 kit.memo / shared by the check scripts of one evaluation, see kit.memo
+        self.cache: dict[Any, Any] = {} if cache is None else cache
+        # 本次执行的脚本副本，ctx.map("fn", …) 在 worker 里从这里找函数 / the running script copy; ctx.map("fn", …) finds fn here
+        self.script = script
+
+    def child(self, args: dict[str, Any], cache: dict[Any, Any] | None = None) -> ScriptContext:
+        """给判定脚本用的上下文：同一个任务和后台进程，默认共享 cache。/ A context for a check script; shares the cache by default."""
+        return ScriptContext(self._daemon, self.job, args, self.cache if cache is None else cache, self.script)
+
+    def measure(self, ids: list[str] | None = None) -> dict[str, Any]:
+        """按需求单的判定测当前镜头（与 check、round 同一套定义），不存证据、不记录；返回 values、shortfall（只含所测各项）、
+        hard_failing、invalid、errors。改镜头—测量的循环用它，不必在脚本里重写判定。
+        Measure the current lens with the demand's checks (the same definitions as check and round) without evidence or a
+        record; returns values, shortfall (of the measured items only), hard_failing, invalid, errors."""
+        from saos import demand
+
+        return demand.quick(self, ids)
 
     @property
     def system(self):
@@ -111,12 +131,27 @@ class ScriptContext:
         self.job.write_progress(stage=str(stage), data=jsonable(data))
         return self.job.cancel_requested()
 
-    def parallel(self, script: str, items: list[Any], workers: int | None = None, reset: bool = True) -> dict[str, Any]:
-        """在几个 standalone 实例中并发执行任务内 script 的 work(wctx, item)，按条目顺序返回结果（saos.parallel）。
-        Run work(wctx, item) of the job's script over items in several standalone instances at once (saos.parallel)."""
+    def map(self, fn: str, items: list[Any], workers: int | None = None, reset: bool = True, args: dict[str, Any] | None = None) -> dict[str, Any]:
+        """在常驻的 standalone 实例池里并发执行 fn(w, item)，按条目顺序返回结果（saos.parallel）。fn 是本脚本里的函数名、
+        "explore/x.py:fn" 或 "saos.scan:point"；args 原样交给每个 w.args。
+        Run fn(w, item) over items on the daemon's pool of standalone instances, results in item order (saos.parallel).
+        fn is a function of this script, "explore/x.py:fn" or "saos.scan:point"; args reaches every w.args."""
         from saos import parallel
 
-        return parallel.run(self, script, items, workers, reset)
+        return parallel.run_map(self, fn, items, workers, reset, args)
+
+    def pool_close(self) -> dict[str, Any]:
+        """立即关闭 worker 池、释放许可证（否则空闲 SAOS_POOL_IDLE_S 秒后自动关闭）。
+        Close the worker pool and free the licences now (otherwise it closes after SAOS_POOL_IDLE_S idle seconds)."""
+        pool = self._daemon.pool
+        before = pool.status()
+        if not pool.lock.acquire(timeout=2):
+            raise SaosError(ErrorCode.POOL_BUSY, "the worker pool is busy with a detached scan; cancel it first (saos job cancel)")
+        try:
+            pool.close()
+        finally:
+            pool.lock.release()
+        return before
 
     def cancel_requested(self) -> bool:
         """用户或 agent 执行了 saos job cancel；脚本应在下一个安全点结束并保存已有结果。
@@ -125,10 +160,7 @@ class ScriptContext:
 
     def path(self, rel: str) -> Path:
         """任务目录内的路径；越出任务目录时拒绝。"""
-        path = (self.job.root / rel).resolve()
-        if self.job.root.resolve() not in path.parents:
-            raise SaosError(ErrorCode.PATH_OUTSIDE_JOB, f"path escapes the job directory: {rel}")
-        return path
+        return jobs.inside(self.job.root, rel)
 
 
 def next_copy(job: jobs.Job, name: str) -> Path:
@@ -151,7 +183,7 @@ def execute(daemon: Daemon, job: jobs.Job, name: str, source: str, args: dict[st
         run = namespace.get("run")
         if not callable(run):
             raise SaosError(ErrorCode.BAD_ARGS, "script must define run(ctx)")
-        ctx = ScriptContext(daemon, job, args)
+        ctx = ScriptContext(daemon, job, args, script=copy)
         result = jsonable(run(ctx))
         try:
             json.dumps(result, allow_nan=False)

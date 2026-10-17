@@ -75,6 +75,10 @@ PATH_RE = re.compile(r"\['[^']*'\]|\[\d+\]|[A-Za-z_][A-Za-z0-9_ ]*")
 BOUND_TOLERANCE = 1e-9
 CHECKS_DIR = "checks"
 SUPPORT_KEY = "_checks_tree"
+# 判定用到的 saos 代码（配方库、kit）：改了它，数值可能变，判定版本也要变 / saos code the checks use (recipe libraries, kit)
+CODE_KEY = "_saos_code"
+_RECIPE_RE = re.compile(r"saos\.recipes\.([A-Za-z_][A-Za-z0-9_]*)|from\s+saos\.recipes\s+import\s+([A-Za-z_][A-Za-z0-9_, ]*)")
+_KIT_RE = re.compile(r"saos\.kit|from\s+saos\s+import\s+[^\n]*\bkit\b|\bctx\.(spot|trace|op|get|values|memo|lib|analysis|kept|restored|quick_focus|surface)\(")
 
 
 def _bad(message: str, **details: Any) -> SaosError:
@@ -192,7 +196,33 @@ def prepare_scripts(root: Path, demand: dict[str, Any]) -> dict[str, dict[str, A
     # supporting files count towards the method version: editing a helper or a data file starts a new window
     files = support_files(root)
     scripts[SUPPORT_KEY] = {"source": None, "sha256": hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest(), "files": files}
+    code = code_files(root)
+    if code:
+        # 只在判定确实用到 saos 代码时才加这一项，旧任务的判定版本不变 / added only when used, so older jobs keep their version
+        scripts[CODE_KEY] = {"source": None, "sha256": hashlib.sha256(json.dumps(code, sort_keys=True).encode()).hexdigest(), "files": code}
     return scripts
+
+
+def code_files(root: Path) -> dict[str, str]:
+    """判定脚本用到的 saos 配方包和 kit 的源文件哈希（相对仓库根）。/ Hashes of the saos recipe packages and kit the checks use."""
+    from saos import config
+
+    base = root / CHECKS_DIR
+    if not base.is_dir():
+        return {}
+    text = "\n".join(f.read_text(encoding="utf-8", errors="ignore") for f in sorted(base.rglob("*.py")) if "__pycache__" not in f.parts)
+    names = set()
+    for a, b in _RECIPE_RE.findall(text):
+        names.update(n.strip() for n in (a or b).split(",") if n.strip())
+    package = config.REPO_ROOT / "src" / "saos"
+    paths = []
+    for name in sorted(names):
+        folder = package / "recipes" / name
+        if folder.is_dir():
+            paths.extend(f for f in sorted(folder.rglob("*.py")) if "__pycache__" not in f.parts)
+    if paths or _KIT_RE.search(text):
+        paths.append(package / "kit.py")
+    return {f.relative_to(config.REPO_ROOT).as_posix(): jobs.sha256_file(f) for f in paths}
 
 
 def method_digest(scripts: dict[str, dict[str, Any]]) -> str:
@@ -402,6 +432,15 @@ def pick(data: Any, path: str) -> Any:
     return current
 
 
+def _evidence_path(ctx, path: Path) -> str | None:
+    """证据文件相对任务目录的路径；quick 的临时目录不在任务里，返回 None。
+    The evidence file relative to the job; None for quick's temporary folder outside the job."""
+    try:
+        return path.relative_to(ctx.job.root).as_posix()
+    except ValueError:
+        return None
+
+
 def measure(ctx: ScriptContext, item: dict[str, Any], folder: Path, scripts: dict[str, dict[str, Any]]) -> dict[str, Any]:
     """在 OpticStudio 中取一项的值；返回值和取值依据。
     Measure one item in OpticStudio; return the value and its evidence."""
@@ -416,20 +455,20 @@ def measure(ctx: ScriptContext, item: dict[str, Any], folder: Path, scripts: dic
             data = ctx.backend.analysis(str(spec["type"]), dict(spec.get("settings") or {}), text_path)
             write_json(folder / f"{item['id']}.json", data)
             evidence = {"analysis": spec["type"], "settings": spec.get("settings") or {}, "path": spec["path"],
-                        "text": text_path.relative_to(ctx.job.root).as_posix() if data.get("text_file") else None}
+                        "text": _evidence_path(ctx, text_path) if data.get("text_file") else None}
             value = pick(data, str(spec["path"]))
         else:
-            from saos import scripting
-
             script = scripts[item["id"]]
             if script["source"] is None:
                 return {"value": None, "error": script["error"], "evidence": {"source": str(spec)}}
             copy = folder / f"{item['id']}.py"
             copy.write_text(script["source"], encoding="utf-8")
-            evidence = {"script": copy.relative_to(ctx.job.root).as_posix(), "source": str(spec), "sha256": script["sha256"]}
+            evidence = {"script": _evidence_path(ctx, copy), "source": str(spec), "sha256": script["sha256"]}
             namespace: dict[str, Any] = {"__name__": f"saos_check_{item['id']}", "__file__": str(ctx.path(str(spec)))}
             exec(compile(script["source"], str(copy), "exec"), namespace)
-            value = namespace["run"](scripting.ScriptContext(ctx._daemon, ctx.job, {"target": item["id"]}))
+            # 同一次判定的各脚本共享 ctx.cache（kit.memo、ctx.lib），镜头在判定期间不变
+            # the scripts of one evaluation share ctx.cache (kit.memo, ctx.lib); the lens does not change meanwhile
+            value = namespace["run"](ctx.child({"target": item["id"]}))
         value = float(value)
     except Exception as exc:  # noqa: BLE001 - 见下 / see below
         # 判定失败是可报告的结果，连接中断和阻塞仍交给后台进程处理。
@@ -445,7 +484,7 @@ def measure(ctx: ScriptContext, item: dict[str, Any], folder: Path, scripts: dic
 
 
 def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict[str, Any]] | None = None,
-             only: list[str] | None = None) -> dict[str, Any]:
+             only: list[str] | None = None, lens: dict[str, Any] | None = None) -> dict[str, Any]:
     """逐项取值和判定。目标差距 G 是所有带界限条目的单项差距按权重的加权和；常量或变量范围不满足时记入 hard_failing。
     only 只测其中几项（探索用）：结果标为 partial，不宣布达成，G 只是这几项之和。
     Measure and judge every check. G is the weighted sum of the shortfalls of every bounded item; broken constants or
@@ -469,13 +508,21 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
         target_file = folder / "support" / rel
         target_file.parent.mkdir(parents=True, exist_ok=True)
         target_file.write_bytes((ctx.job.root / rel).read_bytes())
+    from saos import config
+
+    code = scripts.get(CODE_KEY, {}).get("files") or {}
+    for rel in code:
+        target_file = folder / "support" / "_saos" / rel
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        target_file.write_bytes((config.REPO_ROOT / rel).read_bytes())
     items = []
     total = 0.0
+    shared = ctx.child(ctx.args, cache={})
     for index, spec in enumerate(specs):
         item_folder = folder / f"{index:03d}-{spec['id']}"
         item_folder.mkdir()
         started = time.monotonic()
-        measured = measure(ctx, spec, item_folder, scripts)
+        measured = measure(shared, spec, item_folder, scripts)
         # 每项耗时写进结果，便于看出哪几项判定最慢、探索时值得单独测哪几项
         item = {k: v for k, v in spec.items() if k != "check"} | measured | {"duration_s": round(time.monotonic() - started, 2)}
         value = measured["value"]
@@ -497,11 +544,70 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
               # checks that failed to run: the round says nothing about the design and must not count as a shortfall result
               "measurement_errors": [i["id"] for i in items if i.get("error")],
               "demand": demand, "demand_sha": digest(demand), "method_sha": method_digest(scripts),
-              "support_files": support,
+              "support_files": support, **({"saos_code_files": code} if code else {}),
               "environment": {"saos_code_sha256": getattr(daemon, "code_sha256", None),
                               "opticstudio": (getattr(daemon, "zos_info", None) or {}).get("version")},
-              "lens": ctx.describe(), "evidence_dir": folder.relative_to(ctx.job.root).as_posix(),
+              "lens": lens or ctx.describe(), "evidence_dir": folder.relative_to(ctx.job.root).as_posix(),
               "evidence_file": (folder / "result.json").relative_to(ctx.job.root).as_posix()}
     write_json(folder / "result.json", result)
     ctx.job.seal(folder)
     return result
+
+
+_PREPARED: dict[str, tuple[tuple[Any, ...], dict[str, Any], dict[str, dict[str, Any]]]] = {}
+
+
+def _prepared(root: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    """需求单和判定脚本，文件没变时复用上次读到的（改镜头—测量的循环里每次都读要几十毫秒）。
+    The demand and its check scripts, reused while the files are unchanged (re-reading them in a change–measure loop costs tens of ms)."""
+    checks = root / CHECKS_DIR
+    stamp = (path_of(root).stat().st_mtime_ns,
+             tuple(sorted((p.as_posix(), p.stat().st_mtime_ns) for p in checks.rglob("*") if p.is_file())) if checks.is_dir() else ())
+    key = str(root.resolve())
+    hit = _PREPARED.get(key)
+    if hit is None or hit[0] != stamp:
+        d = load_job(root)
+        hit = (stamp, d, prepare_scripts(root, d))
+        _PREPARED[key] = hit
+    return hit[1], hit[2]
+
+
+def quick(ctx, ids: list[str] | None = None) -> dict[str, Any]:
+    """按需求单的判定测当前镜头，不存证据、不进 evaluations/：给 exec 脚本和并发 worker 的改镜头—测量循环用，
+    与 check、round 同一套定义。ids 省略时测所有带界限的项。shortfall 只含所测各项；invalid 是给不出有效值的项，
+    errors 是判定本身出错的项。
+    Measure the current lens with the demand's checks without evidence or evaluations/: for change–measure loops in exec
+    scripts and parallel workers, with the same definitions as check and round. Without ids, every bounded item.
+    shortfall covers the measured items only; invalid lists items with no valid value, errors items whose check failed."""
+    import shutil
+    import tempfile
+
+    d, scripts = _prepared(ctx.job.root)
+    specs = {s["id"]: s for s in checked(d)}
+    wanted = list(ids) if ids is not None else [i for i, s in specs.items() if s["goal"] is not None]
+    unknown = [i for i in wanted if i not in specs]
+    if unknown:
+        raise SaosError(ErrorCode.BAD_ARGS, f"measure: unknown check ids {unknown}", {"known": sorted(specs)})
+    shared = ctx.child(getattr(ctx, "args", {}), cache={})
+    folder = Path(tempfile.mkdtemp(prefix="saos-measure-"))
+    values: dict[str, float | None] = {}
+    errors: dict[str, str] = {}
+    gaps: dict[str, float] = {}
+    total = 0.0
+    try:
+        for item_id in wanted:
+            spec = specs[item_id]
+            sub = folder / item_id
+            sub.mkdir()
+            measured = measure(shared, spec, sub, scripts)
+            values[item_id] = measured["value"]
+            if measured.get("error"):
+                errors[item_id] = measured["error"]
+            if spec["goal"] is not None:
+                gaps[item_id] = shortfall(spec, measured["value"])
+                total += spec["weight"] * gaps[item_id]
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+    return {"values": values, "shortfall": total, "gaps": gaps,
+            "hard_failing": [i for i, g in gaps.items() if specs[i]["kind"] in HARD_KINDS and g > 0],
+            "invalid": [i for i, v in values.items() if v is None and i not in errors], "errors": errors}

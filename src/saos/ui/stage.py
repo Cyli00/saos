@@ -49,6 +49,11 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
     progress = job.read_progress()
     if progress and progress.get("status") == "running":
         out["progress"] = progress
+    else:
+        # 分离运行的扫描写自己的进度文件 / a detached scan writes its own progress file
+        detached = jobs.detached_runs(job.root)
+        if detached:
+            out["progress"] = {**detached[-1], "detail": detached[-1]["folder"]}
 
     try:
         d = demand.load_job(root)

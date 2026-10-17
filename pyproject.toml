@@ -4,8 +4,10 @@ version = "0.1.0"
 description = "由 agent 驱动 Zemax OpticStudio 的光学设计工作流"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "numpy>=2",
     "pythonnet==3.0.5",
     "pyyaml>=6.0.3",
+    "scipy>=1.13",
 ]
 
 [project.scripts]

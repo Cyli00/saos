@@ -898,7 +898,7 @@ def test_parallel_runs_items_in_several_workers_from_the_saved_lens(setup):
     daemon, job = setup
     (job.root / "explore").mkdir()
     (job.root / "explore" / "work.py").write_text(WORK, encoding="utf-8")
-    run = "def run(ctx):\n    return ctx.parallel('explore/work.py', [{'t': 5.0}, {'t': 6.0}, {'boom': True}, {'t': 7.0}], workers=2)\n"
+    run = "def run(ctx):\n    return ctx.map('explore/work.py:work', [{'t': 5.0}, {'t': 6.0}, {'boom': True}, {'t': 7.0}], workers=2)\n"
     out = call(daemon, "script.exec", job=job.id, name="scan", source=run, args={})
     assert out["ok"], out
     res = out["result"]["result"]

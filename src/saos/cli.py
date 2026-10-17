@@ -193,6 +193,19 @@ def cmd_probe(args: argparse.Namespace) -> Any:
     return client.request("probe.run", {"job": args.job, "plan": _read_json(args.plan)}, timeout=args.timeout)
 
 
+def cmd_scan(args: argparse.Namespace) -> Any:
+    if args.show is not None:
+        from saos import scan
+
+        return scan.show(jobs.get_job(args.job), None if args.show == "latest" else args.show)
+    if not args.plan:
+        raise SaosError(ErrorCode.BAD_ARGS, "give --plan to run a scan or --show [NNN] to read one")
+    payload: dict[str, Any] = {"job": args.job, "plan": _read_json(args.plan), "detach": args.detach}
+    if args.workers:
+        payload["workers"] = args.workers
+    return client.request("scan.run", payload, timeout=args.timeout)
+
+
 def cmd_rule_out(args: argparse.Namespace) -> Any:
     from saos import demand, ledger
 
@@ -398,6 +411,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--plan", required=True, help="JSON plan: target, mechanism, compensate, probes (with predictions and at least one control); see skills/saos/SKILL.md")
     p.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     p.set_defaults(func=cmd_probe)
+
+    p = sub.add_parser("scan", help="concurrent scan, multi-start minimisation or perturbation probes on the daemon's worker pool: per point set parameters, optionally "
+                                    "solve one variable, compensate, measure with the demand's checks; lens left unchanged; archived in scans/NNN/, "
+                                    "the best lenses in lenses/scans/NNN/")
+    p.add_argument("--job", required=True)
+    p.add_argument("--plan", help="JSON plan: one of vars (grid), points, minimize or probes, plus fixed, solve, compensate, measure, operands, keep; see docs/cli.md")
+    p.add_argument("--workers", type=int, default=None, help="OpticStudio instances to use (default the plan's workers, else 4; count the licence)")
+    p.add_argument("--detach", action="store_true", help="return at once and run the scan in the background on the worker pool; the daemon keeps "
+                                                         "serving other commands meanwhile; follow it with --show")
+    p.add_argument("--show", nargs="?", const="latest", default=None, metavar="NNN",
+                   help="read a scan's progress or result from its files (default the latest); works while the daemon is busy")
+    p.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
+    p.set_defaults(func=cmd_scan)
 
     p = sub.add_parser("check", help="measure and judge every check of the demand (sources/demand.yaml) on the current lens without recording")
     p.add_argument("--job", required=True)

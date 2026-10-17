@@ -118,7 +118,7 @@ def run(ctx):
 
 SCAN = """
 def run(ctx):
-    return ctx.parallel("explore/work.py", [{"r": r} for r in ctx.args["radii"]], workers=3)
+    return ctx.map("explore/work.py:work", [{"r": r} for r in ctx.args["radii"]], workers=3)
 """
 
 

@@ -85,7 +85,7 @@ Other fields are refused, so that nothing that affects the design hides outside 
 - `check`: exactly one of
   - `operand`: `{type, int1, int2, data}`, any Zemax optimisation operand on the current lens.
   - `analysis`: `{type, settings, path}`, runs an OpticStudio analysis (same export as `saos lens analysis`) and picks one number by `path`, e.g. `series[0].y.Tangential[20]`; keys with dots are written `['0.48']`.
-  - `script`: a path under `checks/`. The script defines `run(ctx)` and returns one number; `ctx` is the same as for `saos exec`.
+  - `script`: a path under `checks/`. The script defines `run(ctx)` and returns one number; `ctx` is the same as for `saos exec`. The scripts of one evaluation share `ctx.cache`, and the lens does not change while they run: put the shared computation in a helper module and load it with `ctx.lib("<module>")`, wrap a trace several items read in `ctx.memo(key, compute)` so it runs once, and use the `saos.kit` methods (`ctx.spot`, `ctx.trace`, `ctx.op`, `ctx.get`) instead of hand-written ZOS-API wrappers. A check script is then two lines: `def run(ctx): return ctx.lib("fiberlib").spot_um(ctx)`.
 - Every check has preconditions under which its number means something: parts do not intersect, the image or focus is real, enough rays arrive, the quantity covers the whole beam and not only the rays that survive. Write them in the check (a docstring is enough) and return `inf` when one fails. A compensator inside a check (refocusing, a solve) that finds no sensible solution makes the value `inf` too; never return what it left behind.
 - Bounds (`goal`, `range`, `must`, `wish`): `{max: v}`, `{min: v}`, both with `min <= max`, or `{equals: v, tol: t}` with `t > 0`; finite numbers.
 - `scale`: normalises the gap of the bound. Default: `tol` for `equals`, otherwise `|bound|`. Required when the bound is 0.
@@ -127,7 +127,7 @@ Every round also returns a `brief`: the objectives (with origin and weight) agai
 
 ## Workflow
 
-Check scripts live under `checks/` with every helper module and data file they use. Every check archives the demand, a copy of `checks/` (`support/`), analysis exports and `result.json` (with the saos code hash and the OpticStudio version) in a new `evaluations/NNN/`; `evidence_file` points to the result. Editing any file under `checks/` starts a new comparison window without a new confirmation; changing what an item means changes the demand and needs one.
+Check scripts live under `checks/` with every helper module and data file they use. Every check archives the demand, a copy of `checks/` (`support/`), analysis exports and `result.json` (with the saos code hash and the OpticStudio version) in a new `evaluations/NNN/`; `evidence_file` points to the result. Editing any file under `checks/` (or the saos recipe code and `saos.kit` the checks use) needs no new confirmation: the next round first re-measures the best round so far with the new checks (tier `rebase`), and the comparison window goes on if the numbers are unchanged, or restarts at that re-measurement if they differ. Changing what an item means changes the demand and needs one.
 
 1. `saos check --job J` evaluates every check on the loaded lens; it needs no confirmation.
 2. `saos demand confirm --job J --quote "..."` after the user approves the demand.

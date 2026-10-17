@@ -1,0 +1,514 @@
+"""并发扫描与多起点寻优（saos scan）：不写脚本，按计划在 worker 池里逐点改参数、可选求解一个变量、补偿、按需求单实测。
+Concurrent scans and multi-start minimisation (saos scan): no script; per point the plan sets parameters, optionally
+solves one variable, compensates and measures with the demand's checks, on the daemon's worker pool.
+
+    saos scan --job J --plan plan.json
+
+plan.json（vars、points、minimize、probes 四选一 / exactly one of vars, points, minimize, probes）：
+    {"vars": {"lens1 back.curvature": [0, 1, 2, 3], "3.conic": {"from": -1, "to": 0, "steps": 5}},  # 网格 / grid
+     "points": [{"5.radius": 2.1, "5.conic": -0.5}, …],                                              # 或逐点 / or a list
+     "minimize": {"vars": {"5.radius": {"step": 0.01, "min": 1.5, "max": 3}, "12.par1": {"step": 0.03}},
+                  "starts": "current" | [{…}, …], "method": "nelder-mead" | "powell",
+                  "max_evals": 200, "max_seconds": 900},                                            # 每个起点一个 worker / one worker per start
+     "fixed": {"tube outer wall.thickness": -0.015},          # 每个点都先写入 / written before every point
+     "solve": {"var": "lens dome.curvature", "lo": 0, "hi": 8, "target": {"item": "working_distance"}, "value": 15},
+              # 或 {"operand": ["EFFL", 0, 1]}；每个点在 [lo, hi] 内找 target = value（先扫 scan 个点再 Brent）
+              # or {"operand": [...]}; per point find target = value in [lo, hi] (scan `scan` points, then Brent)
+     "compensate": null | "quick_focus" | {"script": "explore/refocus.py"},   # run(w)
+     "measure": ["spot", "fov"],               # 默认需求单所有带界限的项 / default every bounded item
+     "operands": {"efl": ["EFFL", 0, 1]},      # 另外报告的数 / extra numbers to report
+     "workers": 6, "keep": 3, "note": "…"}
+
+扰动诊断（probes）：在开始时的镜头上对 1–6 个变量各取 −delta、+delta，加上不扰动的基准共 2N+1 个点，补偿后实测，
+再与 agent 事先写下的预测对照（方向、阴性对照、补偿是否起作用），按对目标的归一化效应排序：
+Perturbation probes: each of 1–6 variables at −delta and +delta from the start lens, plus the unperturbed base (2N+1
+points), compensated and measured, then compared with the predictions written beforehand and ranked by the normalised
+effect on the target:
+    {"target": "spot", "mechanism": "Petzval 场曲 …", "compensate": "quick_focus",
+     "probes": [{"id": "l1_rear_r", "key": "3.radius", "delta": 0.02, "prediction": "…", "expect": {"spot": "down"}},
+                {"id": "l2_asph", "script": "explore/l2_a4.py", "delta": 1e-3, "control": true,   # run(w, delta)
+                 "prediction": "只改像散分配，不改 Petzval 和", "expect": {"spot": "none"}}]}
+
+结果在 scans/NNN/（计划和 result.json，封存）；按目标差距（只含所测各项）排序，最好的 keep 个点的镜头存到
+lenses/scans/NNN/pPPP.zmx，可以直接 saos lens load。当前镜头不变。minimize 与 opt local 一样要求需求已确认、没有 blocking 问题。
+Results go to scans/NNN/ (the plan and result.json, sealed), ranked by shortfall over the measured items; the lenses of
+the best `keep` points are saved as lenses/scans/NNN/pPPP.zmx, ready for saos lens load. The current lens is unchanged.
+minimize, like opt local, needs a confirmed demand without blocking questions.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import math
+import os
+import shutil
+import threading
+from typing import Any
+
+from saos import demand, jobs, kit, search
+from saos.protocol import ErrorCode, SaosError, write_json
+
+log = logging.getLogger(__name__)
+
+SCANS_DIR = "scans"
+MODES = ("vars", "points", "minimize", "probes")
+MAX_POINTS = 5000
+DIRECTIONS = ("up", "down", "none")
+MAX_PROBES = 6
+# 归一化变化（Δ/scale）小于这个值算"没有变化" / a normalised change below this counts as "none"
+NONE_BELOW = 0.05
+
+
+def _bad(message: str) -> SaosError:
+    return SaosError(ErrorCode.BAD_ARGS, f"scan plan: {message}")
+
+
+def _keys(where: str, values: Any) -> None:
+    if not isinstance(values, dict) or not values:
+        raise _bad(f"{where} must map parameter keys to values")
+    for key in values:
+        kit.parse_key(key)
+
+
+def validate(plan: Any, d: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(plan, dict):
+        raise _bad("must be a JSON object")
+    modes = [m for m in MODES if m in plan]
+    if len(modes) != 1:
+        raise _bad(f"give exactly one of {MODES}")
+    mode = modes[0]
+    items = {i["id"]: i for i in demand.checked(d)}
+    measure = plan.get("measure") or [i for i, item in items.items() if item["goal"] is not None or i == plan.get("target")]
+    unknown = [m for m in measure if m not in items]
+    if unknown:
+        raise _bad(f"measure has ids that are not checks of the demand: {unknown}")
+    if mode == "vars":
+        _keys("vars", plan["vars"])
+        count = math.prod(len(search.axis(v)) for v in plan["vars"].values())
+        if count > MAX_POINTS:
+            raise _bad(f"the grid has {count} points; at most {MAX_POINTS} per scan")
+    elif mode == "points":
+        if not isinstance(plan["points"], list) or not plan["points"] or len(plan["points"]) > MAX_POINTS:
+            raise _bad(f"points must be a list of 1–{MAX_POINTS} parameter dicts")
+        for p in plan["points"]:
+            _keys("each point", p)
+    elif mode == "probes":
+        measure = _validate_probes(plan, items, measure)
+    else:
+        m = plan["minimize"]
+        if not isinstance(m, dict) or not isinstance(m.get("vars"), dict) or not m["vars"]:
+            raise _bad('minimize needs "vars": {key: {"step": s, "min"?: a, "max"?: b}}')
+        for key, spec in m["vars"].items():
+            kit.parse_key(key)
+            if not isinstance(spec, dict) or not isinstance(spec.get("step"), (int, float)) or not spec["step"]:
+                raise _bad(f"minimize var {key} needs a non-zero step")
+        starts = m.get("starts", "current")
+        if starts != "current":
+            if not isinstance(starts, list) or not starts:
+                raise _bad('minimize starts: "current" or a list of {key: value}')
+            for s in starts:
+                _keys("each start", s)
+        if m.get("method", "nelder-mead") not in ("nelder-mead", "powell"):
+            raise _bad("minimize method: nelder-mead or powell")
+    if plan.get("fixed"):
+        _keys("fixed", plan["fixed"])
+    solve = plan.get("solve")
+    if solve is not None:
+        if not isinstance(solve, dict) or not {"var", "lo", "hi", "target"} <= set(solve):
+            raise _bad('solve needs var, lo, hi, target ({"item": id} or {"operand": [type, int1, int2, data…]}) and value')
+        kit.parse_key(solve["var"])
+        target = solve["target"]
+        if not (isinstance(target, dict) and (target.get("item") in items or isinstance(target.get("operand"), list))):
+            raise _bad("solve target: {\"item\": <check id of the demand>} or {\"operand\": [type, int1, int2, data…]}")
+    comp = plan.get("compensate")
+    if not (comp is None or comp == "quick_focus" or (isinstance(comp, dict) and set(comp) == {"script"})):
+        raise _bad('compensate must be null, "quick_focus" or {"script": "<path in the job>"}')
+    operands = plan.get("operands") or {}
+    if not isinstance(operands, dict) or any(not isinstance(v, list) or not v for v in operands.values()):
+        raise _bad("operands map a name to [type, int1, int2, data…]")
+    return {**plan, "mode": mode, "measure": measure, "keep": int(plan.get("keep", 0 if mode == "probes" else 3))}
+
+
+def _validate_probes(plan: dict[str, Any], items: dict[str, Any], measure: list[str]) -> list[str]:
+    if plan.get("target") not in items:
+        raise _bad(f"probes: target must be a checked item of the demand: {sorted(items)}")
+    if not str(plan.get("mechanism", "")).strip():
+        raise _bad("probes: mechanism: say why the target falls short before probing")
+    if plan["target"] not in measure:
+        measure = [plan["target"], *measure]
+    probes = plan["probes"]
+    if not isinstance(probes, list) or not 1 <= len(probes) <= MAX_PROBES:
+        raise _bad(f"probes: 1 to {MAX_PROBES} entries; pick the few your first-order reasoning ranks highest")
+    seen = set()
+    for p in probes:
+        if not isinstance(p, dict) or not demand.ID_RE.match(str(p.get("id", ""))) or p["id"] in seen:
+            raise _bad("each probe needs a unique id (letters, digits, _)")
+        seen.add(p["id"])
+        if not str(p.get("prediction", "")).strip():
+            raise _bad(f"{p['id']}: write the prediction (mechanism, direction, rough size) before measuring")
+        delta = p.get("delta")
+        if not (isinstance(delta, (int, float)) and not isinstance(delta, bool) and math.isfinite(delta) and delta != 0):
+            raise _bad(f"{p['id']}: delta must be a non-zero finite number")
+        if ("script" in p) == ("key" in p):
+            raise _bad(f"{p['id']}: give either key (a numeric lens parameter such as 3.radius) or script (run(w, delta))")
+        if "key" in p and kit.parse_key(p["key"])[2] in ("material", "comment"):
+            raise _bad(f"{p['id']}: key must be a numeric parameter")
+        expect = p.get("expect") or {}
+        if not isinstance(expect, dict) or any(k not in measure or v not in DIRECTIONS for k, v in expect.items()):
+            raise _bad(f"{p['id']}: expect maps measured ids to one of {DIRECTIONS}")
+    return measure
+
+
+def _probe_items(ctx, plan: dict[str, Any]) -> list[dict[str, Any]]:
+    keys = [p["key"] for p in plan["probes"] if "key" in p]
+    start = kit.values(ctx, keys) if keys else {}
+    missing = [k for k, v in start.items() if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)]
+    if missing:
+        raise _bad(f"probes: {missing} have no finite current value to perturb (a flat surface's radius: probe its curvature)")
+    out = [{"i": 0, "set": {}, "probe": "base"}]
+    for p in plan["probes"]:
+        for sign, side in ((-1, "minus"), (1, "plus")):
+            step = sign * float(p["delta"])
+            item = {"i": len(out), "probe": p["id"], "side": side}
+            if "key" in p:
+                item["set"] = {p["key"]: float(start[p["key"]]) + step}
+            else:
+                item["set"], item["change"] = {}, {"script": p["script"], "delta": step}
+            out.append(item)
+    return out
+
+
+def _direction(change: float | None, scale: float) -> str | None:
+    if change is None:
+        return None
+    if abs(change) / scale < NONE_BELOW:
+        return "none"
+    return "up" if change > 0 else "down"
+
+
+def _probe_result(plan: dict[str, Any], scales: dict[str, float | None], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """把 2N+1 个点整理成预测与实测的对照、按对目标的效应排序，并给出该先处理的问题。
+    Turn the 2N+1 points into predictions next to measurements, a ranking by effect on the target, and what to fix first."""
+    target = plan["target"]
+    by = {(r.get("probe"), r.get("side")): r for r in rows}
+    baseline = by[("base", None)]
+    base_values = baseline.get("values") or {}
+    if base_values.get(target) is None:
+        # 前提不成立（例如没有实焦点、零件交叠）时，扰动出的变化没有意义；先确认可行性
+        # without a valid baseline value (no real focus, overlapping parts) changes mean nothing: establish feasibility first
+        return {"target": target, "baseline": baseline, "probes": [], "ranking": [],
+                "review": [f"{target} has no valid value on the base lens, so no perturbation can be read; "
+                           "go through the feasibility ladder first (invariants, an on-axis point under all real constraints, then the full field)"]}
+    results = []
+    for p in plan["probes"]:
+        row: dict[str, Any] = {"id": p["id"], "control": bool(p.get("control")), "prediction": p["prediction"], "delta": p["delta"],
+                               "minus": by[(p["id"], "minus")], "plus": by[(p["id"], "plus")]}
+        # 斜率按 +delta 与 −delta 的差算，方向相对 +delta / the slope uses plus − minus; direction is for +delta
+        observed, effect = {}, {}
+        for k in plan["measure"]:
+            lo, hi = (row["minus"].get("values") or {}).get(k), (row["plus"].get("values") or {}).get(k)
+            change = None if lo is None or hi is None else (hi - lo) / 2
+            scale = scales.get(k) or (abs(base_values[k]) if base_values.get(k) else None) or 1.0
+            observed[k] = _direction(change, scale)
+            effect[k] = None if change is None or scales.get(k) is None else abs(change) / scales[k]
+        row["observed"], row["normalised_effect"] = observed, effect
+        row["mismatch"] = {k: {"expected": v, "observed": observed.get(k)} for k, v in (p.get("expect") or {}).items()
+                           if observed.get(k) is not None and observed[k] != v}
+        results.append(row)
+    movers = [r["id"] for r in results if not r["control"] and (r["normalised_effect"].get(target) or 0) >= NONE_BELOW]
+    controls_moving = [r["id"] for r in results if r["control"] and (r["normalised_effect"].get(target) or 0) >= NONE_BELOW]
+    mismatches = [r["id"] for r in results if r["mismatch"]]
+    review = []
+    if not movers:
+        review.append(f"no probed variable moves {target}; if the first-order reasoning agrees, this is a structure question: ask the user")
+    if not any(r["control"] for r in results):
+        # 阴性对照：原理上不该动目标的变量；没有它，排名里的小效应无法和测量噪声区分
+        # a negative control: a variable that in principle should not move the target; without one, small effects cannot be told from noise
+        review.append(f"no control probe: small effects on {target} in the ranking have no null to compare with; add a control when the ranking decides what to optimise")
+    if controls_moving:
+        review.append(f"control probes {controls_moving} move {target}; recheck the model or the measurement before trusting the ranking")
+    if mismatches:
+        review.append(f"predictions failed for {mismatches}; revise your understanding of the system before optimising")
+    if plan.get("compensate") == "quick_focus":
+        comps = [r.get("compensation") or {} for r in rows]
+        if all(c.get("thickness_after") == c.get("thickness_before") for c in comps):
+            # 实测：fiber 起点镜头上 Quick Focus 从任何厚度出发都不动，Cooke 样例上正常；不能默认补偿生效
+            # measured: on the fiber start lens Quick Focus never moved, on the Cooke sample it worked; never assume the compensation acted
+            review.append(f"quick_focus never moved surface {comps[0].get('surface')} in any point, so nothing was compensated; "
+                          "write a compensate script for this system (for example re-solve the working distance) and probe again")
+    ranking = sorted((r for r in results if not r["control"]), key=lambda r: -(r["normalised_effect"].get(target) or 0))
+    return {"target": target, "baseline": baseline, "probes": results,
+            "ranking": [{"id": r["id"], "effect": r["normalised_effect"].get(target)} for r in ranking], "review": review}
+
+
+# ---------- worker 侧 / worker side ----------
+
+def _script_run(w, rel: str):
+    def load():
+        path = w.path(rel)
+        namespace: dict[str, Any] = {"__name__": f"saos_scan_{path.stem}", "__file__": str(path)}
+        exec(compile(path.read_text(encoding="utf-8"), str(path), "exec"), namespace)
+        return namespace["run"]
+
+    return load()
+
+
+def _prepare(w, plan: dict[str, Any], values: dict[str, Any], change: dict[str, Any] | None = None) -> dict[str, Any]:
+    """写入 fixed 和这个点的参数（扰动脚本在这之后运行），再求解、补偿。返回求解与补偿的记录；求解失败时带 invalid。
+    Write fixed and the point's parameters (then a probe's change script), solve and compensate. Returns their records,
+    with invalid when the solve fails."""
+    out: dict[str, Any] = {}
+    w.set(plan.get("fixed") or {})
+    w.set(values)
+    if change is not None:
+        _script_run(w, change["script"])(w, change["delta"])
+    solve = plan.get("solve")
+    if solve is not None:
+        target = solve["target"]
+
+        def f(x: float):
+            w.set({solve["var"]: x})
+            w.cache.clear()
+            if "item" in target:
+                return w.measure([target["item"]])["values"][target["item"]]
+            name, *rest = target["operand"]
+            return w.op(name, *rest)
+
+        res = search.root(f, float(solve["lo"]), float(solve["hi"]), target=float(solve.get("value", 0.0)), scan=int(solve.get("scan", 9)),
+                          xtol=solve.get("xtol"), should_stop=w.cancel_requested)
+        out["solve"] = {k: res[k] for k in ("x", "f", "ok", "evals", "reason")}
+        if not res["ok"]:
+            out["invalid"] = f"solve: {res['reason']}"
+            return out
+        w.set({solve["var"]: res["x"]})
+    comp = plan.get("compensate")
+    if comp == "quick_focus":
+        out["compensation"] = w.quick_focus()
+    elif isinstance(comp, dict):
+        out["compensation"] = _script_run(w, comp["script"])(w)
+    w.cache.clear()
+    return out
+
+
+def _measure(w, plan: dict[str, Any]) -> dict[str, Any]:
+    m = w.measure(plan["measure"])
+    row = {k: m[k] for k in ("values", "shortfall", "hard_failing", "invalid", "errors")}
+    if plan.get("operands"):
+        row["operands"] = {}
+        for name, spec in plan["operands"].items():
+            try:
+                row["operands"][name] = w.op(spec[0], *spec[1:])
+            except Exception as exc:  # noqa: BLE001 - 一个附加操作数出错不让整个点作废 / one extra operand failing does not void the point
+                row["operands"][name] = f"error: {exc}"
+    return row
+
+
+def _save(w, item: dict[str, Any], row: dict[str, Any]) -> None:
+    if w.args.get("lens_dir") and isinstance(row.get("shortfall"), float) and math.isfinite(row["shortfall"]):
+        rel = f"{w.args['lens_dir']}/p{item['i']:03d}.zmx"
+        target = w.path(f"lenses/{rel}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        w.backend.save_as(target)
+        row["lens"] = rel
+
+
+def point(w, item: dict[str, Any]) -> dict[str, Any]:
+    """一个网格点或列表点。/ One grid or list point."""
+    plan = w.args["plan"]
+    row: dict[str, Any] = {k: item[k] for k in ("i", "set", "probe", "side") if k in item}
+    row.update(_prepare(w, plan, item["set"], item.get("change")))
+    if "invalid" in row:
+        row["shortfall"] = math.inf
+        return row
+    row.update(_measure(w, plan))
+    _save(w, item, row)
+    return row
+
+
+def descend(w, item: dict[str, Any]) -> dict[str, Any]:
+    """从一个起点做无导数寻优，目标是所测各项的目标差距（需求单的定义）。/ Minimise the demand's shortfall from one start."""
+    plan = w.args["plan"]
+    m = plan["minimize"]
+    specs = m["vars"]
+
+    def f(p: dict[str, float]):
+        w.reload()
+        extra = _prepare(w, plan, p)
+        if "invalid" in extra:
+            return None
+        g = w.measure(plan["measure"])["shortfall"]
+        return g if math.isfinite(g) else None
+
+    res = search.minimize(f, item["start"], {k: s["step"] for k, s in specs.items()},
+                          bounds={k: (s.get("min"), s.get("max")) for k, s in specs.items()}, method=m.get("method", "nelder-mead"),
+                          max_evals=int(m.get("max_evals", 200)), max_seconds=float(m.get("max_seconds", 900)),
+                          xtol=float(m.get("xtol", 1e-3)), should_stop=w.cancel_requested)
+    row: dict[str, Any] = {"i": item["i"], "start": item["start"], "set": res["best"], "start_f": res["start_f"], "best_f": res["best_f"],
+                           "evals": res["evals"], "stopped": res["stopped"], "seconds": res["seconds"],
+                           "history": [[h["f"], h["x"]] for h in res["history"]]}
+    if res["best"] is None:
+        row["shortfall"] = math.inf
+        row["invalid"] = "no valid point reached"
+        return row
+    w.reload()
+    row.update(_prepare(w, plan, res["best"]))
+    row.update(_measure(w, plan))
+    _save(w, item, row)
+    return row
+
+
+# ---------- 后台进程侧 / daemon side ----------
+
+def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = False) -> dict[str, Any]:
+    """准备（校验、目录、镜头快照）在本请求里完成；detach 时其余放进后台线程，立即返回，后台进程继续处理其他命令。
+    Preparation (validation, folder, lens snapshot) happens in this request; with detach the rest runs in a background
+    thread and the call returns at once, so the daemon keeps serving other commands."""
+    from saos import config, parallel, workflow
+
+    if ctx.lens is None:
+        raise SaosError(ErrorCode.NO_LENS_LOADED, f"job {ctx.job.id} has no lens loaded")
+    if ctx.dirty:
+        raise SaosError(ErrorCode.UNSAVED_CHANGES, "scan workers load the saved lens file; save your changes first (lens save)")
+    d = demand.load_job(ctx.job.root)
+    plan = validate(plan, d)
+    post = None
+    if plan["mode"] == "probes":
+        checked = {i["id"]: i for i in demand.checked(d)}
+        scales = {k: None if checked[k]["goal"] is None else float(checked[k].get("scale", demand._default_scale(checked[k]["goal"])))
+                  for k in plan["measure"]}
+        post = lambda rows: _probe_result(plan, scales, rows)  # noqa: E731
+    if plan["mode"] == "minimize":
+        # 寻优可能跑很久：与 opt local 同样先确认需求 / minimisation may run long: same gate as opt local
+        workflow.preflight(ctx.job.root)
+    if plan["mode"] == "vars":
+        items = [{"i": k, "set": p} for k, p in enumerate(search.grid(plan["vars"]))]
+    elif plan["mode"] == "points":
+        items = [{"i": k, "set": p} for k, p in enumerate(plan["points"])]
+    elif plan["mode"] == "probes":
+        items = _probe_items(ctx, plan)
+    else:
+        starts = plan["minimize"].get("starts", "current")
+        if starts == "current":
+            starts = [kit.values(ctx, list(plan["minimize"]["vars"]))]
+        items = [{"i": k, "start": s} for k, s in enumerate(starts)]
+    count = min(len(items), int(workers or plan.get("workers") or parallel.DEFAULT_WORKERS), config.compute_cores())
+    pool = ctx._daemon.pool
+    if not pool.lock.acquire(timeout=2):
+        raise SaosError(ErrorCode.POOL_BUSY, "the worker pool is busy with a detached scan; wait for it (saos scan show) or cancel it (saos job cancel)",
+                        {"pool": pool.status()})
+    try:
+        root = ctx.path(SCANS_DIR)
+        root.mkdir(exist_ok=True)
+        folder = root / f"{jobs.next_archive_number(root):03d}"
+        folder.mkdir()
+        write_json(folder / "plan.json", {**plan, "lens": ctx.job.relative_lens(ctx.lens), "workers": count})
+        # 镜头快照：分离运行期间改动或保存工作镜头不影响扫描 / a snapshot, so later edits of the working lens do not reach the scan
+        base = folder / f"base{ctx.lens.suffix}"
+        shutil.copy2(ctx.lens, base)
+        args = {"plan": plan, "lens_dir": f"scans/{folder.name}", "cancel_file": str(folder / jobs.CANCEL_FILE)}
+    except BaseException:
+        pool.lock.release()
+        raise
+    job = ctx.job
+    if not detach:
+        try:
+            return _execute(job, folder, plan, items, pool, base, count, args,
+                            progress=lambda stage: job.write_progress(stage=stage), cancelled=job.cancel_requested, post=post)
+        finally:
+            pool.lock.release()
+    progress_file = folder / jobs.PROGRESS_FILE
+    write_json(progress_file, {"op": "scan.run", "status": "running", "detached": True, "points": len(items), "workers": count,
+                               "started": jobs.now_iso(), "daemon_pid": os.getpid()})
+
+    def report(**fields: Any) -> None:
+        try:
+            current = json.loads(progress_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            current = {}
+        write_json(progress_file, {**current, **fields, "updated": jobs.now_iso()})
+
+    def body() -> None:
+        try:
+            summary = _execute(job, folder, plan, items, pool, base, count, args, progress=lambda stage: report(stage=stage),
+                               cancelled=lambda: job.cancel_requested() or (folder / jobs.CANCEL_FILE).is_file(), on_done=report, post=post)
+            log.info("detached scan %s finished: %s valid of %s", folder.name, summary["valid"], summary["points"])
+        except Exception as exc:  # noqa: BLE001 - 后台线程不能让后台进程退出 / a background thread must not take the daemon down
+            log.exception("detached scan %s failed", folder.name)
+            report(status="failed", error=f"{type(exc).__name__}: {exc}"[:1000])
+        finally:
+            pool.lock.release()
+
+    thread = threading.Thread(target=body, name=f"scan-{folder.name}", daemon=True)
+    ctx._daemon.background[folder.relative_to(job.root).as_posix()] = thread
+    thread.start()
+    return {"folder": folder.relative_to(job.root).as_posix(), "detached": True, "points": len(items), "workers": count,
+            "follow": f"saos scan --job {job.id} --show {folder.name}", "cancel": f"saos job cancel {job.id}"}
+
+
+def _execute(job: jobs.Job, folder, plan: dict[str, Any], items: list[dict[str, Any]], pool, base, count: int, args: dict[str, Any],
+             progress, cancelled, on_done=None, post=None) -> dict[str, Any]:
+    from saos import parallel
+
+    fn = "saos.scan:descend" if plan["mode"] == "minimize" else "saos.scan:point"
+    out = parallel.dispatch(pool, job, base, fn, None, items, count, True, args, progress, cancelled)
+    if not out["workers_available"]:
+        raise SaosError(ErrorCode.ZOS_ERROR, f"no parallel worker could start: {out['startup']['unavailable']}", {"pool": pool.status()})
+    rows = []
+    for item, res in zip(items, out["results"]):
+        if res is None:
+            res = {**item, "shortfall": math.inf, "error": out["errors"].get(str(item["i"]), "not run")}
+        rows.append(res)
+    ranked = search.ranked(rows)
+    keep = {r.get("lens") for r in ranked[:max(0, plan["keep"])] if r.get("lens")}
+    lens_root = job.lenses_dir / args["lens_dir"]
+    for r in ranked:
+        if r.get("lens") and r["lens"] not in keep:
+            (job.lenses_dir / r["lens"]).unlink(missing_ok=True)
+            r["lens"] = None
+    if lens_root.is_dir() and not any(lens_root.iterdir()):
+        shutil.rmtree(lens_root, ignore_errors=True)
+    valid = [r for r in ranked if isinstance(r.get("shortfall"), (int, float)) and math.isfinite(r["shortfall"])]
+    result = {"folder": folder.relative_to(job.root).as_posix(), "mode": plan["mode"], "points": len(items), "valid": len(valid),
+              "errors": out["errors"], "not_run": out["not_run"], "cancelled": out["cancelled"],
+              "workers": out["workers"], "startup": out["startup"], "elapsed_s": out["elapsed_s"],
+              "best": ranked[0] if valid else None, "kept_lenses": sorted(k for k in keep if k), "rows": ranked}
+    if post is not None and not out["cancelled"]:
+        result.update(post(rows))
+    write_json(folder / "result.json", result)
+    (folder / jobs.CANCEL_FILE).unlink(missing_ok=True)
+    if on_done is not None:
+        on_done(status="cancelled" if out["cancelled"] else "done", valid=len(valid), elapsed_s=out["elapsed_s"])
+    job.seal(folder)
+    return summarize(result)
+
+
+def summarize(result: dict[str, Any]) -> dict[str, Any]:
+    """返回给 agent 的摘要：前 10 行，不含寻优历史。/ The summary for the agent: the top 10 rows, no search history."""
+    summary = {k: v for k, v in result.items() if k != "rows"}
+    summary["top"] = [{k: r.get(k) for k in ("i", "set", "shortfall", "hard_failing", "invalid", "values", "solve", "lens", "operands", "error")}
+                      for r in result["rows"][:10]]
+    if summary["best"] is not None and "history" in summary["best"]:
+        summary["best"] = {k: v for k, v in summary["best"].items() if k != "history"}
+    summary["rows_in"] = f"{result['folder']}/result.json"
+    return summary
+
+
+def show(job: jobs.Job, scan: str | None = None) -> dict[str, Any]:
+    """一次扫描的状态或结果，只读文件，后台进程忙时也能用。/ The state or result of a scan from its files; works while the daemon is busy."""
+    root = job.root / SCANS_DIR
+    names = sorted(p.name for p in root.iterdir() if p.is_dir()) if root.is_dir() else []
+    if not names:
+        raise SaosError(ErrorCode.FILE_NOT_FOUND, f"job {job.id} has no scans")
+    name = f"{int(scan):03d}" if scan is not None and str(scan).isdigit() else (scan or names[-1])
+    folder = root / str(name)
+    if not folder.is_dir():
+        raise SaosError(ErrorCode.FILE_NOT_FOUND, f"no scan {name}", {"scans": names})
+    if (folder / "result.json").is_file():
+        return {"finished": True, **summarize(json.loads((folder / "result.json").read_text(encoding="utf-8")))}
+    progress = json.loads((folder / jobs.PROGRESS_FILE).read_text(encoding="utf-8")) if (folder / jobs.PROGRESS_FILE).is_file() else None
+    running = any(r["folder"] == f"{SCANS_DIR}/{name}" for r in jobs.detached_runs(job.root))
+    out = {"folder": f"{SCANS_DIR}/{name}", "finished": False, "running": running, "progress": progress}
+    if not running and not (progress or {}).get("error"):
+        out["note"] = "no result and no running daemon owns this scan; it was interrupted"
+    return out

@@ -144,7 +144,11 @@ class Job:
 
     def request_cancel(self) -> dict[str, Any]:
         (self.root / CANCEL_FILE).write_text(now_iso(), encoding="utf-8")
-        return {"job": self.id, "cancel_requested": True, "progress": self.read_progress()}
+        # 分离运行的扫描有自己的取消文件，同一条命令一起停 / detached scans have their own cancel file; stop them too
+        detached = detached_runs(self.root)
+        for run in detached:
+            (self.root / run["folder"] / CANCEL_FILE).write_text(now_iso(), encoding="utf-8")
+        return {"job": self.id, "cancel_requested": True, "progress": self.read_progress(), "detached": [r["folder"] for r in detached]}
 
     def cancel_requested(self) -> bool:
         return (self.root / CANCEL_FILE).is_file()
@@ -177,6 +181,48 @@ class Job:
 
     def relative_lens(self, path: Path) -> str:
         return path.resolve().relative_to(self.lenses_dir.resolve()).as_posix()
+
+
+DETACHED_DIRS = ("scans",)
+
+
+def inside(root: Path, rel: str) -> Path:
+    """任务目录内的路径，越出时拒绝。先按字面规范化比较，再把已存在的部分按真实路径查一次（挡住指向任务外的链接）。
+    不对还不存在的路径整体 resolve：Windows 上几个 worker 同时建同一目录时，那样偶尔会误报越界（2026-10-17 实测）。
+    A path inside the job, refused when it escapes. Compared after normalising the text, then the existing part is checked
+    by its real path (links out of the job). A not-yet-existing path is never resolved as a whole: on Windows, workers
+    creating the same folder at once occasionally made that report an escape (measured 2026-10-17)."""
+    import os
+
+    base = Path(root).resolve()
+    target = Path(os.path.normpath(base / rel))
+    existing = target
+    while not existing.exists() and existing != existing.parent:
+        existing = existing.parent
+    real = existing.resolve()
+    if base not in target.parents or (real != base and base not in real.parents):
+        raise SaosError(ErrorCode.PATH_OUTSIDE_JOB, f"path escapes the job directory: {rel}")
+    return target
+
+
+def detached_runs(root: Path) -> list[dict[str, Any]]:
+    """正在后台运行的分离任务（saos scan --detach）：进度为 running 且所属后台进程还活着。
+    Detached runs in progress (saos scan --detach): progress says running and the owning daemon is alive."""
+    from saos import client
+
+    out = []
+    for name in DETACHED_DIRS:
+        base = root / name
+        if not base.is_dir():
+            continue
+        for folder in sorted(base.iterdir()):
+            try:
+                progress = json.loads((folder / PROGRESS_FILE).read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if progress.get("status") == "running" and client.pid_alive(int(progress.get("daemon_pid") or 0)):
+                out.append({**progress, "folder": folder.relative_to(root).as_posix()})
+    return out
 
 
 def get_job(job_id: str) -> Job:

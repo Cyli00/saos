@@ -14,7 +14,7 @@ The structural parameters are the radii (or aspheric terms), the thicknesses and
 | What | Command | Notes |
 |---|---|---|
 | radius, thickness, conic | `saos opt vary --param radius\|thickness\|conic --surfaces …` | the object surface allows thickness only |
-| surface-type parameters | `saos opt vary --param par<N>`; `saos lens set --param par<N>`; probes accept `"param": "par<N>"` | the Lens Data Par column: aspheric terms, coordinate-break decenters and tilts, Fresnel or freeform terms. `lens describe` lists each surface's parameters with their column numbers |
+| surface-type parameters | `saos opt vary --param par<N>`; `saos lens set --param par<N>`; scan plans and probes take the key `"<surface>.par<N>"` | the Lens Data Par column: aspheric terms, coordinate-break decenters and tilts, Fresnel or freeform terms. `lens describe` lists each surface's parameters with their column numbers |
 | glass as a model | `saos opt vary --param material --mode model` | nd and Vd vary, starting from the current glass. Exploration only: the round is not deliverable until real glasses replace it |
 | glass substitution | `saos opt vary --param material --mode substitute [--catalog C]` | for Hammer or global search; OpticStudio swaps real glasses of the catalogs in use |
 

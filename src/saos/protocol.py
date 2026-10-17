@@ -37,6 +37,8 @@ class ErrorCode:
     DEMAND_NOT_CONFIRMED = "DEMAND_NOT_CONFIRMED"
     DEMAND_BLOCKED = "DEMAND_BLOCKED"
     CANCELLED = "CANCELLED"
+    POOL_BUSY = "POOL_BUSY"
+    BUSY = "BUSY"
     MODEL_NOT_APPROVED = "MODEL_NOT_APPROVED"
     EXTENSION_REQUIRED = "EXTENSION_REQUIRED"
     LENS_MODIFIED_BY_CHECK = "LENS_MODIFIED_BY_CHECK"
@@ -82,6 +84,9 @@ def jsonable(value: Any) -> Any:
         return {k: jsonable(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
         return [jsonable(v) for v in value]
+    if type(value).__module__ == "numpy" and hasattr(value, "tolist"):
+        # numpy 标量和数组（kit 的追迹结果）/ numpy scalars and arrays (kit's trace results)
+        return jsonable(value.tolist())
     return value
 
 

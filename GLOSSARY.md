@@ -33,7 +33,7 @@ _Avoid_: 待办、pending inputs
 _Avoid_: 需求原话、request
 
 **判定方法 (Check Method)**：
-需求单中为每个带界限的常量、变量和每个目标写明的计算方式：用哪个 Zemax 操作数、分析或任务内脚本，在什么条件下算。
+需求单中为每个带界限的常量、变量和每个目标写明的计算方式：用哪个 Zemax 操作数、分析或任务内脚本，在什么条件下算。同一次判定的各脚本共享一个缓存，判定期间镜头不变；判定版本包括 `checks/` 全部文件和它们引用的 saos 配方库与 kit。
 _Avoid_: 验收口径（显微物镜配方中的专用说法）
 
 ## 工作与交付
@@ -43,8 +43,12 @@ _Avoid_: 验收口径（显微物镜配方中的专用说法）
 _Avoid_: 项目、会话、run
 
 **运行实例 (Instance)**：
-一个后台进程及其独占的运行目录，一个实例同一时间持有一个 OpticStudio 连接。不同实例之间互不干扰，可以并行。
-_Avoid_: 工作目录、环境
+一个后台进程及其独占的运行目录 `work/<实例>/`。后台进程持有一个主 OpticStudio 连接，需要并发时另带一个 worker 池。不同运行实例之间互不干扰，可以并行。
+_Avoid_: 工作目录、环境；不要单说“实例”指 OpticStudio 进程，那是 OpticStudio 实例
+
+**OpticStudio 实例 (OpticStudio Instance)**：
+一个占用 ZOS-API 许可的 OpticStudio 进程：用户打开的窗口、standalone 后台进程、worker 池里的每个 worker 各算一个。本机 Premium 许可同时最多 8 个（2026-10-15 实测，不是许可文档上的数），`saos daemon status` 报告余量。
+_Avoid_: 实例（单独使用时与运行实例混淆）、license 槽
 
 **初始结构 (Starting Design)**：
 开始优化前的镜头结构，包括面型、厚度、材料和光阑位置。来源不限：配方中的结构库、专利、Zemax 样例或 agent 自行求解。
@@ -79,8 +83,20 @@ _Avoid_: 可行性分析（泛指）
 _Avoid_: 背景介质
 
 **并发评估 (Parallel Evaluation)**：
-同时开几个 OpticStudio 实例，各自对同一镜头的副本做一批相互独立的评估，结果按条目汇总。光学计算仍全部由 OpticStudio 完成。
+在 worker 池的几个 OpticStudio 实例上，各自对同一镜头的副本做一批相互独立的评估，结果按条目汇总（`ctx.map`、`saos scan`）。光学计算仍全部由 OpticStudio 完成。
 _Avoid_: 自写追迹、GPU 加速
+
+**Worker 池 (Worker Pool)**：
+后台进程持有的一组 standalone OpticStudio 实例，第一次并发评估时启动，之后的调用复用，空闲 10 分钟关闭并释放许可。同一时间只给一个扫描或 `ctx.map` 用。
+_Avoid_: 线程池、集群
+
+**扫描 (Scan)**：
+按计划逐点改参数、可选对一个变量求根、补偿，再按需求单的判定实测，并按目标差距排序的并发评估（`saos scan`）；也可以从几个起点做无导数寻优。不用写脚本。
+_Avoid_: 地图、map、sweep（单独使用时含义不清）
+
+**分离运行 (Detached Run)**：
+命令立即返回、在后台线程里继续的扫描（`saos scan --detach`）。它只用 worker 池和开始时的镜头快照，后台进程的主实例照常处理其他命令，让 agent 的工作和计算同时进行。
+_Avoid_: 异步任务、后台任务（与后台进程混淆）
 
 **扰动诊断 (Probe)**：
 agent 先从几何光学原理判断当前最大差距的机理，挑少数几个最可能起作用的变量（建议加一个原理上不该起作用的阴性对照），写下预测，再由 `saos probe` 对每个变量取 ±delta、带补偿量（如重新对焦）实测，与预测对照。用来决定先优化哪些变量，以及判断差距是不是结构造成的。

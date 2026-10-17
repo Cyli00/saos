@@ -19,7 +19,7 @@ from multiprocessing.connection import Connection, Listener
 from pathlib import Path
 from typing import Any, Callable
 
-from saos import config, i18n, jobs, prescription, scripting, workflow
+from saos import config, i18n, jobs, parallel, prescription, scripting, workflow
 from saos.backend import Backend, make_backend
 from saos.backend.base import same_number
 from saos.protocol import ErrorCode, SaosError, decode, encode, fail, ok, write_json
@@ -36,7 +36,7 @@ REQUEST_READ_TIMEOUT_S = 30
 # 显性调试：这些操作可能改变镜头，结束后刷新已打开的分析窗口
 # 可能跑很久的操作：开始和结束都写进 progress.json，开始前清掉旧的取消请求
 # operations that may run long: their start and end go to progress.json; a stale cancel request is cleared first
-LONG_OPS = frozenset({"opt.local", "script.exec", "round.record", "probe.run", "demand.check"})
+LONG_OPS = frozenset({"opt.local", "script.exec", "round.record", "probe.run", "demand.check", "scan.run"})
 REFRESH_AFTER = frozenset({"lens.load", "lens.set", "lens.build", "opt.local", "script.exec", "round.record"})
 # 建模说明给用户看，任何阶段都要在用户看着的窗口里生成和确认
 # the model description is for the user to watch, so it always needs the connected window
@@ -96,6 +96,10 @@ class Daemon:
         self.stopping = False
         # 显性调试：连接时窗口里已有的未保存内容要保护，直到保存、捕获副本或显式放弃
         self.window_unsaved = bool(zos_info.get("initial_needs_save"))
+        # ctx.map / saos scan 的常驻 worker 池，第一次用时启动 / the worker pool of ctx.map and saos scan, started on first use
+        self.pool = parallel.Pool()
+        # 分离运行的扫描线程，键为任务内的 scans/NNN / threads of detached scans, keyed by scans/NNN in the job
+        self.background: dict[str, Any] = {}
         self.handlers: dict[str, Callable[[dict[str, Any]], Any]] = {
             "ping": self.op_ping,
             "shutdown": self.op_shutdown,
@@ -120,6 +124,7 @@ class Daemon:
             "script.exec": self.op_exec,
             "demand.check": self.op_check,
             "probe.run": self.op_probe,
+            "scan.run": self.op_scan,
             "round.record": self.op_round,
         }
 
@@ -325,10 +330,16 @@ class Daemon:
             "opticstudio": self.zos_info,
             "backend_healthy": self.backend.healthy(),
             "loaded": self.loaded.describe() if self.loaded else None,
+            "pool": self.pool.status(),
+            "background": self.running_background(),
             "home": str(config.saos_home()),
         }
 
     def op_shutdown(self, args: dict[str, Any]) -> dict[str, Any]:
+        running = self.running_background()
+        if running:
+            raise SaosError(ErrorCode.BUSY, f"detached scans are still running ({', '.join(running)}); cancel them with saos job cancel "
+                                            "or wait for them (saos scan --show), then stop the daemon", {"background": running})
         self._check_not_dirty(bool(args.get("discard", False)), "exiting")
         self.stopping = True
         return {"stopping": True, "discarded": self.loaded.describe() if self.loaded and self.loaded.dirty else None}
@@ -590,6 +601,18 @@ class Daemon:
         self._require_loaded(job)
         return probe.run(scripting.ScriptContext(self, job, {}), _arg(args, "plan", dict))
 
+    def op_scan(self, args: dict[str, Any]) -> dict[str, Any]:
+        """并发扫描或多起点寻优（saos.scan），不改动当前镜头。"""
+        from saos import scan
+
+        job = self._job(args)
+        self._require_loaded(job)
+        return scan.run(scripting.ScriptContext(self, job, {}), _arg(args, "plan", dict), _arg(args, "workers", int, default=None),
+                        detach=_arg(args, "detach", bool, default=False))
+
+    def running_background(self) -> list[str]:
+        return [name for name, thread in self.background.items() if thread.is_alive()]
+
     def op_check(self, args: dict[str, Any]) -> dict[str, Any]:
         """按需求对当前镜头逐项取值判定，不记录轮次。"""
         job = self._job(args)
@@ -696,6 +719,7 @@ def serve(mode: str, token: str = "") -> int:
                 conn.close()
     finally:
         log.info(_t("正在退出", "shutting down"))
+        daemon.pool.close()
         backend.close()
         listener.close()
         config.daemon_state_file().unlink(missing_ok=True)
