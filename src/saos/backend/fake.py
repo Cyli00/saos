@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from saos import geometry
 from saos.backend.base import MATERIAL_MODES, NUMERIC_PARAMS, Backend, check_param, is_par, parse_numeric
 from saos.protocol import ErrorCode, SaosError
 
@@ -183,7 +184,23 @@ class FakeBackend(Backend):
         return {"header": ["fake"], "messages": [], "series": [{"description": "line", "x_label": "x", "x": x, "y": {"v": [slope * v for v in x]}}],
                 "grids": [], "text_file": True, "settings": dict(settings), "message": None}
 
-    def viz_data(self, folder: Path) -> dict[str, Any]:
+    def _geometry_items(self) -> list[dict[str, Any]]:
+        """假几何：平面沿 z 轴排开，交叠检查照常算。/ Flat surfaces along z; the interference check runs as usual."""
+        lens = self._require()
+        items, z = [], 0.0
+        for s in lens["surfaces"][1:-1]:
+            sd = float(s.get("semi_diameter") or 0.0)
+            items.append({"index": s["index"], "type": s["type"], "comment": s["comment"], "material": s["material"], "sd": sd,
+                          "rot": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], "off": [0.0, 0.0, z],
+                          "sags": [0.0] * len(geometry.polar_points(sd))})
+            if s["thickness"] != float("inf"):
+                z += s["thickness"]
+        return items
+
+    def interference(self) -> dict[str, Any]:
+        return geometry.interference(self._geometry_items())
+
+    def viz_data(self, folder: Path | None, *, full: bool = True) -> dict[str, Any]:
         """假数据：面沿 z 轴排开，光线平行于轴到像面，只用来测试导出、存档和界面读取。"""
         lens = self._require()
         surfaces, z = [], 0.0
@@ -200,9 +217,12 @@ class FakeBackend(Backend):
                 z += s["thickness"]
         rays = [{"field": 0, "px": 0.0, "py": py, "points": [[0.0, py, v["vertex"][2]] for v in surfaces], "start_dir": [0.0, 0.0, 1.0]}
                 for py in (-1.0, 0.0, 1.0)]
-        return {"system": {**self.system_info(), "primary_wave": 1, "normalization": "Radial", "normalized_fields": [[0.0, 0.0]],
-                           "stop_semi_diameter": 10.0, "image_surface": len(lens["surfaces"]) - 1},
-                "surfaces": surfaces, "layout": {"wave": 1, "rays": rays},
+        base = {"system": {**self.system_info(), "primary_wave": 1, "normalization": "Radial", "normalized_fields": [[0.0, 0.0]],
+                           "stop_semi_diameter": 10.0, "image_surface": len(lens["surfaces"]) - 1, "non_axial": bool(lens.get("non_axial"))},
+                "surfaces": surfaces, "layout": {"wave": 1, "rays": rays}, "lens_data": self.surfaces(), "interference": self.interference()}
+        if not full:
+            return {**base, "timings_s": {}, "errors": {}}
+        return {**base,
                 "spot": {"reference": "chief ray, primary wavelength", "pupil_grid": 3, "fields": [{"field": 0, "chief": [0.0, 0.0], "points": [[[0.0, 0.0], [0.001, 0.0]]]}],
                          "rms_radius": [[1.0]], "geo_radius": [[2.0]], "analysis_settings": None},
                 "mtf": {"series": [{"description": "Field: 0.00 (deg)", "x_label": "Spatial Frequency", "x": [0.0, 50.0], "y": {"Tangential": [1.0, 0.5], "Sagittal": [1.0, 0.4]}}],

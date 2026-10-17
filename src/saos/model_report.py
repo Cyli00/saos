@@ -94,6 +94,14 @@ TEXT: dict[str, tuple[str, str]] = {
         "第 {s} 面之后的介质在各波长折射率相同（{n}），没有色散；只有确实无色散的介质才应这样建模。",
         "The medium after surface {s} has the same index at every wavelength ({n}); only a truly non-dispersive medium should be modelled this way.",
     ),
+    "w.crossing": (
+        "第 {a} 面（{ca}）和第 {b} 面（{cb}）在口径内相交，最深约 {depth}：镜片边缘厚度为负，或两个零件互相穿过。",
+        "Surfaces {a} ({ca}) and {b} ({cb}) cross inside their apertures, by up to about {depth}: a negative edge thickness, or two parts passing through each other.",
+    ),
+    "w.overlap": (
+        "镜片 {l1}（{c1}）和镜片 {l2}（{c2}）相互穿插：一片的表面落在另一片的玻璃里（{n} 个采样点），多半是空气间隔为负。",
+        "Lenses {l1} ({c1}) and {l2} ({c2}) interpenetrate: {n} sample points of one lie inside the other's glass, usually a negative air gap.",
+    ),
     "w.uncatalogued": ("第 {s} 面的材料 {name} 不在在用的材料目录里。", "Surface {s}: material {name} is not in the catalogs in use."),
     "w.vignetting": ("第 {f} 个视场设置了渐晕因子，会改变该视场的光瞳形状和大小。", "Field {f} has vignetting factors, which change its pupil shape and size."),
     "w.no_first_order": (
@@ -171,6 +179,13 @@ def checks(desc: dict[str, Any], notes: dict[str, Any] | None = None, recorded: 
     for k, f in enumerate(items, 1):
         if any(abs(v) > 0 for v in (f.get("vignetting") or {}).values()):
             out.append(("vignetting", {"f": k}))
+    clash = desc.get("interference") or {}
+    for c in clash.get("crossings") or []:
+        out.append(("crossing", {"a": c["surfaces"][0], "b": c["surfaces"][1], "ca": c["comments"][0] or "-", "cb": c["comments"][1] or "-",
+                                 "depth": fmt(c["depth"])}))
+    for o in clash.get("overlaps") or []:
+        out.append(("overlap", {"l1": "–".join(map(str, o["lenses"][0])), "l2": "–".join(map(str, o["lenses"][1])),
+                                "c1": o["comments"][0] or "-", "c2": o["comments"][1] or "-", "n": o["points"]}))
     # LDE 的注释只是名字；说明要写清这个面代表什么实物，所以每个面都要在 notes 里有一条
     # an LDE comment is only a name; the notes must say what each surface physically is
     missing = [str(s["index"]) for s in surfaces if not str(((notes or {}).get("surfaces") or {}).get(str(s["index"]), "")).strip()]

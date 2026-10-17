@@ -30,6 +30,11 @@ const TEXT = {
     layout_hint_3d: "拖动旋转 · Shift 或右键拖动平移 · 滚轮缩放 · 双击复位", layout_hint_2d: "拖动平移 · 滚轮缩放 · 双击复位",
     image_z: "像面 z", round: "轮", tiers: "层级", gap: "目标差距", state: "状态", note: "说明", achieved: "达成", deliverable: "可交付",
     pick_round: "点一行在其他视图中查看该轮", sag_flat: "部分面读不到面形，按平面画。", select_round: (n) => `r${String(n).padStart(3, "0")}`,
+    live: "当前镜头", live_unsaved: "未保存", no_live: "后台进程加载或改动镜头后，这里显示当前镜头的布局。", live_failed: "当前视图导出失败：",
+    only_3d: "非轴对称系统只有 3D 视图", lens_data: "Lens Data", ld_type: "面型", ld_comment: "注释", ld_radius: "半径", ld_thickness: "厚度",
+    ld_material: "材料", ld_sd: "半口径", ld_conic: "圆锥", ld_solve: "V 为变量，其他字母为求解或 pickup",
+    clash_title: "结构交叠", crossing: (a, b, d) => `第 ${a} 面与第 ${b} 面在口径内相交（最深约 ${d}）`,
+    overlap: (a, b, n) => `镜片 ${a} 与镜片 ${b} 相互穿插（${n} 个采样点落在另一片玻璃里）`,
   },
   en: {
     interview: "Interview & feasibility", demand_confirm: "Confirm demand", modeling: "Model & materials", model_approve: "Approve model", design: "Autonomous design", deliver: "Delivery report",
@@ -54,6 +59,11 @@ const TEXT = {
     layout_hint_3d: "drag to rotate · Shift or right-drag to pan · wheel to zoom · double-click to reset", layout_hint_2d: "drag to pan · wheel to zoom · double-click to reset",
     image_z: "image z", round: "Round", tiers: "Tiers", gap: "Shortfall", state: "State", note: "Note", achieved: "achieved", deliverable: "deliverable",
     pick_round: "Click a row to view that round in the other tabs", sag_flat: "Some surface shapes could not be read; drawn flat.", select_round: (n) => `r${String(n).padStart(3, "0")}`,
+    live: "Current lens", live_unsaved: "unsaved", no_live: "Once the daemon loads or changes the lens, its layout appears here.", live_failed: "The live view export failed: ",
+    only_3d: "Non-axial systems have the 3D view only", lens_data: "Lens Data", ld_type: "Type", ld_comment: "Comment", ld_radius: "Radius", ld_thickness: "Thickness",
+    ld_material: "Material", ld_sd: "Semi-dia.", ld_conic: "Conic", ld_solve: "V marks a variable, other letters a solve or pickup",
+    clash_title: "Interference", crossing: (a, b, d) => `surfaces ${a} and ${b} cross inside their apertures (up to about ${d})`,
+    overlap: (a, b, n) => `lenses ${a} and ${b} interpenetrate (${n} sample points inside the other's glass)`,
   },
 };
 const ANALYSIS_NAMES = {
@@ -73,6 +83,8 @@ let tab = Q.get("tab");
 let pinnedRound = null;
 let roundShown = null;
 let viz = null;
+let liveSeen = null;
+let lensDataOpen = Q.get("ld") === "1";
 let dim = Q.get("dim") === "2d" ? "2d" : "3d";
 let analyses = null;
 const t = (k, ...a) => { const v = (TEXT[lang] || TEXT.zh)[k]; return typeof v === "function" ? v(...a) : (v ?? k); };
@@ -232,17 +244,28 @@ function renderTabs() {
   $("tabs").innerHTML = list.map((k) => `<button class="tab ${k === tab ? "on" : ""}" data-tab="${k}" role="tab">${esc(t("tab_" + k))}</button>`).join("");
   const vr = vizRounds();
   const sel = $("round-select");
-  sel.hidden = !["layout", "spot", "mtf"].includes(tab) || !vr.length;
-  const opts = vr.map((r) => `<option value="${r.round}">${t("select_round", r.round)} · G ${fmtG(r.shortfall)}</option>`).join("");
+  const withLive = tab === "layout" && state?.live != null;
+  sel.hidden = !["layout", "spot", "mtf"].includes(tab) || (!vr.length && !withLive);
+  const opts = (withLive ? `<option value="live">${esc(t("live"))}</option>` : "") +
+    vr.map((r) => `<option value="${r.round}">${t("select_round", r.round)} · G ${fmtG(r.shortfall)}</option>`).join("");
   if (sel.dataset.opts !== opts) { sel.innerHTML = opts; sel.dataset.opts = opts; }
   if (roundShown != null) sel.value = String(roundShown);
   $("dim-seg").hidden = tab !== "layout";
 }
 
+// 布局默认看当前镜头（后台进程每次改动镜头后重写 view.json）；点列图和 MTF 只有轮次有 / the layout follows the current lens by default
+const wantsLive = () => tab === "layout" && state?.live != null && (pinnedRound === "live" || pinnedRound == null);
+
 async function ensureViz() {
+  if (wantsLive()) {
+    if (roundShown === "live" && viz && liveSeen === state.live) return;
+    try { viz = await api("live"); } catch (e) { viz = { ok: false, error: e.message, live: true }; }
+    roundShown = "live"; liveSeen = state.live;
+    return;
+  }
   const vr = vizRounds();
   if (!vr.length) { viz = null; roundShown = null; return; }
-  const want = pinnedRound != null && vr.some((r) => r.round === pinnedRound) ? pinnedRound : vr[vr.length - 1].round;
+  const want = typeof pinnedRound === "number" && vr.some((r) => r.round === pinnedRound) ? pinnedRound : vr[vr.length - 1].round;
   if (want === roundShown && viz) return;
   try { viz = await api("viz", { round: want }); } catch (e) { viz = { ok: false, error: e.message }; }
   roundShown = want;
@@ -254,8 +277,11 @@ async function renderView() {
   if (tab === "rounds") return renderRounds(view);
   await ensureViz();
   renderTabs();
-  if (!viz) { view.innerHTML = `<div class="empty">${esc(t("no_viz"))}</div>`; return; }
-  if (!viz.ok) { view.innerHTML = `<div class="empty">${esc(viz.error?.includes?.("no viz.json") ? t("viz_missing") : t("viz_failed") + (viz.error || ""))}</div>`; return; }
+  if (!viz) { view.innerHTML = `<div class="empty">${esc(t(tab === "layout" ? "no_live" : "no_viz"))}</div>`; return; }
+  if (!viz.ok) {
+    const why = roundShown === "live" ? t("live_failed") + (viz.error || "") : viz.error?.includes?.("no viz.json") ? t("viz_missing") : t("viz_failed") + (viz.error || "");
+    view.innerHTML = `<div class="empty">${esc(why)}</div>`; return;
+  }
   if (tab === "spot") renderSpot(view);
   else if (tab === "mtf") renderMtf(view);
   else renderLayout(view);
@@ -468,9 +494,36 @@ function elements(surfaces) {
   return out;
 }
 
+function clashOf(v) {
+  const c = v.interference || {};
+  const lines = [...(c.crossings || []).map((x) => t("crossing", x.surfaces[0], x.surfaces[1], sig(x.depth, 2))),
+    ...(c.overlaps || []).map((x) => t("overlap", x.lenses[0].join("–"), x.lenses[1].join("–"), x.points))];
+  const hit = new Set([...(c.crossings || []).flatMap((x) => x.surfaces), ...(c.overlaps || []).flatMap((x) => x.lenses.flat())]);
+  return { lines, hit };
+}
+
+function lensDataTable(rows) {
+  const num = (v) => (v == null ? "" : !isFinite(v) ? "∞" : sig(v, 6));
+  const mark = (s, k) => { const v = (s.solves || {})[k]; return !v || ["Fixed", "Automatic", "None"].includes(v) ? "" : v === "Variable" ? " V" : ` ${v[0]}`; };
+  return `<details class="lens-data" ${lensDataOpen ? "open" : ""}><summary>${esc(t("lens_data"))}</summary>
+    <div class="table-wrap"><table><tr><th>#</th><th>${esc(t("ld_type"))}</th><th>${esc(t("ld_comment"))}</th><th class="num">${esc(t("ld_radius"))}</th>
+    <th class="num">${esc(t("ld_thickness"))}</th><th>${esc(t("ld_material"))}</th><th class="num">${esc(t("ld_sd"))}</th><th class="num">${esc(t("ld_conic"))}</th></tr>
+    ${rows.map((s) => `<tr><td>${s.index}${s.is_stop ? " STO" : ""}</td><td>${esc(s.type)}</td><td>${esc(s.comment)}</td>
+      <td class="num">${num(s.radius)}${mark(s, "radius")}</td><td class="num">${num(s.thickness)}${mark(s, "thickness")}</td>
+      <td>${esc(s.material)}${mark(s, "material")}</td><td class="num">${num(s.semi_diameter)}${mark(s, "semi_diameter")}</td>
+      <td class="num">${num(s.conic)}${mark(s, "conic")}</td></tr>`).join("")}</table></div>
+    <div class="foot">${esc(t("ld_solve"))}</div></details>`;
+}
+
 function renderLayout(view) {
   const sys = viz.system;
   const surfs = viz.surfaces;
+  // 非轴对称系统画不出有意义的剖面，只给 3D / a non-axial system has no meaningful section: 3D only
+  const only3d = !!sys.non_axial;
+  if (only3d) dim = "3d";
+  $("dim-seg").querySelectorAll("button").forEach((x) => { x.classList.toggle("on", x.dataset.dim === dim); x.disabled = only3d && x.dataset.dim === "2d"; x.title = x.disabled ? t("only_3d") : ""; });
+  const clash = clashOf(viz);
+  const title = roundShown === "live" ? `${t("live")} · ${viz.lens || ""}${viz.dirty ? ` · ${t("live_unsaved")}` : ""}` : t("select_round", roundShown);
   const els = elements(surfs);
   const mats = [...new Set(els.map((e) => e.material.toLowerCase()))];
   const matColor = (m) => MATERIAL_COLORS[mats.indexOf(m.toLowerCase()) % MATERIAL_COLORS.length];
@@ -480,11 +533,15 @@ function renderLayout(view) {
   // 图例放在画布外，不再盖住光路；画布有最小尺寸，视图放不下时上下、左右滚动
   view.innerHTML = `<div class="layout-view"><div class="figure">
     <div class="fig-head"><span class="info">λ ${sig(sys.wavelengths[sys.primary_wave - 1].um, 4)} µm${stopSd ? ` · STOP Ø ${(2 * stopSd).toFixed(2)} ${unit}` : ""}${image?.vertex ? ` · ${esc(t("image_z"))} ${image.vertex[2].toFixed(2)} ${unit}` : ""}</span>
-      <span class="fig-title">${esc(t("select_round", roundShown))}</span></div>
+      <span class="fig-title">${esc(title)}</span></div>
+    ${clash.lines.length ? `<div class="clash"><b>${esc(t("clash_title"))}</b>${clash.lines.map((l) => `<div>${esc(l)}</div>`).join("")}</div>` : ""}
     <div class="legend">${sys.fields.items.map((f, i) => `<span><i class="line" style="border-color:${FIELD_COLORS[i % FIELD_COLORS.length]}"></i>${esc(fieldLabel(sys, i))}</span>`).join("")}</div>
     <div class="stage"><canvas></canvas><span class="zoom-chip"></span></div>
     <div class="legend" style="margin:8px 0 0">${mats.map((m) => `<span><span class="swatch" style="background:${matColor(m)}55;border-color:${matColor(m)}"></span>${esc(m)}</span>`).join("")}</div></div>
-    <div class="foot ${viz.errors?.sag ? "warn" : ""}">${esc(viz.errors?.sag ? t("sag_flat") + " " : "")}${esc(t("layout_foot"))} <span id="layout-hint"></span></div></div>`;
+    <div class="foot ${viz.errors?.sag ? "warn" : ""}">${esc(viz.errors?.sag ? t("sag_flat") + " " : "")}${esc(t("layout_foot"))} <span id="layout-hint"></span></div>
+    ${viz.lens_data ? lensDataTable(viz.lens_data) : ""}</div>`;
+  const details = view.querySelector(".lens-data");
+  if (details) details.addEventListener("toggle", () => { lensDataOpen = details.open; });
   const stage = view.querySelector(".stage");
   const canvas = stage.querySelector("canvas");
   const zoomChip = stage.querySelector(".zoom-chip");
@@ -587,6 +644,15 @@ function renderLayout(view) {
     g.font = `600 12px ${css("--font")}`; g.textAlign = "center"; g.textBaseline = "bottom";
     g.lineWidth = 3; g.lineJoin = "round"; g.strokeStyle = css("--plot-bg"); g.fillStyle = css("--text-2");
     placed.forEach((p) => { g.strokeText(p.text, p.x, p.y); g.fillText(p.text, p.x, p.y); });
+    // 交叠的面描红 / surfaces involved in interference drawn red
+    if (clash.hit.size) {
+      g.strokeStyle = "#e5484d"; g.lineWidth = 2.2;
+      surfs.forEach((s) => {
+        if (!clash.hit.has(s.index) || !s.profile_y) return;
+        if (dim === "2d") { line(s.profile_y); g.stroke(); }
+        else { line(s.rim, true); g.stroke(); line(s.profile_y); g.stroke(); }
+      });
+    }
     // 反射镜
     surfs.forEach((s) => {
       if ((s.material || "").toUpperCase() !== "MIRROR" || !s.profile_y) return;
@@ -690,7 +756,8 @@ async function poll() {
       document.documentElement.lang = lang;
       renderFlow();
       renderTabs();
-      if (roundsChanged && tab !== "control") renderView();
+      const liveChanged = tab === "layout" && roundShown === "live" && next.live !== liveSeen;
+      if ((roundsChanged || liveChanged) && tab !== "control") renderView();
       if (modeChanged) { analyses = null; renderView(); }
     }
     renderTop();
@@ -706,10 +773,10 @@ $("tabs").addEventListener("click", (e) => {
   tab = b.dataset.tab;
   renderTabs(); renderView();
 });
-$("round-select").addEventListener("change", (e) => { pinnedRound = Number(e.target.value); renderView(); });
+$("round-select").addEventListener("change", (e) => { pinnedRound = e.target.value === "live" ? "live" : Number(e.target.value); renderView(); });
 $("dim-seg").addEventListener("click", (e) => {
   const b = e.target.closest("[data-dim]");
-  if (!b) return;
+  if (!b || b.disabled) return;
   dim = b.dataset.dim;
   $("dim-seg").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
   if (tab === "layout" && renderLayout.redraw) renderLayout.redraw();

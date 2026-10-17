@@ -174,7 +174,7 @@ def test_window_controls_only_forward_whitelisted_view_ops(ui, monkeypatch):
     assert get(srv, f"/api/view?job={job.id}", data={"viewer": "3d"})[1]["error"]["code"] == "BAD_ARGS"
 
 
-def test_window_prefers_chrome_and_falls_back_to_the_default_browser(tmp_path, monkeypatch):
+def test_window_prefers_chrome_and_falls_back_to_the_default_browser(saos_home, tmp_path, monkeypatch):
     import saos.ui as ui_pkg
 
     monkeypatch.setattr(ui_pkg.shutil, "which", lambda name: None)
@@ -197,3 +197,66 @@ def test_window_prefers_chrome_and_falls_back_to_the_default_browser(tmp_path, m
     assert launched[0][0] == str(exe) and launched[0][1].startswith("--app=") and not browsed
     monkeypatch.delenv("LOCALAPPDATA")
     assert ui_pkg.open_window("J1")["window"] == "browser" and len(launched) == 1 and browsed
+
+
+def test_live_view_and_window_polls_are_served(ui):
+    (daemon, job), srv = ui
+    msg = get(srv, f"/api/live?job={job.id}")[1]
+    assert msg["ok"] and msg["result"]["lens"] == "a.zmx" and msg["result"]["lens_data"] and "interference" in msg["result"]
+    assert "spot" not in msg["result"]  # 当前视图只有布局和 Lens Data / the live view has layout and Lens Data only
+    before = get(srv, "/api/ping")[1]["result"]["seen_s"]
+    state = get(srv, f"/api/state?job={job.id}")[1]["result"]
+    assert job.id not in before and get(srv, "/api/ping")[1]["result"]["seen_s"][job.id] < 5
+    first = state["live"]
+    call(daemon, "lens.set", job=job.id, surface=1, param="radius", value=60.0)
+    assert get(srv, f"/api/state?job={job.id}")[1]["result"]["live"] != first
+
+
+def test_job_commands_reopen_the_window_unless_one_is_polling(saos_home, monkeypatch):
+    import argparse
+
+    import saos.ui as ui_pkg
+    from saos import cli
+
+    job = jobs.create_job("watch")
+    monkeypatch.delenv("SAOS_UI")
+    monkeypatch.setattr(ui_pkg, "ensure_server", lambda: {"port": 1, "token": "x", "pid": 2, "reused": True})
+    monkeypatch.setattr(ui_pkg, "_chrome", lambda: "chrome.exe")
+    launched = []
+    monkeypatch.setattr(ui_pkg.subprocess, "Popen", lambda cmd, **kw: launched.append(cmd))
+    assert ui_pkg.ensure_window(job.id)["window"] == "chrome-app" and len(launched) == 1
+    assert ui_pkg.ensure_window(job.id) is None and len(launched) == 1  # 刚打开，还没轮询 / just opened, not polled yet
+    monkeypatch.setattr(ui_pkg.time, "time", lambda: 1e12)  # 很久以后，窗口没在轮询：再开 / much later, nobody polls: open again
+    assert ui_pkg.ensure_window(job.id)["window"] == "chrome-app" and len(launched) == 2
+    monkeypatch.setattr(server, "read_state", lambda: {"pid": 1, "port": 1, "token": "x"})
+    monkeypatch.setattr(ui_pkg.client, "pid_alive", lambda pid: True)
+    monkeypatch.setattr(ui_pkg, "_seen", lambda state: {job.id: 1.5})
+    monkeypatch.setattr(ui_pkg.time, "time", lambda: 2e12)
+    assert ui_pkg.ensure_window(job.id) is None and len(launched) == 2  # 窗口开着 / the window is open
+    monkeypatch.setenv("SAOS_UI", "0")
+    monkeypatch.setattr(ui_pkg, "_seen", lambda state: {})
+    assert ui_pkg.ensure_window(job.id) is None and len(launched) == 2
+    # 命令行只对改动或计算镜头的带任务命令这样做 / the CLI does it for job commands that change or compute the lens
+    asked = []
+    monkeypatch.setattr(ui_pkg, "ensure_window", lambda job_id: asked.append(job_id) or {"window": "chrome-app"})
+    parser = cli.build_parser()
+    assert cli._ensure_window(parser.parse_args(["round", "--job", job.id])) == {"window": "chrome-app"}
+    assert cli._ensure_window(parser.parse_args(["scan", "--job", job.id, "--show"])) is None
+    assert cli._ensure_window(parser.parse_args(["report", "--job", job.id])) is None
+    assert asked == [job.id]
+
+
+def test_snapshot_shows_a_detached_scan_as_the_running_operation(saos_home):
+    """分离运行的扫描写 scans/NNN/progress.json；后台进程活着时窗口把它当作正在运行的操作。"""
+    import os
+
+    job = jobs.create_job("detached")
+    folder = job.root / "scans" / "001"
+    folder.mkdir(parents=True)
+    (folder / "progress.json").write_text(json.dumps({"op": "scan.run", "status": "running", "started": "2026-10-17T10:00:00+08:00",
+                                                      "daemon_pid": os.getpid()}), encoding="utf-8")
+    progress = stage.snapshot(job)["progress"]
+    assert progress["op"] == "scan.run" and progress["detail"] == "scans/001"
+    # 所属后台进程已经不在：不再显示 / the owning daemon is gone: not shown
+    (folder / "progress.json").write_text(json.dumps({"op": "scan.run", "status": "running", "daemon_pid": 0}), encoding="utf-8")
+    assert stage.snapshot(job)["progress"] is None

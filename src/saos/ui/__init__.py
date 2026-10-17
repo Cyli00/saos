@@ -6,6 +6,7 @@ or in the system's default browser when Chrome is not installed.
 from __future__ import annotations
 
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -17,9 +18,14 @@ from pathlib import Path
 from typing import Any
 
 from saos import client, config, jobs
-from saos.protocol import ErrorCode, SaosError
+from saos.protocol import ErrorCode, SaosError, write_json
 
 START_TIMEOUT_S = 15.0
+# 窗口每 1.5 s 轮询一次；这么久没来过就当它没开着 / the window polls every 1.5 s; silent this long means it is not open
+SEEN_WITHIN_S = 6.0
+# 刚打开的窗口还没来得及轮询，这段时间内不再开第二个 / a window just opened has not polled yet; do not open a second one meanwhile
+OPENING_S = 20.0
+OPENED_FILE = "ui-opened.json"
 WINDOW_SIZE = (1080, 720)
 CHROME_SUBPATH = Path("Google") / "Chrome" / "Application" / "chrome.exe"
 
@@ -78,6 +84,41 @@ def _chrome() -> str | None:
     return next((str(Path(r) / CHROME_SUBPATH) for r in roots if r and (Path(r) / CHROME_SUBPATH).is_file()), None)
 
 
+def _seen(state: dict[str, Any]) -> dict[str, float] | None:
+    req = urllib.request.Request(f"http://127.0.0.1:{state['port']}/api/ping", headers={"X-Saos-Token": state["token"]})
+    try:
+        with _DIRECT.open(req, timeout=2) as resp:
+            return json.loads(resp.read())["result"].get("seen_s") or {}
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def ensure_window(job_id: str) -> dict[str, Any] | None:
+    """带任务的命令执行前调用：这个任务的流程图窗口最近没有轮询过（没打开、被关掉、服务已退出）就打开它，
+    不靠 agent 记得。SAOS_UI=0 时什么都不做。返回打开的结果，窗口本来就开着时返回 None。
+    Called before a job command: when no window of this job has polled lately (never opened, closed, service gone),
+    open one, so it does not depend on the agent remembering. Does nothing with SAOS_UI=0. None when it is already open."""
+    from saos.ui import server
+
+    if os.environ.get("SAOS_UI") == "0":
+        return None
+    state = server.read_state()
+    if state and client.pid_alive(int(state.get("pid", 0))):
+        seen = _seen(state)
+        if seen is not None and seen.get(job_id, math.inf) <= SEEN_WITHIN_S:
+            return None
+    if time.time() - float(_opened().get(job_id, 0)) < OPENING_S:
+        return None
+    return open_window(job_id)
+
+
+def _opened() -> dict[str, float]:
+    try:
+        return json.loads((config.daemon_dir() / OPENED_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
 def open_window(job_id: str, *, window: bool = True) -> dict[str, Any]:
     job = jobs.get_job(job_id)
     state = ensure_server()
@@ -93,4 +134,6 @@ def open_window(job_id: str, *, window: bool = True) -> dict[str, Any]:
             opened = "chrome-app"
         elif webbrowser.open(url):
             opened = "browser"
+        if opened:
+            write_json(config.daemon_dir() / OPENED_FILE, {**_opened(), job.id: time.time()})
     return {"job": job.id, "url": url, "pid": state["pid"], "server_reused": state["reused"], "window": opened}

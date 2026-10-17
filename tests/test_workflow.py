@@ -660,22 +660,34 @@ def test_bounds_tolerate_float_noise():
     assert demand.shortfall({"goal": {"max": 0.0}, "scale": 3.7}, 1e-12) == 0.0
 
 
-def test_modelling_after_the_demand_needs_extension_mode(saos_home, fake_lens_file):
-    """需求确认后、建模说明获确认前，standalone 后台进程拒绝该任务的操作；describe / approve 任何时候都要 extension。"""
+def test_modelling_runs_in_standalone_and_the_live_view_shows_interference(saos_home, tmp_path):
+    """建模不再要求 extension：standalone 下改动镜头后写 view.json（布局、Lens Data、交叠检查），建模说明列出交叠。"""
+    from saos.backend.fake import fake_surface
+
+    fixed = {"radius": "Fixed", "thickness": "Fixed", "material": "Fixed", "semi_diameter": "Fixed", "conic": "Fixed"}
+    rows = [fake_surface(0, thickness=float("inf")), fake_surface(1, radius=50.0, thickness=5.0, material="N-BK7", semi_diameter=10.0, is_stop=True, solves=fixed),
+            fake_surface(2, radius=-50.0, thickness=2.0, semi_diameter=10.0, solves=fixed),
+            fake_surface(3, radius=80.0, thickness=4.0, material="N-BK7", semi_diameter=6.0, solves=fixed),
+            fake_surface(4, radius=-80.0, thickness=80.0, semi_diameter=6.0, solves=fixed), fake_surface(5, semi_diameter=1.0)]
+    source = tmp_path / "two.zmx"
+    source.write_text(json.dumps({"title": "two lenses", "surfaces": rows}), encoding="utf-8")
     backend = FakeBackend()
     daemon = Daemon(backend, backend.start(), "standalone")
-    job = jobs.create_job("watched")
-    assert call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx")["ok"]  # 需求确认前不限制
-    assert call(daemon, "lens.describe", job=job.id, notes=NOTES)["error"]["code"] == ErrorCode.EXTENSION_REQUIRED
+    job = jobs.create_job("background")
     write_demand(job, DEMAND)
-    refused = call(daemon, "lens.load", job=job.id, file="a.zmx")["error"]
-    assert refused["code"] == ErrorCode.EXTENSION_REQUIRED and refused["details"]["modelling_phase"]
-
-    watched = Daemon(backend, backend.start(), "extension")
-    assert call(watched, "lens.load", job=job.id, file="a.zmx")["ok"]
-    approve_model(watched, job)
-    assert call(daemon, "lens.load", job=job.id, file="a.zmx")["ok"]  # 模型确认后 standalone 可以接着算
-    assert call(daemon, "lens.approve", job=job.id, model="models/001-a", quote="好")["error"]["code"] == ErrorCode.EXTENSION_REQUIRED
+    assert call(daemon, "lens.import", job=job.id, src=str(source), name="a.zmx")["ok"]
+    assert call(daemon, "lens.load", job=job.id, file="a.zmx")["ok"]
+    view = json.loads((job.root / jobs.VIEW_FILE).read_text(encoding="utf-8"))
+    assert view["ok"] and view["lens"] == "a.zmx" and len(view["lens_data"]) == 6 and view["interference"]["overlaps"] == []
+    first = view["seq"]
+    # 负的空气间隔把第二片镜片塞进第一片 / a negative air gap pushes the second lens into the first
+    assert call(daemon, "lens.set", job=job.id, surface=2, param="thickness", value=-3.0)["ok"]
+    view = json.loads((job.root / jobs.VIEW_FILE).read_text(encoding="utf-8"))
+    assert view["seq"] > first and view["dirty"] and [o["lenses"] for o in view["interference"]["overlaps"]] == [[[1, 2], [3, 4]]]
+    out = call(daemon, "lens.describe", job=job.id, notes=NOTES)
+    assert out["ok"], out
+    assert any("interpenetrate" in w for w in out["result"]["warnings"])
+    assert call(daemon, "lens.approve", job=job.id, model=out["result"]["folder"], quote="好")["ok"]
 
 
 def test_modelling_keeps_lens_data_and_layout_open(saos_home, fake_lens_file, tmp_path):

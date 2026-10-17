@@ -191,7 +191,7 @@ select {
 canvas { display: block; width: 100%; }
 .plot { min-width: 600px; }
 .layout-view { display: flex; flex-direction: column; height: 100%; min-width: 720px; min-height: 520px; }
-.layout-view .figure { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.layout-view .figure { flex: 1 0 auto; min-height: 0; display: flex; flex-direction: column; }
 .stage { position: relative; flex: 1; min-height: 360px; border-radius: 8px; background: var(--plot-bg); border: 1px solid var(--border-soft); overflow: hidden; }
 .stage canvas { position: absolute; inset: 0; height: 100%; cursor: grab; touch-action: none; }
 .stage canvas.panning { cursor: move; }
@@ -235,3 +235,10 @@ tr.sel td { background: var(--accent-soft); }
   background: var(--bg-raise); border: 1px solid var(--border); box-shadow: 0 8px 24px #0006; font-size: 12px;
 }
 .toast.err { border-color: var(--bad); }
+
+.clash { margin: 0 0 8px; padding: 6px 10px; border-radius: 8px; background: #e5484d22; color: #e5484d; font-size: 12px; }
+.clash b { display: block; margin-bottom: 2px; }
+.lens-data { margin-top: 10px; }
+.lens-data summary { cursor: pointer; color: var(--text-2); font-size: 12px; font-weight: 600; }
+.lens-data .table-wrap { margin-top: 6px; }
+.seg button:disabled { opacity: .4; cursor: not-allowed; }

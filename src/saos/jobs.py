@@ -37,6 +37,8 @@ SEALS_FILE = "seals.jsonl"
 # 长时间计算的进度和取消请求：工具写、任何时候都能直接读，不经过可能正忙的后台进程
 # progress of a long computation and a cancel request: written by the tools, readable at any time without the busy daemon
 PROGRESS_FILE = "progress.json"
+# 当前镜头的布局、Lens Data 和交叠检查，每次改动镜头后由后台进程重写，给 saos ui 显示 / the live view for saos ui
+VIEW_FILE = "view.json"
 CANCEL_FILE = "cancel.request"
 # lenses/ 下的归档目录：工具写入一次，之后不再改 / archive folders under lenses/: written once by the tools
 ARCHIVE_LENS_DIRS = ("rounds", "captures")

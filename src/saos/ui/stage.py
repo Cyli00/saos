@@ -46,6 +46,9 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
     detail: dict[str, Any] = {}
     out: dict[str, Any] = {"job": job.id, "name": job.read_state().get("name"), "daemon": _daemon(), "progress": None,
                            "blocking": [], "decision": None, "rounds": rounds_of(job)}
+    view = root / jobs.VIEW_FILE
+    # 当前镜头视图的版本号：界面看到它变了才重新取 / the live view's version; the window refetches only when it changes
+    out["live"] = view.stat().st_mtime_ns if view.is_file() else None
     progress = job.read_progress()
     if progress and progress.get("status") == "running":
         out["progress"] = progress

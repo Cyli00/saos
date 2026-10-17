@@ -88,6 +88,11 @@ class ScriptContext(KitMethods):
         if loaded is not None and loaded.job.id == self.job.id:
             loaded.dirty = True
 
+    def show(self) -> dict[str, Any] | None:
+        """在长脚本中途把当前镜头推给流程图窗口（布局、Lens Data、交叠检查）；命令结束时本来就会推一次。
+        Push the current lens to the workflow window mid-script (layout, Lens Data, interference); every command does it at the end."""
+        return self._daemon.export_view()
+
     def capture_window(self) -> str | None:
         """换掉窗口内容之前调用：窗口有未保存内容时存成 lenses/captures/ 下的副本，返回其路径。"""
         rel = self._daemon.capture_window(self.job)

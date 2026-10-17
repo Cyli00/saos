@@ -62,6 +62,13 @@ def _explicit() -> None:
         raise SaosError(ErrorCode.BAD_ARGS, "window controls need the daemon in extension mode (explicit debugging)")
 
 
+def live_of(job: jobs.Job) -> dict[str, Any]:
+    path = job.root / jobs.VIEW_FILE
+    if not path.is_file():
+        raise SaosError(ErrorCode.FILE_NOT_FOUND, "no live view yet: the daemon writes one after the first command that loads or changes the lens")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def viz_of(job: jobs.Job, number: int) -> dict[str, Any]:
     record = next((r for r in ledger.load(job.root / ledger.LEDGER_FILE) if r["round"] == number), None)
     if record is None or not record.get("evaluation"):
@@ -120,12 +127,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def _route(self, method: str, path: str, args: dict[str, Any]) -> Any:
         if path == "/api/ping":
-            return {"pid": os.getpid()}
+            # 各任务的窗口多久之前来轮询过，命令行据此判断窗口是否开着 / how long ago each job's window polled
+            now = time.monotonic()
+            return {"pid": os.getpid(), "seen_s": {k: round(now - v, 1) for k, v in self.server.seen.items()}}
         if path == "/api/jobs":
             return {"jobs": jobs.list_jobs()}
         job = jobs.get_job(str(args.get("job", "")))
         if path == "/api/state":
+            self.server.seen[job.id] = time.monotonic()
             return stage.snapshot(job)
+        if path == "/api/live":
+            return live_of(job)
         if path == "/api/viz":
             try:
                 number = int(args.get("round", ""))
@@ -180,6 +192,7 @@ class UiServer(ThreadingHTTPServer):
         self.token = token or secrets.token_urlsafe(18)
         self.idle_exit_s = idle_exit_s
         self.last_request = time.monotonic()
+        self.seen: dict[str, float] = {}
 
     def touch(self) -> None:
         self.last_request = time.monotonic()

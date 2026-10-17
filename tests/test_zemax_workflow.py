@@ -79,7 +79,8 @@ def test_workflow_until_achieved_or_exhausted_with_reports(saos_home, tmp_path):
             "variables": [{"id": "radii_thickness", "description": "radii and thicknesses are free"}],
             "objectives": [
                 {"id": "spot_axis", "description": "on-axis RMS spot radius (um), primary wave",
-                 "check": {"analysis": {"type": "StandardSpot", "path": "spot.rms_radius[0][1]"}}, "origin": "user", "must": {"max": 1.5 * spot0}},
+                 "check": {"analysis": {"type": "StandardSpot", "path": "spot.rms_radius[0][1]"}}, "origin": "user", "must": {"max": 1.5 * spot0},
+                 "source": "user: no worse than 50 % above the original design"},
                 {"id": "track", "description": "total track", "check": {"operand": {"type": "TOTR"}}, "origin": "agent"},
             ],
             "summary": "焦距保持原样（±1%），轴上像点尽量小，不比原设计差 50% 以上。发现任何这个demand可能存在的问题，要大胆质疑和询问。",
@@ -121,7 +122,8 @@ def test_workflow_until_achieved_or_exhausted_with_reports(saos_home, tmp_path):
         ok(saos("lens", "load", "--job", job2, "start.zmx", "--discard", env=env))
         write_demand(saos_home, job2, {
             "schema": 2,
-            "objectives": [{"id": "track", "description": "total track", "check": {"operand": {"type": "TOTR"}}, "origin": "user", "must": {"max": 1.0}}],
+            "objectives": [{"id": "track", "description": "total track", "check": {"operand": {"type": "TOTR"}}, "origin": "user", "must": {"max": 1.0},
+                            "source": "user: an unreachable track to force the exhausted ending"}],
             "summary": "总长做到 1 mm 以内。发现任何这个demand可能存在的问题，要大胆质疑和询问。",
             "stop": {"rel": 0.01, "max_rounds": 10, "tiers": ["local", "global"]},
         }, "试试看")

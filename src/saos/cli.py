@@ -463,6 +463,23 @@ def _emit(message: dict[str, Any]) -> None:
     print(json.dumps(jsonable(message), ensure_ascii=False, indent=2))
 
 
+def _ensure_window(args: argparse.Namespace) -> dict[str, Any] | None:
+    """改动或计算镜头的带任务命令先确保用户的流程图窗口开着（saos.ui.ensure_window）；打不开不影响命令本身。
+    Job commands that change or compute the lens first make sure the user's workflow window is open; failing to open it
+    never fails the command."""
+    if args.func not in (cmd_lens, cmd_exec, cmd_opt, cmd_scan, cmd_check, cmd_round) or not getattr(args, "job", None):
+        return None
+    if args.func is cmd_scan and args.show is not None:
+        return None
+    from saos import ui
+
+    try:
+        jobs.get_job(args.job)
+        return ui.ensure_window(args.job)
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"{type(exc).__name__}: {exc}"[:300]}
+
+
 def main(argv: list[str] | None = None) -> int:
     try:
         sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
@@ -478,7 +495,10 @@ def main(argv: list[str] | None = None) -> int:
 
         return serve_ui()
     try:
+        window = _ensure_window(args)
         result = args.func(args)
+        if window is not None and isinstance(result, dict):
+            result["ui_opened"] = window
     except SaosError as exc:
         _emit(fail(exc))
         return 1

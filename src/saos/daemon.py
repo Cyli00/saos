@@ -38,9 +38,6 @@ REQUEST_READ_TIMEOUT_S = 30
 # operations that may run long: their start and end go to progress.json; a stale cancel request is cleared first
 LONG_OPS = frozenset({"opt.local", "script.exec", "round.record", "demand.check", "scan.run"})
 REFRESH_AFTER = frozenset({"lens.load", "lens.set", "lens.build", "opt.local", "script.exec", "round.record"})
-# 建模说明给用户看，任何阶段都要在用户看着的窗口里生成和确认
-# the model description is for the user to watch, so it always needs the connected window
-EXTENSION_ALWAYS = frozenset({"lens.describe", "lens.approve"})
 COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
 COMPARED_NUMBER_KEYS = ("radius", "thickness", "conic", "semi_diameter")
 
@@ -100,6 +97,7 @@ class Daemon:
         self.pool = parallel.Pool()
         # 分离运行的扫描线程，键为任务内的 scans/NNN / threads of detached scans, keyed by scans/NNN in the job
         self.background: dict[str, Any] = {}
+        self.view_seq = 0
         self.handlers: dict[str, Callable[[dict[str, Any]], Any]] = {
             "ping": self.op_ping,
             "shutdown": self.op_shutdown,
@@ -141,7 +139,6 @@ class Daemon:
             handler = self.handlers.get(op)  # type: ignore[arg-type]
             if handler is None:
                 raise SaosError(ErrorCode.UNKNOWN_OP, f"unknown operation {op!r}", {"available": sorted(self.handlers)})
-            self._require_extension(op, args)
             if op not in ("ping", "shutdown") and not self.backend.healthy():
                 raise self._connection_lost({"detected": "connection check before the operation"})
             if op not in ("ping", "shutdown"):
@@ -163,6 +160,8 @@ class Daemon:
                 result = handler(args)
             if op in REFRESH_AFTER or op == "lens.describe":
                 self._refresh_windows(args)
+            if op in REFRESH_AFTER:
+                self.export_view()
         except SaosError as exc:
             error = exc
         except Exception as exc:  # noqa: BLE001 - 后台进程不能因单个请求崩溃
@@ -216,18 +215,26 @@ class Daemon:
             return False
         return bool(demand.confirmations(root)) and not any((root / "models").glob(f"*/{model_gate.APPROVAL_FILE}"))
 
-    def _require_extension(self, op: str, args: dict[str, Any]) -> None:
-        """从需求确认到建模说明获确认，用户要看着建模和选材，只接受连接到界面窗口的后台进程。"""
-        if self.mode == "extension" or op in ("ping", "shutdown"):
-            return
-        if op in EXTENSION_ALWAYS or self._modeling(args):
-            raise SaosError(
-                ErrorCode.EXTENSION_REQUIRED,
-                f"{op} runs only in extension mode: from the confirmed demand until the user approves a model description, "
-                "and for lens describe / approve at any time, the user watches the model in OpticStudio. "
-                "Run saos daemon stop, then saos daemon start --mode extension",
-                {"mode": self.mode, "modelling_phase": op not in EXTENSION_ALWAYS},
-            )
+    def export_view(self) -> dict[str, Any] | None:
+        """把当前镜头的布局、Lens Data 和交叠检查写进任务的 view.json，流程图窗口据此显示；失败只记在文件里，不影响操作。
+        Write the current lens's layout, Lens Data and interference check to the job's view.json for the workflow window;
+        a failure is noted in the file and never fails the operation."""
+        loaded = self.loaded
+        if loaded is None or os.environ.get("SAOS_VIEW") == "0":
+            return None
+        started = time.perf_counter()
+        try:
+            data: dict[str, Any] = {"ok": True, **self.backend.viz_data(None, full=False)}
+        except Exception as exc:  # noqa: BLE001 - 视图只是给人看的 / the view is for people only
+            log.exception(_t("导出当前视图失败", "exporting the live view failed"))
+            data = {"ok": False, "error": f"{type(exc).__name__}: {getattr(exc, 'message', exc)}"[:500]}
+        self.view_seq += 1
+        data.update(lens=loaded.job.relative_lens(loaded.path), dirty=loaded.dirty, updated=jobs.now_iso(), seq=self.view_seq,
+                    elapsed_s=round(time.perf_counter() - started, 3))
+        write_json(loaded.job.root / jobs.VIEW_FILE, data)
+        clash = data.get("interference") or {}
+        return {"elapsed_s": data["elapsed_s"], "ok": data["ok"],
+                "interference": {k: clash.get(k) for k in ("crossings", "overlaps")} if clash else None}
 
     def _refresh_windows(self, args: dict[str, Any]) -> None:
         """改动镜头后刷新窗口；建模阶段还要保证 Lens Data 和布局窗口开着，被关掉的重新打开。"""
@@ -408,6 +415,10 @@ class Daemon:
         root.mkdir(exist_ok=True)
         folder = root / f"{jobs.next_archive_number(root):03d}-{loaded.path.stem}"
         desc = self.backend.describe_model(folder, "layout")
+        try:
+            desc["interference"] = self.backend.interference()
+        except SaosError as exc:
+            desc["interference"] = {"error": exc.message}
         lens = loaded.path.relative_to(job.lenses_dir).as_posix()
         result = model_report.write(job, desc, folder, notes, lens, _arg(args, "lang", str, default=None))
         if notes is not None:

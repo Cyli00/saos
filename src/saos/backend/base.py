@@ -150,10 +150,14 @@ class Backend(ABC):
         """一次拟合到 max_term 项（Zernike Standard，参考主光线），返回所需各项；负项号含义同 ZERN。"""
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support zernike")
 
-    def viz_data(self, folder: Path) -> dict[str, Any]:
-        """saos ui 用的一轮数据：逐面全局几何、布局光线、点列图光线和分析导出；OpticStudio 的文本导出写到 folder。
-        One round's data for saos ui: global geometry per surface, layout rays, spot rays and analysis exports."""
+    def viz_data(self, folder: Path | None, *, full: bool = True) -> dict[str, Any]:
+        """saos ui 的数据：逐面全局几何、布局光线、Lens Data、交叠检查；full 时另有点列图光线和分析导出（文本写到 folder）。
+        Data for saos ui: global geometry, layout rays, Lens Data, interference; with full also spot rays and analysis exports."""
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support viz_data")
+
+    def interference(self) -> dict[str, Any]:
+        """结构交叠检查：面相交（crossings）、镜片穿插（overlaps）。/ Interference: crossing surfaces and interpenetrating lenses."""
+        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support interference")
 
     def trace_check(self, rays: list[tuple[int, float, float, float, float]]) -> list[dict[str, Any]]:
         """追迹到像面，返回失败或被截断的光线：(wave, hx, hy, px, py) 及 error/vignette 码。"""

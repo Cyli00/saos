@@ -12,7 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from saos import config
+from saos import config, geometry
 from saos.backend.base import (
     MATERIAL_MODES,
     NUMERIC_PARAMS,
@@ -1090,9 +1090,29 @@ class ZosBackend(Backend):
             return None
         return float(r[1]) if r[0] and math.isfinite(float(r[1])) else None
 
-    def viz_data(self, folder: Path, *, pupil_grid: int = 31, fan: int = 7) -> dict[str, Any]:
-        """saos ui 用的一轮数据：逐面全局几何、布局光线、点列图光线、点列图 RMS/GEO 和 FFT MTF。
-        几何与光线坐标都来自 ZOS-API（GetGlobalMatrix、GetSag、批量光线追迹），这里只做坐标变换。"""
+    def interference(self) -> dict[str, Any]:
+        """结构交叠检查（saos.geometry）：面相交、镜片穿插。/ Interference check (saos.geometry): crossing surfaces, interpenetrating lenses."""
+        lde = self.system.LDE
+        return geometry.interference(self._geometry_items(range(1, lde.NumberOfSurfaces - 1), {}))
+
+    def _geometry_items(self, indices, transforms: dict[int, Any]) -> list[dict[str, Any]]:
+        lde = self.system.LDE
+        items = []
+        for i in indices:
+            row = lde.GetSurfaceAt(i)
+            tf = transforms[i] if i in transforms else self._global(i)
+            item = {"index": i, "type": str(row.TypeName), "comment": str(row.Comment), "material": str(row.Material), "sd": float(row.SemiDiameter)}
+            if tf is not None and item["sd"] > 0 and "Coordinate" not in item["type"]:
+                item.update(rot=tf[0], off=tf[1], sags=[self._sag(i, x, y) for x, y in geometry.polar_points(item["sd"])])
+            items.append(item)
+        return items
+
+    def viz_data(self, folder: Path | None, *, pupil_grid: int = 31, fan: int = 7, full: bool = True) -> dict[str, Any]:
+        """saos ui 用的数据：逐面全局几何、布局光线、Lens Data、交叠检查；full 时另有点列图光线、点列图 RMS/GEO 和 FFT MTF
+        （每轮的 viz.json）。不带 full 是改动镜头后给界面的当前视图。
+        几何与光线坐标都来自 ZOS-API（GetGlobalMatrix、GetSag、批量光线追迹），这里只做坐标变换。
+        Data for saos ui: global geometry, layout rays, Lens Data and the interference check; with full also spot rays,
+        Standard Spot RMS/GEO and FFT MTF (a round's viz.json). Without full it is the live view after a lens change."""
         system = self.system
         lde = system.LDE
         info = self.system_info()
@@ -1149,6 +1169,9 @@ class ZosBackend(Backend):
                 item["rim"] = [apply(tf, (x, y, s or 0.0)) for (x, y), s in zip(rim, sag_rim)]
             surfaces.append(item)
         timings["geometry"] = round(time.monotonic() - started, 2)
+        started = time.monotonic()
+        clash = geometry.interference(self._geometry_items(range(1, image), transforms))
+        timings["interference"] = round(time.monotonic() - started, 2)
 
         # 布局光线：每个视场一条子午扇和一条弧矢扇，主波长
         started = time.monotonic()
@@ -1173,6 +1196,19 @@ class ZosBackend(Backend):
             if points:
                 paths.append({"field": f, "px": px, "py": py, "points": points, "start_dir": first_dir})
         timings["layout_rays"] = round(time.monotonic() - started, 2)
+        stop = next((s for s in surfaces if s["is_stop"]), None)
+        base = {
+            "system": {**{k: info[k] for k in ("title", "lens_units", "aperture", "fields", "wavelengths", "stop_surface")},
+                       "primary_wave": primary, "normalization": normalization, "normalized_fields": norm,
+                       "stop_semi_diameter": stop["semi_diameter"] if stop else None, "image_surface": image,
+                       "non_axial": bool(system.IsNonAxial)},
+            "surfaces": surfaces,
+            "layout": {"wave": primary, "rays": paths},
+            "lens_data": self.surfaces(),
+            "interference": clash,
+        }
+        if not full:
+            return {**base, "timings_s": timings, "errors": errors}
 
         # 点列图：方形网格取单位圆内的光瞳点，各视场各波长追到像面，相对主波长主光线
         started = time.monotonic()
@@ -1218,14 +1254,9 @@ class ZosBackend(Backend):
 
         spot_analysis = run("StandardSpot", {"ReferTo": "ChiefRay"}, ("ReferTo", "Pattern", "RayDensity"))
         mtf = run("FftMtf", {"ShowDiffractionLimit": True}, ("MaximumFrequency", "SampleSize", "Type", "ShowDiffractionLimit"))
-        stop = next((s for s in surfaces if s["is_stop"]), None)
         spot_stats = (spot_analysis or {}).get("spot") or {}
         return {
-            "system": {**{k: info[k] for k in ("title", "lens_units", "aperture", "fields", "wavelengths", "stop_surface")},
-                       "primary_wave": primary, "normalization": normalization, "normalized_fields": norm,
-                       "stop_semi_diameter": stop["semi_diameter"] if stop else None, "image_surface": image},
-            "surfaces": surfaces,
-            "layout": {"wave": primary, "rays": paths},
+            **base,
             "spot": {"reference": "chief ray, primary wavelength", "pupil_grid": pupil_grid, "fields": spots,
                      "rms_radius": spot_stats.get("rms_radius"), "geo_radius": spot_stats.get("geo_radius"),
                      "analysis_settings": (spot_analysis or {}).get("settings")},

@@ -23,7 +23,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `saos lens surfaces --job J` | 各面的类型、半径、厚度、材料、半口径、二次曲面系数、求解类型 |
 | `saos job verify <job>` | 检查工具写入并封存的证据文件（`seals.jsonl`）有没有被改动或删除；返回 `intact` 和 `problems` |
 | `saos lens approve --job J --model models/NNN-<镜头> --quote "<用户原话>"` | 记录用户对这份建模说明的确认（`approval.json`，含结构指纹和当时仍在的自动检查结果）。之后 `saos round` 只接受结构与某份已确认说明一致的镜头 |
-| `saos lens describe --job J [--notes N.json] [--lang zh\|en]` | 建模说明：写 `models/NNN-<镜头>/index.html`、`model.json` 和布局图（3D 三个视角，轴对称系统另有截面）。逐面列出面型、所有非零附加参数、材料来源与各波长折射率（INDX 实测）、孔径、求解和顶点全局位置，并给出系统孔径、物方远心、光线瞄准、视场、波长。N.json 写每个面代表的实物、假设和一阶分析：`{"surfaces": {"3": "…"}, "assumptions": ["…"], "first_order": ["…"]}`。返回值的 `warnings` 是自动检查的问题（模型玻璃、目录外材料、无色散介质、非平面的菲涅尔基底、物方 NA 未设远心、渐晕因子、缺少面说明或一阶分析） |
+| `saos lens describe --job J [--notes N.json] [--lang zh\|en]` | 建模说明（任何模式下都能用）：写 `models/NNN-<镜头>/index.html`、`model.json` 和布局图（3D 三个视角，轴对称系统另有截面）。逐面列出面型、所有非零附加参数、材料来源与各波长折射率（INDX 实测）、孔径、求解和顶点全局位置，并给出系统孔径、物方远心、光线瞄准、视场、波长。N.json 写每个面代表的实物、假设和一阶分析：`{"surfaces": {"3": "…"}, "assumptions": ["…"], "first_order": ["…"]}`。返回值的 `warnings` 是自动检查的问题（模型玻璃、目录外材料、无色散介质、非平面的菲涅尔基底、物方 NA 未设远心、渐晕因子、缺少面说明或一阶分析） |
 | `saos lens set --job J --surface N --param P --value V` | 修改一个面参数：radius、thickness、conic、semi_diameter、material、comment，或面型参数列 `par<N>`（非球面系数、坐标断点的偏心与倾斜等，列号见建模说明页）。数值可写 `inf` |
 | `saos lens save --job J [--as NAME] [--overwrite] [--no-verify]` | 保存；默认保存后从磁盘重新加载，与保存前逐面核对 |
 | `saos lens operand --job J TYPE [--int1 --int2 --d1 … --d6]` | 计算一个优化操作数，例如 `EFFL --int2 2` |
@@ -32,7 +32,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `saos lens screenshot --job J [--label L]` | 显性调试：把 OpticStudio 的可见窗口截成 PNG，存为任务的 `screens/NNN-L-K.png`（PrintWindow，被遮挡也能截；最小化的窗口跳过） |
 | `saos demand show --job J` | 校验需求单 `sources/demand.yaml`，给出版本哈希、确认记录、待确认问题和访谈总结，不连接 OpticStudio |
 | `saos demand confirm --job J --quote "<用户原话>"` | 记录用户对当前需求单版本的确认，写入 `confirmations.jsonl`；随后打开流程图小窗口（同 `saos ui open`，结果在 `ui` 字段，`SAOS_UI=0` 时不开） |
-| `saos ui open --job J [--no-window]` | 打开给用户看的流程图小窗口（Chrome 应用窗口，1080×720；没装 Chrome 时用系统默认浏览器，返回值 `window` 为 `chrome-app` 或 `browser`）：六个步骤的流程图，当前步骤带流光动画，等用户确认的停顿和 blocking 问题另有标识；右侧显式调试时有窗口控制页（切换布局窗口、打开分析窗口、只读查看孔径/视场/波长，经后台进程执行，后台进程忙时排队），任何模式下都可按轮查看布局（2D/3D，可旋转、平移、缩放）、点列图、MTF 和差距曲线，图放不下时右侧面板上下、左右滚动。本机服务只读任务目录、只监听 127.0.0.1，15 分钟没有请求自行退出；状态在 `daemon/ui.json`，日志在 `daemon/ui.log` |
+| `saos ui open --job J [--no-window]` | 打开给用户看的流程图小窗口（Chrome 应用窗口，1080×720；没装 Chrome 时用系统默认浏览器，返回值 `window` 为 `chrome-app` 或 `browser`）：六个步骤的流程图，当前步骤带流光动画，等用户确认的停顿和 blocking 问题另有标识；布局页默认显示当前镜头（任务的 `view.json`，后台进程在 lens load/set/build、opt local、exec、round 之后重写；Cooke 样例约 0.7 s，14 面的光纤探头约 1.1 s），也可选某一轮；2D/3D 可旋转、平移、缩放，非轴对称系统只有 3D；结构交叠（面在口径内相交、镜片互相穿插）在图上方列出并把相关的面描红；Lens Data 折叠在图下（URL 加 `&ld=1` 默认展开）。点列图、MTF 和差距曲线按轮次看。右侧显式调试时另有窗口控制页（切换布局窗口、打开分析窗口、只读查看孔径/视场/波长，经后台进程执行，后台进程忙时排队）。图放不下时右侧面板上下、左右滚动。lens、exec、opt、scan（不含 `--show`）、check、round 这些带任务的命令执行前，若这个任务的窗口 6 s 内没有轮询过，就重新打开（20 s 内不重复打开），返回值带 `ui_opened`；`SAOS_UI=0` 时不开。本机服务只读任务目录、只监听 127.0.0.1，15 分钟没有请求自行退出；状态在 `daemon/ui.json`，日志在 `daemon/ui.log` |
 | `saos scan --job J --plan PLAN.json [--workers N] [--detach]` / `saos scan --job J --show [NNN]` | 并发扫描、多起点寻优或扰动诊断，不用写脚本：在后台进程常驻的 worker 池（见下文 `ctx.map`）里逐点写入参数（参数键见下文），可选在 `[lo, hi]` 内对一个变量求根让某个判定项或操作数等于目标值（先等分扫 `scan` 个点找变号，再 Brent 法），再补偿（`quick_focus` 或任务内脚本 `run(w)`），按需求单的判定实测（默认所有带界限的项）并附加操作数。计划四选一：`vars`（各轴取值的网格，轴可写列表或 `{"from","to","steps"}`）、`points`（逐点列表）、`minimize`（每个起点一个 worker 跑 Nelder–Mead 或 Powell，目标是所测各项的目标差距，与需求单同一定义；`max_evals`、`max_seconds` 限定预算；和 `opt local` 一样要求需求已确认、没有 blocking 问题）、`probes`（扰动诊断，见下）。另有 `fixed`（每点先写入）、`operands`、`keep`（保留最好几个点的镜头，默认 3，probes 默认 0）。`probes` 计划带 `target`（需求单中差距最大的一项）、`mechanism`（它为什么差）和 1–6 个扰动，每个扰动写 `id`、`prediction`、`delta`、可选 `expect`（各项 up/down/none）和 `control`（阴性对照），改动方式是参数键 `key`（同下文，平面用 `curvature`）或任务内脚本 `run(w, delta)`；基准点加每个扰动的 ±delta 共 2N+1 个点同时跑，结果另给预测与实测的对照、按对目标归一化效应的排序 `ranking` 和审视提醒 `review`（没有阴性对照、对照动了目标、预测不符、没有变量动目标、`quick_focus` 从没动过）；基准点的目标没有有效值时不读扰动，提示先确认可行性。扰动诊断不需要需求单已确认（2026-10-17 由原 `saos probe` 并入，原来在主实例上串行，5 次共 1277 s）。结果按目标差距排序，返回前 10 行；全部行、计划存到 `scans/NNN/` 并封存，保留的镜头存为 `lenses/scans/NNN/pPPP.zmx`，可以直接 `lens load`。当前镜头不变，但要求已保存；扫描开始时把它复制为 `scans/NNN/base.zmx`，之后改动工作镜头不影响扫描。`--detach` 让命令立即返回、扫描在后台线程里跑，后台进程照常处理其他命令（ADR-0009），进度写在 `scans/NNN/progress.json`（流程图窗口也显示）；`saos scan --job J --show [NNN]` 读某次扫描（默认最近一次）的进度或结果，只读文件，后台进程忙时也能用。worker 池同一时间只给一个扫描或 `ctx.map` 用，忙时返回 `POOL_BUSY`。`saos job cancel` 在当前点完成后停止，分离运行的也一样。旧任务的 `probes/NNN/` 保留原样 |
 | `saos rule-out --job J --tier T [--tier T…] --reason TEXT` | 带证据排除帮不上的手段层级（`ruled_out.jsonl`），终止判断不再等它；只到下一次明显进步为止。必须先在当前需求版本下记录过轮次。不连接 OpticStudio |
 | `saos stop --job J --reason TEXT --quote "<用户原话>"` | 记录用户的停止决定（`stops.jsonl`）：当前需求单版本下不再记录轮次，报告显示“按用户决定停止”、理由和原话。必须先在当前版本下记录过轮次。不连接 OpticStudio |
@@ -120,7 +120,6 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `ZOS_ERROR` | OpticStudio 操作抛出异常，连接仍正常，后台进程继续运行 |
 | `ZOS_LOAD_FAILED` / `ZOS_SAVE_FAILED` | OpticStudio 无法加载或保存文件 |
 | `VERIFY_FAILED` | 保存后重新加载与保存前不一致，`details.diffs` 列出差异 |
-| `EXTENSION_REQUIRED` | 建模阶段（需求已确认、还没有获确认的建模说明）或 `lens describe` / `lens approve` 在 standalone 后台进程上执行；`saos daemon stop` 后用 `saos daemon start --mode extension` 重启 |
 | `UI_BLOCKED` | extension 模式下 OpticStudio 窗口被模态对话框挡住（如自动保存恢复提示、错误消息框），`details.dialogs` 列出标题；在窗口中关闭后重试 |
 | `SCRIPT_ERROR` | `exec` 的脚本抛出异常，`details` 给出脚本存档路径和 traceback；后台进程继续运行 |
 | `SPEC_CHANGED` | 需求单或检查脚本改动后还没有新轮次时生成报告；优化基准（experiments/bench）的轮次中，规格路径或补全后的验收配置与第 0 轮冻结的不一致 |
@@ -192,7 +191,7 @@ work/<实例名>/
 
 - `saos lens capture --job J --as backup.zmx`：将窗口当前内容另存到任务，不覆盖源文件或已有副本；可保留连接前尚未保存的修改。
 - `saos lens view --job J [--viewer cross-section|3d|shaded] [--analysis TYPE]`：extension 模式下打开 Lens Data 和布局窗口（默认剖面图，画不了时改用 3D Viewer，`layout.fallback_reason` 给出原因），按需再开一个分析，并刷新；关掉的窗口重新打开；UpdateMode 设为 EditorsOnly，分析窗口由 saos 在改动后刷新。standalone 模式下返回 BAD_ARGS。
-- 建模阶段（需求已确认、还没有获确认的建模说明）只能用 extension 模式，standalone 下该任务的操作返回 `EXTENSION_REQUIRED`；`lens describe`、`lens approve` 任何时候都要 extension 模式。这一阶段每条改动镜头的命令之后，saos 保证 Lens Data 和布局窗口开着。
+- extension 模式是可选的：用户看建模过程靠流程图窗口的当前镜头视图，任何阶段都不要求 extension（ADR-0011）。连接 extension 时，建模阶段每条改动镜头的命令之后 saos 保证 Lens Data 和布局窗口开着。
 - `saos lens screenshot --job J [--label L]`：截取 OpticStudio 窗口 PNG。
 
 extension 模式下，`lens load`、`lens unload`、`lens build` 换掉窗口内容前，若 OpticStudio 的 NeedsSave 置位（分析窗口的刷新也会置位，无法与用户修改区分），先把窗口内容存成 `lenses/captures/NNN-unsaved.zmx`，返回值 `captured` 给出路径，然后继续。脚本中的 `ctx.load` 和显微物镜配方的 accept、repro 同样先存副本，返回值带 `captured`。agent 自己未保存的修改（后台 dirty）仍返回 UNSAVED_CHANGES，先 `lens save` 或加 `--discard`；`--discard` 只放弃 agent 自己的修改，窗口内容照样先存副本。
