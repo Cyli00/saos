@@ -261,7 +261,9 @@ def test_script_versions_reset_comparison_and_preserve_source(setup):
     changed = call(daemon, "round.record", job=job.id, tier="local")["result"]
     assert changed["record"]["demand_sha"] == first["record"]["demand_sha"]
     assert changed["record"]["method_sha"] != first["record"]["method_sha"]
-    assert changed["decision"]["status"] == "continue" and changed["decision"]["last_gain_round"] == 2
+    # 新窗口从对最好一轮（r0）的重测开始，本轮试了 local 仍没有进步 / the new window starts at the re-measured r0; local again gave nothing
+    assert changed["rebase"]["rebase_of"] == 0 and not changed["rebase"]["equivalent"] and changed["record"]["round"] == 3
+    assert changed["decision"]["status"] == "exhausted" and changed["decision"]["last_gain_round"] == 2
     assert report.build(job)["deliver"]["round"] == 2
     archived = job.root / first["evaluation"]["items"][0]["evidence"]["script"]
     assert archived.read_text(encoding="utf-8") == source
@@ -288,7 +290,7 @@ def test_legacy_stopped_round_can_be_remeasured_without_reconfirmation(setup):
     with pytest.raises(SaosError):
         report.build(job)
     assert call(daemon, "round.record", job=job.id, tier="local")["result"]["record"]["achieved"]
-    assert report.build(job)["deliver"]["round"] == 1
+    assert report.build(job)["deliver"]["round"] == 2  # r1 是对 r0 的重测 / r1 re-measures r0
 
 
 def test_evidence_names_cannot_collide_on_windows(setup):
@@ -539,73 +541,6 @@ def test_agent_objectives_weigh_less_in_the_shortfall(setup):
     assert "用户，权重 2" in html and "agent 补充，权重 0.3" in html
 
 
-def probe_plan(*probes, **kw):
-    return {"target": "length", "mechanism": "the track is the sum of the thicknesses", "compensate": "quick_focus", "probes": list(probes), **kw}
-
-
-T1 = {"id": "t1", "surface": 1, "param": "thickness", "delta": 2.0, "prediction": "longer first gap, longer track", "expect": {"length": "up"}}
-R1 = {"id": "r1", "surface": 1, "param": "radius", "delta": 1.0, "control": True, "prediction": "radius does not enter the track", "expect": {"length": "none"}}
-
-
-def test_probe_ranks_variables_compares_predictions_and_leaves_the_lens(setup):
-    daemon, job = setup
-    write_demand(job, DEMAND, confirm=None)  # 诊断不需要确认 / diagnosis needs no confirmation
-    before = json.dumps(daemon.backend.surfaces(), sort_keys=True)
-    wrong = {**T1, "id": "wrong", "delta": 1.0, "expect": {"length": "down"}}
-    result = call(daemon, "probe.run", job=job.id, plan=probe_plan(T1, R1, wrong))["result"]
-    assert [r["id"] for r in result["ranking"]] == ["t1", "wrong"] and result["ranking"][0]["effect"] == pytest.approx(0.4)
-    rows = {r["id"]: r for r in result["probes"]}
-    assert rows["t1"]["observed"]["length"] == "up" and not rows["t1"]["mismatch"]
-    assert rows["r1"]["observed"]["length"] == "none"
-    assert rows["wrong"]["mismatch"] == {"length": {"expected": "down", "observed": "up"}}
-    assert rows["t1"]["plus"]["values"]["length"] == pytest.approx(102.0) and rows["t1"]["plus"]["compensation"]["surface"] == 2
-    # 假后端的 quick_focus 不动，提醒补偿没起作用 / the fake quick_focus never moves, so the review says nothing was compensated
-    assert len(result["review"]) == 2 and "wrong" in result["review"][0] and "nothing was compensated" in result["review"][1]
-    assert result["lens_unchanged"] and json.dumps(daemon.backend.surfaces(), sort_keys=True) == before
-    folder = job.root / result["folder"]
-    assert (folder / "plan.json").is_file() and (folder / "result.json").is_file() and job.verify_seals() == []
-
-
-def test_probe_without_a_control_runs_and_says_so(setup):
-    daemon, job = setup
-    write_demand(job, DEMAND, confirm=None)
-    result = call(daemon, "probe.run", job=job.id, plan=probe_plan(T1))["result"]
-    assert result["ranking"] and any("no control probe" in line for line in result["review"])
-
-
-def test_probe_flags_a_target_no_variable_can_move(setup):
-    daemon, job = setup
-    write_demand(job, DEMAND, confirm=None)
-    r2 = {**R1, "id": "r2", "control": False, "expect": {}}
-    review = call(daemon, "probe.run", job=job.id, plan=probe_plan(r2, R1))["result"]["review"]
-    assert any("structure question" in line for line in review)
-
-
-@pytest.mark.parametrize("plan", [
-    probe_plan({**T1, "prediction": ""}, R1),                        # 没有预测
-    probe_plan(T1, R1, target="nothing"),
-    probe_plan(T1, R1, mechanism=" "),
-    probe_plan({**T1, "param": "material"}, R1),
-    probe_plan({**T1, "delta": 0}, R1),
-    probe_plan(T1, R1, compensate="refocus"),
-    probe_plan(*({**T1, "id": f"p{k}"} for k in range(6)), R1),      # 最多 6 个
-])
-def test_probe_plan_is_checked(setup, plan):
-    daemon, job = setup
-    write_demand(job, DEMAND, confirm=None)
-    assert call(daemon, "probe.run", job=job.id, plan=plan)["error"]["code"] == ErrorCode.BAD_ARGS
-
-
-def test_probe_stops_when_the_target_has_no_valid_value(setup):
-    """前提不成立（例如没有实焦点）时不做扰动，提示先确认可行性。"""
-    daemon, job = setup
-    (job.root / "checks").mkdir()
-    (job.root / "checks" / "virtual.py").write_text("def run(ctx):\n    return float('inf')\n", encoding="utf-8")
-    write_demand(job, demand_with({**LENGTH, "check": {"script": "checks/virtual.py"}}), confirm=None)
-    result = call(daemon, "probe.run", job=job.id, plan=probe_plan(T1, R1, measure=["length"]))["result"]
-    assert result["probes"] == [] and "feasibility ladder" in result["review"][0]
-
-
 def test_stop_needs_the_users_words_and_ends_the_rounds(setup):
     daemon, job = setup
     write_demand(job, DEMAND)
@@ -680,7 +615,7 @@ def test_agent_reported_merit_is_marked(setup):
 
 
 def test_long_operations_report_progress_and_honour_cancel(setup, monkeypatch):
-    """长操作写 progress.json；旧的取消请求在开始时清掉；脚本、优化和 probe 都能收到取消。"""
+    """长操作写 progress.json；旧的取消请求在开始时清掉；脚本和优化都能收到取消（scan 的取消见 test_kit_parallel）。"""
     daemon, job = setup
     write_demand(job, DEMAND)
     job.request_cancel()  # 上一次留下的请求，不该影响新操作 / a stale request must not affect a new operation
@@ -705,18 +640,6 @@ def test_long_operations_report_progress_and_honour_cancel(setup, monkeypatch):
     assert seen == {"cores": config.compute_cores(), "max_seconds": 30, "cancel": True}
     assert job.read_progress()["merit"] == 2.0
 
-    # probe 在第一次扰动开始时收到取消 / the probe gets a cancel as its first perturbation starts
-    original = jobs.Job.write_progress
-
-    def cancel_on_first_probe(self, **fields):
-        if fields.get("stage") == "probe t1-minus":
-            self.request_cancel()
-        return original(self, **fields)
-
-    monkeypatch.setattr(jobs.Job, "write_progress", cancel_on_first_probe)
-    refused = call(daemon, "probe.run", job=job.id, plan=probe_plan(T1, R1))["error"]
-    monkeypatch.setattr(jobs.Job, "write_progress", original)
-    assert refused["code"] == ErrorCode.CANCELLED and job.read_progress()["status"] == "cancelled"
 
 
 def test_job_show_and_cancel_work_without_the_daemon(saos_home):
@@ -830,10 +753,6 @@ def test_surface_parameters_and_materials_can_vary(setup):
     assert call(daemon, "opt.vary", job=job.id, param="material", surfaces=[1])["error"]["code"] == ErrorCode.BAD_ARGS  # 缺 mode
     assert call(daemon, "opt.vary", job=job.id, param="material", surfaces=[2], mode="substitute")["error"]["code"] == ErrorCode.BAD_ARGS  # 空气面
     assert call(daemon, "opt.vary", job=job.id, param="semi_diameter", surfaces=[1])["error"]["code"] == ErrorCode.BAD_ARGS
-    write_demand(job, DEMAND, confirm=None)
-    plan = probe_plan({**T1, "id": "a4", "surface": 1, "param": "par4", "delta": 1e-6, "expect": {}}, R1)
-    result = call(daemon, "probe.run", job=job.id, plan=plan)
-    assert result["ok"], result
 
 
 def test_demand_notes_are_free_and_ranges_can_cite_a_source(saos_home):
@@ -924,3 +843,58 @@ def test_check_only_measures_the_named_items_and_never_achieves(setup):
     assert [i["id"] for i in part["items"]] == ["length2"] and part["items"][0]["passed"] is True
     bad = call(daemon, "demand.check", job=job.id, only=["nope"])
     assert bad["ok"] is False and bad["error"]["code"] == ErrorCode.BAD_ARGS
+
+
+def test_changed_checks_re_measure_the_best_round_first(setup):
+    """判定代码改了：先用新判定重测此前最好的一轮。数值不变则窗口延续；变了就从重测记录开新窗口，旧的最好镜头仍可交付。"""
+    daemon, job = setup
+    checks = job.root / "checks"
+    checks.mkdir(exist_ok=True)
+    (checks / "length.py").write_text("def run(ctx):\n    return ctx.backend.operand('TOTR', 0, 0, [])\n", encoding="utf-8")
+    write_demand(job, demand_with({**LENGTH, "check": {"script": "checks/length.py"}}))
+    call(daemon, "round.record", job=job.id, note="start")                     # r0: TOTR 100
+    call(daemon, "lens.set", job=job.id, surface=1, param="thickness", value=3.0)
+    call(daemon, "lens.save", job=job.id)
+    assert call(daemon, "round.record", job=job.id, tier="local")["ok"]         # r1: TOTR 98，最好 / best
+    # 改写成 kit 的写法，数值相同 / rewritten with kit, same numbers
+    (checks / "length.py").write_text("def run(ctx):\n    return ctx.op('TOTR')\n", encoding="utf-8")
+    call(daemon, "lens.set", job=job.id, surface=1, param="thickness", value=4.0)
+    call(daemon, "lens.save", job=job.id)
+    out = call(daemon, "round.record", job=job.id, tier="variables")["result"]
+    assert out["rebase"] == {"round": 2, "rebase_of": 1, "equivalent": True, "diffs": {}, "shortfall": out["rebase"]["shortfall"],
+                             "evaluation": out["rebase"]["evaluation"]}
+    assert out["record"]["round"] == 3 and out["record"]["file"] == "rounds/r003.zmx"
+    assert out["decision"]["rounds_in_version"] == 2 and out["decision"]["last_gain_round"] == 1  # 同一窗口 / same window
+    evaluation = json.loads((job.root / out["rebase"]["evaluation"]).read_text(encoding="utf-8"))
+    assert evaluation["lens"]["file"] == "rounds/r001.zmx" and "src/saos/kit.py" in evaluation["saos_code_files"]
+    assert daemon.backend.surfaces()[1]["thickness"] == 4.0 and job.verify_seals() == []  # 当前镜头回来了 / the current lens is back
+    rows = ledger.load(job.root / ledger.LEDGER_FILE)
+    assert [r["tier"] for r in rows] == ["baseline", "local", "rebase", "variables"] and rows[2]["file"] == "rounds/r001.zmx"
+    # 口径变了：重测数值不同，从重测记录开新窗口 / the measurement changed: a new window starts at the rebase record
+    (checks / "length.py").write_text("def run(ctx):\n    return ctx.op('TOTR') + 1.0\n", encoding="utf-8")
+    call(daemon, "lens.set", job=job.id, surface=1, param="thickness", value=2.0)
+    call(daemon, "lens.save", job=job.id)
+    out = call(daemon, "round.record", job=job.id, tier="local")["result"]
+    assert not out["rebase"]["equivalent"] and out["rebase"]["rebase_of"] == 1
+    assert out["rebase"]["diffs"]["length"] == {"recorded": 98.0, "now": 99.0}
+    assert out["decision"]["rounds_in_version"] == 1 and out["decision"]["last_gain_round"] == 5
+    window = ledger.current_window(ledger.load(job.root / ledger.LEDGER_FILE))
+    assert [r["round"] for r in window] == [4, 5] and window[0]["file"] == "rounds/r001.zmx"
+    report.write(job, lang="zh")
+    assert "新判定重测" in (job.root / "report" / "index.html").read_text(encoding="utf-8")
+
+
+def test_saos_code_used_by_checks_joins_the_method_version(setup):
+    """判定用到 kit 或配方库时，它们的源码哈希进入判定版本，并随证据留副本；没用到时版本不变。"""
+    daemon, job = setup
+    checks = job.root / "checks"
+    checks.mkdir(exist_ok=True)
+    (checks / "length.py").write_text("def run(ctx):\n    return ctx.backend.operand('TOTR', 0, 0, [])\n", encoding="utf-8")
+    d = demand.validate(demand_with({**LENGTH, "check": {"script": "checks/length.py"}}))
+    plain = demand.prepare_scripts(job.root, d)
+    assert demand.CODE_KEY not in plain
+    (checks / "helper.py").write_text("from saos.recipes import fiber  # noqa\n", encoding="utf-8")
+    with_recipe = demand.prepare_scripts(job.root, d)
+    files = with_recipe[demand.CODE_KEY]["files"]
+    assert "src/saos/kit.py" in files and any(f.startswith("src/saos/recipes/fiber/") for f in files)
+    assert demand.method_digest(with_recipe) != demand.method_digest(plain)

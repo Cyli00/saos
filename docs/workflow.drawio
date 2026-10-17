@@ -221,7 +221,7 @@
         <mxCell id="a12" value="&lt;b&gt;找最大加权差距的机理&lt;/b&gt;&lt;br&gt;选 1–6 个变量 + ≥1 个阴性对照&lt;br&gt;先写预测（机理、方向、量级）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="1740.0" width="320" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="t7" value="&lt;b&gt;saos probe --plan plan.json&lt;/b&gt;&lt;br&gt;同一基准 ±delta · quick_focus / 脚本补偿&lt;br&gt;镜头复原 → probes/NNN/（ranking · review）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+        <mxCell id="t7" value="&lt;b&gt;saos scan --plan（probes 计划）&lt;/b&gt;&lt;br&gt;基准 + 各 ±delta 在 worker 池同时跑 · quick_focus / 脚本补偿&lt;br&gt;镜头不变 → scans/NNN/（ranking · review）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
           <mxGeometry x="980" y="1740.0" width="400" height="70" as="geometry" />
         </mxCell>
         <mxCell id="a13" value="&lt;b&gt;读 ranking / review&lt;/b&gt;&lt;br&gt;预测成立？&lt;br&gt;有变量能动目标？" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
@@ -372,50 +372,50 @@
         <mxCell id="p3" value="&lt;b style=&quot;font-size:14px&quot;&gt;何时停下来问用户&lt;/b&gt;&lt;br&gt;&lt;br&gt;• 需求自相矛盾，或常量 / 范围 / 达标线依据不足&lt;br&gt;• 测量口径有多种读法且影响结果&lt;br&gt;• 可行性判断或一阶分析表明结构达不到目标，或某项 must 差通过线好几倍&lt;br&gt;• 已有结果不支持继续当前策略（brief.review）&lt;br&gt;• 结构要改成用户没见过的样子&lt;br&gt;&lt;br&gt;会改变需求的问题写成 open_questions（blocking: true），未答时 round / opt local 拒绝运行" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#fffdf0;strokeColor=#d6b656;" parent="1" vertex="1">
           <mxGeometry x="1450" y="720" width="400" height="250" as="geometry" />
         </mxCell>
-        <mxCell id="p4" value="&lt;b style=&quot;font-size:14px&quot;&gt;长任务与算力&lt;/b&gt;&lt;br&gt;&lt;br&gt;• 光学数值一律经 ZOS-API 计算，不自写追迹 / 近轴计算（ADR-0008）&lt;br&gt;• 大量独立评估用 ctx.parallel 并发多实例；许可上限 8，含用户窗口&lt;br&gt;• opt local / round / check / probe / exec 写 progress.json；job show 看进度，job cancel 停止&lt;br&gt;• opt local 设 --max-seconds；脚本里 ctx.progress 分段，一段收益 &amp;lt; rel 就停&lt;br&gt;• 精度服从可达性：差好几倍时不做收敛审计&lt;br&gt;• 给用户留 2 个逻辑核，自起长进程用低于正常优先级" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f3faf1;strokeColor=#82b366;" parent="1" vertex="1">
-          <mxGeometry x="1450" y="990" width="400" height="260" as="geometry" />
+        <mxCell id="p4" value="&lt;b style=&quot;font-size:14px&quot;&gt;长任务与算力&lt;/b&gt;&lt;br&gt;&lt;br&gt;• 光学数值一律经 ZOS-API 计算，不自写追迹 / 近轴计算（ADR-0008）&lt;br&gt;• 先用现成工具，不现写封装：saos.kit（按注释读写参数、追迹、点列、操作数）、ctx.measure（按需求单实测）、saos.search（求根、寻优）&lt;br&gt;• 扫描 / 逐点求解 / 多起点用 saos scan；脚本里用 ctx.map，都跑在后台进程常驻的 worker 池（空闲 10 分钟关闭）；许可上限 8，含用户窗口&lt;br&gt;• 长操作默认暂停窗口刷新，结束后刷新一次（exec --live 全程刷新）&lt;br&gt;• 判定代码改了：下一次 round 先用新判定重测最好的一轮（rebase），数值不变则比较窗口延续&lt;br&gt;• 同一段代码第二个任务又抄时，上收为配方草稿（如 saos.recipes.fiber）&lt;br&gt;• opt local / round / check / scan / exec 写 progress.json；job show 看进度，job cancel 停止&lt;br&gt;• opt local 设 --max-seconds；脚本里 ctx.progress 分段，一段收益 &amp;lt; rel 就停&lt;br&gt;• 精度服从可达性：差好几倍时不做收敛审计&lt;br&gt;• 给用户留 2 个逻辑核，自起长进程用低于正常优先级" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f3faf1;strokeColor=#82b366;" parent="1" vertex="1">
+          <mxGeometry x="1450" y="990" width="400" height="450" as="geometry" />
         </mxCell>
-        <mxCell id="p5" value="&lt;b style=&quot;font-size:14px&quot;&gt;封存与校验&lt;/b&gt;&lt;br&gt;&lt;br&gt;evaluations/、rounds/、models/、probes/、report/NNN-* 等写入 seals.jsonl&lt;br&gt;saos job verify 报告事后改动；有改动时 saos report 拒绝运行" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f5f5f5;strokeColor=#666666;" parent="1" vertex="1">
-          <mxGeometry x="1450" y="1270" width="400" height="140" as="geometry" />
+        <mxCell id="p5" value="&lt;b style=&quot;font-size:14px&quot;&gt;封存与校验&lt;/b&gt;&lt;br&gt;&lt;br&gt;evaluations/、rounds/、models/、parallel/、scans/、report/NNN-* 等写入 seals.jsonl&lt;br&gt;saos job verify 报告事后改动；有改动时 saos report 拒绝运行" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f5f5f5;strokeColor=#666666;" parent="1" vertex="1">
+          <mxGeometry x="1450" y="1460" width="400" height="140" as="geometry" />
         </mxCell>
         <mxCell id="lg" value="&lt;b style=&quot;font-size:14px&quot;&gt;图例&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#ffffff;strokeColor=#999999;" parent="1" vertex="1">
-          <mxGeometry x="1450" y="1580" width="400" height="330" as="geometry" />
+          <mxGeometry x="1450" y="1770" width="400" height="330" as="geometry" />
         </mxCell>
         <mxCell id="lg0" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="1466" y="1620" width="60" height="28" as="geometry" />
+          <mxGeometry x="1466" y="1810" width="60" height="28" as="geometry" />
         </mxCell>
         <mxCell id="lgt0" value="用户动作" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="1540" y="1620" width="280" height="28" as="geometry" />
+          <mxGeometry x="1540" y="1810" width="280" height="28" as="geometry" />
         </mxCell>
         <mxCell id="lg1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="1466" y="1656" width="60" height="28" as="geometry" />
+          <mxGeometry x="1466" y="1846" width="60" height="28" as="geometry" />
         </mxCell>
         <mxCell id="lgt1" value="Agent 动作" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="1540" y="1656" width="280" height="28" as="geometry" />
+          <mxGeometry x="1540" y="1846" width="280" height="28" as="geometry" />
         </mxCell>
         <mxCell id="lg2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
-          <mxGeometry x="1466" y="1692" width="60" height="28" as="geometry" />
+          <mxGeometry x="1466" y="1882" width="60" height="28" as="geometry" />
         </mxCell>
         <mxCell id="lgt2" value="saos 命令 / 工具行为" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="1540" y="1692" width="280" height="28" as="geometry" />
+          <mxGeometry x="1540" y="1882" width="280" height="28" as="geometry" />
         </mxCell>
         <mxCell id="lg3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;strokeWidth=3;fontSize=13;fontStyle=1;" parent="1" vertex="1">
-          <mxGeometry x="1466" y="1728" width="60" height="28" as="geometry" />
+          <mxGeometry x="1466" y="1918" width="60" height="28" as="geometry" />
         </mxCell>
         <mxCell id="lgt3" value="必经停顿（gate）" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="1540" y="1728" width="280" height="28" as="geometry" />
+          <mxGeometry x="1540" y="1918" width="280" height="28" as="geometry" />
         </mxCell>
         <mxCell id="lg4" value="" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="1466" y="1764" width="60" height="28" as="geometry" />
+          <mxGeometry x="1466" y="1954" width="60" height="28" as="geometry" />
         </mxCell>
         <mxCell id="lgt4" value="判断" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="1540" y="1764" width="280" height="28" as="geometry" />
+          <mxGeometry x="1540" y="1954" width="280" height="28" as="geometry" />
         </mxCell>
         <mxCell id="lg5" value="" style="shape=note;whiteSpace=wrap;html=1;size=12;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;fontFamily=Consolas;" parent="1" vertex="1">
-          <mxGeometry x="1466" y="1800" width="60" height="28" as="geometry" />
+          <mxGeometry x="1466" y="1990" width="60" height="28" as="geometry" />
         </mxCell>
         <mxCell id="lgt5" value="任务文件" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="1540" y="1800" width="280" height="28" as="geometry" />
+          <mxGeometry x="1540" y="1990" width="280" height="28" as="geometry" />
         </mxCell>
         <mxCell id="lge0" value="主流程" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;align=left;labelPosition=right;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
@@ -424,7 +424,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="lget0" value="主流程" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="1522" y="1830" width="130" height="24" as="geometry" />
+          <mxGeometry x="1522" y="2020" width="130" height="24" as="geometry" />
         </mxCell>
         <mxCell id="lge1" value="调用工具" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#82b366;fontSize=11;labelBackgroundColor=#ffffff;align=left;labelPosition=right;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
@@ -433,7 +433,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="lget1" value="调用工具" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="1712" y="1830" width="130" height="24" as="geometry" />
+          <mxGeometry x="1712" y="2020" width="130" height="24" as="geometry" />
         </mxCell>
         <mxCell id="lge2" value="回退 / 求助用户" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#b85450;dashed=1;strokeWidth=1.5;fontSize=11;fontColor=#b85450;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;align=left;labelPosition=right;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
@@ -442,7 +442,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="lget2" value="回退 / 求助用户" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="1522" y="1860" width="130" height="24" as="geometry" />
+          <mxGeometry x="1522" y="2050" width="130" height="24" as="geometry" />
         </mxCell>
         <mxCell id="lge3" value="轮次循环" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#d79b00;strokeWidth=2;fontSize=11;fontColor=#b46504;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;align=left;labelPosition=right;" parent="1" edge="1">
           <mxGeometry relative="1" as="geometry">
@@ -451,7 +451,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="lget3" value="轮次循环" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="1712" y="1860" width="130" height="24" as="geometry" />
+          <mxGeometry x="1712" y="2050" width="130" height="24" as="geometry" />
         </mxCell>
         <mxCell id="title" value="&lt;b style=&quot;font-size:20px&quot;&gt;saos workflow&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px&quot;&gt;依据 skills/saos/SKILL.md、DESIGN.md、src/saos/workflow.py、daemon.py（分支 saos，2026-10-16 更新）&lt;/span&gt;" style="text;html=1;align=left;verticalAlign=middle;" parent="1" vertex="1">
           <mxGeometry x="1450" y="-70" width="500" height="60" as="geometry" />
@@ -484,7 +484,7 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="p6" value="&lt;b style=&quot;font-size:14px&quot;&gt;上下文经济&lt;/b&gt;&lt;br&gt;&lt;br&gt;• 大文件按章节读，辅助库用到时再读&lt;br&gt;• 选型表交给 optic-material-explorer（haiku · effort high），只拿回带出处的表&lt;br&gt;• 待答问题可能推翻的工作，先等答复" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
-          <mxGeometry x="1450" y="1430" width="400" height="130" as="geometry" />
+          <mxGeometry x="1450" y="1620" width="400" height="130" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

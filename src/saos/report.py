@@ -33,6 +33,7 @@ TEXT: dict[str, tuple[str, str]] = {
     "summary.stopped": ("用户根据下面的理由决定停止，需求没有全部满足。下表列出未达标的项和差距。",
                         "The user decided to stop for the reason below; the demand is not fully met. The table lists the unmet items and their gaps."),
     "tier.baseline": ("初始", "Start"),
+    "tier.rebase": ("新判定重测", "Re-measured with new checks"),
     "tier.local": ("局部优化", "Local optimisation"),
     "tier.variables": ("放开变量", "More variables"),
     "tier.materials": ("换材料", "Materials"),

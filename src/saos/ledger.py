@@ -34,6 +34,10 @@ has also been escalated. Tiers, low to high:
 A round may use several tiers at once; ruling a tier out needs the evidence and holds only until the next gain.
 需求的实质内容一变（哈希不同），G 的定义就变了，进步从改动后的第一轮重新算起。
 When the demand content changes (different hash), G means something else and progress is counted afresh.
+判定代码改了，saos round 先用新判定重测此前最好的一轮（tier 为 rebase），之后的轮次和它比较：数值不变则窗口延续，
+变了就从这条重测记录开始新窗口。
+When the check code changes, saos round first re-measures the best earlier round with the new checks (tier "rebase")
+and later rounds compare with it: unchanged numbers keep the window, changed ones start a new window at that record.
 """
 
 from __future__ import annotations
@@ -50,6 +54,8 @@ from saos.protocol import ErrorCode, SaosError, jsonable
 LEDGER_FILE = "ledger.jsonl"
 STOPS_FILE = "stops.jsonl"
 RULED_OUT_FILE = "ruled_out.jsonl"
+# 判定代码改动后对此前最好一轮的重测记录 / the re-measurement of the best earlier round after the check code changed
+REBASE = "rebase"
 
 
 def load(path: Path) -> list[dict[str, Any]]:
@@ -114,7 +120,7 @@ def record_rule_out(root: Path, demand_sha: str, tiers: list[str], reason: str) 
     if not tiers or unknown:
         raise SaosError(ErrorCode.BAD_ARGS, f"--tier must name tiers of the ladder ({', '.join(TIERS)}); got {unknown or tiers}")
     if not reason:
-        raise SaosError(ErrorCode.BAD_ARGS, "--reason must say why the tier cannot help, citing the evidence (e.g. probes/NNN, a first-order result)")
+        raise SaosError(ErrorCode.BAD_ARGS, "--reason must say why the tier cannot help, citing the evidence (e.g. scans/NNN, a first-order result)")
     rounds = load(root / LEDGER_FILE)
     if not rounds or version(rounds[-1])[0] != demand_sha:
         raise SaosError(ErrorCode.BAD_ARGS, "record a round under the current demand first; a tier is ruled out after a given round")
@@ -136,8 +142,19 @@ def version(record: dict[str, Any]) -> tuple[Any, Any]:
     return record.get("demand_sha", record.get("harness_sha")), record.get("method_sha")
 
 
+def is_rebase(record: dict[str, Any]) -> bool:
+    return record.get("tier") == REBASE
+
+
+def _continues(prev: dict[str, Any], record: dict[str, Any]) -> bool:
+    if version(record) == version(prev):
+        return True
+    # 判定改了，但在旧镜头上重测的数值不变：仍是同一个比较窗口 / new checks, same numbers on the old lens: the same window
+    return is_rebase(record) and bool(record.get("equivalent")) and version(record)[0] == version(prev)[0]
+
+
 def current_window(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    start = max((k for k, r in enumerate(rounds) if k == 0 or version(r) != version(rounds[k - 1])), default=0)
+    start = max((k for k, r in enumerate(rounds) if k == 0 or not _continues(rounds[k - 1], r)), default=0)
     return rounds[start:]
 
 
@@ -172,7 +189,7 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str
         if significant(best, r["shortfall"], rel):
             last_gain = k
         best = min(best, r["shortfall"])
-    since = window[last_gain + 1 :]
+    since = [r for r in window[last_gain + 1 :] if not is_rebase(r)]
     tried = {t for r in since if valid(r) for t in tiers_of(r)}
     gain_round = int(window[last_gain]["round"])
     excluded = {t for x in ruled or [] if int(x["round"]) >= gain_round for t in x["tiers"]}
@@ -188,7 +205,7 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str
         "tiers_ruled_out_since_gain": sorted((excluded - tried) & set(tiers), key=TIERS.index),
         "untried_tiers": untried,
         # 轮次预算按需求版本计：用户确认新版本后重新计数 / the round budget counts per demand version
-        "rounds_in_version": len(window) - 1,
+        "rounds_in_version": sum(1 for r in window[1:] if not is_rebase(r)),
     }
     if current.get("achieved") and deliverable(current):
         return {**base, "status": "achieved", "reason": "every constant, variable range and objective pass line is met"}

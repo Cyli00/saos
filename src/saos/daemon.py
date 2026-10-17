@@ -36,7 +36,7 @@ REQUEST_READ_TIMEOUT_S = 30
 # 显性调试：这些操作可能改变镜头，结束后刷新已打开的分析窗口
 # 可能跑很久的操作：开始和结束都写进 progress.json，开始前清掉旧的取消请求
 # operations that may run long: their start and end go to progress.json; a stale cancel request is cleared first
-LONG_OPS = frozenset({"opt.local", "script.exec", "round.record", "probe.run", "demand.check", "scan.run"})
+LONG_OPS = frozenset({"opt.local", "script.exec", "round.record", "demand.check", "scan.run"})
 REFRESH_AFTER = frozenset({"lens.load", "lens.set", "lens.build", "opt.local", "script.exec", "round.record"})
 # 建模说明给用户看，任何阶段都要在用户看着的窗口里生成和确认
 # the model description is for the user to watch, so it always needs the connected window
@@ -123,7 +123,6 @@ class Daemon:
             "opt.local": self.op_optimize,
             "script.exec": self.op_exec,
             "demand.check": self.op_check,
-            "probe.run": self.op_probe,
             "scan.run": self.op_scan,
             "round.record": self.op_round,
         }
@@ -596,14 +595,6 @@ class Daemon:
             # 实测只读的 Zernike 拟合也会让 NeedsSave 置位，所以这样做偏保守
             if self.loaded is not None and self.backend.healthy() and self.backend.needs_save():
                 self.loaded.dirty = True
-
-    def op_probe(self, args: dict[str, Any]) -> dict[str, Any]:
-        """按 agent 写下的预测做扰动诊断，不改动当前镜头。"""
-        from saos import probe
-
-        job = self._job(args)
-        self._require_loaded(job)
-        return probe.run(scripting.ScriptContext(self, job, {}), _arg(args, "plan", dict))
 
     def op_scan(self, args: dict[str, Any]) -> dict[str, Any]:
         """并发扫描或多起点寻优（saos.scan），不改动当前镜头。"""

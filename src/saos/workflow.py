@@ -140,6 +140,7 @@ def _set_aside(ctx, target) -> None:
 
 
 VIZ_FILE = "viz.json"
+REBASE_PURPOSE = "rebase"
 
 
 def export_viz(ctx, evidence_dir: str) -> dict[str, Any]:
@@ -173,6 +174,7 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
     history = ledger.load(path)
     number = len(history)
     ruled = ledger.ruled_out_for(ctx.job.root, sha)
+    best = None
     if number == 0:
         tiers = ["baseline"]
     else:
@@ -181,8 +183,8 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
         if not tiers or any(t not in h["stop"]["tiers"] for t in tiers):
             raise SaosError(ErrorCode.BAD_ARGS, f"tier must be one or more (comma-separated) of {h['stop']['tiers']} (ladder: {', '.join(TIERS)})")
         last = history[-1]
-        if (sha, method_sha) == ledger.version(last):
-            status = ledger.decide(history, h["stop"], ledger.stop_for(ctx.job.root, sha), ruled)["status"]
+        status = ledger.decide(history, h["stop"], ledger.stop_for(ctx.job.root, sha), ruled)["status"]
+        if ledger.version(last) == (sha, method_sha):
             if status != "continue":
                 raise SaosError(ErrorCode.BAD_ARGS, f"rounds already stopped ({status}); review the demand with the user to continue", {"status": status})
             if last.get("lens_sha") == lens_sha:
@@ -190,6 +192,11 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
                 # the same lens under the same version again: most likely a retry after a timeout; point to the existing round
                 raise SaosError(ErrorCode.DUPLICATE_ROUND, f"round {last['round']} already recorded this lens under the same demand and checks",
                                 {"round": last["round"], "file": last.get("file"), "evaluation": last.get("evaluation")})
+        elif ledger.version(last)[0] == sha:
+            # 同一需求下判定代码改了：先用新判定重测此前最好的一轮，之后的比较都对着它
+            # the check code changed under the same demand: re-measure the best earlier round first and compare with that
+            window = [r for r in ledger.current_window(history) if ledger.valid(r) and r.get("file")]
+            best = min(window, key=lambda r: r["shortfall"]) if window else None
     merit_from_agent = merit is not None
     if merit is not None:
         # agent 在 OpticStudio 评价函数之外优化时，记录它实际优化的目标值
@@ -213,11 +220,19 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
     # 存一份本轮的归档镜头，然后回到原来的工作文件，避免之后的 lens save 改写归档
     # archive this round's lens, then switch back to the working file so a later lens save cannot rewrite the archive
     working = ctx.lens
+    rebase_number, number = (number, number + 1) if best is not None else (None, number)
     _set_aside(ctx, ctx.job.resolve_lens(f"rounds/r{number:03d}.zmx", must_exist=False))
     rel = ctx.save_as(f"rounds/r{number:03d}.zmx", archive=True)
     archived = ctx.path(f"lenses/{rel}")
     if working is not None and not ctx.job.is_archive_lens(working):
         ctx.save_as(ctx.job.relative_lens(working), overwrite=True)
+    rebase = None
+    if best is not None:
+        rebase = _rebase(ctx, h, scripts, best, rebase_number, sha, method_sha, confirmation)
+        # 旧记录没有判定版本，不算同一版本内的终止 / records from before check versions existed never stopped this version
+        if rebase["equivalent"] and status != "continue" and best.get("method_sha"):
+            raise SaosError(ErrorCode.BAD_ARGS, f"rounds already stopped ({status}) and the new checks give the same numbers; review the demand with the user to continue",
+                            {"status": status, "evaluation": rebase["evaluation"]})
     record = {
         "round": number,
         # tier 留第一个层级，兼容旧记录；tiers 是本轮用到的全部层级 / tier keeps the first for older readers; tiers lists them all
@@ -253,11 +268,59 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
     ctx.job.seal(archived)
     # 写进 ledger 是本轮完成的标志；之前任何一步失败都不留下轮次
     # appending to the ledger is what completes a round; a failure before this leaves no round behind
-    ledger.append(path, record)
-    decision = ledger.decide(history + [record], h["stop"], ledger.stop_for(ctx.job.root, sha), ruled)
+    added = [rebase, record] if rebase is not None else [record]
+    for row in added:
+        ledger.append(path, row)
+    decision = ledger.decide(history + added, h["stop"], ledger.stop_for(ctx.job.root, sha), ruled)
     ctx.job.update_state(round=number, round_status=decision["status"])
-    out = {"record": record, "decision": decision, "brief": brief(h, evaluation, decision, ledger.current_window(history + [record])),
+    out = {"record": record, "decision": decision, "brief": brief(h, evaluation, decision, ledger.current_window(history + added)),
            "evaluation": evaluation}
+    if rebase is not None:
+        out["rebase"] = {k: rebase[k] for k in ("round", "rebase_of", "equivalent", "diffs", "shortfall", "evaluation")}
     if viz:
         out["viz"] = export_viz(ctx, evaluation["evidence_dir"])
     return out
+
+
+# 判定代码改了以后，重测的数值与原记录在这个相对容差内一致，就算口径没变 / within this the new checks measure the same thing
+EQUAL_RTOL = 1e-9
+
+
+def _same(a: Any, b: Any) -> bool:
+    if a is None or b is None:
+        return a is None and b is None
+    a, b = float(a), float(b)
+    return a == b or abs(a - b) <= EQUAL_RTOL * max(abs(a), abs(b))
+
+
+def _rebase(ctx, h: dict[str, Any], scripts: dict[str, Any], best: dict[str, Any], number: int, sha: str, method_sha: str,
+            confirmation: str) -> dict[str, Any]:
+    """用新判定重测此前最好一轮的归档镜头，返回要写进 ledger 的记录；之后重新加载当前镜头（调用前已保存）。
+    Re-measure the archived lens of the best earlier round with the new checks and return its ledger record; the current
+    lens (saved before this call) is reloaded afterwards."""
+    current = ctx.lens
+    try:
+        ctx.job.write_progress(stage=f"rebase r{int(best['round']):03d}")
+        ctx.backend.load(ctx.path(f"lenses/{best['file']}"))
+        _, before = lens_state(ctx)
+        ev = demand.evaluate(ctx, h, scripts, lens={"file": best["file"], "round": best["round"], "purpose": REBASE_PURPOSE})
+        _, after = lens_state(ctx)
+    finally:
+        ctx.backend.load(current)
+    if after != before:
+        raise SaosError(ErrorCode.LENS_MODIFIED_BY_CHECK, f"a check changed the lens of round {best['round']} while re-measuring it; make the checks read-only",
+                        {"evaluation": ev["evidence_dir"]})
+    values = {i["id"]: i["value"] for i in ev["items"]}
+    old = best.get("values") or {}
+    diffs = {k: {"recorded": old.get(k), "now": values.get(k)} for k in sorted(set(old) | set(values)) if not _same(old.get(k), values.get(k))}
+    return {
+        "round": number, "tier": ledger.REBASE, "tiers": [ledger.REBASE], "note": f"r{int(best['round']):03d} re-measured with the new checks",
+        "file": best["file"], "lens_sha": before, "rebase_of": best["round"],
+        # 数值不变说明只是换了写法，比较窗口延续；否则从这条开始新窗口 / same numbers: the window goes on; otherwise a new one starts here
+        "equivalent": not diffs and not ev["measurement_errors"], "diffs": diffs,
+        "evaluation": ev["evidence_file"], "shortfall": ev["shortfall"], "achieved": ev["achieved"],
+        "measurement_errors": ev["measurement_errors"], "hard_failing": ev["hard_failing"], "values": values,
+        "failing": {i["id"]: i["shortfall"] for i in ev["items"] if i.get("shortfall", 0) > 0},
+        "merit": best.get("merit"), "demand_sha": sha, "method_sha": method_sha, "confirmation": confirmation,
+        **{k: best.get(k) for k in ("model", "materials", "model_glass", "environment")}, "time": jobs.now_iso(),
+    }

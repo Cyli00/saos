@@ -189,10 +189,6 @@ def cmd_check(args: argparse.Namespace) -> Any:
     return client.request("demand.check", payload, timeout=args.timeout)
 
 
-def cmd_probe(args: argparse.Namespace) -> Any:
-    return client.request("probe.run", {"job": args.job, "plan": _read_json(args.plan)}, timeout=args.timeout)
-
-
 def cmd_scan(args: argparse.Namespace) -> Any:
     if args.show is not None:
         from saos import scan
@@ -298,7 +294,7 @@ def build_parser() -> argparse.ArgumentParser:
     show.add_argument("--log", type=int, default=10, help="number of recent log records to show")
     verify = jsub.add_parser("verify", help="check that no evidence file written by the tools was changed or deleted (seals.jsonl)")
     verify.add_argument("job")
-    cancel = jsub.add_parser("cancel", help="ask the running computation of a job to stop at its next safe point (opt local, probe, scripts that call ctx.progress); works while the daemon is busy")
+    cancel = jsub.add_parser("cancel", help="ask the running computation of a job to stop at its next safe point (opt local, scan, scripts that call ctx.progress); works while the daemon is busy")
     cancel.add_argument("job")
     job.set_defaults(func=cmd_job)
 
@@ -406,12 +402,6 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--quote", required=True, help="the user's own words of approval")
     dm.set_defaults(func=cmd_demand)
 
-    p = sub.add_parser("probe", help="perturbation diagnosis: perturb a few variables by ±delta, compensate, measure, compare with your written predictions (lens left unchanged; archived in probes/NNN/)")
-    p.add_argument("--job", required=True)
-    p.add_argument("--plan", required=True, help="JSON plan: target, mechanism, compensate, probes (with predictions and at least one control); see skills/saos/SKILL.md")
-    p.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
-    p.set_defaults(func=cmd_probe)
-
     p = sub.add_parser("scan", help="concurrent scan, multi-start minimisation or perturbation probes on the daemon's worker pool: per point set parameters, optionally "
                                     "solve one variable, compensate, measure with the demand's checks; lens left unchanged; archived in scans/NNN/, "
                                     "the best lenses in lenses/scans/NNN/")
@@ -443,11 +433,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("rule-out", help="rule out strategy tiers that your evidence says cannot help, so the stop rule does not wait for them (holds until the next clear gain; no OpticStudio needed)")
     p.add_argument("--job", required=True)
     p.add_argument("--tier", action="append", required=True, help="tier(s) to rule out; repeat or comma-separate")
-    p.add_argument("--reason", required=True, help="why the tier cannot help, citing the evidence (probes/NNN, a first-order result, a measurement)")
+    p.add_argument("--reason", required=True, help="why the tier cannot help, citing the evidence (scans/NNN, a first-order result, a measurement)")
     p.set_defaults(func=cmd_rule_out)
     p = sub.add_parser("stop", help="record the user's decision to stop the rounds of the current demand version, with the reason and the user's words (no OpticStudio needed)")
     p.add_argument("--job", required=True)
-    p.add_argument("--reason", required=True, help="why the rounds stop, with the evidence (e.g. probes/NNN, notes/findings.md F20)")
+    p.add_argument("--reason", required=True, help="why the rounds stop, with the evidence (e.g. scans/NNN, notes/findings.md F20)")
     p.add_argument("--quote", required=True, help="the user's own words deciding to stop, including the full text of any option they chose")
     p.set_defaults(func=cmd_stop)
     p = sub.add_parser("report", help="write the delivery report report/index.html from the demand and the ledger (no OpticStudio needed)")
