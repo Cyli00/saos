@@ -19,5 +19,5 @@ def call(fn: str, job: str, timeout: float = client.DEFAULT_REQUEST_TIMEOUT_S, *
     """返回 ops.<fn> 的结果；脚本副本和结果照常存进任务的 scripts/。验收类操作期间暂停窗口刷新。"""
     if fn not in OPS:
         raise ValueError(f"unknown microscope op {fn!r}")
-    payload = {"job": job, "name": f"microscope-{fn.replace('_', '-')}", "source": SOURCE.format(fn=fn), "args": kwargs, "quiet": fn != "perturb"}
+    payload = {"job": job, "name": f"microscope-{fn.replace('_', '-')}", "source": SOURCE.format(fn=fn), "args": kwargs, "live": fn == "perturb"}
     return client.request("script.exec", payload, timeout=timeout)["result"]

@@ -153,8 +153,12 @@ class Daemon:
                         f"the OpticStudio window is blocked by a dialog ({', '.join(blockers)}); close it in the window and retry",
                         {"dialogs": blockers},
                     )
-            # 连接手动打开的窗口时，带 quiet 的脚本执行期间暂停界面刷新，结束后窗口显示最终状态；SAOS_UI_LIVE=1 时全程刷新
-            quiet = op == "script.exec" and bool(args.get("quiet")) and os.environ.get("SAOS_UI_LIVE") != "1"
+            # 连接手动打开的窗口时，长操作期间默认暂停界面刷新，结束后窗口显示最终状态（实测刷新会让一次验收评估从 22 s 变成 98 s）；
+            # 请求带 live 或 SAOS_UI_LIVE=1 时全程刷新
+            # with a connected window, long operations pause UI updates by default and the window shows the final state afterwards
+            # (live updates once slowed an acceptance evaluation from 22 s to 98 s); live or SAOS_UI_LIVE=1 keeps them
+            live = bool(args.get("live")) or os.environ.get("SAOS_UI_LIVE") == "1"
+            quiet = op in LONG_OPS and not live
             self._progress_start(op, args)
             with self.backend.activity(f"saos {op}", quiet):
                 result = handler(args)

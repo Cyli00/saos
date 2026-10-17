@@ -178,7 +178,7 @@ def cmd_exec(args: argparse.Namespace) -> Any:
         raise SaosError(ErrorCode.BAD_ARGS, "--args-file must contain a JSON object")
     script_args.update(_key_values(args.arg, "--arg"))
     name = args.name or "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in script.stem)[:48] or "script"
-    payload = {"job": args.job, "name": name, "source": source, "args": script_args, "quiet": args.quiet}
+    payload = {"job": args.job, "name": name, "source": source, "args": script_args, "live": args.live}
     return client.request("script.exec", payload, timeout=args.timeout)
 
 
@@ -369,7 +369,7 @@ def build_parser() -> argparse.ArgumentParser:
     ex.add_argument("--name", help="archive name (default: the script file name)")
     ex.add_argument("--arg", action="append", default=[], metavar="KEY=VALUE", help="passed in ctx.args; VALUE is parsed as JSON, else kept as a string")
     ex.add_argument("--args-file", help="JSON object file used as the initial ctx.args")
-    ex.add_argument("--quiet", action="store_true", help="pause window updates while running in extension mode")
+    ex.add_argument("--live", action="store_true", help="in extension mode, update the OpticStudio windows while the script runs (slower; by default they refresh once at the end)")
     ex.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     ex.set_defaults(func=cmd_exec)
 

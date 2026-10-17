@@ -88,7 +88,7 @@ OpticStudio 2024 R1 Premium 加 ZOS-API 能建模的系统都在范围内，包�
 - 用户在窗口里有未保存的修改时，agent 不能覆盖。OpticStudio 的 NeedsSave 标志也会被 saos 自己的动作置位（实测打开或刷新分析窗口、Zernike 拟合、把参数写回相同的值都会置位），而面数据和系统概况读不全评价函数和面型专有参数，无法区分用户修改与这些副作用。所以 load、unload、build 换掉窗口内容前，只要 NeedsSave 置位（或连接时窗口已有未保存内容），saos 先把窗口内容存成任务内的 `lenses/captures/NNN-unsaved.zmx` 再继续，返回值的 `captured` 给出路径；不阻断，也不要求 agent 加 `--discard`。脚本的 `ctx.load` 和配方中会重建窗口的操作走同一步。agent 自己未保存的修改仍按后台 dirty 拒绝，先保存或显式放弃；显式放弃只放弃 agent 自己的修改，不跳过窗口副本。
 - OpticStudio 只自动更新编辑器（UpdateMode 为 EditorsOnly）；分析窗口由 saos 在每次改动镜头的命令后显式刷新。实测 AllWindows 会在改动后异步重算分析窗口，与 API 读取竞争：读到空结果，或与等待循环互相卡住。
 - 窗口被模态对话框挡住时（实测异常退出后的自动保存恢复提示、OpticStudio 错误消息框会挡住分析计算，请求会无限期挂起），saos 立即返回 UI_BLOCKED 并写明对话框标题，由用户在窗口中关闭。
-- 窗口实时刷新会拖慢计算：一次显微物镜验收评估从 22 s 变为 98 s。耗时操作期间可以暂停刷新，结束后再显示最终状态。
+- 窗口实时刷新会拖慢计算：一次显微物镜验收评估从 22 s 变为 98 s。所以 exec、check、round、scan、opt local 这些长操作默认暂停刷新，结束后刷新一次显示最终状态；`exec --live` 或 `SAOS_UI_LIVE=1` 全程刷新（2026-10-17 决定）。
 
 ## 仓库目录
 
