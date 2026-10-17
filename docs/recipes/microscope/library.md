@@ -18,7 +18,7 @@
    - 搭建并做复现校验。焦距、NA、顶点工作距离逐项与原文比较，每项允许的偏差取相对误差 1% 与舍入包络半宽的较大者。全部通过才算收录（admitted），否则拒收（rejected）并写明原因。
    - 在"格式默认规格"下做一次验收评估（probe）。这次评估只填入结构固有的 NA、倍率、视场和盖玻片，界限类取宽松值，测量结果作为标定证据。
    - 按下节规则推导基准规格，并确认原结构在基准规格下 G = 0。
-7. **`uv run python experiments/bench/run.py split`**：把可作基准的条目分为调参组和验证组，写入 `library/microscope/benchmarks.json`。
+7. **`uv run python experiments/bench/run.py split`**（2026-10-17 随优化基准一起删除，见 git 历史）：把可作基准的条目分为调参组和验证组，写入 `library/microscope/benchmarks.json`。
 
 **舍入包络**：专利表格的数字按印刷位数四舍五入，复现精度不可能高于印刷精度。`adapt.rounding_envelope` 按每列的印刷小数位（JSON 数值会丢掉末尾的 0，所以取该列中最多的位数）把半径、间隔、折射率在 ±半个末位内均匀抽样 4000 次，用近轴计算得到焦距和工作距离的分布范围。例如 US 6128139 的折射率只印 2 位小数，f = 20 mm 时焦距的包络半宽约 0.3–0.46 mm，超过 1%。
 

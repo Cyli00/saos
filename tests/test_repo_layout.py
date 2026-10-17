@@ -27,8 +27,8 @@ JOB_ENTRIES = {
     "job.json", "log.jsonl", "ledger.jsonl", "seals.jsonl", "confirmations.jsonl", "stops.jsonl", "ruled_out.jsonl", "progress.json", "view.json", "cancel.request", "sources", "lenses", "models", "scripts", "analyses", "screens", "evaluations", "rounds", "report", "probes", "parallel", "scans",
     # agent 写入
     "notes", "checks", "explore",
-    # 显微物镜配方与优化基准（experiments/bench）
-    "spec", "eval", "rounds.jsonl", "bench.jsonl",
+    # 显微物镜配方（规格与验收评估）
+    "spec", "eval",
 }
 
 

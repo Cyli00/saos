@@ -251,7 +251,7 @@ _Avoid_: 迭代、循环
 _Avoid_: 不收敛、卡住
 
 **优化基准 (Optimization Benchmark)**：
-从已收录结构出发、施加受控扰动后检验能否恢复到通过验收评估的案例，分为调参组和验证组。
+从已收录结构出发、施加受控扰动后检验能否恢复到通过验收评估的案例，分为调参组和验证组。原 zea 第 5 步的实验，工具已于 2026-10-17 删除，结果留在 `library/microscope/calibration/`。
 _Avoid_: 测试集、benchmark（单独使用时含义不清）
 
 **基准规格 (Benchmark Spec)**：

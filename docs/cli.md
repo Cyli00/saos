@@ -54,11 +54,6 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `saos microscope library verify ID --job J [--discard]` | 搭建、复现校验、探测验收、推导基准规格并确认原结构 G = 0，结果写回条目。当前镜头有未保存修改时返回 UNSAVED_CHANGES；显式加 `--discard` 才会丢弃，包括其他任务的修改。复现不通过的条目状态为 rejected |
 | `saos microscope library list` | 列出条目：状态、焦距、NA、片数、能否作基准及原因 |
 | `saos microscope library query --na A --magnification M [--class achromat\|plan_achromat] [--field-number N] [--working-distance W] [--limit K]` | 按光学规格从已收录条目中选初始结构 |
-| `uv run python experiments/bench/run.py split` | 把可作基准的条目分为调参组和验证组，写入 `library/microscope/benchmarks.json` |
-| `uv run python experiments/bench/run.py run ENTRY [--seed S] [--radius-rel A] [--thickness-rel B] [--no-amplify] [--stretch wd=F length=F] [--max-rounds N] [--cores K] [--job J] [--discard]` | 开发用基准任务：搭建条目、受控扰动（默认幅度按 ×1、×2、×4、×8 放大到 G0 ≥ 1）或拉伸规格，按参考策略逐轮优化，每轮用 observe 模式记录，不按停滞规则中途停机；轨迹写入任务的 `bench.jsonl`。`--job` 续跑；后台进程里有其他任务的未保存镜头时默认拒绝，`--discard` 才放弃 |
-| `uv run python experiments/bench/run.py plan --batch B` | 生成正式批次的实验清单 `library/microscope/calibration/B.json`，记录任务、分组、策略版本和代码哈希；已存在时拒绝覆盖 |
-| `uv run python experiments/bench/run.py run --batch B --task T [--cores K]` | 按清单运行正式任务；客户端或后台进程的代码版本与清单不同、或后台进程不是 standalone 时拒绝。本 SAOS_HOME 中已有该任务时续跑 |
-| `uv run python experiments/bench/run.py calibrate --batch B --homes DIR… [--validate N REL CAP]` | 按清单准入正式轨迹并列出排除原因、重复起点，在调参组主实验上按冻结规则选停机参数；给出 `--validate` 时在验证组主实验和两组压力测试上检验固定参数 |
 
 结构库的收录规则、提取格式和基准规格的推导见 [library.md](./recipes/microscope/library.md)。
 
@@ -122,7 +117,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `VERIFY_FAILED` | 保存后重新加载与保存前不一致，`details.diffs` 列出差异 |
 | `UI_BLOCKED` | extension 模式下 OpticStudio 窗口被模态对话框挡住（如自动保存恢复提示、错误消息框），`details.dialogs` 列出标题；在窗口中关闭后重试 |
 | `SCRIPT_ERROR` | `exec` 的脚本抛出异常，`details` 给出脚本存档路径和 traceback；后台进程继续运行 |
-| `SPEC_CHANGED` | 需求单或检查脚本改动后还没有新轮次时生成报告；优化基准（experiments/bench）的轮次中，规格路径或补全后的验收配置与第 0 轮冻结的不一致 |
+| `SPEC_CHANGED` | 需求单或检查脚本改动后还没有新轮次时生成报告 |
 | `VALUE_NOT_APPLIED` | 修改没有生效（例如被求解覆盖），`details` 给出目标值、实际值和求解类型 |
 | `LENS_MODIFIED_BY_CHECK` | 记录轮次时，判定脚本改动了镜头（取值前后的镜头内容不同）；本轮不记录。把判定改成只读后重试 |
 | `DUPLICATE_ROUND` | 同一镜头在同一需求和判定版本下已经记过一轮（多为超时后的重试）；`details` 给出已有的轮次 |
@@ -166,7 +161,7 @@ work/<实例名>/
     ledger.jsonl     调试轮次台账（指向 evaluations/NNN/result.json）；旧任务另有 rounds/rNNN.json
     report/          NNN-rMMM-<状态>.html（每次生成的封存副本）与 index.html（最新）
     explore/<主题>/  不经过 saos exec 的探索代码、中间镜头和日志，附 README.md
-    spec/ eval/ plan/ rounds.jsonl bench.jsonl   显微物镜配方专用，只在用到时创建
+    spec/ eval/      显微物镜配方专用（规格与验收评估），只在用到时创建
 ```
 
 ## 环境变量

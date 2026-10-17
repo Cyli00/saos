@@ -1,6 +1,8 @@
 # 第 5 步：校准优化循环（本轮结束：主实验完成，校准未达成）
 
 > 历史记录：本文写于原 zea 项目。「实现顺序」和文中的 DESIGN.md 指 zea 当时的设计文档；`src/zea/…` 是当时的路径，现为 `src/saos/recipes/microscope/…` 与 `experiments/bench/`（calibration.py、runner.py、rounds.py）。文件哈希等实验记录保持原样。
+>
+> 2026-10-17：`experiments/bench`（本文的基准与校准工具）已从仓库删除，它的停机规则与 saos 的通用终止规则重复；结果与证据仍在 `library/microscope/calibration/`，代码见 git 历史。
 
 对应原 zea「实现顺序」第 5 步：用调参组校准停滞阈值和轮次上限，用验证组检验。初始值为"连续 3 轮规格差距缩小不足 1% 视为停滞，硬上限 20 轮"（`src/zea/rounds.py`）。
 

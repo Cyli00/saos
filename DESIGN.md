@@ -154,7 +154,7 @@ OpticStudio 2024 R1 Premium 加 ZOS-API 能建模的系统都在范围内，包�
 - 每个配方是一个子技能，放在 `skills/recipes/<系统>/SKILL.md`；配套代码（可选）放在 `src/saos/recipes/<系统>/`，agent 通过脚本调用。
 - SKILL.md 按《配方编写规范》的固定章节写：适用范围、整理需求单时要追问的事项、常用判定及对应的 Zemax 操作数或分析、初始结构来源、建模要点、优化做法、已经实测验证过的内容。
 - 新配方从设计任务中提炼，不预先设计。同一段代码在第二个任务里被复制时就上收为配方草稿（SKILL.md 标明 Draft 并列出来源任务），不等任务交付；上收不能改变任何数值，要在同一批镜头上对照新旧代码并记录在 `docs/recipes/<配方>/`。
-- 已有配方：**光纤侧视探头**（草稿，2026-10-17 由 fiber-printed-relay 的 fiberlib v6 上收为 `saos.recipes.fiber.side_view`，12 个镜头 × 20 项与原代码逐位一致，一次完整判定少 18%–25% 时间；GRIN 变体未上收），**显微物镜**。保留规格格式、验收评估（`saos microscope accept`）、复现与扰动、专利适配和初始结构库（25 个专利条目），供通用工作流的检查脚本和建模调用；轮次、停机和需求确认一律走通用工作流；优化基准 `experiments/bench/rounds.py` 自带调整轮次与停机规则（3 轮 / 1% / 20 轮），只用于基准实验。历史文档在 docs/recipes/microscope/ 下（optical-spec-and-acceptance、library、step3–5），结构库在 library/microscope/，测试在 tests/recipes/microscope/。
+- 已有配方：**光纤侧视探头**（草稿，2026-10-17 由 fiber-printed-relay 的 fiberlib v6 上收为 `saos.recipes.fiber.side_view`，12 个镜头 × 20 项与原代码逐位一致，一次完整判定少 18%–25% 时间；GRIN 变体未上收），**显微物镜**。保留规格格式、验收评估（`saos microscope accept`）、复现与扰动、专利适配和初始结构库（25 个专利条目），供通用工作流的检查脚本和建模调用；轮次、停机和需求确认一律走通用工作流。原 zea 的优化基准与停机参数校准（`experiments/bench`，自带 3 轮 / 1% / 20 轮的停机规则）与「测试」一节“不再做优化基准”矛盾，2026-10-17 删除，结果和证据留在 `library/microscope/calibration/`，代码见 git 历史。历史文档在 docs/recipes/microscope/ 下（optical-spec-and-acceptance、library、step3–5），结构库在 library/microscope/，测试在 tests/recipes/microscope/。
 
 ## 测试
 
