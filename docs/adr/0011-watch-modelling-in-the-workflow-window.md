@@ -8,7 +8,7 @@ status: accepted
 
 - 后台进程在每条改动镜头的命令（lens load/set/build、opt local、exec、round）之后，把布局几何、布局光线、Lens Data 和交叠检查写进任务的 `view.json`；脚本可用 `ctx.show()` 中途推送。界面布局页默认跟着它。
 - 交叠检查（`saos.geometry`）只用 ZOS-API 的面变换和矢高做坐标比较：材料分界面在口径内相交，或一片镜片的表面落进另一片的玻璃里。结果在界面上列出并描红，也写进建模说明的自动检查。
-- lens、exec、opt、scan、check、round 这些带任务的命令执行前，这个任务的窗口 6 s 内没有轮询过就重新打开（20 s 内不重复）。
+- lens、exec、opt、scan、check、round 这些带任务的命令执行前，这个任务的窗口 6 s 内没有轮询过就重新打开（20 s 内不重复；最小化的窗口按 90 s 算），焦点留在用户原来的窗口。
 - 建模阶段不再拒绝 standalone（取消 `EXTENSION_REQUIRED`），`lens describe` / `lens approve` 在任何模式下都能用；extension 模式保留为可选。
 
 ## Considered Options

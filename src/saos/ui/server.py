@@ -127,14 +127,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def _route(self, method: str, path: str, args: dict[str, Any]) -> Any:
         if path == "/api/ping":
-            # 各任务的窗口多久之前来轮询过，命令行据此判断窗口是否开着 / how long ago each job's window polled
+            # 各任务的窗口多久之前来轮询过、当时是否隐藏（最小化），命令行据此判断窗口是否开着
+            # how long ago each job's window polled and whether it was hidden (minimised) then
             now = time.monotonic()
-            return {"pid": os.getpid(), "seen_s": {k: round(now - v, 1) for k, v in self.server.seen.items()}}
+            return {"pid": os.getpid(), "seen_s": {k: round(now - v, 1) for k, v in self.server.seen.items()},
+                    "hidden": sorted(self.server.hidden)}
         if path == "/api/jobs":
             return {"jobs": jobs.list_jobs()}
         job = jobs.get_job(str(args.get("job", "")))
         if path == "/api/state":
             self.server.seen[job.id] = time.monotonic()
+            (self.server.hidden.add if args.get("hidden") == "1" else self.server.hidden.discard)(job.id)
             return stage.snapshot(job)
         if path == "/api/live":
             return live_of(job)
@@ -193,6 +196,7 @@ class UiServer(ThreadingHTTPServer):
         self.idle_exit_s = idle_exit_s
         self.last_request = time.monotonic()
         self.seen: dict[str, float] = {}
+        self.hidden: set[str] = set()
 
     def touch(self) -> None:
         self.last_request = time.monotonic()

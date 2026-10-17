@@ -207,7 +207,11 @@ def test_live_view_and_window_polls_are_served(ui):
     before = get(srv, "/api/ping")[1]["result"]["seen_s"]
     state = get(srv, f"/api/state?job={job.id}")[1]["result"]
     assert job.id not in before and get(srv, "/api/ping")[1]["result"]["seen_s"][job.id] < 5
-    first = state["live"]
+    get(srv, f"/api/state?job={job.id}&hidden=1")
+    assert get(srv, "/api/ping")[1]["result"]["hidden"] == [job.id]  # 最小化的窗口 / a minimised window
+    first = get(srv, f"/api/state?job={job.id}")[1]["result"]["live"]
+    assert get(srv, "/api/ping")[1]["result"]["hidden"] == []
+    assert first == state["live"]
     call(daemon, "lens.set", job=job.id, surface=1, param="radius", value=60.0)
     assert get(srv, f"/api/state?job={job.id}")[1]["result"]["live"] != first
 
@@ -224,18 +228,28 @@ def test_job_commands_reopen_the_window_unless_one_is_polling(saos_home, monkeyp
     monkeypatch.setattr(ui_pkg, "_chrome", lambda: "chrome.exe")
     launched = []
     monkeypatch.setattr(ui_pkg.subprocess, "Popen", lambda cmd, **kw: launched.append(cmd))
+    monkeypatch.setattr(ui_pkg, "_foreground", lambda: 0)
     assert ui_pkg.ensure_window(job.id)["window"] == "chrome-app" and len(launched) == 1
+    assert "--disable-background-timer-throttling" in launched[0]  # 最小化后照常轮询 / keeps polling when minimised
     assert ui_pkg.ensure_window(job.id) is None and len(launched) == 1  # 刚打开，还没轮询 / just opened, not polled yet
     monkeypatch.setattr(ui_pkg.time, "time", lambda: 1e12)  # 很久以后，窗口没在轮询：再开 / much later, nobody polls: open again
     assert ui_pkg.ensure_window(job.id)["window"] == "chrome-app" and len(launched) == 2
     monkeypatch.setattr(server, "read_state", lambda: {"pid": 1, "port": 1, "token": "x"})
     monkeypatch.setattr(ui_pkg.client, "pid_alive", lambda pid: True)
-    monkeypatch.setattr(ui_pkg, "_seen", lambda state: {job.id: 1.5})
+    monkeypatch.setattr(ui_pkg, "_seen", lambda state: ({job.id: 1.5}, set()))
     monkeypatch.setattr(ui_pkg.time, "time", lambda: 2e12)
     assert ui_pkg.ensure_window(job.id) is None and len(launched) == 2  # 窗口开着 / the window is open
-    monkeypatch.setenv("SAOS_UI", "0")
-    monkeypatch.setattr(ui_pkg, "_seen", lambda state: {})
+    # 最小化的窗口轮询变慢：40 s 前来过仍算开着；没隐藏的窗口 40 s 没来就是关了
+    # a minimised window polls slowly: 40 s ago still counts as open; a visible one silent for 40 s is closed
+    monkeypatch.setattr(ui_pkg, "_seen", lambda state: ({job.id: 40.0}, {job.id}))
     assert ui_pkg.ensure_window(job.id) is None and len(launched) == 2
+    monkeypatch.setattr(ui_pkg, "_seen", lambda state: ({job.id: 40.0}, set()))
+    monkeypatch.setattr(ui_pkg.time, "time", lambda: 3e12)
+    assert ui_pkg.ensure_window(job.id)["window"] == "chrome-app" and len(launched) == 3
+    monkeypatch.setenv("SAOS_UI", "0")
+    monkeypatch.setattr(ui_pkg, "_seen", lambda state: ({}, set()))
+    monkeypatch.setattr(ui_pkg.time, "time", lambda: 4e12)
+    assert ui_pkg.ensure_window(job.id) is None and len(launched) == 3
     # 命令行只对改动或计算镜头的带任务命令这样做 / the CLI does it for job commands that change or compute the lens
     asked = []
     monkeypatch.setattr(ui_pkg, "ensure_window", lambda job_id: asked.append(job_id) or {"window": "chrome-app"})

@@ -23,6 +23,12 @@ from saos.protocol import ErrorCode, SaosError, write_json
 START_TIMEOUT_S = 15.0
 # 窗口每 1.5 s 轮询一次；这么久没来过就当它没开着 / the window polls every 1.5 s; silent this long means it is not open
 SEEN_WITHIN_S = 6.0
+# 最小化的窗口：浏览器把定时器放慢到最多约 1 分钟一次（Chrome 的 intensive throttling），留出余量
+# a minimised window: browsers slow its timers to about once a minute (Chrome's intensive throttling); with a margin
+HIDDEN_SEEN_WITHIN_S = 90.0
+# UI 专用的 Chrome 配置不放慢后台窗口 / the UI's own Chrome profile keeps background windows at full speed
+CHROME_FLAGS = ("--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows")
+FOREGROUND_WAIT_S = 4.0
 # 刚打开的窗口还没来得及轮询，这段时间内不再开第二个 / a window just opened has not polled yet; do not open a second one meanwhile
 OPENING_S = 20.0
 OPENED_FILE = "ui-opened.json"
@@ -84,11 +90,13 @@ def _chrome() -> str | None:
     return next((str(Path(r) / CHROME_SUBPATH) for r in roots if r and (Path(r) / CHROME_SUBPATH).is_file()), None)
 
 
-def _seen(state: dict[str, Any]) -> dict[str, float] | None:
+def _seen(state: dict[str, Any]) -> tuple[dict[str, float], set[str]] | None:
+    """(各任务窗口距上次轮询的秒数, 上次轮询时隐藏着的任务)；服务不应答时 None。"""
     req = urllib.request.Request(f"http://127.0.0.1:{state['port']}/api/ping", headers={"X-Saos-Token": state["token"]})
     try:
         with _DIRECT.open(req, timeout=2) as resp:
-            return json.loads(resp.read())["result"].get("seen_s") or {}
+            result = json.loads(resp.read())["result"]
+            return result.get("seen_s") or {}, set(result.get("hidden") or ())
     except (OSError, ValueError, KeyError):
         return None
 
@@ -104,12 +112,15 @@ def ensure_window(job_id: str) -> dict[str, Any] | None:
         return None
     state = server.read_state()
     if state and client.pid_alive(int(state.get("pid", 0))):
-        seen = _seen(state)
-        if seen is not None and seen.get(job_id, math.inf) <= SEEN_WITHIN_S:
-            return None
+        polled = _seen(state)
+        if polled is not None:
+            seen, hidden = polled
+            if seen.get(job_id, math.inf) <= (HIDDEN_SEEN_WITHIN_S if job_id in hidden else SEEN_WITHIN_S):
+                return None
     if time.time() - float(_opened().get(job_id, 0)) < OPENING_S:
         return None
-    return open_window(job_id)
+    # 自动重开不抢焦点：用户可能正在别的窗口里打字 / an automatic reopen keeps the focus where the user is typing
+    return open_window(job_id, activate=False)
 
 
 def _opened() -> dict[str, float]:
@@ -119,21 +130,61 @@ def _opened() -> dict[str, float]:
         return {}
 
 
-def open_window(job_id: str, *, window: bool = True) -> dict[str, Any]:
+def _foreground() -> int:
+    if sys.platform != "win32":
+        return 0
+    import ctypes
+
+    return int(ctypes.windll.user32.GetForegroundWindow() or 0)
+
+
+def _keep_focus(before: int) -> bool:
+    """Chrome 不理会 STARTUPINFO 的“显示但不激活”（2026-10-17 实测三种启动方式都抢焦点），所以等新窗口抢到前台后，
+    挂到前台线程的输入队列上把焦点还给原来的窗口。返回是否还回去了。
+    Chrome ignores STARTUPINFO's show-without-activating (all three start modes took the focus, measured 2026-10-17), so
+    once the new window is in front, attach to the foreground thread's input and give the focus back."""
+    if sys.platform != "win32" or not before:
+        return False
+    import ctypes
+
+    user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
+    deadline = time.monotonic() + FOREGROUND_WAIT_S
+    while time.monotonic() < deadline:
+        now = user32.GetForegroundWindow()
+        if now and now != before:
+            thread = user32.GetWindowThreadProcessId(now, None)
+            me = kernel32.GetCurrentThreadId()
+            user32.AttachThreadInput(me, thread, True)
+            try:
+                user32.SetForegroundWindow(before)
+            finally:
+                user32.AttachThreadInput(me, thread, False)
+            return int(user32.GetForegroundWindow() or 0) == before
+        time.sleep(0.05)
+    return False
+
+
+def open_window(job_id: str, *, window: bool = True, activate: bool = True) -> dict[str, Any]:
     job = jobs.get_job(job_id)
     state = ensure_server()
     url = f"http://127.0.0.1:{state['port']}/?job={job.id}&t={state['token']}"
-    opened = None
+    opened, focus_kept = None, None
     if window:
         chrome = _chrome()
         if chrome:
             # 单独的配置目录让窗口大小生效，也不打扰用户自己的 Chrome / a separate profile makes the size stick and leaves the user's Chrome alone
             profile = config.daemon_dir() / "ui-chrome"
+            before = 0 if activate else _foreground()
             subprocess.Popen([chrome, f"--app={url}", f"--window-size={WINDOW_SIZE[0]},{WINDOW_SIZE[1]}", f"--user-data-dir={profile}",
-                              "--no-first-run", "--no-default-browser-check"], close_fds=True)
+                              "--no-first-run", "--no-default-browser-check", *CHROME_FLAGS], close_fds=True)
             opened = "chrome-app"
+            if before:
+                focus_kept = _keep_focus(before)
         elif webbrowser.open(url):
             opened = "browser"
         if opened:
             write_json(config.daemon_dir() / OPENED_FILE, {**_opened(), job.id: time.time()})
-    return {"job": job.id, "url": url, "pid": state["pid"], "server_reused": state["reused"], "window": opened}
+    out = {"job": job.id, "url": url, "pid": state["pid"], "server_reused": state["reused"], "window": opened}
+    if focus_kept is not None:
+        out["focus_kept"] = focus_kept
+    return out

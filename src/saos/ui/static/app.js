@@ -971,7 +971,8 @@ function renderRounds(view) {
 
 async function poll() {
   try {
-    const next = await api("state");
+    // 最小化时浏览器会放慢定时器，告诉服务端窗口只是隐藏了，命令行不必再开一个 / hidden, not closed
+    const next = await api("state", document.hidden ? { hidden: "1" } : {});
     const text = JSON.stringify(next);
     if (text !== stateText) {
       const roundsChanged = !state || JSON.stringify(state.rounds) !== JSON.stringify(next.rounds);
