@@ -168,6 +168,7 @@ def test_step2_acceptance(saos_home):
         stopped = ok(saos("daemon", "stop", "--discard", env=env))
 
     assert stopped["forced"] is False and len(stopped["opticstudio_pids"]) == 1
-    assert ok(saos("daemon", "status", env=env)) == {"running": False}
+    status = ok(saos("daemon", "status", env=env))
+    assert status["running"] is False and "environment" in status  # 没运行时附带环境预检 / the environment check comes with it
     # stop 返回时，后台进程启动的 OpticStudio 必须已经退出
     assert not (opticstudio_pids() - before_pids), "后台进程退出后仍有 OpticStudio 进程残留"
