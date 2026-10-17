@@ -4,7 +4,9 @@ A recipe is an optional sub-skill for one family of optical systems. The `saos` 
 
 ## Where recipes come from
 
-Write a recipe only from a design job that was actually completed with saos. Do not design recipes up front. When a job finishes, distil what worked into a recipe and cite the job.
+Write a recipe from design jobs run with saos; do not design recipes up front. When a job finishes, distil what worked into a recipe and cite the job.
+
+Lift a **draft** recipe earlier when code repeats: as soon as a second job copies a helper (check library, model builder, scan driver) from an earlier one, move it into `src/saos/recipes/<system>/` and write a `SKILL.md` marked "Draft" that cites the jobs. Lifting must not change a number: run the old and the new code on the same lenses and record the comparison under `docs/recipes/<system>/` (example: `docs/recipes/fiber/equivalence-2026-10-17.md`). Recipe code that checks import counts towards the check version (`saos.demand.code_files`); after a change, the next `saos round` re-measures the best round with it, and the comparison window goes on only if the numbers are equal.
 
 ## Layout
 

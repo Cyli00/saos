@@ -57,7 +57,7 @@ Write `sources/demand.yaml` ([demand.md](demand.md)): the fixed `constants`, the
 
 ## 2. Recipes
 
-If `skills/recipes/<system>/SKILL.md` matches, read it. Recipes are experience, not rules.
+If `skills/recipes/<system>/SKILL.md` matches, read it. Recipes are experience, not rules; a recipe marked Draft was lifted from unfinished jobs. When you find yourself copying a helper from an earlier job, lift it into a draft recipe instead (`skills/recipes/README.md`), and prove with the old and new code on the same lenses that no number changed.
 
 ## 3. Model, understand, describe
 
