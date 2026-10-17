@@ -69,3 +69,44 @@ def test_prism_faces_and_dummy_surfaces_do_not_raise_false_alarms():
     # 空气里的反射镜照常检查 / a mirror in air is still checked
     fold = surface(3, 2.0, sd=8.0, material="MIRROR", rot=hyp)
     assert [c["surfaces"] for c in geometry.interference([*lens(1, 0.0, 4.0), fold])["crossings"]]
+
+
+def with_aperture(s, spec):
+    """按面孔径重取网格（与 ZosBackend._geometry_items 相同的做法）。/ Re-sample on the aperture grid as the backend does."""
+    ap = geometry.aperture(spec, s["sd"])
+    s = {k: v for k, v in s.items() if k != "global"}  # 上一次检查缓存的采样点 / sample points cached by an earlier check
+    return {**s, "ap": ap, "sd": geometry.extent(ap), "sags": [0.0] * len(geometry.polar_points(geometry.extent(ap)))}
+
+
+def test_square_prism_faces_are_checked_by_their_rectangular_apertures():
+    """0.4 mm 立方棱镜：入射面和出射面相互垂直，在棱边相接。按半口径的圆盘会在角上互相穿过（旧模型实测误报 0.07 mm），
+    按矩形孔径不相交；斜面有显式孔径后照常参与检查。
+    A 0.4 mm cube prism: entrance and exit faces meet at an edge. Semi-diameter discs pass through each other at the corner
+    (a 0.07 mm false alarm on an old model); the rectangular apertures do not, and the hypotenuse with an explicit aperture
+    is checked."""
+    c = math.cos(math.radians(45))
+    hyp = [1.0, 0.0, 0.0, 0.0, c, -c, 0.0, c, c]
+    down = [1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0]  # 出射面法线沿 -y / exit face normal along -y
+    square = {"type": "SurfaceApertureTypes.RectangularAperture", "XHalfWidth": 0.2, "YHalfWidth": 0.2}
+    entrance = surface(1, 0.0, sd=0.26, material="N-BK7", comment="prism entrance")
+    mirror = surface(2, 0.2, sd=0.85, material="MIRROR", rot=hyp, comment="hypotenuse")
+    exit_ = surface(3, 0.2, sd=0.27, material="", rot=down, off=[0.0, -0.2, 0.2], comment="prism exit")
+    discs = geometry.interference([entrance, mirror, exit_])
+    assert [c["surfaces"] for c in discs["crossings"]] == [[1, 3]]
+    squared = [with_aperture(entrance, square), with_aperture(mirror, {**square, "XHalfWidth": 0.2, "YHalfWidth": 0.2 * math.sqrt(2)}),
+               with_aperture(exit_, square)]
+    assert geometry.interference(squared)["crossings"] == []
+    # 斜面沿光轴错开 0.1 mm 就穿过入射面 / a hypotenuse shifted 0.1 mm along the axis passes through the entrance face
+    shifted = with_aperture(surface(2, 0.1, sd=0.85, material="MIRROR", rot=hyp), {**square, "YHalfWidth": 0.2 * math.sqrt(2)})
+    assert [c["surfaces"] for c in geometry.interference([squared[0], shifted, squared[2]])["crossings"]] == [[1, 2]]
+
+
+def test_aperture_outline_chord_and_extent():
+    rect = geometry.aperture({"type": "RectangularAperture", "XHalfWidth": 0.3, "YHalfWidth": 0.2, "ApertureYDecenter": 0.1}, 1.0)
+    rim = geometry.outline(rect, 32)
+    assert len(rim) == 33 and rim[0] == (0.3, 0.1) and abs(rim[8][1] - 0.3) < 1e-12
+    assert geometry.chord(rect, "y") == (-0.1, 0.30000000000000004, 0.0) and geometry.chord(rect, "x") == (-0.3, 0.3, 0.0)
+    assert abs(geometry.extent(rect) - math.hypot(0.3, 0.3)) < 1e-12
+    circle = geometry.aperture({"type": "CircularAperture", "MinimumRadius": 0.0, "MaximumRadius": 0.25}, 1.0)
+    assert circle["explicit"] and geometry.extent(circle) == 0.25
+    assert geometry.aperture({"type": "None"}, 0.4) == {"shape": "circle", "hx": 0.4, "hy": 0.4, "dx": 0.0, "dy": 0.0, "rmin": 0.0, "explicit": False}

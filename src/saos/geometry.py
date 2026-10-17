@@ -3,8 +3,11 @@
 Interference check: surfaces crossing each other and lenses interpenetrating. Uses only the surface transforms
 (GetGlobalMatrix) and shapes (GetSag) from ZOS-API; this module does coordinate transforms and comparisons, no optics.
 
-每个面在自身局部坐标里按极坐标网格取矢高：RINGS 圈（含边缘）× SPOKES 条辐线，加中心点。
+每个面在自身局部坐标里按极坐标网格取矢高：RINGS 圈（含边缘）× SPOKES 条辐线，加中心点。网格半径取面孔径的外接圆，
+只有落在孔径里的点参与比较；没有显式孔径（矩形、圆形、椭圆）的面按半口径的圆处理。
 Each surface is sampled in its local frame on a polar grid: RINGS rings (the rim included) × SPOKES spokes, plus the centre.
+The grid covers the surface aperture's circumscribed circle and only points inside the aperture are compared; a surface
+without an explicit aperture (rectangular, circular, elliptical) is a circle of its semi-diameter.
 """
 
 from __future__ import annotations
@@ -16,6 +19,80 @@ RINGS = 4
 SPOKES = 16
 # 越过另一面超过这个距离（镜头单位）才算相交，挡住数值噪声和贴合的胶合面 / beyond numerical noise and cemented contact
 TOL = 1e-4
+
+
+def aperture(spec: dict[str, Any] | None, sd: float) -> dict[str, Any]:
+    """面孔径（backend 的 aperture 字典，ZOS-API 的 CurrentType 与设置）统一成 shape、hx、hy、dx、dy、rmin；
+    遮拦、浮动孔径、用户孔径和没有孔径时按半口径的圆，explicit 为 False。
+    The surface aperture as shape, hx, hy, dx, dy, rmin; obscurations, floating, user or no apertures give the
+    semi-diameter circle with explicit False."""
+    spec = spec or {}
+    kind = str(spec.get("type", ""))
+    dx, dy = float(spec.get("ApertureXDecenter") or 0.0), float(spec.get("ApertureYDecenter") or 0.0)
+    if "RectangularAperture" in kind and spec.get("XHalfWidth") and spec.get("YHalfWidth"):
+        return {"shape": "rect", "hx": float(spec["XHalfWidth"]), "hy": float(spec["YHalfWidth"]), "dx": dx, "dy": dy, "rmin": 0.0, "explicit": True}
+    if "EllipticalAperture" in kind and spec.get("XHalfWidth") and spec.get("YHalfWidth"):
+        return {"shape": "ellipse", "hx": float(spec["XHalfWidth"]), "hy": float(spec["YHalfWidth"]), "dx": dx, "dy": dy, "rmin": 0.0, "explicit": True}
+    if "CircularAperture" in kind and spec.get("MaximumRadius"):
+        r = float(spec["MaximumRadius"])
+        return {"shape": "circle", "hx": r, "hy": r, "dx": dx, "dy": dy, "rmin": float(spec.get("MinimumRadius") or 0.0), "explicit": True}
+    return {"shape": "circle", "hx": sd, "hy": sd, "dx": 0.0, "dy": 0.0, "rmin": 0.0, "explicit": False}
+
+
+def extent(ap: dict[str, Any]) -> float:
+    """孔径外接圆半径（以面顶点为圆心）。/ Radius of the aperture's circumscribed circle about the vertex."""
+    if ap["shape"] == "rect":
+        return math.hypot(ap["hx"] + abs(ap["dx"]), ap["hy"] + abs(ap["dy"]))
+    return max(ap["hx"], ap["hy"]) + math.hypot(ap["dx"], ap["dy"])
+
+
+def inside(ap: dict[str, Any], x: float, y: float) -> bool:
+    u, v = x - ap["dx"], y - ap["dy"]
+    eps = 1e-9 * max(ap["hx"], ap["hy"])
+    if ap["shape"] == "rect":
+        return abs(u) <= ap["hx"] + eps and abs(v) <= ap["hy"] + eps
+    if ap["shape"] == "ellipse":
+        return (u / ap["hx"]) ** 2 + (v / ap["hy"]) ** 2 <= 1 + 1e-9
+    r = math.hypot(u, v)
+    return ap["rmin"] - eps <= r <= ap["hx"] + eps
+
+
+def outline(ap: dict[str, Any], n: int = 32) -> list[tuple[float, float]]:
+    """孔径边界上 n+1 个点（首尾相同），第 k 个点在方位角 2πk/n 方向上，布局图据此画边缘。
+    n+1 points on the aperture edge (closed), the k-th in the direction 2πk/n from the aperture centre."""
+    out = []
+    for k in range(n + 1):
+        a = 2 * math.pi * k / n
+        c, sn = math.cos(a), math.sin(a)
+        if ap["shape"] == "rect":
+            t = min(ap["hx"] / abs(c) if abs(c) > 1e-12 else math.inf, ap["hy"] / abs(sn) if abs(sn) > 1e-12 else math.inf)
+            out.append((ap["dx"] + t * c, ap["dy"] + t * sn))
+        else:
+            out.append((ap["dx"] + ap["hx"] * c, ap["dy"] + ap["hy"] * sn))
+    return out
+
+
+def chord(ap: dict[str, Any], axis: str) -> tuple[float, float, float]:
+    """子午（axis="y"，x=0）或弧矢（axis="x"，y=0）截线在孔径里的范围 (lo, hi, 另一坐标)；截线不过孔径时取过孔径中心的那条。
+    The meridional (axis "y", at x=0) or sagittal (axis "x", at y=0) section inside the aperture as (lo, hi, other
+    coordinate); when the section misses the aperture, the one through the aperture centre."""
+    across, along = ("dx", "dy") if axis == "y" else ("dy", "dx")
+    half_across, half_along = (ap["hx"], ap["hy"]) if axis == "y" else (ap["hy"], ap["hx"])
+    at = 0.0 if abs(ap[across]) <= half_across else ap[across]
+    u = (at - ap[across]) / half_across
+    half = half_along if ap["shape"] == "rect" else half_along * math.sqrt(max(0.0, 1 - u * u))
+    return ap[along] - half, ap[along] + half, at
+
+
+def fill_outside(points: list[tuple[float, float]], sags: list[float | None], ap: dict[str, Any]) -> list[float | None]:
+    """孔径外的网格点读不到矢高时（例如球面在矩形孔径的角外），用同一辐线内一圈的值补上，只供插值用。
+    Grid points outside the aperture without a sag (a sphere beyond a rectangle's corner) take the next inner ring's
+    value on the same spoke; they only serve interpolation."""
+    out = list(sags)
+    for i, ((x, y), v) in enumerate(zip(points, out)):
+        if v is None and i > 0 and not inside(ap, x, y):
+            out[i] = out[i - SPOKES] if i > SPOKES else out[0]
+    return out
 
 
 def polar_points(sd: float) -> list[tuple[float, float]]:
@@ -39,10 +116,10 @@ def _to_local(s: dict[str, Any], p: tuple[float, float, float]) -> tuple[float, 
 
 
 def _sag_at(s: dict[str, Any], x: float, y: float) -> float | None:
-    """在极坐标网格上双线性插值；口径之外返回 None。/ Bilinear interpolation on the polar grid; None outside the aperture."""
+    """在极坐标网格上双线性插值；孔径之外返回 None。/ Bilinear interpolation on the polar grid; None outside the aperture."""
     sd, sags = s["sd"], s["sags"]
     r = math.hypot(x, y)
-    if r >= sd:
+    if r >= sd or ("ap" in s and not inside(s["ap"], x, y)):
         return None
     u = r / sd * RINGS
     k = min(int(u), RINGS - 1)
@@ -61,7 +138,8 @@ def _sag_at(s: dict[str, Any], x: float, y: float) -> float | None:
 
 def _points(s: dict[str, Any]) -> list[tuple[float, float, float]]:
     if "global" not in s:
-        s["global"] = [_to_global(s, x, y, z) for (x, y), z in zip(polar_points(s["sd"]), s["sags"])]
+        ap = s.get("ap")
+        s["global"] = [_to_global(s, x, y, z) for (x, y), z in zip(polar_points(s["sd"]), s["sags"]) if ap is None or inside(ap, x, y)]
     return s["global"]
 
 
@@ -82,10 +160,12 @@ def crossings(surfaces: list[dict[str, Any]]) -> list[dict[str, Any]]:
     Pairwise over material boundaries (mirrors included): when one surface's samples inside another's aperture lie on
     both sides of it, the two surfaces cross."""
     out = []
-    # 玻璃里的反射面（棱镜斜面）的实际范围由棱镜其他面决定，半口径常远大于它（实测光纤探头 0.85 对半宽 0.2），不参与检查
-    # a reflecting face inside glass (a prism hypotenuse) is bounded by the prism's other faces, not by its semi-diameter
-    # (0.85 against a half-width of 0.2 on the fibre probe), so it is left out
-    bounds = [s for s in surfaces if s.get("boundary") and not s.get("in_glass_mirror")]
+    # 玻璃里的反射面（棱镜斜面）没有显式孔径时，实际范围由棱镜其他面决定，半口径常远大于它（实测光纤探头 0.85 对半宽 0.2），
+    # 不参与检查；有矩形等显式孔径时照常检查
+    # a reflecting face inside glass (a prism hypotenuse) without an explicit aperture is bounded by the prism's other faces,
+    # not by its semi-diameter (0.85 against a half-width of 0.2 on the fibre probe), so it is left out; with an explicit
+    # aperture it is checked like any other
+    bounds = [s for s in surfaces if s.get("boundary") and not (s.get("in_glass_mirror") and not (s.get("ap") or {}).get("explicit"))]
     for i, a in enumerate(bounds):
         for b in bounds[i + 1:]:
             if not _near(a, b):
@@ -143,10 +223,12 @@ def overlaps(surfaces: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def interference(surfaces: list[dict[str, Any]]) -> dict[str, Any]:
-    """surfaces：按序号排列，每个带 index、type、comment、material（面后的材料）、sd、rot（行优先 3×3）、off、sags（与 polar_points 对应）。
-    material 之前的介质取上一面的材料；两侧材料不同（或是反射镜）的面才是分界面。
-    surfaces in index order, each with index, type, comment, material (after the surface), sd, rot (row-major 3×3), off, and
-    sags matching polar_points. A surface is a boundary when the media on its two sides differ, or it is a mirror."""
+    """surfaces：按序号排列，每个带 index、type、comment、material（面后的材料）、sd（网格半径）、rot（行优先 3×3）、off、
+    sags（与 polar_points(sd) 对应），可选 ap（aperture() 的结果）。material 之前的介质取上一面的材料；两侧材料不同（或是
+    反射镜）的面才是分界面。
+    surfaces in index order, each with index, type, comment, material (after the surface), sd (grid radius), rot (row-major
+    3×3), off, sags matching polar_points(sd), and optionally ap (from aperture()). A surface is a boundary when the media on
+    its two sides differ, or it is a mirror."""
     before = ""
     for s in surfaces:
         if "Coordinate" in str(s.get("type", "")):

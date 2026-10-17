@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -48,6 +49,26 @@ def _load_zosapi(root: str):
 
     _ZOSAPI = ZOSAPI
     return ZOSAPI
+
+
+def _to_local(tf, p):
+    """全局点换到变换 tf（行优先旋转、平移）的局部坐标。/ A global point in the local frame of tf."""
+    rot, off = tf
+    d = [p[0] - off[0], p[1] - off[1], p[2] - off[2]]
+    return [rot[0] * d[0] + rot[3] * d[1] + rot[6] * d[2], rot[1] * d[0] + rot[4] * d[1] + rot[7] * d[2],
+            rot[2] * d[0] + rot[5] * d[1] + rot[8] * d[2]]
+
+
+def _between(a, q, b) -> bool:
+    """q 在 a→b 方向上的投影落在两端之间。/ q projects strictly between a and b along a→b."""
+    d = [b[i] - a[i] for i in range(3)]
+    n = sum(v * v for v in d)
+    return n > 0 and 0 < sum((q[i] - a[i]) * d[i] for i in range(3)) / n < 1
+
+
+# 梯度折射率面（Gradient 1…12、Gradium、Grid Gradient）和布局里 GRIN 介质内的分段数
+GRIN_TYPE_RE = re.compile(r"gradi|grin", re.IGNORECASE)
+GRIN_SLICES = 8
 
 
 class ZosBackend(Backend):
@@ -1057,10 +1078,11 @@ class ZosBackend(Backend):
 
     # ---- 每轮的可视化数据（saos ui 只读这些导出，不自己算光学量）----
 
-    def _batch(self, rays: list[tuple[int, float, float, float, float]], to_surface: int) -> list[tuple]:
-        """归一化坐标的批量实际光线追迹，返回每条光线在 to_surface 局部坐标中的 (error, vignette, x, y, z, l, m, n)。"""
+    def _batch(self, rays: list[tuple[int, float, float, float, float]], to_surface: int, system=None) -> list[tuple]:
+        """归一化坐标的批量实际光线追迹，返回每条光线在 to_surface 局部坐标中的 (error, vignette, x, y, z, l, m, n)。
+        system 省略时用主系统。"""
         rt = _load_zosapi(self.root).Tools.RayTrace
-        tool = self.system.Tools.OpenBatchRayTrace()
+        tool = (system or self.system).Tools.OpenBatchRayTrace()
         try:
             batch = tool.CreateNormUnpol(len(rays), rt.RaysType.Real, to_surface)
             none_mode = getattr(rt.OPDMode, "None")
@@ -1076,9 +1098,9 @@ class ZosBackend(Backend):
         finally:
             tool.Close()
 
-    def _global(self, index: int) -> tuple[list[float], list[float]] | None:
+    def _global(self, index: int, system=None) -> tuple[list[float], list[float]] | None:
         """面 index 的局部→全局变换：3×3 旋转（行优先）和平移。"""
-        m = self.system.LDE.GetGlobalMatrix(index, *([0.0] * 12))
+        m = (system or self.system).LDE.GetGlobalMatrix(index, *([0.0] * 12))
         if not m[0]:
             return None
         return [float(v) for v in m[1:10]], [float(v) for v in m[10:13]]
@@ -1089,6 +1111,57 @@ class ZosBackend(Backend):
         except Exception:  # noqa: BLE001 - 读不到面形时退回平面画法
             return None
         return float(r[1]) if r[0] and math.isfinite(float(r[1])) else None
+
+    def _grin_points(self, rays, image: int, apply, errors: dict[str, str]) -> dict[int, dict[int, list[list[float]]]]:
+        """梯度折射率介质里光线是弯的，只连面交点会画成直线（2026-10-17 实测 1.13 mm 的 GRIN 棒内偏差达 0.42 mm）。
+        在系统副本上把 GRIN 面的厚度依次缩短，追迹到下一面：介质定义不变，交点就是真实路径上的点。全局坐标参考面在 GRIN
+        之后时，缩短厚度挪动的是前面的面，所以交点先换到副本里 GRIN 面的局部坐标，再用主系统里该面的变换换回全局。
+        返回 {GRIN 面: {光线序号: [全局点, …]}}，主系统不动。
+        Rays bend inside a gradient-index medium; joining surface intercepts draws them straight (a 1.13 mm GRIN rod was off
+        by up to 0.42 mm, measured 2026-10-17). On a copy of the system the GRIN thickness is shortened step by step and the
+        rays traced to the next surface: the medium is unchanged, so the intercepts lie on the real path. When the global
+        reference surface lies after the GRIN, shortening moves the surfaces before it, so the intercepts go through the GRIN
+        surface's local frame of the copy and back to global with that surface's transform in the main system."""
+        lde = self.system.LDE
+        grins = []
+        for g in range(1, image):
+            row = lde.GetSurfaceAt(g)
+            if GRIN_TYPE_RE.search(str(row.TypeName)) and float(row.Thickness) != 0.0:
+                grins.append(g)
+        if not grins:
+            return {}
+        out: dict[int, dict[int, list[list[float]]]] = {}
+        copy = self.system.CopySystem()
+        try:
+            for g in grins:
+                row = copy.LDE.GetSurfaceAt(g)
+                thickness = float(row.Thickness)
+                try:
+                    row.ThicknessCell.MakeSolveFixed()
+                except Exception:  # noqa: BLE001 - 没有求解时无需处理 / nothing to fix
+                    pass
+                main = self._global(g)
+                # 从 GRIN 前表面最凸处切起：更薄的切片落在光线入射点之前 / start beyond the front face's sag
+                sd = float(lde.GetSurfaceAt(g).SemiDiameter)
+                sags = [v for v in (self._sag(g, 0.0, y) for y in (-sd, -sd / 2, sd / 2, sd)) if v is not None]
+                lo = (max([0.0, *sags]) if thickness > 0 else min([0.0, *sags])) if sags else 0.0
+                if abs(lo) >= abs(thickness):
+                    lo = 0.0
+                points: dict[int, list[list[float]]] = {k: [] for k in range(len(rays))}
+                for step in range(1, GRIN_SLICES):
+                    row.Thickness = lo + (thickness - lo) * step / GRIN_SLICES
+                    tf, frame = self._global(g + 1, copy), self._global(g, copy)
+                    if tf is None or frame is None or main is None:
+                        break
+                    for k, (err, _vig, *xyz_lmn) in enumerate(self._batch([r[1:] for r in rays], g + 1, copy)):
+                        if not err:
+                            points[k].append(apply(main, _to_local(frame, apply(tf, xyz_lmn[:3]))))
+                out[g] = points
+        except Exception as exc:  # noqa: BLE001 - 退回直线画法 / fall back to straight segments
+            errors["grin"] = f"GRIN ray paths unavailable ({type(exc).__name__}: {exc}); drawn straight"[:300]
+        finally:
+            copy.Close(False)
+        return out
 
     def interference(self) -> dict[str, Any]:
         """结构交叠检查（saos.geometry）：面相交、镜片穿插。/ Interference check (saos.geometry): crossing surfaces, interpenetrating lenses."""
@@ -1103,7 +1176,10 @@ class ZosBackend(Backend):
             tf = transforms[i] if i in transforms else self._global(i)
             item = {"index": i, "type": str(row.TypeName), "comment": str(row.Comment), "material": str(row.Material), "sd": float(row.SemiDiameter)}
             if tf is not None and item["sd"] > 0 and "Coordinate" not in item["type"]:
-                item.update(rot=tf[0], off=tf[1], sags=[self._sag(i, x, y) for x, y in geometry.polar_points(item["sd"])])
+                ap = geometry.aperture(self._aperture_dict(row), item["sd"])
+                grid = geometry.polar_points(geometry.extent(ap))
+                sags = geometry.fill_outside(grid, [self._sag(i, x, y) for x, y in grid], ap)
+                item.update(sd=geometry.extent(ap), ap=ap, rot=tf[0], off=tf[1], sags=sags)
             items.append(item)
         return items
 
@@ -1155,17 +1231,23 @@ class ZosBackend(Backend):
             sd = item["semi_diameter"]
             if tf is not None and sd > 0 and "Coordinate" not in item["type"]:
                 item["vertex"] = tf[1]
-                # 子午、弧矢两条截线和边缘一圈，局部点 (x, y, sag) 变换到全局
-                line = [sd * (2 * k / 20 - 1) for k in range(21)]
-                sag_y = [self._sag(i, 0.0, y) for y in line]
-                sag_x = [self._sag(i, x, 0.0) for x in line]
-                angles = [2 * math.pi * k / 32 for k in range(33)]
-                rim = [(sd * math.cos(a), sd * math.sin(a)) for a in angles]
+                # 子午、弧矢两条截线和边缘一圈按面孔径取（矩形孔径的棱镜面画成方的），局部点 (x, y, sag) 变换到全局
+                # sections and rim follow the surface aperture (a prism face with a rectangular aperture is drawn square)
+                ap = geometry.aperture(self._aperture_dict(row), sd)
+                if ap["explicit"]:
+                    item["aperture"] = {k: ap[k] for k in ("shape", "hx", "hy", "dx", "dy")}
+                y_lo, y_hi, x_at = geometry.chord(ap, "y")
+                x_lo, x_hi, y_at = geometry.chord(ap, "x")
+                line_y = [(x_at, y_lo + (y_hi - y_lo) * k / 20) for k in range(21)]
+                line_x = [(x_lo + (x_hi - x_lo) * k / 20, y_at) for k in range(21)]
+                rim = geometry.outline(ap, 32)
+                sag_y = [self._sag(i, x, y) for x, y in line_y]
+                sag_x = [self._sag(i, x, y) for x, y in line_x]
                 sag_rim = [self._sag(i, x, y) for x, y in rim]
                 if any(s is None for s in sag_y + sag_x + sag_rim):
                     errors.setdefault("sag", f"GetSag unavailable on surface {i}; drawn flat")
-                item["profile_y"] = [apply(tf, (0.0, y, s or 0.0)) for y, s in zip(line, sag_y)]
-                item["profile_x"] = [apply(tf, (x, 0.0, s or 0.0)) for x, s in zip(line, sag_x)]
+                item["profile_y"] = [apply(tf, (x, y, s or 0.0)) for (x, y), s in zip(line_y, sag_y)]
+                item["profile_x"] = [apply(tf, (x, y, s or 0.0)) for (x, y), s in zip(line_x, sag_x)]
                 item["rim"] = [apply(tf, (x, y, s or 0.0)) for (x, y), s in zip(rim, sag_rim)]
             surfaces.append(item)
         timings["geometry"] = round(time.monotonic() - started, 2)
@@ -1179,20 +1261,27 @@ class ZosBackend(Backend):
         layout_rays = [(f, primary, hx, hy, 0.0, p) for f, (hx, hy) in enumerate(norm) for p in steps] + \
                       [(f, primary, hx, hy, p, 0.0) for f, (hx, hy) in enumerate(norm) for p in steps if p != 0.0]
         traced = {j: self._batch([r[1:] for r in layout_rays], j) for j in range(1, image + 1) if transforms[j] is not None}
+        inner = self._grin_points(layout_rays, image, apply, errors)
         paths = []
         for k, (f, _, _, _, px, py) in enumerate(layout_rays):
-            points, first_dir = [], None
+            points, first_dir, pending = [], None, []
             for j in range(1, image + 1):
                 if j not in traced:
                     continue
                 err, vig, *xyz_lmn = traced[j][k]
                 if err:
                     break
-                points.append(apply(transforms[j], xyz_lmn[:3]))
+                here = apply(transforms[j], xyz_lmn[:3])
+                if pending:
+                    # 只留两端交点之间的点：弯的 GRIN 前表面上，厚度切得比矢高还薄时交点在入射点之前（虚延长）
+                    # keep points between the two intercepts: a slice thinner than a curved front face's sag lands before the entry
+                    points.extend(q for q in pending if _between(points[-1], q, here))
+                points.append(here)
                 if first_dir is None:
                     first_dir = rotate(transforms[j], xyz_lmn[3:])
                 if vig and vig <= j:
                     break
+                pending = inner.get(j, {}).get(k, [])
             if points:
                 paths.append({"field": f, "px": px, "py": py, "points": points, "start_dir": first_dir})
         timings["layout_rays"] = round(time.monotonic() - started, 2)

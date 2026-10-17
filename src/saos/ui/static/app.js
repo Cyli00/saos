@@ -537,11 +537,13 @@ function zAtY(profile, y) {
   return null;
 }
 
-// 轴对称系统的边缘厚：取两面较小半口径处，上下两侧的较小值
+// 轴对称系统的边缘厚：在两面子午截线共同覆盖的上下两端取厚度，取较小值（截线按面孔径取，可能不对称）
 function edgeThickness(e) {
-  const h = Math.min(e.front.semi_diameter, e.back.semi_diameter), yc = e.front.vertex[1];
+  const ys = (p) => p.map((q) => q[1]);
+  const top = Math.min(Math.max(...ys(e.front.profile_y)), Math.max(...ys(e.back.profile_y)));
+  const bottom = Math.max(Math.min(...ys(e.front.profile_y)), Math.min(...ys(e.back.profile_y)));
   const dir = Math.sign(e.back.vertex[2] - e.front.vertex[2]) || 1;
-  const vals = [h, -h].map((d) => { const zf = zAtY(e.front.profile_y, yc + d), zb = zAtY(e.back.profile_y, yc + d); return zf == null || zb == null ? null : (zb - zf) * dir; });
+  const vals = [top, bottom].map((y) => { const zf = zAtY(e.front.profile_y, y), zb = zAtY(e.back.profile_y, y); return zf == null || zb == null ? null : (zb - zf) * dir; });
   const ok = vals.filter((v) => v != null);
   return ok.length ? Math.min(...ok) : null;
 }
@@ -859,10 +861,13 @@ function renderLayout(view) {
     hover = null; tip.hidden = true;
     canvas.setPointerCapture(e.pointerId);
   };
-  canvas.onpointermove = (e) => {
-    const [mx, my] = pos(e);
+  const showReadout = (mx, my) => {
     if (dim === "2d" && frame) { const [z, y] = frame.inv(mx, my), step = 1 / frame.scale; readout.textContent = `z ${fmtLen(z, step)} · y ${fmtLen(y, step)} ${unit}`; }
     else readout.textContent = "";
+  };
+  canvas.onpointermove = (e) => {
+    const [mx, my] = pos(e);
+    showReadout(mx, my);
     if (!drag) {
       const h = surfaceAt(mx, my);
       if (h !== hover) { hover = h; draw(); }
@@ -895,6 +900,7 @@ function renderLayout(view) {
     const f = camera.zoom / old, [mx, my] = pos(e), cx = mx - frame.W / 2, cy = my - frame.H / 2;
     camera.panX = cx - (cx - camera.panX) * f; camera.panY = cy - (cy - camera.panY) * f;
     draw();
+    showReadout(mx, my);
     tip.hidden = true;
   };
   canvas.ondblclick = () => { Object.assign(camera, CAMERA0); draw(); };
