@@ -242,3 +242,17 @@ tr.sel td { background: var(--accent-soft); }
 .lens-data summary { cursor: pointer; color: var(--text-2); font-size: 12px; font-weight: 600; }
 .lens-data .table-wrap { margin-top: 6px; }
 .seg button:disabled { opacity: .4; cursor: not-allowed; }
+.stage canvas.measuring { cursor: crosshair; }
+.stage-tools { position: absolute; right: 8px; top: 8px; display: flex; gap: 4px; }
+.stage-tools button {
+  border: 1px solid var(--border-soft); background: var(--bg-raise); color: var(--text-3); border-radius: 6px;
+  padding: 2px 8px; font: 11px var(--mono); cursor: pointer; opacity: .85;
+}
+.stage-tools button:hover { border-color: var(--accent); color: var(--text); }
+.stage-tools button.on { color: var(--text); border-color: var(--accent); background: var(--accent-soft); }
+.stage .zoom-chip { top: 36px; }
+.readout { position: absolute; right: 10px; bottom: 20px; pointer-events: none; font: 11px var(--mono); color: var(--text-2); }
+.tip {
+  position: absolute; pointer-events: none; max-width: 420px; padding: 6px 9px; border-radius: 8px; z-index: 2;
+  background: var(--bg-raise); border: 1px solid var(--border); box-shadow: var(--shadow); font: 11px/1.5 var(--mono); color: var(--text);
+}

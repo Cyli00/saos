@@ -27,7 +27,7 @@ const TEXT = {
     viz_failed: "这一轮的可视化导出失败：", spot_foot: (ref) => `点：批量光线追迹，相对主波长主光线，未计被拦光线。RMS / GEO：OpticStudio Standard Spot（参考 ${ref}，全部波长），单位 µm。`,
     mtf_foot: "曲线：OpticStudio FFT MTF 导出。", tangential: "子午 T", sagittal: "弧矢 S", diff: "衍射极限",
     layout_foot: "几何与光线坐标：ZOS-API（GetGlobalMatrix、GetSag、批量光线追迹）。",
-    layout_hint_3d: "拖动旋转 · Shift 或右键拖动平移 · 滚轮缩放 · 双击复位", layout_hint_2d: "拖动平移 · 滚轮缩放 · 双击复位",
+    layout_hint_3d: "拖动旋转 · Shift 或右键拖动平移 · 滚轮以光标为中心缩放 · 双击复位 · 指向某面看参数", layout_hint_2d: "拖动平移 · Shift 或右键拖动测距（吸附面上的点）· 滚轮以光标为中心缩放 · 双击复位 · Esc 清除测距 · 指向某面看参数",
     image_z: "像面 z", round: "轮", tiers: "层级", gap: "目标差距", state: "状态", note: "说明", achieved: "达成", deliverable: "可交付",
     pick_round: "点一行在其他视图中查看该轮", sag_flat: "部分面读不到面形，按平面画。", select_round: (n) => `r${String(n).padStart(3, "0")}`,
     live: "当前镜头", live_unsaved: "未保存", no_live: "后台进程加载或改动镜头后，这里显示当前镜头的布局。", live_failed: "当前视图导出失败：",
@@ -35,6 +35,9 @@ const TEXT = {
     ld_material: "材料", ld_sd: "半口径", ld_conic: "圆锥", ld_solve: "V 为变量，其他字母为求解或 pickup",
     clash_title: "结构交叠", crossing: (a, b, d) => `第 ${a} 面与第 ${b} 面在口径内相交（最深约 ${d}）`,
     overlap: (a, b, n) => `镜片 ${a} 与镜片 ${b} 相互穿插（${n} 个采样点落在另一片玻璃里）`,
+    opt_grid: "网格", opt_labels: "面号", png_title: "把当前画面存成 PNG", tip_air: "空气",
+    ruler: (d, dz, dy, u) => `${d} ${u}（Δz ${dz} · Δy ${dy}）`,
+    tip_lens: (k, m, ct, et, u) => `L${k} ${m} · 中心厚 ${ct} · 边缘厚 ${et} ${u}`,
   },
   en: {
     interview: "Interview & feasibility", demand_confirm: "Confirm demand", modeling: "Model & materials", model_approve: "Approve model", design: "Autonomous design", deliver: "Delivery report",
@@ -56,7 +59,7 @@ const TEXT = {
     viz_failed: "The visual export of this round failed: ", spot_foot: (ref) => `Points: batch ray trace relative to the primary chief ray, vignetted rays left out. RMS / GEO: OpticStudio Standard Spot (reference ${ref}, all wavelengths), in µm.`,
     mtf_foot: "Curves: OpticStudio FFT MTF export.", tangential: "Tangential", sagittal: "Sagittal", diff: "Diff. limit",
     layout_foot: "Geometry and rays: ZOS-API (GetGlobalMatrix, GetSag, batch ray trace).",
-    layout_hint_3d: "drag to rotate · Shift or right-drag to pan · wheel to zoom · double-click to reset", layout_hint_2d: "drag to pan · wheel to zoom · double-click to reset",
+    layout_hint_3d: "drag to rotate · Shift or right-drag to pan · wheel zooms at the cursor · double-click to reset · hover a surface for its data", layout_hint_2d: "drag to pan · Shift or right-drag to measure (snaps to surface points) · wheel zooms at the cursor · double-click to reset · Esc clears the ruler · hover a surface for its data",
     image_z: "image z", round: "Round", tiers: "Tiers", gap: "Shortfall", state: "State", note: "Note", achieved: "achieved", deliverable: "deliverable",
     pick_round: "Click a row to view that round in the other tabs", sag_flat: "Some surface shapes could not be read; drawn flat.", select_round: (n) => `r${String(n).padStart(3, "0")}`,
     live: "Current lens", live_unsaved: "unsaved", no_live: "Once the daemon loads or changes the lens, its layout appears here.", live_failed: "The live view export failed: ",
@@ -64,6 +67,9 @@ const TEXT = {
     ld_material: "Material", ld_sd: "Semi-dia.", ld_conic: "Conic", ld_solve: "V marks a variable, other letters a solve or pickup",
     clash_title: "Interference", crossing: (a, b, d) => `surfaces ${a} and ${b} cross inside their apertures (up to about ${d})`,
     overlap: (a, b, n) => `lenses ${a} and ${b} interpenetrate (${n} sample points inside the other's glass)`,
+    opt_grid: "Grid", opt_labels: "Surface #", png_title: "Save the current view as PNG", tip_air: "air",
+    ruler: (d, dz, dy, u) => `${d} ${u} (Δz ${dz} · Δy ${dy})`,
+    tip_lens: (k, m, ct, et, u) => `L${k} ${m} · centre ${ct} · edge ${et} ${u}`,
   },
 };
 const ANALYSIS_NAMES = {
@@ -515,6 +521,41 @@ function lensDataTable(rows) {
     <div class="foot">${esc(t("ld_solve"))}</div></details>`;
 }
 
+// 布局图的显示选项按浏览器记住；读写失败（隐私窗口等）就用默认值
+const LAYOUT_OPTS_KEY = "saos.layout";
+const layoutOpts = { grid: true, labels: false };
+try { Object.assign(layoutOpts, JSON.parse(localStorage.getItem(LAYOUT_OPTS_KEY) || "{}")); } catch { /* 用默认值 */ }
+const saveLayoutOpts = () => { try { localStorage.setItem(LAYOUT_OPTS_KEY, JSON.stringify(layoutOpts)); } catch { /* 不记住 */ } };
+let ruler = null;
+
+// 截线上纵坐标为 y 处的 z（线性插值）；截线不过 y 时返回 null
+function zAtY(profile, y) {
+  for (let i = 0; i < profile.length - 1; i++) {
+    const a = profile[i], b = profile[i + 1];
+    if (a[1] !== b[1] && (a[1] - y) * (b[1] - y) <= 1e-12) return a[2] + (b[2] - a[2]) * (y - a[1]) / (b[1] - a[1]);
+  }
+  return null;
+}
+
+// 轴对称系统的边缘厚：取两面较小半口径处，上下两侧的较小值
+function edgeThickness(e) {
+  const h = Math.min(e.front.semi_diameter, e.back.semi_diameter), yc = e.front.vertex[1];
+  const dir = Math.sign(e.back.vertex[2] - e.front.vertex[2]) || 1;
+  const vals = [h, -h].map((d) => { const zf = zAtY(e.front.profile_y, yc + d), zb = zAtY(e.back.profile_y, yc + d); return zf == null || zb == null ? null : (zb - zf) * dir; });
+  const ok = vals.filter((v) => v != null);
+  return ok.length ? Math.min(...ok) : null;
+}
+
+function segDist(px, py, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], L = dx * dx + dy * dy;
+  const k = L ? Math.max(0, Math.min(1, ((px - a[0]) * dx + (py - a[1]) * dy) / L)) : 0;
+  return Math.hypot(px - a[0] - k * dx, py - a[1] - k * dy);
+}
+
+// 区间内的整格位置；格号取整再乘步长，避免累加误差，-0 归零
+const ticks = (a, b, step) => { const out = []; for (let k = Math.ceil(a / step); k <= Math.floor(b / step); k++) out.push(k * step || 0); return out; };
+const fmtLen = (v, step) => v.toFixed(Math.max(0, Math.min(6, -Math.floor(Math.log10(step) + 1e-9))));
+
 function renderLayout(view) {
   const sys = viz.system;
   const surfs = viz.surfaces;
@@ -530,13 +571,16 @@ function renderLayout(view) {
   const image = surfs[surfs.length - 1];
   const stopSd = sys.stop_semi_diameter;
   const unit = sys.lens_units === "Millimeters" ? "mm" : sys.lens_units;
+  const rows = new Map((viz.lens_data || []).map((r) => [r.index, r]));
   // 图例放在画布外，不再盖住光路；画布有最小尺寸，视图放不下时上下、左右滚动
   view.innerHTML = `<div class="layout-view"><div class="figure">
     <div class="fig-head"><span class="info">λ ${sig(sys.wavelengths[sys.primary_wave - 1].um, 4)} µm${stopSd ? ` · STOP Ø ${(2 * stopSd).toFixed(2)} ${unit}` : ""}${image?.vertex ? ` · ${esc(t("image_z"))} ${image.vertex[2].toFixed(2)} ${unit}` : ""}</span>
       <span class="fig-title">${esc(title)}</span></div>
     ${clash.lines.length ? `<div class="clash"><b>${esc(t("clash_title"))}</b>${clash.lines.map((l) => `<div>${esc(l)}</div>`).join("")}</div>` : ""}
     <div class="legend">${sys.fields.items.map((f, i) => `<span><i class="line" style="border-color:${FIELD_COLORS[i % FIELD_COLORS.length]}"></i>${esc(fieldLabel(sys, i))}</span>`).join("")}</div>
-    <div class="stage"><canvas></canvas><span class="zoom-chip"></span></div>
+    <div class="stage"><canvas></canvas>
+      <div class="stage-tools"><button data-opt="grid">${esc(t("opt_grid"))}</button><button data-opt="labels">${esc(t("opt_labels"))}</button><button data-act="png" title="${esc(t("png_title"))}">PNG</button></div>
+      <span class="zoom-chip"></span><span class="readout"></span><div class="tip" hidden></div></div>
     <div class="legend" style="margin:8px 0 0">${mats.map((m) => `<span><span class="swatch" style="background:${matColor(m)}55;border-color:${matColor(m)}"></span>${esc(m)}</span>`).join("")}</div></div>
     <div class="foot ${viz.errors?.sag ? "warn" : ""}">${esc(viz.errors?.sag ? t("sag_flat") + " " : "")}${esc(t("layout_foot"))} <span id="layout-hint"></span></div>
     ${viz.lens_data ? lensDataTable(viz.lens_data) : ""}</div>`;
@@ -545,6 +589,13 @@ function renderLayout(view) {
   const stage = view.querySelector(".stage");
   const canvas = stage.querySelector("canvas");
   const zoomChip = stage.querySelector(".zoom-chip");
+  const readout = stage.querySelector(".readout");
+  const tip = stage.querySelector(".tip");
+  const tools = stage.querySelector(".stage-tools");
+  const syncTools = () => tools.querySelectorAll("[data-opt]").forEach((b) => {
+    b.classList.toggle("on", !!layoutOpts[b.dataset.opt]);
+    b.hidden = b.dataset.opt === "grid" && dim !== "2d";
+  });
 
   // 所有点用于取景；起点按第一面方向往回延长一段
   const verts = surfs.filter((s) => s.vertex).map((s) => s.vertex);
@@ -557,6 +608,8 @@ function renderLayout(view) {
   const all = [...surfs.flatMap((s) => s.rim || []), ...rays.flatMap((r) => r.pts)];
   const lo = [0, 1, 2].map((k) => Math.min(...all.map((p) => p[k]))), hi = [0, 1, 2].map((k) => Math.max(...all.map((p) => p[k])));
   const center = lo.map((v, k) => (v + hi[k]) / 2);
+  let frame = null;
+  let hover = null;
 
   function project(p, yaw, pitch) {
     // 基准视图：z 向右、y 向上、x 朝向观察者；先绕 y 轴转 yaw，再绕屏幕横轴转 pitch（正交投影）
@@ -572,7 +625,9 @@ function renderLayout(view) {
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     const g = canvas.getContext("2d");
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    g.clearRect(0, 0, W, H);
+    // 填底色而不是清空，导出的 PNG 才有背景
+    g.fillStyle = css("--plot-bg"); g.fillRect(0, 0, W, H);
+    syncTools();
     const yaw = dim === "2d" ? 0 : camera.yaw, pitch = dim === "2d" ? 0 : camera.pitch;
     const P = all.map((p) => project(p, yaw, pitch));
     const spanU = Math.max(...P.map((p) => p[0])) - Math.min(...P.map((p) => p[0])) || 1;
@@ -581,11 +636,38 @@ function renderLayout(view) {
     const midU = (Math.max(...P.map((p) => p[0])) + Math.min(...P.map((p) => p[0]))) / 2;
     const midV = (Math.max(...P.map((p) => p[1])) + Math.min(...P.map((p) => p[1]))) / 2;
     const S = (p) => { const [u, v] = project(p, yaw, pitch); return [W / 2 + camera.panX + (u - midU) * scale, H / 2 + camera.panY - (v - midV) * scale]; };
+    // 2D 下屏幕点换回全局 (z, y)
+    const inv = (x, y) => [(x - W / 2 - camera.panX) / scale + midU + center[2], -(y - H / 2 - camera.panY) / scale + midV + center[1]];
+    const at = (z, y) => [center[0], y, z];
+    frame = { S, inv, W, H, scale };
     $("layout-hint").textContent = t(dim === "2d" ? "layout_hint_2d" : "layout_hint_3d");
     zoomChip.textContent = camera.zoom === 1 ? "" : `${Math.round(camera.zoom * 100)} %`;
     const placed = [];
+    const overlaps = (box) => placed.some((b) => b.box[0] < box[2] && box[0] < b.box[2] && b.box[1] < box[3] && box[1] < b.box[3]);
     const line = (pts, close = false) => { g.beginPath(); pts.forEach((p, i) => { const [x, y] = S(p); i ? g.lineTo(x, y) : g.moveTo(x, y); }); if (close) g.closePath(); };
 
+    // 网格（2D）：主格约 90 px，次格 4 或 5 等分；刻度是全局 z、y
+    if (dim === "2d" && layoutOpts.grid) {
+      const major = niceStep(90 / scale);
+      const mant = Math.round(major / Math.pow(10, Math.floor(Math.log10(major) + 1e-9)));
+      const minor = major / (mant === 2 ? 4 : 5);
+      const [z0, y1] = inv(0, 0), [z1, y0] = inv(W, H);
+      const gridLines = (step, color, width) => {
+        g.strokeStyle = color; g.lineWidth = width; g.beginPath();
+        ticks(z0, z1, step).forEach((z) => { const x = Math.round(S(at(z, 0))[0]) + 0.5; g.moveTo(x, 0); g.lineTo(x, H); });
+        ticks(y0, y1, step).forEach((y) => { const v = Math.round(S(at(0, y))[1]) + 0.5; g.moveTo(0, v); g.lineTo(W, v); });
+        g.stroke();
+      };
+      g.globalAlpha = 0.45; gridLines(minor, css("--grid"), 1); g.globalAlpha = 1;
+      gridLines(major, css("--grid"), 1);
+      g.font = `10px ${css("--mono")}`; g.fillStyle = css("--text-3");
+      g.textAlign = "center"; g.textBaseline = "bottom";
+      ticks(z0, z1, major).forEach((z) => { const x = S(at(z, 0))[0]; if (x > 40 && x < W - 50) g.fillText(fmtLen(z, major), x, H - 3); });
+      g.textAlign = "left"; g.textBaseline = "middle";
+      ticks(y0, y1, major).forEach((y) => { const v = S(at(0, y))[1]; if (v > 18 && v < H - 18) g.fillText(fmtLen(y, major), 4, v); });
+      g.textAlign = "right"; g.textBaseline = "bottom"; g.fillText(`z (${unit})`, W - 6, H - 3);
+      g.textAlign = "left"; g.textBaseline = "top"; g.fillText(`y (${unit})`, 4, 4);
+    }
     // 光轴
     if (verts.length > 1) {
       g.strokeStyle = css("--text-3"); g.setLineDash([6, 4]); g.lineWidth = 0.8;
@@ -638,12 +720,26 @@ function renderLayout(view) {
       const [x1, y1] = S(topF), [x2, y2] = S(topB);
       // 挤在一起的镜片只标不重叠的标签，免得 L3–L6 叠成一团；标签最后统一画，不被后面镜片的填充盖住
       const lx = (x1 + x2) / 2, ly = Math.min(y1, y2) - 8, box = [lx - 11, ly - 14, lx + 11, ly];
-      if (placed.some((b) => b.box[0] < box[2] && box[0] < b.box[2] && b.box[1] < box[3] && box[1] < b.box[3])) return;
-      placed.push({ box, text: `L${k + 1}`, x: lx, y: ly });
+      if (overlaps(box)) return;
+      placed.push({ box, text: `L${k + 1}`, x: lx, y: ly, baseline: "bottom" });
     });
-    g.font = `600 12px ${css("--font")}`; g.textAlign = "center"; g.textBaseline = "bottom";
-    g.lineWidth = 3; g.lineJoin = "round"; g.strokeStyle = css("--plot-bg"); g.fillStyle = css("--text-2");
-    placed.forEach((p) => { g.strokeText(p.text, p.x, p.y); g.fillText(p.text, p.x, p.y); });
+    // 面号：标在每面下端
+    if (layoutOpts.labels) {
+      surfs.forEach((s) => {
+        if (!s.profile_y) return;
+        // 下端出了画布就贴着画布底部（让开刻度和比例尺）
+        const [x, y0] = S(s.profile_y[0]), y = Math.min(y0 + 4, H - 48);
+        const text = `${s.index}`, w = 4 + 6.5 * text.length, box = [x - w / 2, y, x + w / 2, y + 13];
+        if (x < 0 || x > W || y < 0 || overlaps(box)) return;
+        placed.push({ box, text, x, y, baseline: "top", small: true });
+      });
+    }
+    g.textAlign = "center"; g.lineWidth = 3; g.lineJoin = "round"; g.strokeStyle = css("--plot-bg");
+    placed.forEach((p) => {
+      g.font = p.small ? `11px ${css("--mono")}` : `600 12px ${css("--font")}`;
+      g.fillStyle = p.small ? css("--text-3") : css("--text-2"); g.textBaseline = p.baseline;
+      g.strokeText(p.text, p.x, p.y); g.fillText(p.text, p.x, p.y);
+    });
     // 交叠的面描红 / surfaces involved in interference drawn red
     if (clash.hit.size) {
       g.strokeStyle = "#e5484d"; g.lineWidth = 2.2;
@@ -659,6 +755,35 @@ function renderLayout(view) {
       g.strokeStyle = "#c8ccd4"; g.lineWidth = 2.4; line(s.profile_y); g.stroke();
       if (dim === "3d" && s.rim) { g.lineWidth = 1; line(s.rim, true); g.stroke(); }
     });
+    // 悬停的面
+    const hs = hover != null && surfs.find((s) => s.index === hover);
+    if (hs?.profile_y) {
+      g.strokeStyle = css("--accent"); g.lineWidth = 2.6;
+      line(hs.profile_y); g.stroke();
+      if (dim === "3d" && hs.rim) { line(hs.rim, true); g.stroke(); }
+    }
+    // 测距（2D）
+    if (dim === "2d" && ruler) {
+      const [ax, ay] = S(at(...ruler.a)), [bx, by] = S(at(...ruler.b));
+      g.strokeStyle = css("--accent"); g.fillStyle = css("--accent"); g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
+      [[ax, ay, ruler.snapA], [bx, by, ruler.snapB]].forEach(([x, y, snapped]) => { g.beginPath(); g.arc(x, y, snapped ? 4 : 2.5, 0, 2 * Math.PI); snapped ? g.stroke() : g.fill(); });
+      const dz = ruler.b[0] - ruler.a[0], dy = ruler.b[1] - ruler.a[1];
+      const text = t("ruler", fmtLen(Math.hypot(dz, dy), 1e-3), fmtLen(dz, 1e-3), fmtLen(dy, 1e-3), unit);
+      g.font = `12px ${css("--mono")}`; g.textAlign = "left"; g.textBaseline = "bottom";
+      const tx = Math.min(Math.max((ax + bx) / 2 + 8, 4), W - g.measureText(text).width - 6), ty = Math.max((ay + by) / 2 - 6, 16);
+      g.lineWidth = 3; g.strokeStyle = css("--plot-bg"); g.strokeText(text, tx, ty); g.fillText(text, tx, ty);
+    }
+    // 比例尺：正交投影，3D 下表示屏幕平面内的长度
+    {
+      const len = niceStep(110 / scale), px = len * scale, x0 = 46, y0 = H - (dim === "2d" && layoutOpts.grid ? 30 : 18);
+      g.strokeStyle = css("--text-2"); g.fillStyle = css("--text-2"); g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(x0, y0 - 5); g.lineTo(x0, y0); g.lineTo(x0 + px, y0); g.lineTo(x0 + px, y0 - 5); g.stroke();
+      g.font = `11px ${css("--mono")}`; g.textAlign = "center"; g.textBaseline = "bottom";
+      g.lineWidth = 3; g.strokeStyle = css("--plot-bg");
+      const label = `${fmtLen(len, len)} ${unit}`;
+      g.strokeText(label, x0 + px / 2, y0 - 3); g.fillText(label, x0 + px / 2, y0 - 3);
+    }
     // 坐标轴小图标
     if (dim === "3d") {
       const ox = W - 46, oy = H - 44, L = 22;
@@ -671,19 +796,83 @@ function renderLayout(view) {
       g.beginPath(); g.arc(ox, oy, 2.5, 0, 2 * Math.PI); g.fill();
     }
   }
+
+  // 离光标 8 px 内最近的面（按子午截线，3D 加边缘一圈）
+  function surfaceAt(mx, my) {
+    let best = null, bestD = 8;
+    surfs.forEach((s) => {
+      if (!s.profile_y) return;
+      const paths = dim === "3d" && s.rim ? [s.profile_y, s.rim] : [s.profile_y];
+      paths.forEach((pts) => {
+        const q = pts.map(frame.S);
+        for (let i = 0; i < q.length - 1; i++) { const d = segDist(mx, my, q[i], q[i + 1]); if (d < bestD) { bestD = d; best = s.index; } }
+      });
+    });
+    return best;
+  }
+
+  // 测距端点吸附到 8 px 内的面顶点或截线采样点
+  function snapAt(mx, my) {
+    let best = null, bestD = 8;
+    surfs.forEach((s) => (s.profile_y || []).forEach((p) => {
+      const [x, y] = frame.S(p), d = Math.hypot(x - mx, y - my);
+      if (d < bestD) { bestD = d; best = [p[2], p[1]]; }
+    }));
+    return best ? { p: best, snapped: true } : { p: frame.inv(mx, my), snapped: false };
+  }
+
+  function tipText(index) {
+    const s = surfs.find((x) => x.index === index), r = rows.get(index) || {};
+    const num = (v) => (v == null ? "–" : !isFinite(v) ? "∞" : sig(v, 5));
+    const lines = [`S${index}${s.is_stop ? " STO" : ""} · ${r.type || s.type}${(r.comment || s.comment) ? ` · ${r.comment || s.comment}` : ""}`,
+      `R ${num(r.radius)} · T ${num(r.thickness)} · ${r.material || s.material || t("tip_air")} · SD ${num(r.semi_diameter ?? s.semi_diameter)}`];
+    els.forEach((e, k) => {
+      if (e.front !== s && e.back !== s) return;
+      const ct = rows.get(e.front.index)?.thickness;
+      const et = sys.non_axial ? null : edgeThickness(e);
+      lines.push(t("tip_lens", k + 1, e.material, ct == null ? "–" : ct.toFixed(3), et == null ? "–" : et.toFixed(3), unit) + (et != null && et <= 0 ? " ⚠" : ""));
+    });
+    return lines;
+  }
+
+  function showTip(mx, my) {
+    if (hover == null) { tip.hidden = true; return; }
+    tip.innerHTML = tipText(hover).map((l) => `<div>${esc(l)}</div>`).join("");
+    tip.hidden = false;
+    const w = tip.offsetWidth, h = tip.offsetHeight;
+    tip.style.left = `${Math.min(mx + 14, frame.W - w - 6)}px`;
+    tip.style.top = `${my + 16 + h > frame.H ? my - h - 10 : my + 16}px`;
+  }
+
   draw();
   let drag = null;
+  const pos = (e) => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
   canvas.oncontextmenu = (e) => e.preventDefault();
   canvas.onpointerdown = (e) => {
-    // 2D 只能平移；3D 左键旋转，Shift 或右键平移
-    drag = { x: e.clientX, y: e.clientY, pan: dim === "2d" || e.shiftKey || e.button === 2 };
+    // 2D：左键平移，Shift 或右键测距；3D：左键旋转，Shift 或右键平移
+    const alt = e.shiftKey || e.button === 2;
+    const measure = dim === "2d" && alt;
+    drag = { x: e.clientX, y: e.clientY, moved: false, measure, pan: !measure && (dim === "2d" || alt) };
+    if (measure) { const [mx, my] = pos(e); const a = snapAt(mx, my); ruler = { a: a.p, b: a.p, snapA: a.snapped, snapB: a.snapped }; }
     canvas.classList.toggle("panning", drag.pan);
+    canvas.classList.toggle("measuring", measure);
+    hover = null; tip.hidden = true;
     canvas.setPointerCapture(e.pointerId);
   };
   canvas.onpointermove = (e) => {
-    if (!drag) return;
+    const [mx, my] = pos(e);
+    if (dim === "2d" && frame) { const [z, y] = frame.inv(mx, my), step = 1 / frame.scale; readout.textContent = `z ${fmtLen(z, step)} · y ${fmtLen(y, step)} ${unit}`; }
+    else readout.textContent = "";
+    if (!drag) {
+      const h = surfaceAt(mx, my);
+      if (h !== hover) { hover = h; draw(); }
+      showTip(mx, my);
+      return;
+    }
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-    if (drag.pan) { camera.panX += dx; camera.panY += dy; }
+    if (Math.abs(dx) + Math.abs(dy) > 0) drag.moved = true;
+    if (drag.measure) { const b = snapAt(mx, my); ruler.b = b.p; ruler.snapB = b.snapped; }
+    else if (drag.pan) { camera.panX += dx; camera.panY += dy; }
     else {
       camera.yaw += dx * 0.008;
       camera.pitch = Math.max(-1.45, Math.min(1.45, camera.pitch + dy * 0.008));
@@ -691,11 +880,41 @@ function renderLayout(view) {
     drag.x = e.clientX; drag.y = e.clientY;
     draw();
   };
-  canvas.onpointerup = () => { drag = null; canvas.classList.remove("panning"); };
-  canvas.onwheel = (e) => { e.preventDefault(); camera.zoom = Math.max(0.3, Math.min(12, camera.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12))); draw(); };
+  canvas.onpointerup = () => {
+    // 不拖动的单击清掉测距线
+    if (drag && !drag.moved && !drag.measure && ruler) { ruler = null; draw(); }
+    if (drag?.measure && !drag.moved) { ruler = null; draw(); }
+    drag = null; canvas.classList.remove("panning", "measuring");
+  };
+  canvas.onpointerleave = () => { if (drag) return; readout.textContent = ""; tip.hidden = true; if (hover != null) { hover = null; draw(); } };
+  canvas.onwheel = (e) => {
+    e.preventDefault();
+    // 以光标为中心缩放：光标下的点缩放前后不动
+    const old = camera.zoom;
+    camera.zoom = Math.max(0.3, Math.min(200, old * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
+    const f = camera.zoom / old, [mx, my] = pos(e), cx = mx - frame.W / 2, cy = my - frame.H / 2;
+    camera.panX = cx - (cx - camera.panX) * f; camera.panY = cy - (cy - camera.panY) * f;
+    draw();
+    tip.hidden = true;
+  };
   canvas.ondblclick = () => { Object.assign(camera, CAMERA0); draw(); };
+  tools.onclick = (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.dataset.opt) { layoutOpts[b.dataset.opt] = !layoutOpts[b.dataset.opt]; saveLayoutOpts(); draw(); return; }
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${JOB}-${roundShown === "live" ? "live" : t("select_round", roundShown)}-${dim}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    });
+  };
   renderLayout.redraw = draw;
 }
+
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && ruler) { ruler = null; if (tab === "layout" && renderLayout.redraw) renderLayout.redraw(); } });
 
 // ---------------- 轮次 ----------------
 
