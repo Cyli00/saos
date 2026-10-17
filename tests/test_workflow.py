@@ -9,6 +9,7 @@ import yaml
 
 from saos import config, demand, jobs, ledger, report, workflow
 from saos.backend.fake import FakeBackend
+from saos import daemon as daemon_mod
 from saos.daemon import Daemon
 from saos.protocol import ErrorCode, SaosError
 
@@ -631,13 +632,20 @@ def test_long_operations_report_progress_and_honour_cancel(setup, monkeypatch):
 
     def optimize(cycles, cores, *, max_seconds=None, on_progress=None, should_cancel=None):
         on_progress({"progress": 10, "merit": 2.0, "elapsed_s": 0.5})
+        # 运行中的视图只有几何 / the mid-run view has geometry only
+        seen["mid_view"] = json.loads((job.root / jobs.VIEW_FILE).read_text(encoding="utf-8"))["layout"]
         job.request_cancel()
         seen.update(cores=cores, max_seconds=max_seconds, cancel=should_cancel())
         return {"stopped_by": "cancel"}
 
     daemon.backend.optimize = optimize
+    monkeypatch.setattr(daemon_mod, "VIEW_DURING_OPT_S", 0.0)
     assert call(daemon, "opt.local", job=job.id, max_seconds=30)["result"]["stopped_by"] == "cancel"
+    mid = seen.pop("mid_view")
+    assert mid["rays"] == [] and mid["rays_paused"]
     assert seen == {"cores": config.compute_cores(), "max_seconds": 30, "cancel": True}
+    final = json.loads((job.root / jobs.VIEW_FILE).read_text(encoding="utf-8"))["layout"]
+    assert final["rays"] and "rays_paused" not in final  # 结束后带光线 / with rays once it ends
     assert job.read_progress()["merit"] == 2.0
 
 

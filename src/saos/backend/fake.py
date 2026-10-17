@@ -200,7 +200,7 @@ class FakeBackend(Backend):
     def interference(self) -> dict[str, Any]:
         return geometry.interference(self._geometry_items())
 
-    def viz_data(self, folder: Path | None, *, full: bool = True) -> dict[str, Any]:
+    def viz_data(self, folder: Path | None, *, full: bool = True, rays: bool = True) -> dict[str, Any]:
         """假数据：面沿 z 轴排开，光线平行于轴到像面，只用来测试导出、存档和界面读取。"""
         lens = self._require()
         surfaces, z = [], 0.0
@@ -215,11 +215,11 @@ class FakeBackend(Backend):
             surfaces.append(item)
             if s["thickness"] != float("inf"):
                 z += s["thickness"]
-        rays = [{"field": 0, "px": 0.0, "py": py, "points": [[0.0, py, v["vertex"][2]] for v in surfaces], "start_dir": [0.0, 0.0, 1.0]}
-                for py in (-1.0, 0.0, 1.0)]
+        paths = [{"field": 0, "px": 0.0, "py": py, "points": [[0.0, py, v["vertex"][2]] for v in surfaces], "start_dir": [0.0, 0.0, 1.0]}
+                 for py in (-1.0, 0.0, 1.0)] if rays else []
         base = {"system": {**self.system_info(), "primary_wave": 1, "normalization": "Radial", "normalized_fields": [[0.0, 0.0]],
                            "stop_semi_diameter": 10.0, "image_surface": len(lens["surfaces"]) - 1, "non_axial": bool(lens.get("non_axial"))},
-                "surfaces": surfaces, "layout": {"wave": 1, "rays": rays}, "lens_data": self.surfaces(), "interference": self.interference()}
+                "surfaces": surfaces, "layout": {"wave": 1, "rays": paths, **({} if rays else {"rays_paused": True})}, "lens_data": self.surfaces(), "interference": self.interference()}
         if not full:
             return {**base, "timings_s": {}, "errors": {}}
         return {**base,

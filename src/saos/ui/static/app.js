@@ -35,7 +35,7 @@ const TEXT = {
     ld_material: "材料", ld_sd: "半口径", ld_conic: "圆锥", ld_solve: "V 为变量，其他字母为求解或 pickup",
     clash_title: "结构交叠", crossing: (a, b, d) => `第 ${a} 面与第 ${b} 面在口径内相交（最深约 ${d}）`,
     overlap: (a, b, n) => `镜片 ${a} 与镜片 ${b} 相互穿插（${n} 个采样点落在另一片玻璃里）`,
-    opt_grid: "网格", opt_labels: "面号", png_title: "把当前画面存成 PNG", tip_air: "空气",
+    live_optimising: "优化中，光线在结束后更新", opt_grid: "网格", opt_labels: "面号", png_title: "把当前画面存成 PNG", tip_air: "空气",
     ruler: (d, dz, dy, u) => `${d} ${u}（Δz ${dz} · Δy ${dy}）`,
     tip_lens: (k, m, ct, et, u) => `L${k} ${m} · 中心厚 ${ct} · 边缘厚 ${et} ${u}`,
   },
@@ -67,7 +67,7 @@ const TEXT = {
     ld_material: "Material", ld_sd: "Semi-dia.", ld_conic: "Conic", ld_solve: "V marks a variable, other letters a solve or pickup",
     clash_title: "Interference", crossing: (a, b, d) => `surfaces ${a} and ${b} cross inside their apertures (up to about ${d})`,
     overlap: (a, b, n) => `lenses ${a} and ${b} interpenetrate (${n} sample points inside the other's glass)`,
-    opt_grid: "Grid", opt_labels: "Surface #", png_title: "Save the current view as PNG", tip_air: "air",
+    live_optimising: "optimising, rays update when it ends", opt_grid: "Grid", opt_labels: "Surface #", png_title: "Save the current view as PNG", tip_air: "air",
     ruler: (d, dz, dy, u) => `${d} ${u} (Δz ${dz} · Δy ${dy})`,
     tip_lens: (k, m, ct, et, u) => `L${k} ${m} · centre ${ct} · edge ${et} ${u}`,
   },
@@ -566,7 +566,7 @@ function renderLayout(view) {
   if (only3d) dim = "3d";
   $("dim-seg").querySelectorAll("button").forEach((x) => { x.classList.toggle("on", x.dataset.dim === dim); x.disabled = only3d && x.dataset.dim === "2d"; x.title = x.disabled ? t("only_3d") : ""; });
   const clash = clashOf(viz);
-  const title = roundShown === "live" ? `${t("live")} · ${viz.lens || ""}${viz.dirty ? ` · ${t("live_unsaved")}` : ""}` : t("select_round", roundShown);
+  const title = roundShown === "live" ? `${t("live")} · ${viz.lens || ""}${viz.dirty ? ` · ${t("live_unsaved")}` : ""}${viz.layout?.rays_paused ? ` · ${t("live_optimising")}` : ""}` : t("select_round", roundShown);
   const els = elements(surfs);
   const mats = [...new Set(els.map((e) => e.material.toLowerCase()))];
   const matColor = (m) => MATERIAL_COLORS[mats.indexOf(m.toLowerCase()) % MATERIAL_COLORS.length];

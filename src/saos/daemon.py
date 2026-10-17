@@ -38,6 +38,8 @@ REQUEST_READ_TIMEOUT_S = 30
 # operations that may run long: their start and end go to progress.json; a stale cancel request is cleared first
 LONG_OPS = frozenset({"opt.local", "script.exec", "round.record", "demand.check", "scan.run"})
 REFRESH_AFTER = frozenset({"lens.load", "lens.set", "lens.build", "opt.local", "script.exec", "round.record"})
+# 局部优化运行中多久给流程图窗口推一次当前镜头（只有几何，不带光线）/ how often a running optimisation updates the live view
+VIEW_DURING_OPT_S = 5.0
 COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
 COMPARED_NUMBER_KEYS = ("radius", "thickness", "conic", "semi_diameter")
 
@@ -215,7 +217,7 @@ class Daemon:
             return False
         return bool(demand.confirmations(root)) and not any((root / "models").glob(f"*/{model_gate.APPROVAL_FILE}"))
 
-    def export_view(self) -> dict[str, Any] | None:
+    def export_view(self, *, rays: bool = True) -> dict[str, Any] | None:
         """把当前镜头的布局、Lens Data 和交叠检查写进任务的 view.json，流程图窗口据此显示；失败只记在文件里，不影响操作。
         Write the current lens's layout, Lens Data and interference check to the job's view.json for the workflow window;
         a failure is noted in the file and never fails the operation."""
@@ -224,7 +226,7 @@ class Daemon:
             return None
         started = time.perf_counter()
         try:
-            data: dict[str, Any] = {"ok": True, **self.backend.viz_data(None, full=False)}
+            data: dict[str, Any] = {"ok": True, **self.backend.viz_data(None, full=False, rays=rays)}
         except Exception as exc:  # noqa: BLE001 - 视图只是给人看的 / the view is for people only
             log.exception(_t("导出当前视图失败", "exporting the live view failed"))
             data = {"ok": False, "error": f"{type(exc).__name__}: {getattr(exc, 'message', exc)}"[:500]}
@@ -585,10 +587,19 @@ class Daemon:
         # 优化可能跑很久：需求未确认或有 blocking 问题时先问用户，不进入优化
         # an optimisation may run for a long time: with an unconfirmed demand or a blocking question, ask the user first
         workflow.preflight(job.root)
+        last_view = [time.monotonic()]
+
+        def on_progress(data: dict[str, Any]) -> None:
+            job.write_progress(stage="opt.local", **data)
+            # 运行中只读得到几何：优化器占着工具，追迹不了光线；实测读几何不改变优化结果（Double Gauss，2026-10-17）
+            # only geometry can be read mid-run: the optimiser holds the tool; reading it left the result unchanged
+            if time.monotonic() - last_view[0] >= VIEW_DURING_OPT_S:
+                self.export_view(rays=False)
+                last_view[0] = time.monotonic()
+
         result = self.backend.optimize(str(args.get("cycles", "auto")), args.get("cores") or config.compute_cores(),
                                        max_seconds=_arg(args, "max_seconds", (int, float), default=None),
-                                       on_progress=lambda data: job.write_progress(stage="opt.local", **data),
-                                       should_cancel=job.cancel_requested)
+                                       on_progress=on_progress, should_cancel=job.cancel_requested)
         if result.get("stopped_by"):
             job.write_progress(stopped_by=result["stopped_by"])
         loaded.dirty = True

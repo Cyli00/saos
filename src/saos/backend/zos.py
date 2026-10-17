@@ -1183,12 +1183,14 @@ class ZosBackend(Backend):
             items.append(item)
         return items
 
-    def viz_data(self, folder: Path | None, *, pupil_grid: int = 31, fan: int = 7, full: bool = True) -> dict[str, Any]:
+    def viz_data(self, folder: Path | None, *, pupil_grid: int = 31, fan: int = 7, full: bool = True, rays: bool = True) -> dict[str, Any]:
         """saos ui 用的数据：逐面全局几何、布局光线、Lens Data、交叠检查；full 时另有点列图光线、点列图 RMS/GEO 和 FFT MTF
         （每轮的 viz.json）。不带 full 是改动镜头后给界面的当前视图。
         几何与光线坐标都来自 ZOS-API（GetGlobalMatrix、GetSag、批量光线追迹），这里只做坐标变换。
         Data for saos ui: global geometry, layout rays, Lens Data and the interference check; with full also spot rays,
-        Standard Spot RMS/GEO and FFT MTF (a round's viz.json). Without full it is the live view after a lens change."""
+        Standard Spot RMS/GEO and FFT MTF (a round's viz.json). Without full it is the live view after a lens change.
+        rays=False 时不追迹布局光线：优化运行中工具被优化器占着，只能读几何（同一系统同时只能开一个工具）。
+        rays=False skips the layout rays: while an optimisation runs its tool is open and only geometry can be read."""
         system = self.system
         lde = system.LDE
         info = self.system_info()
@@ -1260,8 +1262,8 @@ class ZosBackend(Backend):
         steps = [2 * k / (fan - 1) - 1 for k in range(fan)]
         layout_rays = [(f, primary, hx, hy, 0.0, p) for f, (hx, hy) in enumerate(norm) for p in steps] + \
                       [(f, primary, hx, hy, p, 0.0) for f, (hx, hy) in enumerate(norm) for p in steps if p != 0.0]
-        traced = {j: self._batch([r[1:] for r in layout_rays], j) for j in range(1, image + 1) if transforms[j] is not None}
-        inner = self._grin_points(layout_rays, image, apply, errors)
+        traced = {j: self._batch([r[1:] for r in layout_rays], j) for j in range(1, image + 1) if transforms[j] is not None} if rays else {}
+        inner = self._grin_points(layout_rays, image, apply, errors) if rays else {}
         paths = []
         for k, (f, _, _, _, px, py) in enumerate(layout_rays):
             points, first_dir, pending = [], None, []
@@ -1292,7 +1294,7 @@ class ZosBackend(Backend):
                        "stop_semi_diameter": stop["semi_diameter"] if stop else None, "image_surface": image,
                        "non_axial": bool(system.IsNonAxial)},
             "surfaces": surfaces,
-            "layout": {"wave": primary, "rays": paths},
+            "layout": {"wave": primary, "rays": paths, **({} if rays else {"rays_paused": True})},
             "lens_data": self.surfaces(),
             "interference": clash,
         }
