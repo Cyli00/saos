@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -126,10 +127,17 @@ class Job:
         return problems
 
     def write_progress(self, **fields: Any) -> dict[str, Any]:
-        """合并写入 progress.json（原子替换）。/ Merge fields into progress.json (atomic replace)."""
+        """合并写入 progress.json（原子替换）。进度只是给人看的：重试后仍写不进去时记一笔日志、返回合并后的内容，
+        不让显示故障打断正在跑的计算。
+        Merge fields into progress.json (atomic replace). Progress is for display only: when it still cannot be written
+        after the retries, log it and return the merged content, so a display fault never stops a running computation."""
         current = self.read_progress() or {}
         current.update(fields, updated=now_iso())
-        write_json(self.root / PROGRESS_FILE, current)
+        try:
+            write_json(self.root / PROGRESS_FILE, current)
+        except OSError as exc:
+            logging.getLogger("saos.jobs").warning("progress.json of job %s not written: %s", self.id, exc)
+            current["write_error"] = f"{type(exc).__name__}: {exc}"[:300]
         return current
 
     def read_progress(self) -> dict[str, Any] | None:
