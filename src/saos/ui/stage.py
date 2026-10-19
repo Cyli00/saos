@@ -36,7 +36,7 @@ def rounds_of(job: jobs.Job) -> list[dict[str, Any]]:
         folder = evaluation.rsplit("/", 1)[0] if evaluation else ""
         out.append({"round": r["round"], "tiers": ledger.tiers_of(r), "note": r.get("note", ""), "shortfall": _num(r["shortfall"]),
                     "achieved": bool(r.get("achieved")), "deliverable": ledger.deliverable(r), "time": r.get("time"),
-                    "demand_sha": r.get("demand_sha"), "viz": bool(folder) and (job.root / folder / "viz.json").is_file()})
+                    "demand_sha": ledger.version(r)[0], "viz": bool(folder) and (job.root / folder / "viz.json").is_file()})
     return out
 
 
@@ -90,7 +90,7 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
         else:
             status["modeling"] = status["model_approve"] = "done"
             rows = ledger.load(root / ledger.LEDGER_FILE)
-            in_version = [r for r in ledger.current_window(rows) if r.get("demand_sha") == sha] if rows else []
+            in_version = [r for r in ledger.current_window(rows) if ledger.version(r)[0] == sha] if rows else []
             decision = None
             if in_version:
                 decision = ledger.decide(rows, d["stop"], ledger.stop_for(root, sha), ledger.ruled_out_for(root, sha))
