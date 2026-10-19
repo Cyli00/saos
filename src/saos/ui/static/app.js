@@ -558,12 +558,33 @@ function segDist(px, py, a, b) {
 const ticks = (a, b, step) => { const out = []; for (let k = Math.ceil(a / step); k <= Math.floor(b / step); k++) out.push(k * step || 0); return out; };
 const fmtLen = (v, step) => v.toFixed(Math.max(0, Math.min(6, -Math.floor(Math.log10(step) + 1e-9))));
 
+// 2D 剖面：把点换到剖面平面的坐标（离面距离, 纵轴, 横轴），之后照旧按 (z, y) 画子午截线和 px = 0 的光线扇。
+// 轴对称系统的剖面就是全局 YZ 面，坐标不变；折转系统用服务端找到的对称平面（section.py）
+function toSection(v, sec) {
+  const dot = (a, p) => a[0] * p[0] + a[1] * p[1] + a[2] * p[2];
+  const P = (p) => [dot(sec.normal, p) - sec.offset, dot(sec.v, p), dot(sec.u, p)];
+  const D = (d) => [dot(sec.normal, d), dot(sec.v, d), dot(sec.u, d)];
+  // 截线按纵坐标从下到上排，标签和挡光片按首尾取上下端
+  const upward = (pts) => (pts && pts.length && pts[0][1] > pts[pts.length - 1][1] ? pts.slice().reverse() : pts);
+  const surfaces = v.surfaces.map((s) => {
+    if (!s.vertex) return s;
+    const key = sec.profiles[s.index] || "profile_y", other = key === "profile_y" ? "profile_x" : "profile_y";
+    return { ...s, vertex: P(s.vertex), profile_y: upward(s[key]?.map(P)), profile_x: s[other]?.map(P), rim: s.rim?.map(P) };
+  });
+  const swap = sec.fan !== "px";
+  const rays = v.layout.rays.map((r) => ({ ...r, px: swap ? r.py : r.px, py: swap ? r.px : r.py, points: r.points.map(P), start_dir: r.start_dir && D(r.start_dir) }));
+  return { ...v, surfaces, layout: { ...v.layout, rays } };
+}
+
 function renderLayout(view) {
-  const sys = viz.system;
-  const surfs = viz.surfaces;
-  // 非轴对称系统画不出有意义的剖面，只给 3D / a non-axial system has no meaningful section: 3D only
-  const only3d = !!sys.non_axial;
+  const sec = viz.section;
+  // 找不到对称平面的系统（各面朝向不共面）画不出有意义的剖面，只给 3D / no plane of symmetry: 3D only
+  const only3d = !!viz.system.non_axial && !sec;
   if (only3d) dim = "3d";
+  const shown = dim === "2d" && sec ? toSection(viz, sec) : viz;
+  const sys = shown.system;
+  const surfs = shown.surfaces;
+  const axisH = dim === "2d" && sec ? sec.u_name : "z", axisV = dim === "2d" && sec ? sec.v_name : "y";
   $("dim-seg").querySelectorAll("button").forEach((x) => { x.classList.toggle("on", x.dataset.dim === dim); x.disabled = only3d && x.dataset.dim === "2d"; x.title = x.disabled ? t("only_3d") : ""; });
   const clash = clashOf(viz);
   const title = roundShown === "live" ? `${t("live")} · ${viz.lens || ""}${viz.dirty ? ` · ${t("live_unsaved")}` : ""}${viz.layout?.rays_paused ? ` · ${t("live_optimising")}` : ""}` : t("select_round", roundShown);
@@ -602,7 +623,7 @@ function renderLayout(view) {
   // 所有点用于取景；起点按第一面方向往回延长一段
   const verts = surfs.filter((s) => s.vertex).map((s) => s.vertex);
   const track = verts.length > 1 ? Math.hypot(...verts[verts.length - 1].map((v, k) => v - verts[0][k])) : 10;
-  const rays = viz.layout.rays.map((r) => {
+  const rays = shown.layout.rays.map((r) => {
     const pts = r.points.slice();
     if (r.start_dir) pts.unshift(pts[0].map((v, k) => v - r.start_dir[k] * track * 0.28));
     return { ...r, pts };
@@ -667,8 +688,8 @@ function renderLayout(view) {
       ticks(z0, z1, major).forEach((z) => { const x = S(at(z, 0))[0]; if (x > 40 && x < W - 50) g.fillText(fmtLen(z, major), x, H - 3); });
       g.textAlign = "left"; g.textBaseline = "middle";
       ticks(y0, y1, major).forEach((y) => { const v = S(at(0, y))[1]; if (v > 18 && v < H - 18) g.fillText(fmtLen(y, major), 4, v); });
-      g.textAlign = "right"; g.textBaseline = "bottom"; g.fillText(`z (${unit})`, W - 6, H - 3);
-      g.textAlign = "left"; g.textBaseline = "top"; g.fillText(`y (${unit})`, 4, 4);
+      g.textAlign = "right"; g.textBaseline = "bottom"; g.fillText(`${axisH} (${unit})`, W - 6, H - 3);
+      g.textAlign = "left"; g.textBaseline = "top"; g.fillText(`${axisV} (${unit})`, 4, 4);
     }
     // 光轴
     if (verts.length > 1) {
@@ -831,7 +852,7 @@ function renderLayout(view) {
     els.forEach((e, k) => {
       if (e.front !== s && e.back !== s) return;
       const ct = rows.get(e.front.index)?.thickness;
-      const et = sys.non_axial ? null : edgeThickness(e);
+      const et = sys.non_axial && !(dim === "2d" && sec) ? null : edgeThickness(e);
       lines.push(t("tip_lens", k + 1, e.material, ct == null ? "–" : ct.toFixed(3), et == null ? "–" : et.toFixed(3), unit) + (et != null && et <= 0 ? " ⚠" : ""));
     });
     return lines;
@@ -862,7 +883,7 @@ function renderLayout(view) {
     canvas.setPointerCapture(e.pointerId);
   };
   const showReadout = (mx, my) => {
-    if (dim === "2d" && frame) { const [z, y] = frame.inv(mx, my), step = 1 / frame.scale; readout.textContent = `z ${fmtLen(z, step)} · y ${fmtLen(y, step)} ${unit}`; }
+    if (dim === "2d" && frame) { const [z, y] = frame.inv(mx, my), step = 1 / frame.scale; readout.textContent = `${axisH} ${fmtLen(z, step)} · ${axisV} ${fmtLen(y, step)} ${unit}`; }
     else readout.textContent = "";
   };
   canvas.onpointermove = (e) => {
@@ -1005,7 +1026,8 @@ $("dim-seg").addEventListener("click", (e) => {
   if (!b || b.disabled) return;
   dim = b.dataset.dim;
   $("dim-seg").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
-  if (tab === "layout" && renderLayout.redraw) renderLayout.redraw();
+  // 2D 与 3D 用的坐标可能不同（折转系统的 2D 换到剖面平面），整体重画 / 2D may use the section frame: redraw from scratch
+  if (tab === "layout") renderView();
 });
 let resizeTimer = null;
 window.addEventListener("resize", () => {

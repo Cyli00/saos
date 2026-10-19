@@ -13,7 +13,7 @@ import yaml
 from saos import demand, jobs, report
 from saos.backend.fake import FakeBackend
 from saos.daemon import Daemon
-from saos.ui import server, stage
+from saos.ui import section, server, stage
 
 DEMAND = {
     "schema": 2,
@@ -204,6 +204,8 @@ def test_live_view_and_window_polls_are_served(ui):
     msg = get(srv, f"/api/live?job={job.id}")[1]
     assert msg["ok"] and msg["result"]["lens"] == "a.zmx" and msg["result"]["lens_data"] and "interference" in msg["result"]
     assert "spot" not in msg["result"]  # 当前视图只有布局和 Lens Data / the live view has layout and Lens Data only
+    sec = msg["result"]["section"]  # 轴对称：2D 画全局 YZ 面 / axial: the 2D view is the global YZ plane
+    assert (sec["u_name"], sec["v_name"], sec["fan"]) == ("z", "y", "px") and set(sec["profiles"].values()) == {"profile_y"}
     before = get(srv, "/api/ping")[1]["result"]["seen_s"]
     state = get(srv, f"/api/state?job={job.id}")[1]["result"]
     assert job.id not in before and get(srv, "/api/ping")[1]["result"]["seen_s"][job.id] < 5
@@ -274,3 +276,32 @@ def test_snapshot_shows_a_detached_scan_as_the_running_operation(saos_home):
     # 所属后台进程已经不在：不再显示 / the owning daemon is gone: not shown
     (folder / "progress.json").write_text(json.dumps({"op": "scan.run", "status": "running", "daemon_pid": 0}), encoding="utf-8")
     assert stage.snapshot(job)["progress"] is None
+
+
+def _surface(index, vertex, y_dir, x_dir, sd=1.0):
+    """平面镜片面：顶点、局部 y 轴、局部 x 轴的全局方向 / a flat face given its vertex and local y and x axes."""
+    at = lambda d, k: [vertex[i] + d[i] * k for i in range(3)]  # noqa: E731
+    return {"index": index, "vertex": list(vertex), "profile_y": [at(y_dir, k) for k in (-sd, 0.0, sd)],
+            "profile_x": [at(x_dir, k) for k in (-sd, 0.0, sd)], "rim": [at(y_dir, sd), at(x_dir, sd), at(y_dir, -sd), at(x_dir, -sd)]}
+
+
+def test_folded_systems_get_a_2d_section_in_their_plane_of_symmetry():
+    """轴对称系统画 YZ 面；在 XZ 面内折转（光纤段沿 x，45° 镜后沿 z）画 XZ 面、用弧矢截线和 py = 0 的扇；各面不共面时没有 2D。"""
+    X, Y, Z = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)
+    axial = {"surfaces": [_surface(1, (0, 0, 0), Y, X), _surface(2, (0, 0, 5), Y, X)],
+             "layout": {"rays": [{"field": 0, "px": 0.0, "py": py, "points": [[0, py, 0], [0, py, 5]]} for py in (-1.0, 1.0)]}}
+    sec = section.section_plane(axial)
+    assert sec["normal"] == [1.0, 0.0, 0.0] and (sec["u_name"], sec["v_name"], sec["fan"]) == ("z", "y", "px")
+    assert sec["profiles"] == {1: "profile_y", 2: "profile_y"}
+
+    # 光纤段的面法线沿 x（局部 x 轴对着全局 -z），镜后的面法线沿 z；光瞳 x 扇（py = 0）留在 XZ 面里
+    folded = {"surfaces": [_surface(1, (3, 0, 0), Y, (0, 0, -1)), _surface(2, (0, 0, 2), Y, X)],
+              "layout": {"rays": [{"field": 0, "px": px, "py": 0.0, "points": [[3, 0, px], [px, 0, 2]]} for px in (-1.0, 1.0)]
+                         + [{"field": 0, "px": 0.0, "py": py, "points": [[3, py, 0], [0, py, 2]]} for py in (-1.0, 1.0)]}}
+    sec = section.section_plane(folded)
+    assert sec["normal"] == [0.0, 1.0, 0.0] and (sec["u_name"], sec["v_name"], sec["fan"]) == ("z", "x", "py")
+    assert sec["profiles"] == {1: "profile_x", 2: "profile_x"}
+
+    skew = {"surfaces": [_surface(1, (0, 0, 0), Y, X), _surface(2, (1, 0, 1), Y, X), _surface(3, (0, 1, 2), Y, X),
+                         _surface(4, (1, 1, 5), Y, X)], "layout": {"rays": []}}
+    assert section.section_plane(skew) is None

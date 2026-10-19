@@ -27,7 +27,7 @@ from urllib.parse import parse_qs, urlparse
 
 from saos import client, config, jobs, ledger
 from saos.protocol import ErrorCode, SaosError, fail, jsonable, ok, write_json
-from saos.ui import stage
+from saos.ui import section, stage
 
 log = logging.getLogger("saos.ui")
 
@@ -66,7 +66,7 @@ def live_of(job: jobs.Job) -> dict[str, Any]:
     path = job.root / jobs.VIEW_FILE
     if not path.is_file():
         raise SaosError(ErrorCode.FILE_NOT_FOUND, "no live view yet: the daemon writes one after the first command that loads or changes the lens")
-    return json.loads(path.read_text(encoding="utf-8"))
+    return _with_section(json.loads(path.read_text(encoding="utf-8")))
 
 
 def viz_of(job: jobs.Job, number: int) -> dict[str, Any]:
@@ -76,7 +76,14 @@ def viz_of(job: jobs.Job, number: int) -> dict[str, Any]:
     path = job.root / record["evaluation"].rsplit("/", 1)[0] / "viz.json"
     if not path.is_file():
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"round {number} has no viz.json (recorded with --no-viz or before saos ui existed)")
-    return json.loads(path.read_text(encoding="utf-8"))
+    return _with_section(json.loads(path.read_text(encoding="utf-8")))
+
+
+def _with_section(viz: dict[str, Any]) -> dict[str, Any]:
+    # 2D 剖面所在的平面；折转系统也能画 2D / the plane of the 2D section, so folded systems get a 2D view too
+    if viz.get("surfaces"):
+        viz["section"] = section.section_plane(viz)
+    return viz
 
 
 class Handler(BaseHTTPRequestHandler):
