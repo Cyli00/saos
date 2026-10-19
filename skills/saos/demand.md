@@ -1,6 +1,6 @@
 # Demand format (`sources/demand.yaml`)
 
-The demand is the confirmed need of one job, condensed. It is what you reread when you resume work or lose track, so it holds only what the design must respect and reach. `saos check`, `saos round` and `saos opt local` read it on every call; `saos report` shows it to the user.
+The demand is the confirmed need of one job, condensed. It is what you reread when you resume work or lose track, so it holds only what the design must respect and reach. `saos check`, `saos round` and `saos opt local`, `hammer` and `global` read it on every call; `saos report` shows it to the user.
 
 The user's words stay verbatim in `sources/interview.md`. The demand holds the current conclusions; rewrite it when they change, never append the conversation to it.
 
@@ -61,7 +61,7 @@ lang: zh
 | `constants` | Fixed facts and conditions the design must not change, and every requirement the user said cannot be relaxed (it must not be traded for other gains): wavelengths, given parts (fiber model and NA, prism, tube), the sample medium, the task scope. Each has a `source`: the user, a datasheet or paper, or `agent assumption: <why>`. | An unknown real-world fact (the actual tube glass, the brain region). Write it in `open_questions`; if you must use a provisional value, make it a constant whose source says `agent assumption`. |
 | `variables` | Freedoms you may use and their limits: material candidates, surface families, a dimension's allowed range. A `range` needs a `check` that measures it. | A real-world unknown. The optimiser must never "choose" a fact (fiber type, tissue, vendor tube) to make the result look better. |
 | `objectives` | Measured goals. `must` is the pass line and enters the shortfall G; `wish` is the value hoped for, reported only. An objective with neither is reported only. One quantity is one objective: write `must` and `wish` on the same entry, not two entries. `origin` says whose goal it is (see Weights). | A derived geometric condition that is really a limit on a freedom (put it in `variables`). |
-| `open_questions` | What you still need from the user. `blocking: true` stops `round` and `opt local` until it is answered; use it when an answer could change a constant, a range or a pass line. | Research to-dos that do not change the demand. |
+| `open_questions` | What you still need from the user. `blocking: true` stops `round` and `opt local`/`hammer`/`global` until it is answered; use it when an answer could change a constant, a range or a pass line. | Research to-dos that do not change the demand. |
 | `summary` | A short account of the conversation, 2–6 sentences. | Lists, numbers already in the sections, literature details. |
 
 Do not restate the rules of `skills/saos/SKILL.md` (sourced materials, no model glass in a delivery, no discarding rays, model approval). They hold for every job. Do not copy literature details or process instructions (library work, file clean-up) into the demand; keep them in other files under `sources/` and cite the file in a `source`. Anything that affects design or acceptance must be in `constants`, `variables` or `objectives`, never only in the summary: only those sections are versioned and checked.
@@ -121,7 +121,7 @@ A round whose checks failed to run (exception, unreadable file) is invalid: it c
 
 A round may name several tiers (`--tier variables,materials`). A rule-out holds until the next clear gain; after a gain, judge again.
 
-Tiers, low to high: `local`, `variables`, `materials` (substitute sourced real materials), `global` (global search or Hammer, or a multi-start scan in a ZOS-API script), `structure` (add, split or remove elements, aspheres).
+Tiers, low to high: `local`, `variables`, `materials` (substitute sourced real materials), `global` (`saos opt global` or `saos opt hammer`, or a multi-start scan), `structure` (add, split or remove elements, aspheres).
 
 Every round also returns a `brief`: the objectives (with origin and weight) against `must` / `wish`, `hard_failing`, the open questions, `doubts` raised by evidence (an item without a valid value for two rounds, a hard limit never met in this demand version, a failing limit that rests on an agent assumption; the reminder to question the demand comes with them, not every round), and `review` when two rounds passed without a clear gain, the next tier is `global` or `structure`, or the rounds stopped. When `review` is set, reread the summary and your first-order analysis before spending more compute, and ask the user if the demand, the structure or a measurement looks wrong.
 
@@ -132,5 +132,5 @@ Check scripts live under `checks/` with every helper module and data file they u
 1. `saos check --job J` evaluates every check on the loaded lens; it needs no confirmation.
 2. `saos demand confirm --job J --quote "..."` after the user approves the demand.
 3. `saos lens describe` and `saos lens approve --model models/NNN-<lens> --quote "..."` for the model.
-4. `saos round --job J [--tier T] --note "..."` records round 0 (no tier), then one round per adjustment. It refuses without a confirmation of the current version (`DEMAND_NOT_CONFIRMED`), with a blocking question (`DEMAND_BLOCKED`), after the job stopped, when the lens matches no approved model (`MODEL_NOT_APPROVED`), when a check changed the lens (`LENS_MODIFIED_BY_CHECK`), or for the same lens under the same versions (`DUPLICATE_ROUND`). `saos opt local` applies the same demand checks before it starts.
+4. `saos round --job J [--tier T] --note "..."` records round 0 (no tier), then one round per adjustment. It refuses without a confirmation of the current version (`DEMAND_NOT_CONFIRMED`), with a blocking question (`DEMAND_BLOCKED`), after the job stopped, when the lens matches no approved model (`MODEL_NOT_APPROVED`), when a check changed the lens (`LENS_MODIFIED_BY_CHECK`), or for the same lens under the same versions (`DUPLICATE_ROUND`). `saos opt local`, `opt hammer` and `opt global` apply the same demand checks before they start.
 5. `saos report --job J [--lang zh|en]` writes `report/index.html`.

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import glob
 import logging
 import math
 import os
@@ -36,10 +37,12 @@ REQUEST_READ_TIMEOUT_S = 30
 # 显性调试：这些操作可能改变镜头，结束后刷新已打开的分析窗口
 # 可能跑很久的操作：开始和结束都写进 progress.json，开始前清掉旧的取消请求
 # operations that may run long: their start and end go to progress.json; a stale cancel request is cleared first
-LONG_OPS = frozenset({"opt.local", "script.exec", "round.record", "demand.check", "scan.run"})
-REFRESH_AFTER = frozenset({"lens.load", "lens.set", "lens.build", "opt.local", "script.exec", "round.record"})
-# 局部优化运行中多久给流程图窗口推一次当前镜头（只有几何，不带光线）/ how often a running optimisation updates the live view
+LONG_OPS = frozenset({"opt.local", "opt.hammer", "opt.global", "script.exec", "round.record", "demand.check", "scan.run"})
+REFRESH_AFTER = frozenset({"lens.load", "lens.set", "lens.build", "opt.local", "opt.hammer", "opt.global", "script.exec", "round.record"})
+# 优化运行中多久给流程图窗口推一次当前镜头（只有几何，不带光线）/ how often a running optimisation updates the live view
 VIEW_DURING_OPT_S = 5.0
+# Hammer、全局搜索运行中在镜头文件旁写出的系统（文件名模式）/ systems Hammer and global search write next to the lens file
+SEARCH_FILES = {"hammer": "{stem}_*_HAMMER.zmx", "global": "GLOPT_*.zmx"}
 COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
 COMPARED_NUMBER_KEYS = ("radius", "thickness", "conic", "semi_diameter")
 
@@ -121,6 +124,8 @@ class Daemon:
             "opt.vary": self.op_vary,
             "opt.merit": self.op_merit,
             "opt.local": self.op_optimize,
+            "opt.hammer": lambda args: self.op_search({**args, "kind": "hammer"}),
+            "opt.global": lambda args: self.op_search({**args, "kind": "global"}),
             "script.exec": self.op_exec,
             "demand.check": self.op_check,
             "scan.run": self.op_scan,
@@ -581,29 +586,75 @@ class Daemon:
             loaded.dirty = True
         return {**loaded.describe(), "merit": self.backend.merit_value(), "rows": self.backend.merit_rows()}
 
-    def op_optimize(self, args: dict[str, Any]) -> dict[str, Any]:
-        job = self._job(args)
-        loaded = self._require_loaded(job)
-        # 优化可能跑很久：需求未确认或有 blocking 问题时先问用户，不进入优化
-        # an optimisation may run for a long time: with an unconfirmed demand or a blocking question, ask the user first
-        workflow.preflight(job.root)
+    def _optimizer_hooks(self, job: jobs.Job, stage: str) -> Callable[[dict[str, Any]], None]:
         last_view = [time.monotonic()]
 
         def on_progress(data: dict[str, Any]) -> None:
-            job.write_progress(stage="opt.local", **data)
+            job.write_progress(stage=stage, **data)
             # 运行中只读得到几何：优化器占着工具，追迹不了光线；实测读几何不改变优化结果（Double Gauss，2026-10-17）
             # only geometry can be read mid-run: the optimiser holds the tool; reading it left the result unchanged
             if time.monotonic() - last_view[0] >= VIEW_DURING_OPT_S:
                 self.export_view(rays=False)
                 last_view[0] = time.monotonic()
 
+        return on_progress
+
+    def op_optimize(self, args: dict[str, Any]) -> dict[str, Any]:
+        job = self._job(args)
+        loaded = self._require_loaded(job)
+        # 优化可能跑很久：需求未确认或有 blocking 问题时先问用户，不进入优化
+        # an optimisation may run for a long time: with an unconfirmed demand or a blocking question, ask the user first
+        workflow.preflight(job.root)
         result = self.backend.optimize(str(args.get("cycles", "auto")), args.get("cores") or config.compute_cores(),
                                        max_seconds=_arg(args, "max_seconds", (int, float), default=None),
-                                       on_progress=on_progress, should_cancel=job.cancel_requested)
+                                       on_progress=self._optimizer_hooks(job, "opt.local"), should_cancel=job.cancel_requested)
         if result.get("stopped_by"):
             job.write_progress(stopped_by=result["stopped_by"])
         loaded.dirty = True
         return {**loaded.describe(), **result}
+
+    def op_search(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Hammer 或全局搜索。两者都不会自己结束，必须给 max_seconds。OpticStudio 运行中把找到的系统写在镜头文件旁边，
+        结束后移到 lenses/<kind>/NNN/，不留在工作镜头的目录里。
+        Hammer or global search. Neither ends on its own, so max_seconds is required. OpticStudio writes the systems it
+        finds next to the lens file while running; they are moved to lenses/<kind>/NNN/ afterwards."""
+        job = self._job(args)
+        loaded = self._require_loaded(job)
+        kind = _arg(args, "kind", str)
+        if kind not in SEARCH_FILES:
+            raise SaosError(ErrorCode.BAD_ARGS, f"kind must be one of {list(SEARCH_FILES)}")
+        max_seconds = _arg(args, "max_seconds", (int, float))
+        if max_seconds <= 0:
+            raise SaosError(ErrorCode.BAD_ARGS, "max_seconds must be positive")
+        workflow.preflight(job.root)
+        lens_dir = loaded.path.parent
+        pattern = SEARCH_FILES[kind].format(stem=glob.escape(loaded.path.stem))
+        before = {p.name: p.stat().st_mtime_ns for p in lens_dir.glob(pattern)}
+        try:
+            result = self.backend.optimize_search(kind, args.get("cores") or config.compute_cores(), max_seconds=float(max_seconds),
+                                                  on_progress=self._optimizer_hooks(job, f"opt.{kind}"), should_cancel=job.cancel_requested)
+        finally:
+            written = sorted(p for p in lens_dir.glob(pattern) if before.get(p.name) != p.stat().st_mtime_ns)
+            files = self._archive_search_files(job, kind, written)
+        if result.get("stopped_by"):
+            job.write_progress(stopped_by=result["stopped_by"])
+        loaded.dirty = True
+        return {**loaded.describe(), **result, "files": files}
+
+    @staticmethod
+    def _archive_search_files(job: jobs.Job, kind: str, written: list[Path]) -> list[str]:
+        if not written:
+            return []
+        root = job.lenses_dir / kind
+        root.mkdir(parents=True, exist_ok=True)
+        folder = root / f"{jobs.next_archive_number(root):03d}"
+        folder.mkdir()
+        out = []
+        for p in written:
+            target = folder / p.name
+            shutil.move(str(p), target)
+            out.append(job.relative_lens(target))
+        return out
 
     def op_exec(self, args: dict[str, Any]) -> dict[str, Any]:
         """执行 agent 编写的脚本（ADR-0007）。当前加载的是其他任务的镜头时拒绝。"""

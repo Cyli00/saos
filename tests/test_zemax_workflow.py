@@ -21,23 +21,6 @@ pytestmark = [
 
 SAMPLE = Path.home() / "Documents/Zemax/Samples/Sequential/Objectives/Cooke 40 degree field.zmx"
 
-HAMMER = """
-def run(ctx):
-    # 全局层级：Hammer 优化跑几秒后中断（它本身会一直运行到人为中断）
-    tool = ctx.system.Tools.OpenHammerOptimization()
-    try:
-        before = float(tool.InitialMeritFunction)
-        tool.RunAndWaitWithTimeout(float(ctx.args.get("seconds", 5)))
-        tool.Cancel()
-        tool.WaitForCompletion()
-        after = float(tool.CurrentMeritFunction)
-    finally:
-        tool.Close()
-    ctx.mark_dirty()
-    return {"initial_merit": before, "final_merit": after}
-"""
-
-
 def saos(*args, env):
     proc = subprocess.run([sys.executable, "-m", "saos", *map(str, args)], capture_output=True, env=env, timeout=600)
     out = json.loads(proc.stdout.decode("utf-8"))
@@ -135,15 +118,20 @@ def test_workflow_until_achieved_or_exhausted_with_reports(saos_home, tmp_path):
         ok(saos("opt", "local", "--job", job2, env=env))
         d1 = ok(saos("round", "--job", job2, "--tier", "local", env=env))["decision"]
         assert d1["status"] == "continue" and d1["next_tier"] == "global"
-        script = tmp_path / "hammer.py"
-        script.write_text(HAMMER, encoding="utf-8")
-        hammer = ok(saos("exec", script, "--job", job2, "--name", "hammer", "--arg", "seconds=5", env=env))["result"]
+        # 全局层级：Hammer 与全局搜索都不会自己结束，按 --max-seconds 中断；运行中写在镜头旁的系统移进 lenses/<kind>/NNN/
+        lens_dir = saos_home / "jobs" / job2 / "lenses"
+        hammer = ok(saos("opt", "hammer", "--job", job2, "--max-seconds", 5, env=env))
+        assert hammer["stopped_by"] == "timeout" and hammer["systems"] > 0
         assert hammer["final_merit"] <= hammer["initial_merit"] + 1e-12
-        d2 = ok(saos("round", "--job", job2, "--tier", "global", "--note", "Hammer 5 s", env=env))["decision"]
+        found = ok(saos("opt", "global", "--job", job2, "--max-seconds", 5, env=env))
+        assert found["stopped_by"] == "timeout" and found["final_merit"] == found["best_merits"][0]
+        assert found["files"] and all(f.startswith("global/001/GLOPT_") for f in found["files"]), found["files"]
+        assert not list(lens_dir.glob("GLOPT_*")) and not list(lens_dir.glob("*_HAMMER.zmx"))
+        d2 = ok(saos("round", "--job", job2, "--tier", "global", "--note", "Hammer 5 s + global search 5 s", env=env))["decision"]
         assert d2["status"] == "exhausted", d2
         assert saos("round", "--job", job2, "--tier", "local", env=env)["error"]["code"] == "BAD_ARGS"
         rep2 = ok(saos("report", "--job", job2, env=env))
         html2 = Path(rep2["report"]).read_text(encoding="utf-8")
-        assert rep2["status"] == "exhausted" and "无法再优化" in html2 and "超出" in html2 and "scripts/" in html2
+        assert rep2["status"] == "exhausted" and "无法再优化" in html2 and "超出" in html2
     finally:
         ok(saos("daemon", "stop", "--discard", env=env))

@@ -114,7 +114,7 @@ def materials(desc: dict[str, Any]) -> list[dict[str, Any]]:
         src = s.get("material_source") or {}
         if src.get("kind") in ("model", "catalog"):
             item = {"surface": s["index"], "kind": src["kind"], "n": s.get("n")}
-            item.update({"name": src.get("name"), "catalogs": src.get("catalogs")} if src["kind"] == "catalog"
+            item.update({"name": src.get("name"), "catalogs": src.get("catalogs"), "status": src.get("status")} if src["kind"] == "catalog"
                         else {"nd": src.get("nd"), "vd": src.get("vd"), "dpgf": src.get("dpgf")})
             out.append(item)
     return out

@@ -66,6 +66,19 @@ def test_each_rule_fires_on_the_fiber_mistakes():
     assert codes(flat) == []
 
 
+def test_obsolete_catalog_glass_is_flagged_and_its_status_shown():
+    """玻璃替换常换成停产牌号：目录状态为 Obsolete 时提示，来源一栏写出状态。"""
+    sk16 = {"kind": "catalog", "name": "SK16", "catalogs": ["SCHOTT"], "status": "Obsolete"}
+    d = build([("Standard", math.inf, 0.0, AIR, [1.0, 1.0]), ("Standard", 10.0, 0.0, sk16, [1.6239, 1.6216]),
+               ("Standard", -10.0, 0.0, {**BK7, "status": "Preferred"}, [1.5222, 1.5195]),
+               ("Standard", math.inf, 0.0, AIR, [1.0, 1.0])], telecentric=True)
+    found = model_report.checks(d, ALL)
+    assert [c for c, _ in found] == ["obsolete_material"] and dict(found)["obsolete_material"] == {"s": 1, "name": "SK16"}
+    text, _ = model_report._source_text(sk16, model_report.Tr("en"))
+    assert text == "catalog SCHOTT, Obsolete"
+    assert codes(d, {**ALL, "environment": [1]}) == []  # 外购件已经存在，不提示 / a bought-in part already exists
+
+
 def test_telecentric_rule_needs_object_aperture_and_off_axis_field():
     rows = [("Standard", math.inf, 0.0, AIR, [1.0, 1.0]), ("Standard", math.inf, 0.0, AIR, [1.0, 1.0])]
     assert "non_telecentric" not in codes(build(rows, fields=((0.0, 0.0),)))

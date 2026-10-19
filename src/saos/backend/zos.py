@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from saos import config, geometry
+from saos import config, geometry, glasscat
 from saos.backend.base import (
     MATERIAL_MODES,
     NUMERIC_PARAMS,
@@ -80,6 +80,8 @@ class ZosBackend(Backend):
         self.app = None
         self.extension_ui: dict[str, Any] | None = None
         self._material_cache: dict[tuple[str, ...], set[str]] = {}
+        # 目录 → {牌号: 状态}，取自 AGF 文件 / catalog → {name: status}, read from the AGF files
+        self._glass_status: dict[str, dict[str, str]] = {}
 
     # ---- 连接 ----
 
@@ -507,7 +509,26 @@ class ZosBackend(Backend):
             return {"kind": "none"}
         if name == "MIRROR":
             return {"kind": "mirror"}
-        return {"kind": "catalog", "name": name, "catalogs": [c for c, names in members.items() if name in names]}
+        catalogs = [c for c, names in members.items() if name in names]
+        return {"kind": "catalog", "name": name, "catalogs": catalogs, "status": self.glass_status(name, catalogs)}
+
+    def glass_status(self, name: str, catalogs: list[str]) -> str | None:
+        """牌号在目录里的状态（Standard、Preferred、Obsolete、Special、Melt），取自 OpticStudio 玻璃目录文件夹里的 AGF；
+        与 IMaterialsCatalog 逐一核对过 SCHOTT、OHARA、CDGM 全部牌号，一致，而 IMaterialsCatalog 读一个目录要 14–27 s
+        （2026-10-18 实测）。找不到时为 None。
+        Catalog status of a glass, from the AGF files in OpticStudio's glass folder; it matched IMaterialsCatalog for every
+        SCHOTT, OHARA and CDGM glass, which takes 14-27 s per catalog (measured 2026-10-18). None when not found."""
+        for catalog in catalogs:
+            key = catalog.upper()
+            if key not in self._glass_status:
+                folder = Path(str(self.app.GlassDir)) if self.app is not None and str(getattr(self.app, "GlassDir", "") or "") else glasscat.DEFAULT_GLASSCAT_DIR
+                try:
+                    self._glass_status[key] = {g.name.upper(): g.status for g in glasscat.load_catalogs([catalog], folder)}
+                except (OSError, FileNotFoundError):
+                    self._glass_status[key] = {}
+            if name.upper() in self._glass_status[key]:
+                return self._glass_status[key][name.upper()]
+        return None
 
     @staticmethod
     def _tilt_decenter(row) -> dict[str, Any]:
@@ -1012,21 +1033,8 @@ class ZosBackend(Backend):
             tool.Cycles = getattr(zosapi.Tools.Optimization.OptimizationCycles, names[cycles])
             if cores:
                 tool.NumberOfCores = int(cores)
-            started = time.monotonic()
-            stopped_by = None
-            tool.Run()
-            while tool.IsRunning:
-                time.sleep(0.5)
-                elapsed = time.monotonic() - started
-                if on_progress is not None:
-                    on_progress({"progress": int(tool.Progress), "merit": float(tool.CurrentMeritFunction), "elapsed_s": round(elapsed, 1)})
-                if stopped_by is None and should_cancel is not None and should_cancel():
-                    stopped_by = "cancel"
-                elif stopped_by is None and max_seconds is not None and elapsed > max_seconds:
-                    stopped_by = "timeout"
-                if stopped_by is not None and tool.CanCancel:
-                    tool.Cancel()
-            tool.WaitForCompletion()
+            stopped_by, elapsed = self._run_optimizer(tool, lambda: {"merit": float(tool.CurrentMeritFunction)},
+                                                      max_seconds, on_progress, should_cancel)
             return {
                 "initial_merit": float(tool.InitialMeritFunction),
                 "final_merit": float(tool.CurrentMeritFunction),
@@ -1034,10 +1042,86 @@ class ZosBackend(Backend):
                 "targets": int(tool.Targets),
                 "succeeded": bool(tool.Succeeded),
                 "stopped_by": stopped_by,
-                "elapsed_s": round(time.monotonic() - started, 1),
+                "elapsed_s": elapsed,
             }
         finally:
             tool.Close()
+
+    def optimize_search(self, kind: str, cores: int | None = None, *, max_seconds: float,
+                        on_progress=None, should_cancel=None) -> dict[str, Any]:
+        """Hammer（kind="hammer"）或全局搜索（kind="global"），按 max_seconds 调用 Cancel；结束后编辑器里是找到的最好系统。
+        两者都不会自己结束，TargetRunTimeM 也不能让它们停下。Hammer 的自动模式会自己结束，但在 Cooke 上 2 s、704 个
+        系统就停，玻璃替换一个也没换，与局部优化同值，所以不用（2026-10-18 实测）。
+        Hammer (kind="hammer") or global search (kind="global"), cancelled after max_seconds; afterwards the editor holds
+        the best system found. Neither ends on its own and TargetRunTimeM does not stop them. Hammer's automatic mode does
+        end, but on the Cooke triplet it stopped after 2 s and 704 systems, substituted no glass and matched the local
+        optimum, so it is not used (measured 2026-10-18)."""
+        zosapi = _load_zosapi(self.root)
+        opt = zosapi.Tools.Optimization
+        tools = self.system.Tools
+        if kind == "hammer":
+            tool = tools.OpenHammerOptimization()
+        elif kind == "global":
+            tool = tools.OpenGlobalOptimization()
+        else:
+            raise SaosError(ErrorCode.BAD_ARGS, "kind must be hammer or global")
+        if tool is None:
+            raise SaosError(ErrorCode.ZOS_ERROR, f"OpticStudio cannot open the {kind} optimiser (another tool is open, or the licence lacks it)")
+        lde = self.system.LDE
+        materials = lambda: [str(lde.GetSurfaceAt(i).Material) for i in range(lde.NumberOfSurfaces)]  # noqa: E731
+        before = materials()
+        try:
+            tool.Algorithm = opt.OptimizationAlgorithm.DampedLeastSquares
+            if cores:
+                tool.NumberOfCores = int(cores)
+            if kind == "hammer":
+                tool.AutomaticOptimization = False
+                best = lambda: float(tool.CurrentMeritFunction)  # noqa: E731
+            else:
+                tool.NumberToSave = opt.OptimizationSaveCount.Save_10
+                best = lambda: float(tool.CurrentMeritFunction(1))  # noqa: E731
+            stopped_by, elapsed = self._run_optimizer(tool, lambda: {"merit": best(), "systems": int(tool.Systems)},
+                                                      max_seconds, on_progress, should_cancel)
+            out = {
+                "initial_merit": float(tool.InitialMeritFunction),
+                "final_merit": best(),
+                "systems": int(tool.Systems),
+                "variables": int(tool.Variables),
+                "targets": int(tool.Targets),
+                "succeeded": bool(tool.Succeeded),
+                "stopped_by": stopped_by,
+                "elapsed_s": elapsed,
+            }
+            if kind == "global":
+                out["best_merits"] = [float(tool.CurrentMeritFunction(k)) for k in range(1, 11)]
+        finally:
+            tool.Close()
+        # 玻璃替换常换成停产牌号（Cooke 上 3 次 Hammer、1 次全局搜索共 12 个替换，9 个是 Obsolete），把状态一并报出 / substitution often picks obsolete glasses
+        catalogs = self._catalogs_in_use()
+        out["materials_changed"] = [{"surface": i, "before": a, "after": b, "status": self.glass_status(b, catalogs)}
+                                    for i, (a, b) in enumerate(zip(before, materials())) if a.upper() != b.upper()]
+        return out
+
+    @staticmethod
+    def _run_optimizer(tool, reading, max_seconds, on_progress, should_cancel) -> tuple[str | None, float]:
+        """异步运行一个优化工具直到结束；超时或收到取消请求时调用 Cancel。返回 (stopped_by, 用时 s)。
+        Run an optimisation tool to its end; Cancel on a timeout or a cancel request. Returns (stopped_by, seconds)."""
+        started = time.monotonic()
+        stopped_by = None
+        tool.Run()
+        while tool.IsRunning:
+            time.sleep(0.5)
+            elapsed = time.monotonic() - started
+            if on_progress is not None:
+                on_progress({"progress": int(tool.Progress), **reading(), "elapsed_s": round(elapsed, 1)})
+            if stopped_by is None and should_cancel is not None and should_cancel():
+                stopped_by = "cancel"
+            elif stopped_by is None and max_seconds is not None and elapsed > max_seconds:
+                stopped_by = "timeout"
+            if stopped_by is not None and tool.CanCancel:
+                tool.Cancel()
+        tool.WaitForCompletion()
+        return stopped_by, round(time.monotonic() - started, 1)
 
     def quick_focus(self) -> dict[str, Any]:
         """OpticStudio 的 Quick Focus：按 RMS 光斑半径（质心参考）调整像面前一面的厚度。

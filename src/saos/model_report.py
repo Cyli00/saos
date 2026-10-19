@@ -63,6 +63,7 @@ TEXT: dict[str, tuple[str, str]] = {
                     "#|Name and description|Type|Radius|Conic|Thickness|Medium after|Aperture|Solves|Vertex, global (x, y, z)"),
     "src.model": ("模型玻璃（不是真实材料）", "Model glass (not a real material)"),
     "src.catalog": ("目录 {cats}", "catalog {cats}"),
+    "src.status": ("，{status}", ", {status}"),
     "src.uncatalogued": ("在用目录里找不到", "not found in the catalogs in use"),
     "src.none": ("空气/真空（OpticStudio 环境）", "air/vacuum (OpticStudio environment)"),
     "src.mirror": ("反射面", "mirror"),
@@ -103,6 +104,8 @@ TEXT: dict[str, tuple[str, str]] = {
         "Lenses {l1} ({c1}) and {l2} ({c2}) interpenetrate: {n} sample points of one lie inside the other's glass, usually a negative air gap.",
     ),
     "w.uncatalogued": ("第 {s} 面的材料 {name} 不在在用的材料目录里。", "Surface {s}: material {name} is not in the catalogs in use."),
+    "w.obsolete_material": ("第 {s} 面的玻璃 {name} 在目录里标为 Obsolete（停产），通常买不到；交付前换成在产牌号或向厂家确认。",
+                            "Surface {s}: glass {name} is marked Obsolete in its catalog and is usually unavailable; replace it with a glass in production or confirm with the maker before delivery."),
     "w.vignetting": ("第 {f} 个视场设置了渐晕因子，会改变该视场的光瞳形状和大小。", "Field {f} has vignetting factors, which change its pupil shape and size."),
     "w.no_first_order": (
         "没有一阶分析：开始优化前应写明倍率、光阑与光瞳位置、各孔径处的光束口径和渐晕预算、每个面需要的最大偏折角（写在 --notes 的 first_order 里）。",
@@ -167,6 +170,8 @@ def checks(desc: dict[str, Any], notes: dict[str, Any] | None = None, recorded: 
             out.append((code, {"s": s["index"], "nd": fmt(src.get("nd")), "vd": fmt(src.get("vd"))}))
         if src.get("kind") == "catalog" and not src.get("catalogs"):
             out.append(("uncatalogued", {"s": s["index"], "name": src.get("name")}))
+        if src.get("kind") == "catalog" and src.get("status") == "Obsolete" and s["index"] not in environment:
+            out.append(("obsolete_material", {"s": s["index"], "name": src.get("name")}))
         if "Fresnel" in str(s.get("type")) and (not _flat(float(s["radius"])) or float(s.get("conic", 0.0)) != 0.0):
             out.append(("curved_fresnel", {"s": s["index"], "type": s["type"], "r": fmt(float(s["radius"])), "k": fmt(float(s.get("conic", 0.0)))}))
         n = s.get("n") or []
@@ -202,7 +207,8 @@ def _source_text(src: dict[str, Any], t: Tr) -> tuple[str, str]:
         return t("src.model"), f"nd {fmt(src.get('nd'))}, Vd {fmt(src.get('vd'))}, ΔPgF {fmt(src.get('dpgf'))}"
     if kind == "catalog":
         cats = src.get("catalogs") or []
-        return (t("src.catalog", cats=", ".join(cats)) if cats else t("src.uncatalogued")), ""
+        status = t("src.status", status=src["status"]) if src.get("status") else ""
+        return (t("src.catalog", cats=", ".join(cats)) + status if cats else t("src.uncatalogued")), ""
     return t("src." + (kind if kind in ("mirror", "none", "inherit") else "none")), ""
 
 

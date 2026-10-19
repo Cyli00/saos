@@ -144,15 +144,18 @@ def test_workflow_rounds_until_achieved_and_report(setup):
     assert call(daemon, "round.record", job=job.id, tier="magic")["error"]["code"] == ErrorCode.BAD_ARGS
     call(daemon, "lens.set", job=job.id, surface=2, param="thickness", value=85.0)  # 由 MarginalRayHeight 求解覆盖
     daemon.backend.lens["surfaces"][2]["thickness"] = 85.0
+    glass = next(s for s in daemon.backend.lens["surfaces"] if s.get("material"))
+    glass["material_source"] = {"kind": "catalog", "name": glass["material"], "catalogs": ["FAKE"], "status": "Obsolete"}
     r1 = call(daemon, "round.record", job=job.id, tier="local", note="shorter")["result"]
     assert r1["record"]["achieved"] and r1["decision"]["status"] == "achieved"
+    assert [m["status"] for m in r1["record"]["materials"] if m["kind"] == "catalog"] == ["Obsolete"]  # 目录状态随轮记录
     assert call(daemon, "round.record", job=job.id, tier="local")["error"]["code"] == ErrorCode.BAD_ARGS  # 已停止
     assert (job.root / "lenses" / "rounds" / "r001.zmx").is_file() and (job.root / r1["record"]["evaluation"]).is_file()
     out = report.write(job, lang="zh")
     html = (job.root / "report" / "index.html").read_text(encoding="utf-8")
     assert out["status"] == "achieved" and out["deliver"] == "rounds/r001.zmx" and out["lang"] == "zh"
     assert "达成" in html and "总长不超过 95 mm" in html and "TOTR" in html and "<svg" in html and LINE in html
-    assert "确认，开始吧" in html and "a.zmx" in html and "期望 ≤ 90" in html
+    assert "确认，开始吧" in html and "a.zmx" in html and "期望 ≤ 90" in html and "Obsolete（停产" in html
     # 语言由需求的 lang 决定，--lang 优先；切换语言不改变需求的哈希，不需要重新确认
     write_demand(job, {**DEMAND, "lang": "en"}, confirm=None)
     assert report.write(job)["lang"] == "en"
@@ -647,6 +650,40 @@ def test_long_operations_report_progress_and_honour_cancel(setup, monkeypatch):
     final = json.loads((job.root / jobs.VIEW_FILE).read_text(encoding="utf-8"))["layout"]
     assert final["rays"] and "rays_paused" not in final  # 结束后带光线 / with rays once it ends
     assert job.read_progress()["merit"] == 2.0
+
+
+def test_hammer_and_global_need_a_budget_and_archive_the_systems_they_write(setup):
+    """Hammer / 全局搜索：必须给 max_seconds，过需求单检查；OpticStudio 写在镜头旁的系统移到 lenses/<kind>/NNN/。"""
+    daemon, job = setup
+    lens_dir = job.lenses_dir
+    seen = {}
+
+    def search(kind, cores, *, max_seconds, on_progress=None, should_cancel=None):
+        on_progress({"progress": 0, "merit": 0.5, "systems": 1000, "elapsed_s": 1.0})
+        names = [f"GLOPT_0001_{k:03d}.zmx" for k in (1, 2)] if kind == "global" else ["a_0001_HAMMER.zmx"]
+        for name in names:
+            (lens_dir / name).write_text("lens", encoding="utf-8")
+        seen.update(kind=kind, cores=cores, max_seconds=max_seconds)
+        return {"final_merit": 0.5, "stopped_by": "timeout"}
+
+    daemon.backend.optimize_search = search
+    write_demand(job, DEMAND, confirm=None)
+    assert call(daemon, "opt.global", job=job.id, max_seconds=5)["error"]["code"] == ErrorCode.DEMAND_NOT_CONFIRMED
+    demand.confirm(job.root, "确认，开始吧")
+    assert call(daemon, "opt.global", job=job.id)["error"]["code"] == ErrorCode.BAD_ARGS  # 没有预算 / no budget
+    assert call(daemon, "opt.hammer", job=job.id, max_seconds=0)["error"]["code"] == ErrorCode.BAD_ARGS
+    (lens_dir / "GLOPT_0001_009.zmx").write_text("old", encoding="utf-8")  # 运行前就有的不动 / left as it was
+
+    out = call(daemon, "opt.global", job=job.id, max_seconds=5)["result"]
+    assert out["files"] == ["global/001/GLOPT_0001_001.zmx", "global/001/GLOPT_0001_002.zmx"] and out["dirty"]
+    assert seen == {"kind": "global", "cores": config.compute_cores(), "max_seconds": 5.0}
+    assert not (lens_dir / "GLOPT_0001_001.zmx").exists() and (lens_dir / "GLOPT_0001_009.zmx").read_text(encoding="utf-8") == "old"
+    progress = job.read_progress()
+    assert progress["op"] == "opt.global" and progress["stage"] == "opt.global" and progress["systems"] == 1000
+    assert progress["stopped_by"] == "timeout" and progress["status"] == "done"
+
+    assert call(daemon, "opt.hammer", job=job.id, max_seconds=5)["result"]["files"] == ["hammer/001/a_0001_HAMMER.zmx"]
+    assert call(daemon, "opt.global", job=job.id, max_seconds=5)["result"]["files"][0].startswith("global/002/")
 
 
 

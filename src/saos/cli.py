@@ -164,6 +164,10 @@ def cmd_opt(args: argparse.Namespace) -> Any:
         return client.request("opt.merit", payload, timeout=args.timeout)
     if args.action == "local":
         return client.request("opt.local", {"job": args.job, "cycles": args.cycles, "cores": args.cores, "max_seconds": args.max_seconds}, timeout=args.timeout)
+    if args.action in ("hammer", "global"):
+        # 运行时长已知：客户端至少等到它结束后再留 2 分钟收尾 / the run length is known: wait for it plus 2 minutes to wrap up
+        return client.request(f"opt.{args.action}", {"job": args.job, "cores": args.cores, "max_seconds": args.max_seconds},
+                              timeout=max(args.timeout, args.max_seconds + 120))
     raise AssertionError(args.action)
 
 
@@ -294,7 +298,7 @@ def build_parser() -> argparse.ArgumentParser:
     show.add_argument("--log", type=int, default=10, help="number of recent log records to show")
     verify = jsub.add_parser("verify", help="check that no evidence file written by the tools was changed or deleted (seals.jsonl)")
     verify.add_argument("job")
-    cancel = jsub.add_parser("cancel", help="ask the running computation of a job to stop at its next safe point (opt local, scan, scripts that call ctx.progress); works while the daemon is busy")
+    cancel = jsub.add_parser("cancel", help="ask the running computation of a job to stop at its next safe point (opt local/hammer/global, scan, scripts that call ctx.progress); works while the daemon is busy")
     cancel.add_argument("job")
     job.set_defaults(func=cmd_job)
 
@@ -391,6 +395,12 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--cycles", default="auto", choices=("auto", "1", "5", "10", "50"))
     q.add_argument("--cores", type=int, help="CPU cores for OpticStudio (default: all logical cores but 2)")
     q.add_argument("--max-seconds", type=float, help="cancel the optimisation after this many seconds and keep what it reached")
+    for name, help_text in (("hammer", "run Hammer optimisation (escapes local minima; with material --mode substitute it swaps real glasses); "
+                                       "keeps the best system found"),
+                            ("global", "run global search; keeps the best system found and moves the ten best to lenses/global/NNN/")):
+        q = opt_cmd(name, help_text)
+        q.add_argument("--max-seconds", type=float, required=True, help="required: it never ends on its own; cancel after this many seconds")
+        q.add_argument("--cores", type=int, help="CPU cores for OpticStudio (default: all logical cores but 2)")
     op.set_defaults(func=cmd_opt)
 
     dm = sub.add_parser("demand", help="the job's demand (sources/demand.yaml); no OpticStudio needed")

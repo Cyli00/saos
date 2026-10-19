@@ -93,6 +93,8 @@ TEXT: dict[str, tuple[str, str]] = {
     "th.materials": ("面|材料|来源|各波长折射率", "Surface|Material|Source|Index per wavelength"),
     "mat.model": ("模型玻璃 nd {nd}，Vd {vd}（不是真实材料）", "model glass nd {nd}, Vd {vd} (not a real material)"),
     "mat.catalog": ("目录 {cats}", "catalog {cats}"),
+    "mat.status": ("，{status}", ", {status}"),
+    "mat.obsolete": ("，Obsolete（停产，通常买不到）", ", Obsolete (discontinued, usually unavailable)"),
     "mat.env": ("（环境或外购件）", " (environment or bought-in)"),
     "blocked": ("<b>没有可交付的镜头</b>：所有轮次都还含模型玻璃（第 {surfaces} 面），下面列的是探索中最好的一轮，不能作为设计交付。",
                 "<b>No deliverable lens</b>: every round still uses a model glass (surfaces {surfaces}); the round below is the best exploration result and is not a deliverable design."),
@@ -421,6 +423,8 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
             name, source = "MODEL", t("mat.model", nd=fmt(m.get("nd")), vd=fmt(m.get("vd")))
         else:
             name, source = m.get("name") or "", t("mat.catalog", cats=", ".join(m.get("catalogs") or []))
+            if m.get("status"):
+                source += t("mat.obsolete") if m["status"] == "Obsolete" else t("mat.status", status=m["status"])
         n = " / ".join(f"{v:.6f}" for v in m.get("n") or [])
         if m["surface"] in (deliver.get("environment") or []):
             source += t("mat.env")
