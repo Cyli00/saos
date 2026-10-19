@@ -471,6 +471,167 @@ def spot(ctx, fields: Iterable[Iterable[float]] = ((0.0, 0.0),), wave: int | Ite
     return rows
 
 
+# ---------- 加密采样与极值 / dense sampling and extremes ----------
+#
+# 一次任务里补全视场 CRA、加密光谱透过率时，边缘一点或五个波长都漏掉过极值（nightvision，2026-10-19：中间视场的 CRA
+# 达 19.88°，加密光谱后透过率出现五波长之间的低谷）。这些函数按同一个格式交回：量的定义和单位、采样范围与步长、极值和
+# 它的位置、所有局部极值、读不出的点、加密后极值移动了多少，以及覆盖是否够（coverage）。
+# Filling in the full-field CRA and a denser transmission spectrum on one job, an edge point or five wavelengths missed the
+# extreme (nightvision, 2026-10-19: 19.88° CRA in mid field, a transmission dip between the five wavelengths). These
+# functions all return the quantity's definition and unit, the sampled range and step, the extreme and where it is, every
+# local extreme, unreadable points, how far refining moved the extreme, and whether the coverage is enough.
+
+# profile 一次最多等距取的点数 / the most equally spaced points one profile takes
+PROFILE_MAX_N = 10001
+
+
+def _number(v: Any) -> float | None:
+    """有限实数原样，其他（None、非有限、复数、文字）算读不出。/ A finite real number, else None (unreadable)."""
+    if isinstance(v, bool) or not isinstance(v, (int, float, np.integer, np.floating)):
+        return None
+    v = float(v)
+    return v if math.isfinite(v) else None
+
+
+def profile(evaluate: Callable[[list[float]], Iterable[float | None]], lo: float, hi: float, n: int = 33, *, find: str = "max",
+            refine: int = 2, points: int = 8, rel: float = 1e-3) -> dict[str, Any]:
+    """在 [lo, hi] 上等距取 n 点求极值，再在当前极值两侧相邻样点之间加密 refine 次（每次 points 点）。evaluate 一次收到一批
+    x、按序返回值（None 或非有限值算读不出）；一批一次调用，便于批量追迹。coverage.ok 为假的情形：有读不出的点、加密让极值
+    变化超过 rel（相对）、或有效样点少于 3 个。at_edge 表示极值在区间端点，区间外可能更极端。
+    Find the extreme over n equally spaced points on [lo, hi], then refine `refine` times between the samples next to the
+    current extreme (`points` each time). evaluate gets a batch of x and returns values in order (None or non-finite means
+    unreadable), one call per batch so that rays can be traced in batches. coverage.ok is False when points were unreadable,
+    refining changed the extreme by more than rel (relative), or fewer than 3 samples are valid. at_edge: the extreme lies at
+    an end of the range and may be exceeded outside it."""
+    if find not in ("max", "min"):
+        raise SaosError(ErrorCode.BAD_ARGS, "find must be max or min")
+    if isinstance(n, bool) or not isinstance(n, (int, np.integer)) or not 2 <= n <= PROFILE_MAX_N:
+        raise SaosError(ErrorCode.BAD_ARGS, f"profile needs an integer n in 2–{PROFILE_MAX_N} (got {n!r})")
+    if isinstance(refine, bool) or not isinstance(refine, (int, np.integer)) or not isinstance(points, (int, np.integer)) or points < 1:
+        raise SaosError(ErrorCode.BAD_ARGS, f"profile needs integer refine and points >= 1 (got {refine!r}, {points!r})")
+    try:
+        lo, hi = float(lo), float(hi)
+    except (TypeError, ValueError) as exc:
+        raise SaosError(ErrorCode.BAD_ARGS, f"profile needs numeric lo and hi (got {lo!r}, {hi!r})") from exc
+    if not (math.isfinite(lo) and math.isfinite(hi)) or hi <= lo:
+        raise SaosError(ErrorCode.BAD_ARGS, f"profile needs finite lo < hi (got {lo}, {hi})")
+    sign = 1.0 if find == "max" else -1.0
+    samples: dict[float, float | None] = {}
+
+    def run(xs: list[float]) -> None:
+        xs = [x for x in xs if x not in samples]
+        if not xs:
+            return
+        values = list(evaluate(xs))
+        if len(values) != len(xs):
+            raise SaosError(ErrorCode.BAD_ARGS, f"evaluate returned {len(values)} values for {len(xs)} points")
+        for x, v in zip(xs, values):
+            samples[x] = _number(v)
+
+    def best() -> tuple[float, float] | None:
+        valid = [(x, v) for x, v in samples.items() if v is not None]
+        return max(valid, key=lambda xv: sign * xv[1]) if valid else None
+
+    run([lo + (hi - lo) * k / (n - 1) for k in range(n)])
+    coarse = best()
+    for _ in range(max(0, refine)):
+        current = best()
+        if current is None:
+            break
+        xs = sorted(samples)
+        k = xs.index(current[0])
+        a, b = xs[max(0, k - 1)], xs[min(len(xs) - 1, k + 1)]
+        run([a + (b - a) * (j + 1) / (points + 1) for j in range(points)])
+    final = best()
+    ordered = sorted(samples.items())
+    valid = [(x, v) for x, v in ordered if v is not None]
+    local = [[x, v] for k, (x, v) in enumerate(valid)
+             if all(sign * v >= sign * w for _, w in valid[max(0, k - 1):k + 2])]
+    local.sort(key=lambda xv: -sign * xv[1])
+    missing = [x for x, v in ordered if v is None]
+    notes = []
+    if missing:
+        notes.append(f"{len(missing)} of {len(ordered)} points gave no value")
+    if len(valid) < 3:
+        notes.append("fewer than 3 valid samples")
+    shift = None
+    if coarse is not None and final is not None:
+        shift = final[1] - coarse[1]
+        if abs(shift) > rel * max(1e-12, abs(final[1])):
+            notes.append(f"refining moved the {find} by {shift:.4g}: the coarse step {(hi - lo) / (n - 1):.4g} is too wide")
+    return {"find": find, "value": final[1] if final else None, "at": final[0] if final else None, "range": [lo, hi],
+            "step": (hi - lo) / (n - 1), "evaluations": len(ordered), "refine_shift": shift,
+            "at_edge": bool(final and final[0] in (lo, hi)), "local": local[:10], "missing": missing,
+            "samples": [[x, v] for x, v in ordered], "coverage": {"ok": not notes, "notes": notes}}
+
+
+def cra(ctx, direction: Iterable[float] = (0.0, 1.0), wave: int | Iterable[int] | None = None, n: int = 33, refine: int = 2,
+        to: int | str | None = None) -> dict[str, Any]:
+    """主光线角沿视场方向的分布和最大值：实际主光线（px = py = 0）与目标面（默认像面）局部 z 轴的夹角，取所测各波长中的最大，
+    单位度。direction 是归一化视场坐标里的终点 (hx, hy)：径向归一化时 (0, 1) 是 +y 全视场；矩形归一化时对角是 (1, 1)。
+    wave 默认全部波长。某个视场点有任一波长的主光线到不了，这一点记为读不出（coverage 会说明）。
+    The chief ray angle along a field direction and its maximum: the angle between the real chief ray (px = py = 0) and
+    the local z axis of the target surface (default the image), the largest over the wavelengths measured, in degrees.
+    direction is the end point (hx, hy) in normalised field coordinates: (0, 1) is the +y full field with radial
+    normalisation; the diagonal is (1, 1) with rectangular normalisation. wave defaults to every wavelength. A field point
+    where any wavelength's chief ray fails counts as unreadable (coverage says so)."""
+    sysm = _need_system(ctx, "cra")
+    dx, dy = (float(v) for v in direction)
+    waves = (list(range(1, int(sysm.SystemData.Wavelengths.NumberOfWavelengths) + 1)) if wave is None
+             else [int(wave)] if isinstance(wave, (int, np.integer)) else [int(w) for w in wave])
+    per_wave: dict[float, list[float | None]] = {}
+
+    def evaluate(qs: list[float]) -> list[float | None]:
+        result = trace(ctx, [(w, q * dx, q * dy, 0.0, 0.0) for q in qs for w in waves], to)
+        angles = np.degrees(np.arccos(np.clip(np.abs(result.n), 0.0, 1.0)))
+        out = []
+        for k, q in enumerate(qs):
+            row = [float(angles[k * len(waves) + j]) if result.ok[k * len(waves) + j] else None for j in range(len(waves))]
+            per_wave[q] = row
+            out.append(None if None in row else max(row))
+        return out
+
+    found = profile(evaluate, 0.0, 1.0, n, find="max", refine=refine)
+    return {"quantity": "chief ray angle", "unit": "deg",
+            "definition": "angle between the real chief ray (px=py=0) and the target surface's local z axis, largest over the wavelengths",
+            "direction": [dx, dy], "waves": waves, "surface": surface(ctx, to) if to is not None else int(sysm.LDE.NumberOfSurfaces) - 1,
+            "per_wave_at_extreme": dict(zip(waves, per_wave.get(found["at"], []))) if found["at"] is not None else None, **found}
+
+
+def field_profile(ctx, fn: Callable[..., float | None], direction: Iterable[float] = (0.0, 1.0), n: int = 17, *, find: str = "max",
+                  refine: int = 1, unit: str = "", quantity: str = "") -> dict[str, Any]:
+    """任意量沿视场方向的分布和极值：对 q ∈ [0, 1] 调 fn(ctx, hx, hy)（hx, hy = q·direction，归一化视场坐标），格式同 profile。
+    fn 不能改动镜头。用于相对照度、畸变、像质等逐视场量；主光线角用 cra（一次批量追迹，快得多）。
+    Any quantity along a field direction and its extreme: fn(ctx, hx, hy) at q in [0, 1] (hx, hy = q·direction in
+    normalised field coordinates), returned like profile. fn must leave the lens unchanged. For relative illumination,
+    distortion, image quality per field; for the chief ray angle use cra (one batch trace, much faster)."""
+    dx, dy = (float(v) for v in direction)
+    found = profile(lambda qs: [fn(ctx, q * dx, q * dy) for q in qs], 0.0, 1.0, n, find=find, refine=refine)
+    return {"quantity": quantity, "unit": unit, "axis": "normalised field q", "direction": [dx, dy], **found}
+
+
+def wave_profile(ctx, fn: Callable[..., float | None], lo: float, hi: float, n: int = 33, *, find: str = "min", refine: int = 2,
+                 wave: int | None = None, unit: str = "", quantity: str = "") -> dict[str, Any]:
+    """任意量沿波长的分布和极值（透过率的低谷、色差的峰值）：把第 wave 个波长（默认主波长）依次设为 [lo, hi] µm 内的各点，
+    调 fn(ctx, wave) 取值，结束后恢复原波长；格式同 profile。几个离散波长之间的窄低谷只有这样加密才看得见。
+    Any quantity across wavelength and its extreme (a transmission dip, a colour peak): set wavelength number `wave`
+    (default the primary) to points in [lo, hi] µm in turn, read fn(ctx, wave), restore the wavelength afterwards; returned
+    like profile. A narrow dip between a few discrete wavelengths only shows up this way."""
+    slot = primary_wave(ctx) if wave is None else int(wave)
+    key = f"wave.{slot}"
+
+    def evaluate(xs: list[float]) -> list[float | None]:
+        out = []
+        for x in xs:
+            set(ctx, {key: x})
+            out.append(fn(ctx, slot))
+        return out
+
+    with kept(ctx, [key]):
+        found = profile(evaluate, float(lo), float(hi), n, find=find, refine=refine)
+    return {"quantity": quantity, "unit": unit, "axis": "wavelength (µm)", "wave": slot, **found}
+
+
 # ---------- 缓存与任务内模块 / cache and job modules ----------
 
 def memo(ctx, key: Any, compute: Callable[[], Any]) -> Any:
@@ -541,6 +702,15 @@ class KitMethods:
 
     def spot(self, fields=((0.0, 0.0),), wave=None, grid=21, to=None, refocus=False, min_rays=3):
         return spot(self, fields, wave, grid, to, refocus, min_rays)
+
+    def cra(self, direction=(0.0, 1.0), wave=None, n=33, refine=2, to=None):
+        return cra(self, direction, wave, n, refine, to)
+
+    def field_profile(self, fn, direction=(0.0, 1.0), n=17, **kw):
+        return field_profile(self, fn, direction, n, **kw)
+
+    def wave_profile(self, fn, lo, hi, n=33, **kw):
+        return wave_profile(self, fn, lo, hi, n, **kw)
 
     def memo(self, key, compute):
         return memo(self, key, compute)
