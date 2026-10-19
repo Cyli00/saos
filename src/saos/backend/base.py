@@ -121,7 +121,9 @@ class Backend(ABC):
 
     def vary(self, surface: int, param: str, on: bool, mode: str | None = None, catalog: str | None = None) -> str:
         """设变量或取消变量；material 用 mode 选模型玻璃（nd、νd 可变）或目录内替换。返回求解类型。
-        Make a parameter variable or fixed; for material, mode picks a model glass (nd and Vd vary) or catalog substitution."""
+        catalog 是 substitute_catalog 已解析的目录名，原样使用，空串表示全部在用目录。
+        Make a parameter variable or fixed; for material, mode picks a model glass (nd and Vd vary) or catalog substitution.
+        catalog is the name substitute_catalog resolved, used as given; empty means every catalog in use."""
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support vary")
 
     def show_windows(self, viewer: str | None = None, analysis: str | None = None, settings: dict[str, Any] | None = None) -> dict[str, Any]:

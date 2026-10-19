@@ -564,6 +564,10 @@ class Daemon:
         loaded = self._require_loaded(self._job(args))
         param = _arg(args, "param", str)
         surfaces = _arg(args, "surfaces", list)
+        # 面号先校验成整数：否则 int() 的异常出在循环里，会被当成改动途中的错误而把镜头标为未保存
+        # surface numbers are checked up front; an int() failure inside the loop would mark the lens unsaved
+        if any(isinstance(s, bool) or not isinstance(s, int) for s in surfaces):
+            raise SaosError(ErrorCode.BAD_ARGS, f"surfaces must be integers, got {surfaces!r}")
         on = bool(args.get("on", True))
         mode = _arg(args, "mode", str, default=None)
         catalog = _arg(args, "catalog", str, default=None)
@@ -584,6 +588,12 @@ class Daemon:
         try:
             for s in surfaces:
                 solves[int(s)] = self.backend.vary(int(s), param, on, mode, catalog)
+        except Exception as exc:
+            # BAD_ARGS 是改动前的校验；其他错误可能出在加目录或设 solve 之后，保守地当作镜头已改
+            # BAD_ARGS comes from checks before any change; any other error may follow an added catalog or a set solve
+            if not (isinstance(exc, SaosError) and exc.code == ErrorCode.BAD_ARGS):
+                loaded.dirty = True
+            raise
         finally:
             # 中途某面失败时，前面的面（和替换目录）已经改了 / when a later surface fails, the earlier ones are already changed
             if solves:

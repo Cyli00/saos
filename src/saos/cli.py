@@ -12,6 +12,7 @@ import argparse
 import json
 import math
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -136,15 +137,27 @@ def cmd_lens(args: argparse.Namespace) -> Any:
     raise AssertionError(action)
 
 
+# 一次 --surfaces 最多列出的面数，远多于任何镜头的面数 / the most surfaces one --surfaces may list, far beyond any lens
+MAX_SURFACES = 10000
+
+
 def _surface_list(text: str) -> list[int]:
-    """"1-16" 或 "1,3,5-7" → 面序号列表。"""
+    """"1-16" 或 "1,3,5-7" → 面序号列表；写错的段、倒序区间和空列表报 BAD_ARGS，不当作内部错误或悄悄变成空列表。"""
     out: list[int] = []
     for part in text.split(","):
-        if "-" in part:
-            a, b = part.split("-", 1)
-            out.extend(range(int(a), int(b) + 1))
-        elif part.strip():
-            out.append(int(part))
+        # 只认 ASCII 数字、最多 5 位：超长数字串会让 int() 抛异常，全角或其他文字的数字也不该当面号
+        # ASCII digits only, at most 5: a huge digit string makes int() fail, and full-width or other scripts' digits are no surface numbers
+        m = re.fullmatch(r"[ \t]*([0-9]{1,5})[ \t]*(?:-[ \t]*([0-9]{1,5})[ \t]*)?", part)
+        if not m:
+            raise SaosError(ErrorCode.BAD_ARGS, f"--surfaces takes surface numbers and ranges like 1,3,5-7; cannot read {part[:40]!r}")
+        a, b = int(m[1]), int(m[2] or m[1])
+        if a > b:
+            raise SaosError(ErrorCode.BAD_ARGS, f"--surfaces range {a}-{b} runs backwards; write it as {b}-{a}")
+        out.extend(range(a, b + 1))
+        # 每段最多 5 位，单段至多十万个面号；总数再设上限，免得几段大区间在发往后台之前占满内存
+        # at most 5 digits bound one range; the total is capped too, so wide ranges cannot fill memory before reaching the daemon
+        if len(out) > MAX_SURFACES:
+            raise SaosError(ErrorCode.BAD_ARGS, f"--surfaces lists more than {MAX_SURFACES} surfaces")
     return out
 
 

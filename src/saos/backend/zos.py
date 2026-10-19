@@ -969,8 +969,10 @@ class ZosBackend(Backend):
             m = new._S_MaterialModel
             m.IndexNd, m.AbbeVd, m.VaryIndex, m.VaryAbbe = nd, vd, True, True
         else:
-            # 面已经过校验才加目录，失败的调用不会留下目录改动 / the catalog is added only after the surface passed its checks
-            name = self.substitute_catalog(catalog)
+            # 面已经过校验才加目录，校验失败不会留下目录改动；之后的异常由后台进程把镜头标为未保存
+            # the catalog is added only after the surface passed its checks; the daemon marks the lens unsaved on a later error
+            # catalog 已由 substitute_catalog 解析（空串为全部在用目录），这里不再重选默认目录 / already resolved; no second pick of the default
+            name = (catalog or "").upper()
             self._use_catalog(name)
             new = cell.CreateSolveType(zosapi.Editors.SolveType.MaterialSubstitute)
             # 空目录名表示在当前使用的全部目录中替换 / an empty catalog substitutes within every catalog in use
