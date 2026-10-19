@@ -113,9 +113,9 @@ For every item with a bound (`goal`, `range`, `must`), the gap is `max(0, excess
 
 After every `saos round` the ledger decides, in this order:
 
-A round whose checks failed to run (exception, unreadable file) is invalid: it counts as no progress, no tier tried, and is never delivered. A check that runs but finds no valid value for this design should return `inf`; that is a design result and counts as unmet. `max_rounds` counts the rounds of the current demand version.
+A round whose checks failed to run (exception, unreadable file) is invalid: it counts as no progress, no tier tried, and is never delivered. A check that runs but finds no valid value for this design should return `inf`; that is a design result and counts as unmet. `max_rounds` counts the rounds of the current demand version; `rebase` rows (the best round re-measured after the checks changed) do not count, and changing the checks never lifts `limit` or `stopped`.
 
-1. `achieved`: every bounded item passes in this round and the lens uses no model glass (with a model glass: `continue` with `next_tier: materials`). With objectives to minimise or maximise, the round also needs every allowed tier tried or ruled out since the last gain of G by `rel`, or `max_rounds` reached; until then the decision is `continue`, keep improving them.
+1. `achieved`: every bounded item passes in this round and the lens uses no model glass (with a model glass: `continue` with `next_tier: materials`). With objectives to minimise or maximise, the round also needs them all at their `ideal` (G is 0), or every allowed tier tried or ruled out since the last gain of G by `rel`, or `max_rounds` reached; until then the decision is `continue`, keep improving them.
 2. `limit`: the round number reached `max_rounds`.
 3. `stopped`: the user decided to stop under this demand version (`saos stop --reason --quote`, after the last round); stopping is a conclusion, recorded with the evidence and the user's words.
 4. `exhausted`: since the last round that cut the best G by at least `rel`, every tier in `stop.tiers` was tried at least once, or ruled out with evidence (`saos rule-out --tier T --reason "…"`), without such a gain. This says the strategies stopped working, not that the goal is physically out of reach.

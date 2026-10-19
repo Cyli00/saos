@@ -161,6 +161,14 @@ def current_window(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rounds[start:]
 
 
+def current_version(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """当前需求版本的轮次。判定改动开的新比较窗口仍在同一版本内：轮次上限和用户停止按版本算，改判定解除不了。
+    The rounds of the current demand version. A new comparison window opened by changed checks stays inside it:
+    the round budget and the user's stop hold per demand version, so changing the checks does not lift them."""
+    start = max((k for k, r in enumerate(rounds) if k == 0 or version(rounds[k - 1])[0] != version(r)[0]), default=0)
+    return rounds[start:]
+
+
 def valid(record: dict[str, Any]) -> bool:
     """有判定执行出错的轮次不算数：不计进步、不算试过某层级。
     A round whose checks failed to run counts for nothing: no progress, no tier tried."""
@@ -197,6 +205,9 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str
     gain_round = int(window[last_gain]["round"])
     excluded = {t for x in ruled or [] if int(x["round"]) >= gain_round for t in x["tiers"]}
     untried = [t for t in tiers if t not in tried and t not in excluded]
+    # 重测记录不计入轮次上限 / re-measurements (rebase) do not count against max_rounds
+    in_version = current_version(rounds)
+    counted = sum(1 for r in in_version[1:] if not is_rebase(r))
     current = rounds[-1]
     number = int(current["round"])
     base = {
@@ -208,13 +219,16 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str
         "tiers_ruled_out_since_gain": sorted((excluded - tried) & set(tiers), key=TIERS.index),
         "untried_tiers": untried,
         # 轮次预算按需求版本计：用户确认新版本后重新计数 / the round budget counts per demand version
-        "rounds_in_version": sum(1 for r in window[1:] if not is_rebase(r)),
+        "rounds_in_version": counted,
     }
     if current.get("achieved") and deliverable(current):
         if not current.get("pursuing"):
             return {**base, "status": "achieved", "reason": "every constant, variable range and objective pass line is met"}
+        if current["shortfall"] <= 0:
+            # 越小/越大越好的目标都已到理想值，G 为 0，不可能再有明显进步 / every pursued objective is at its ideal: G is 0 and cannot gain
+            return {**base, "status": "achieved", "reason": "every pass line is met and every objective to minimise or maximise is at its ideal value"}
         # 达标后继续压越小/越大越好的目标，直到各手段都不再明显进步 / after the pass lines, keep pursuing until no tier gains
-        if not untried or len(window) - 1 >= cap:
+        if not untried or counted >= cap:
             return {**base, "status": "achieved",
                     "reason": "every pass line is met and the objectives to minimise or maximise gained less than "
                               f"{rel:.0%} since round {base['last_gain_round']} " + ("after trying or ruling out every allowed tier" if not untried
@@ -222,10 +236,10 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str
         return {**base, "status": "continue", "next_tier": untried[0],
                 "reason": f"every pass line is met; keep improving the objectives to minimise or maximise, next escalate to {untried[0]} "
                           "if the current tier stops gaining"}
-    if stopped is not None and int(stopped["round"]) >= int(window[0]["round"]):
+    if stopped is not None and int(stopped["round"]) >= int(in_version[0]["round"]):
         return {**base, "status": "stopped", "stopped": stopped,
                 "reason": f"the user decided to stop after round {stopped['round']}: {stopped['reason']}"}
-    if len(window) - 1 >= cap:
+    if counted >= cap:
         return {**base, "status": "limit", "reason": f"reached max_rounds = {cap} for this demand version"}
     if not valid(current):
         return {**base, "status": "continue", "next_tier": untried[0] if untried else None,

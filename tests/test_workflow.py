@@ -1017,7 +1017,8 @@ def test_changed_checks_re_measure_the_best_round_first(setup):
     out = call(daemon, "round.record", job=job.id, tier="local")["result"]
     assert not out["rebase"]["equivalent"] and out["rebase"]["rebase_of"] == 1
     assert out["rebase"]["diffs"]["length"] == {"recorded": 98.0, "now": 99.0}
-    assert out["decision"]["rounds_in_version"] == 1 and out["decision"]["last_gain_round"] == 5
+    # 新窗口不重置轮次上限：本需求版本内非 rebase 的 r1、r3、r5 / a new window keeps the round budget of the demand version
+    assert out["decision"]["rounds_in_version"] == 3 and out["decision"]["last_gain_round"] == 5
     window = ledger.current_window(ledger.load(job.root / ledger.LEDGER_FILE))
     assert [r["round"] for r in window] == [4, 5] and window[0]["file"] == "rounds/r001.zmx"
     report.write(job, lang="zh")

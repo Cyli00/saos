@@ -192,6 +192,10 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
                 raise SaosError(ErrorCode.DUPLICATE_ROUND, f"round {last['round']} already recorded this lens under the same demand and checks",
                                 {"round": last["round"], "file": last.get("file"), "evaluation": last.get("evaluation")})
         elif ledger.version(last)[0] == sha:
+            if status in ("limit", "stopped"):
+                # 轮次上限和用户的停止决定按需求版本算，改判定解除不了 / the round budget and the user's stop hold per demand version
+                raise SaosError(ErrorCode.BAD_ARGS, f"rounds already stopped ({status}) under this demand version, and changed checks do not lift that; "
+                                "review the demand with the user to continue", {"status": status})
             # 同一需求下判定代码改了：先用新判定重测此前最好的一轮，之后的比较都对着它
             # the check code changed under the same demand: re-measure the best earlier round first and compare with that
             window = [r for r in ledger.current_window(history) if ledger.valid(r) and r.get("file")]
