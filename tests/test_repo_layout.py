@@ -113,7 +113,8 @@ def test_local_work_tree_follows_the_job_layout():
                 bad.append(f"{instance.name}/jobs/{job.name}/{p['path']} ({p['problem']} after sealing)")
             explore = job / "explore"
             for topic in explore.iterdir() if explore.is_dir() else []:
-                if topic.is_dir() and not (topic / "README.md").is_file():
+                # __pycache__ 是导入 explore 里的脚本时 Python 自动生成的，不是探索主题 / Python's import cache, not a topic
+                if topic.is_dir() and topic.name != "__pycache__" and not (topic / "README.md").is_file():
                     bad.append(f"{instance.name}/jobs/{job.name}/explore/{topic.name} (no README.md)")
     assert bad == [], "work/ layout (DESIGN.md 任务目录): instance = daemon/ + jobs/; job extras only notes/, checks/, explore/<topic>/ with README.md: " + ", ".join(bad)
 
