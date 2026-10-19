@@ -539,22 +539,35 @@ class ZosBackend(Backend):
         return Path(glass_dir) if glass_dir else glasscat.DEFAULT_GLASSCAT_DIR
 
     def substitute_catalog(self, catalog: str | None) -> str:
-        """玻璃替换用的目录：指定了就用指定的，否则用成都光明的在产目录（Standard、Preferred，library/glasscat 生成；
-        Glasscat 里没有它时退回全部在用目录）。目录不在镜头的在用列表里就加进去，替换求解只认在用的目录。
-        The catalog for glass substitution: the one given, else CDGM's in-production catalog (made by library/glasscat;
-        every catalog in use when it is not installed). A catalog not in use is added, as the solve only takes those."""
+        """玻璃替换用的目录名（不改镜头）：指定了就用指定的，否则用成都光明的在产目录（Standard、Preferred，
+        library/glasscat 生成；Glasscat 里没有它时为空串，即全部在用目录）。
+        The catalog name for glass substitution, without touching the lens: the one given, else CDGM's in-production
+        catalog (made by library/glasscat); empty, meaning every catalog in use, when that is not installed."""
         name = (catalog or "").upper()
-        if not name:
-            if not (self._glass_dir() / f"{DEFAULT_SUBSTITUTE_CATALOG}.AGF").is_file():
-                return ""
+        if not name and (self._glass_dir() / f"{DEFAULT_SUBSTITUTE_CATALOG}.AGF").is_file():
             name = DEFAULT_SUBSTITUTE_CATALOG
+        return name
+
+    def catalog_has(self, name: str, catalog: str) -> bool | None:
+        """牌号是否在这个目录的 AGF 里；目录为空、找不到它的 AGF，或这不是在用目录里的牌号（模型玻璃）时为 None。
+        Whether a glass is in this catalog's AGF; None for an empty catalog, one whose AGF is not found, or a name that
+        is no glass of the catalogs in use (a model glass)."""
+        if not catalog or not name or name.upper() not in self._names_in_use():
+            return None
+        self.glass_status(name, [catalog])  # 读入并缓存该目录 / loads and caches the catalog
+        table = self._glass_status.get(catalog.upper())
+        return None if not table else name.upper() in table
+
+    def _use_catalog(self, name: str) -> None:
+        """替换求解只认在用的目录：不在就加进去（这是对镜头的改动）/ the solve only takes catalogs in use: add it (a lens change)"""
+        if not name:
+            return
         mc = self.system.SystemData.MaterialCatalogs
         if not mc.IsCatalogInUse(name):
             mc.AddCatalog(name)
             self._material_cache.clear()
             if not mc.IsCatalogInUse(name):
                 raise SaosError(ErrorCode.BAD_ARGS, f"cannot load glass catalog {name} from {self._glass_dir()}")
-        return name
 
     @staticmethod
     def _tilt_decenter(row) -> dict[str, Any]:
@@ -719,6 +732,16 @@ class ZosBackend(Backend):
         # ZOS-API 对不存在的牌号不报错，只能自己按当前使用的玻璃目录核对
         if name == "" or name.upper() == "MIRROR":
             return name.upper()
+        upper = name.upper()
+        if upper not in self._names_in_use():
+            raise SaosError(
+                ErrorCode.BAD_ARGS,
+                f"{name!r} is not in the catalogs in use",
+                {"catalogs": self._catalogs_in_use()},
+            )
+        return upper
+
+    def _names_in_use(self) -> set[str]:
         catalogs = tuple(self._catalogs_in_use())
         if catalogs not in self._material_cache:
             mc = self.system.SystemData.MaterialCatalogs
@@ -726,14 +749,7 @@ class ZosBackend(Backend):
             for cat in catalogs:
                 names.update(str(m).upper() for m in mc.GetMaterialsInCatalog(cat))
             self._material_cache[catalogs] = names
-        upper = name.upper()
-        if upper not in self._material_cache[catalogs]:
-            raise SaosError(
-                ErrorCode.BAD_ARGS,
-                f"{name!r} is not in the catalogs in use",
-                {"catalogs": list(catalogs)},
-            )
-        return upper
+        return self._material_cache[catalogs]
 
     # ---- 搭建与快照 ----
 
@@ -953,9 +969,12 @@ class ZosBackend(Backend):
             m = new._S_MaterialModel
             m.IndexNd, m.AbbeVd, m.VaryIndex, m.VaryAbbe = nd, vd, True, True
         else:
+            # 面已经过校验才加目录，失败的调用不会留下目录改动 / the catalog is added only after the surface passed its checks
+            name = self.substitute_catalog(catalog)
+            self._use_catalog(name)
             new = cell.CreateSolveType(zosapi.Editors.SolveType.MaterialSubstitute)
             # 空目录名表示在当前使用的全部目录中替换 / an empty catalog substitutes within every catalog in use
-            new._S_MaterialSubstitute.Catalog = self.substitute_catalog(catalog)
+            new._S_MaterialSubstitute.Catalog = name
         cell.SetSolveData(new)
         return str(cell.GetSolveData().Type)
 

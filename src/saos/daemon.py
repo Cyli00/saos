@@ -568,11 +568,27 @@ class Daemon:
         mode = _arg(args, "mode", str, default=None)
         catalog = _arg(args, "catalog", str, default=None)
         substitute = param == "material" and on and mode == "substitute"
+        extra: dict[str, Any] = {}
         if substitute:
             catalog = self.backend.substitute_catalog(catalog)
-        solves = {int(s): self.backend.vary(int(s), param, on, mode, catalog) for s in surfaces}
-        loaded.dirty = True
-        return {**loaded.describe(), "param": param, "solves": solves, **({"catalog": catalog or "all catalogs in use"} if substitute else {})}
+            # 现在的玻璃不在所选目录里的面：替换会把它换成别家的玻璃，提醒 agent 必要时按面给 --catalog
+            # surfaces whose glass is not in the chosen catalog: substitution moves them to another maker's glasses
+            rows = self.backend.surfaces()
+            glass = {int(s): str(rows[int(s)].get("material") or "") for s in surfaces if 0 <= int(s) < len(rows)}
+            outside = [{"surface": s, "material": m} for s, m in glass.items() if m and self.backend.catalog_has(m, catalog) is False]
+            extra = {"catalog": catalog or "all catalogs in use", "outside_catalog": outside}
+            if outside:
+                extra["note"] = (f"the current glass of surfaces {[o['surface'] for o in outside]} is not in {catalog}; substitution will "
+                                 "replace it with glasses of that catalog. Pass --catalog per surface to stay with a maker")
+        solves: dict[int, str] = {}
+        try:
+            for s in surfaces:
+                solves[int(s)] = self.backend.vary(int(s), param, on, mode, catalog)
+        finally:
+            # 中途某面失败时，前面的面（和替换目录）已经改了 / when a later surface fails, the earlier ones are already changed
+            if solves:
+                loaded.dirty = True
+        return {**loaded.describe(), "param": param, "solves": solves, **extra}
 
     def op_merit(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))

@@ -10,7 +10,8 @@
       "url": "http://www.cdgmgd.com/downloadFile.htm?uid=vkYlfwDmuNtvITOp4NV",
       "page": "http://www.cdgmgd.com/go.htm?k=ge_lei_xia_zai&url=downList",
       "retrieved": "2026-10-19，用户下载（原文件名 CDGM-ZEMAX202609.AGF）",
-      "sha256": "e0933fe14749919b2b7c5170f814765af570ef53b78171dc98dae6b542f8e9ce"
+      "sha256": "e0933fe14749919b2b7c5170f814765af570ef53b78171dc98dae6b542f8e9ce",
+      "url_note": "下载页“zemax格式文档”链接的文件 ID，不是会话令牌：2026-10-19 不带 cookie 重新请求，得到同一文件（Content-Disposition CDGM-ZEMAX202609.AGF，sha256 一致）。厂家换版本时 ID 指向的内容可能变，以 page 为入口、以 sha256 认版本"
     },
     {
       "vendor": "NHG",
@@ -21,7 +22,8 @@
       "url": "http://www.hbnhg.com/uploadfiles/2026/09/NHG202608.zip",
       "page": "http://www.hbnhg.com/AllKindsOfDownloads/index.aspx",
       "retrieved": "2026-10-19，官网“Zemax数据包(AGF).zip”（整理时间 2026-08-26），zip sha256 f89fe28a65cec1afb0c5381c0a05e00971835272d9fa424fe8448a52aa15ab57，内含 NHG202608.AGF",
-      "sha256": "04062f360f00eee6c40f625c8a3202c43b0bd499d58b0228f9c02f843e652bcf"
+      "sha256": "04062f360f00eee6c40f625c8a3202c43b0bd499d58b0228f9c02f843e652bcf",
+      "url_note": "官网“各类下载”里的上传文件路径；厂家换版本时会换路径，以 page 为入口、以 sha256 认版本"
     }
   ]
 }

@@ -9,7 +9,7 @@
 
 两家有 88 个同名牌号，其中 8 个光学参数不同（H-ZLAF71 的 nd：CDGM 1.850、NHG 1.901），所以按厂家分开，不合并。替换求解每个面只能指定一个目录，不同的面可以用不同厂家。
 
-厂家文件不进仓库，装在 OpticStudio 的 Glasscat 文件夹（`Documents\Zemax\Glasscat`）里，下载地址、版本和 SHA-256 记在 [manifest.json](manifest.json)。换新版时：把新文件装进 Glasscat，更新 manifest 里的 `file`、`edition`、`sha256`，再运行
+厂家文件不进仓库，装在 OpticStudio 的 Glasscat 文件夹（`Documents\Zemax\Glasscat`）里，下载地址、版本和 SHA-256 记在 [manifest.json](manifest.json)。下载地址是厂家下载页当时给的文件链接（CDGM 的 `uid` 是文件 ID，2026-10-19 不带 cookie 重取得到同一文件），厂家换版本后可能指向别的内容：以 `page` 为入口找新版，以 SHA-256 认定是哪一版。换新版时：把新文件装进 Glasscat，更新 manifest 里的 `file`、`edition`、`sha256`，再运行
 
 ```bash
 uv run python library/glasscat/inprod.py

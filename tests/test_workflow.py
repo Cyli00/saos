@@ -876,6 +876,23 @@ def test_surface_parameters_and_materials_can_vary(setup):
     assert call(daemon, "opt.vary", job=job.id, param="semi_diameter", surfaces=[1])["error"]["code"] == ErrorCode.BAD_ARGS
 
 
+def test_a_failed_vary_leaves_the_lens_unchanged_or_marked_unsaved_and_names_glasses_outside_the_catalog(setup):
+    """替换：空气面报错且什么都不改；多面中途失败时前面的面已改，镜头标为未保存；现在的玻璃不在所选目录里的面列出来。"""
+    daemon, job = setup
+    assert call(daemon, "lens.save", job=job.id)["ok"]
+    assert call(daemon, "opt.vary", job=job.id, param="material", surfaces=[2], mode="substitute")["error"]["code"] == ErrorCode.BAD_ARGS
+    assert call(daemon, "lens.info", job=job.id)["result"]["dirty"] is False
+    assert call(daemon, "opt.vary", job=job.id, param="material", surfaces=[1, 2], mode="substitute")["error"]["code"] == ErrorCode.BAD_ARGS
+    assert call(daemon, "lens.info", job=job.id)["result"]["dirty"] is True  # 第 1 面已设为替换 / surface 1 is already set
+    glass = daemon.backend.surfaces()[1]["material"]
+    daemon.backend.catalog_has = lambda name, catalog: False
+    out = call(daemon, "opt.vary", job=job.id, param="material", surfaces=[1], mode="substitute", catalog="SAOS_NHG_INPROD")["result"]
+    assert out["outside_catalog"] == [{"surface": 1, "material": glass}] and "not in SAOS_NHG_INPROD" in out["note"]
+    daemon.backend.catalog_has = lambda name, catalog: True
+    out = call(daemon, "opt.vary", job=job.id, param="material", surfaces=[1], mode="substitute", catalog="SAOS_NHG_INPROD")["result"]
+    assert out["outside_catalog"] == [] and "note" not in out
+
+
 def test_demand_notes_are_free_and_ranges_can_cite_a_source(saos_home):
     """notes 不进版本；变量范围和目标可以写来源（例如教材表格）。"""
     job = jobs.create_job("notes")

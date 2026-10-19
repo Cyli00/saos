@@ -111,9 +111,13 @@ class Backend(ABC):
         return self.surfaces()[index].get(param)
 
     def substitute_catalog(self, catalog: str | None) -> str:
-        """玻璃替换实际使用的目录名；空串表示当前使用的全部目录。
-        The catalog glass substitution will use; empty means every catalog in use."""
+        """玻璃替换实际使用的目录名（不改镜头）；空串表示当前使用的全部目录。
+        The catalog glass substitution will use, without touching the lens; empty means every catalog in use."""
         return (catalog or "").upper()
+
+    def catalog_has(self, name: str, catalog: str) -> bool | None:
+        """牌号是否在这个目录里；不知道时为 None。/ Whether a glass is in this catalog; None when unknown."""
+        return None
 
     def vary(self, surface: int, param: str, on: bool, mode: str | None = None, catalog: str | None = None) -> str:
         """设变量或取消变量；material 用 mode 选模型玻璃（nd、νd 可变）或目录内替换。返回求解类型。

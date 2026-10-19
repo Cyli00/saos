@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from saos import glasscat
 from saos.protocol import ErrorCode
 
 pytestmark = [
@@ -78,9 +79,24 @@ def test_variable_kinds(tmp_path):
         ok(saos("opt", "vary", "--job", job, "--param", "material", "--surfaces", glass["index"], "--off", env=env))
         fixed = ok(saos("exec", script, "--job", job, env=env))["result"]
         assert fixed["nd"] == pytest.approx(model["nd"]) and fixed["vary"] == [False, False]
+        # 替换：不给 --catalog 时用在产目录；对空气面报错且不改在用目录，成功时才把目录加进去
+        # substitution: the in-production catalog by default; an air surface fails without touching the catalogs in use
+        air = next(s for s in surfaces if not s["material"] and 0 < s["index"] < len(surfaces) - 1)
+        catalogs = tmp_path / "catalogs.py"
+        catalogs.write_text("def run(ctx):\n    return [str(c) for c in ctx.system.SystemData.MaterialCatalogs.GetCatalogsInUse() if str(c)]\n",
+                            encoding="utf-8")
+        before = ok(saos("exec", catalogs, "--job", job, env=env))["result"]
+        assert saos("opt", "vary", "--job", job, "--param", "material", "--mode", "substitute", "--surfaces", air["index"], env=env)["error"]["code"] == ErrorCode.BAD_ARGS
+        assert ok(saos("exec", catalogs, "--job", job, env=env))["result"] == before
         sub = ok(saos("opt", "vary", "--job", job, "--param", "material", "--mode", "substitute", "--surfaces", glass["index"], env=env))
         assert list(sub["solves"].values()) == ["MaterialSubstitute"]
-        air = next(s for s in surfaces if not s["material"] and 0 < s["index"] < len(surfaces) - 1)
+        assert sub["outside_catalog"] == []  # 这一面现在是模型玻璃，不是哪家的牌号 / a model glass belongs to no maker
+        if (glasscat.DEFAULT_GLASSCAT_DIR / "SAOS_CDGM_INPROD.AGF").is_file():
+            assert sub["catalog"] == "SAOS_CDGM_INPROD" and "SAOS_CDGM_INPROD" in ok(saos("exec", catalogs, "--job", job, env=env))["result"]
+            # Cooke 的其他玻璃是 SCHOTT 牌号，不在成都光明的目录里 / Cooke's other SCHOTT glasses are not in CDGM's catalog
+            other = next(s for s in surfaces if s["material"] and s["index"] > glass["index"])
+            sub = ok(saos("opt", "vary", "--job", job, "--param", "material", "--mode", "substitute", "--surfaces", other["index"], env=env))
+            assert sub["outside_catalog"] == [{"surface": other["index"], "material": other["material"]}] and "note" in sub, sub
         assert saos("opt", "vary", "--job", job, "--param", "material", "--mode", "model", "--surfaces", air["index"], env=env)["error"]["code"] == ErrorCode.BAD_ARGS
 
         # 面型参数列：偶次非球面的系数可以写入、读回、设为变量；没有的列报错
