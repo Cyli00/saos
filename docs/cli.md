@@ -47,7 +47,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `saos microscope perturb --job J --seed S --radius-rel A [--thickness-rel B]` | 受控扰动：物镜各面曲率、厚度按固定随机种子均匀改变 |
 | `saos microscope accept --job J [--spec FILE]` | 按光学规格做验收评估，结果和验收模型存到任务的 eval/。结果的 `focus_trace` 列出调焦的每个试探位置（波长、厚度、轴上光线失败数、c4、拟合残差） |
 | `saos opt vary --job J --param radius\|thickness\|conic\|par<N>\|material --surfaces 1-16 [--mode model\|substitute] [--catalog C] [--off]` | 设变量或取消变量。物面只允许厚度（即无盖玻片时的工作距离间隔）。`par<N>` 为面型参数列；`material` 需要 `--mode`：`model` 把玻璃换成 nd、νd 可变的模型玻璃（起点取当前玻璃，只用于探索，不能交付），`substitute` 让 Hammer、全局优化在目录内替换真实玻璃（`--catalog` 不给时用全部在用目录）。`--off` 对模型玻璃保留当前 nd、νd 并停止变化。变量、边界条件和工艺约束见 `skills/saos/design-practice.md` |
-| `saos opt merit --job J clear\|wizard\|add\|show [--file JSON]` | 评价函数：清空；按向导生成默认评价函数（type、data、reference、rings、arms 等）；追加操作数列表；查看 |
+| `saos opt merit --job J clear\|wizard\|add\|show [--file JSON]` | 评价函数：清空；按向导生成默认评价函数（type、data、reference、rings、arms、glass、air、start_at、assume_axial_symmetry 等；assume_axial_symmetry 默认 true，折转或非旋转对称的系统要设 false，否则只追半个光瞳）；追加操作数列表；查看 |
 | `saos opt local --job J [--cycles auto\|1\|5\|10\|50] [--cores N] [--max-seconds S]` | 局部优化（阻尼最小二乘），默认用全部逻辑核减 2。异步运行，进度写进 `progress.json`；超过 `--max-seconds` 或收到 `job cancel` 时调用 OpticStudio 的 Cancel，保留已经得到的结果（返回 `stopped_by`）。运行中每 5 s 把当前镜头的几何、Lens Data 和交叠检查推给流程图窗口（优化器占着追迹工具，这时不带光线，结束后补上）。开始前做与 round 相同的需求单检查（已确认、没有 blocking 问题） |
 | `saos microscope library check EXTRACT` | 入库前用近轴计算核对提取结果：焦距和工作距离的印刷值落在印刷精度的舍入包络内，或与计算值相差不超过 1%，即为一致（不经后台进程） |
 | `saos microscope library add ID --extract FILE [--catalogs …] [--focal-length F] [--field-number N] [--stop rear_focal\|printed\|r<面号>]` | 把提取结果适配成处方，写入 `library/microscope/entries/ID/`，状态为 extracted（不经后台进程） |

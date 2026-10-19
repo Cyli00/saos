@@ -951,7 +951,8 @@ class ZosBackend(Backend):
         if air:
             wiz.AirMin, wiz.AirMax, wiz.AirEdge = float(air[0]), float(air[1]), float(air[2])
         wiz.StartAt = int(settings.get("start_at", 1))
-        wiz.IsAssumeAxialSymmetryUsed = True
+        # 折转、双圆锥、柱面等非旋转对称系统必须关掉，否则向导只追半个光瞳 / must be off for systems that are not rotationally symmetric
+        wiz.IsAssumeAxialSymmetryUsed = bool(settings.get("assume_axial_symmetry", True))
         wiz.Apply()
         return int(self.system.MFE.NumberOfOperands)
 
