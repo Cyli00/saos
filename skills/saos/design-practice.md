@@ -45,7 +45,7 @@ In saos the product's hard limits belong in the demand (`constants`, or a `range
 
 ## Manufacturing and assembly [LXT §17.5]
 
-**Diameter allowance.** The outer diameter is the clear aperture D plus a mounting allowance. Leave it during correction, not afterwards: added later, it can leave a positive lens without edge thickness or turn a surface past a hemisphere.
+**Diameter allowance.** The outer diameter is the clear aperture D plus a mounting allowance. Leave it during correction, not afterwards: added later, it can leave a positive lens without edge thickness or turn a surface past a hemisphere. In saos it is the mechanical semi-diameter (`lens set --param mech_semi_diameter`, or the key `"<surface>.mech_semi_diameter"` in scripts); the interference check and its `clearances` then measure the real part.
 
 | Clear aperture (mm) | rolled edge | retaining ring | Clear aperture (mm) | rolled edge | retaining ring |
 |---|---|---|---|---|---|
