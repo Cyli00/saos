@@ -358,7 +358,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--quote", required=True, help="the user's own words of approval")
     p = lens_cmd("set", "change one surface parameter")
     p.add_argument("--surface", type=int, required=True)
-    p.add_argument("--param", required=True, help="radius / thickness / conic / semi_diameter / material / comment / par<N> (a Lens Data parameter column)")
+    p.add_argument("--param", required=True, help="radius / thickness / conic / semi_diameter / mech_semi_diameter (the part's outer edge, "
+                                                   "used by the interference check) / material / comment / par<N> (a Lens Data parameter column)")
     p.add_argument("--value", required=True, help="a number, inf, a material name or comment text")
     p = lens_cmd("save", "save (default: overwrite the current file, then reload and compare)")
     p.add_argument("--as", dest="as_name", help="save as this file name inside lenses/")

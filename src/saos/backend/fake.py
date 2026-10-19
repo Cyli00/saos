@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from saos import geometry
-from saos.backend.base import MATERIAL_MODES, NUMERIC_PARAMS, Backend, check_param, is_par, parse_numeric
+from saos.backend.base import MATERIAL_MODES, NUMERIC_PARAMS, Backend, check_param, check_size, is_par, parse_numeric
 from saos.protocol import ErrorCode, SaosError
 
 FAKE_MATERIALS = {"", "N-BK7", "SF2", "H-K9L", "H-ZF2", "MIRROR"}
@@ -26,9 +26,10 @@ def fake_surface(index: int, **overrides: Any) -> dict[str, Any]:
         "thickness": 0.0,
         "material": "",
         "semi_diameter": 0.0,
+        "mech_semi_diameter": 0.0,
         "conic": 0.0,
         "is_stop": False,
-        "solves": {k: "Fixed" for k in ("radius", "thickness", "material", "semi_diameter", "conic")},
+        "solves": {k: "Fixed" for k in ("radius", "thickness", "material", "semi_diameter", "mech_semi_diameter", "conic")},
     }
     surface.update(overrides)
     return surface
@@ -119,6 +120,7 @@ class FakeBackend(Backend):
             surface[param] = parse_numeric(param, value)
         elif param in NUMERIC_PARAMS:
             number = parse_numeric(param, value)
+            check_size(param, number)
             # 模拟求解覆盖：非 Fixed/Variable 的单元格写不进去
             if surface["solves"].get(param) not in ("Fixed", "Variable"):
                 raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"surface {index} {param} is overridden by a solve")

@@ -118,6 +118,24 @@ def brief(d: dict[str, Any], evaluation: dict[str, Any], decision: dict[str, Any
     return out
 
 
+def parts_clash(ctx) -> dict[str, Any] | None:
+    """当前镜头的零件交叠（saos.geometry：面在口径内相交、镜片互相穿插，按零件外缘算）。有就返回涉及的面，没有返回 None；
+    后端没有交叠检查（SaosError）时也返回 None；检查本身出其他错时异常照常抛出、本轮不记录，没查过的镜头不放行。物理上不可能的镜头不能算达成、也不能交付（2026-10-19 验证中，一个
+    Hammer 后穿插 5.35 mm 的镜头仍被判达成并交付）。
+    The current lens's part clashes (saos.geometry: surfaces crossing inside their apertures, lenses interpenetrating,
+    out to the parts' outer edges): the surfaces involved, or None when there are none or the backend has no interference
+    check (SaosError). Any other failure of the check propagates and the round is not recorded: an unchecked lens is not let through.
+    A physically impossible lens is neither achieved nor deliverable (in the 2026-10-19 verification a lens with a
+    5.35 mm interpenetration after Hammer was judged achieved and delivered)."""
+    try:
+        clash = ctx.backend.interference()
+    except SaosError:
+        return None
+    crossings = [{"surfaces": c["surfaces"], "depth": c["depth"]} for c in clash.get("crossings") or []]
+    overlaps = [{"lenses": o["lenses"], "points": o["points"]} for o in clash.get("overlaps") or []]
+    return {"crossings": crossings, "overlaps": overlaps} if crossings or overlaps else None
+
+
 def lens_state(ctx) -> tuple[dict[str, Any], str]:
     """当前镜头的完整数据和内容哈希（不含文件路径和布局图），用来发现被改动的镜头和重复记录。
     The full data of the current lens and a hash of its content (file path and pictures excluded),
@@ -244,6 +262,7 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
     if changed:
         raise SaosError(ErrorCode.LENS_MODIFIED_BY_CHECK, "a check changed the lens while measuring; make the checks read-only (work on a copy or restore the lens), then record again",
                         {"changed": changed[:30], "evaluation": evaluation["evidence_dir"]})
+    clash = parts_clash(ctx)
     # 存一份本轮的归档镜头，然后回到原来的工作文件，避免之后的 lens save 改写归档
     # archive this round's lens, then switch back to the working file so a later lens save cannot rewrite the archive
     working = ctx.lens
@@ -272,7 +291,12 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
         # the full judgement is stored once: evaluations/NNN/result.json is the authoritative record
         "evaluation": evaluation["evidence_file"],
         "shortfall": evaluation["shortfall"],
-        "achieved": evaluation["achieved"],
+        # 零件交叠的镜头物理上不成立：不算达成，也不能交付。evaluations/NNN/result.json 只记判定的测量结果，
+        # 那里的 achieved 只看判定；本轮是否达成以这条记录为准
+        # parts that clash make the lens impossible: not achieved, not deliverable. evaluations/NNN/result.json holds what
+        # the checks measured and its achieved covers the checks only; whether the round is achieved is this record's call
+        "achieved": evaluation["achieved"] and clash is None,
+        **({"parts_clash": clash} if clash else {}),
         **({"pursuing": True} if evaluation.get("pursuing") else {}),
         "measurement_errors": evaluation["measurement_errors"],
         # 常量或变量范围不满足的轮次不能交付 / a round that breaks a constant or a variable range is not deliverable
@@ -333,6 +357,7 @@ def _rebase(ctx, h: dict[str, Any], scripts: dict[str, Any], best: dict[str, Any
         desc_before, before = lens_state(ctx)
         ev = demand.evaluate(ctx, h, scripts, lens={"file": best["file"], "round": best["round"], "purpose": REBASE_PURPOSE})
         desc_after, _ = lens_state(ctx)
+        clash = parts_clash(ctx)
     finally:
         ctx.backend.load(current)
     if lens_changes(desc_before, desc_after):
@@ -346,7 +371,8 @@ def _rebase(ctx, h: dict[str, Any], scripts: dict[str, Any], best: dict[str, Any
         "file": best["file"], "lens_sha": before, "rebase_of": best["round"],
         # 数值不变说明只是换了写法，比较窗口延续；否则从这条开始新窗口 / same numbers: the window goes on; otherwise a new one starts here
         "equivalent": not diffs and not ev["measurement_errors"], "diffs": diffs,
-        "evaluation": ev["evidence_file"], "shortfall": ev["shortfall"], "achieved": ev["achieved"],
+        "evaluation": ev["evidence_file"], "shortfall": ev["shortfall"], "achieved": ev["achieved"] and clash is None,
+        **({"parts_clash": clash} if clash else {}),
         **({"pursuing": True} if ev.get("pursuing") else {}),
         "measurement_errors": ev["measurement_errors"], "hard_failing": ev["hard_failing"], "values": values,
         "failing": {i["id"]: i["shortfall"] for i in ev["items"] if i.get("shortfall", 0) > 0},

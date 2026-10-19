@@ -8,7 +8,8 @@ ctx.spot(...)); kit.<function>(ctx, ...) works as well.
 
 参数键 / parameter keys:
     "<面>.<参数>"   面是序号（"3"、"-1" 为像面）或 Lens Data 的注释（"lens1 back"）；
-                    参数：radius、curvature（1/R，0 为平面）、thickness、conic、semi_diameter、material、comment、par<N>
+                    参数：radius、curvature（1/R，0 为平面）、thickness、conic、semi_diameter、mech_semi_diameter（零件外缘）、
+                    material、comment、par<N>
     "aperture"      系统孔径值 / the system aperture value
     "field.<n>.x"、"field.<n>.y"、"wave.<n>"   第 n 个视场坐标、第 n 个波长（µm）/ field n coordinates, wavelength n (µm)
 """
@@ -29,7 +30,9 @@ import numpy as np
 from saos.backend.base import PAR_RE
 from saos.protocol import ErrorCode, SaosError
 
-PARAMS = ("radius", "curvature", "thickness", "conic", "semi_diameter", "material", "comment")
+PARAMS = ("radius", "curvature", "thickness", "conic", "semi_diameter", "mech_semi_diameter", "material", "comment")
+_ROW_ATTRS = {"radius": "Radius", "thickness": "Thickness", "conic": "Conic", "semi_diameter": "SemiDiameter",
+              "mech_semi_diameter": "MechanicalSemiDiameter"}
 _INT_RE = re.compile(r"^-?\d+$")
 _SYSTEM_RE = re.compile(r"^(aperture|wave\.(\d+)|field\.(\d+)\.([xy]))$")
 # ReadNextResult 的返回：(成功, 光线号, 错误, 渐晕, X, Y, Z, L, M, N, l2, m2, n2, opd, 强度)
@@ -114,9 +117,10 @@ def parse_key(key: str) -> tuple[str, Any, str]:
     return "surface", ref, param
 
 
-def _par_cell(ctx, row, param: str):
-    column = getattr(zosapi(ctx).Editors.LDE.SurfaceColumn, f"Par{PAR_RE.match(param).group(1)}")
-    return row.GetSurfaceCell(column)
+def _par_cell(ctx, row, param: str, index: int):
+    from saos.backend.zos import par_cell
+
+    return par_cell(zosapi(ctx), row, index, param)
 
 
 def _get_zos(ctx, sysm, kind: str, ref: Any, param: str, names: dict[str, int]) -> Any:
@@ -128,15 +132,16 @@ def _get_zos(ctx, sysm, kind: str, ref: Any, param: str, names: dict[str, int]) 
             return float(sd.Wavelengths.GetWavelength(int(param)).Wavelength)
         field = sd.Fields.GetField(int(param))
         return float(field.X if ref == "field_x" else field.Y)
-    row = sysm.LDE.GetSurfaceAt(surface(ctx, ref, names))
+    index = surface(ctx, ref, names)
+    row = sysm.LDE.GetSurfaceAt(index)
     if param == "curvature":
         r = float(row.Radius)
         return 0.0 if r == 0 or math.isinf(r) else 1.0 / r
     if PAR_RE.match(param):
-        return float(_par_cell(ctx, row, param).DoubleValue)
+        return float(_par_cell(ctx, row, param, index).DoubleValue)
     if param in ("material", "comment"):
         return str(getattr(row, param.capitalize()))
-    return float(getattr(row, {"radius": "Radius", "thickness": "Thickness", "conic": "Conic", "semi_diameter": "SemiDiameter"}[param]))
+    return float(getattr(row, _ROW_ATTRS[param]))
 
 
 def _set_zos(ctx, sysm, kind: str, ref: Any, param: str, value: Any, names: dict[str, int]) -> None:
@@ -163,11 +168,11 @@ def _set_zos(ctx, sysm, kind: str, ref: Any, param: str, value: Any, names: dict
     if param == "curvature":
         target, param = (math.inf if target == 0 else 1.0 / target), "radius"
     if PAR_RE.match(param):
-        cell = _par_cell(ctx, row, param)
+        cell = _par_cell(ctx, row, param, index)
         cell.DoubleValue = target
         actual = float(cell.DoubleValue)
     else:
-        attr = {"radius": "Radius", "thickness": "Thickness", "conic": "Conic", "semi_diameter": "SemiDiameter"}[param]
+        attr = _ROW_ATTRS[param]
         setattr(row, attr, target)
         actual = float(getattr(row, attr))
     if not (actual == target or abs(actual - target) <= 1e-12 * max(1.0, abs(target))):
@@ -290,18 +295,12 @@ def material_nd(ctx, ref: int | str) -> float:
     solve = row.MaterialCell.GetSolveData()
     if str(solve.Type) == "MaterialModel":
         return float(solve._S_MaterialModel.IndexNd)
+    from saos.backend.zos import catalog_constants
+
     name = str(row.Material)
-    catalogs = sysm.SystemData.MaterialCatalogs
-    for catalog in catalogs.GetCatalogsInUse():
-        names = {str(m).upper(): str(m) for m in catalogs.GetMaterialsInCatalog(catalog)}
-        if name.upper() in names:
-            tool = sysm.Tools.OpenMaterialsCatalog()
-            try:
-                tool.SelectedCatalog = str(catalog)
-                tool.SelectedMaterial = names[name.upper()]
-                return float(tool.Nd)
-            finally:
-                tool.Close()
+    constants = catalog_constants(sysm, name)
+    if constants is not None:
+        return constants[0]
     raise SaosError(ErrorCode.BAD_ARGS, f"material {name!r} of surface {ref} is not in the catalogs in use")
 
 
@@ -353,13 +352,6 @@ class Rays:
 
     def select(self, mask: np.ndarray) -> Rays:
         return Rays(**{k: (getattr(self, k)[mask] if k != "surface" else self.surface) for k in self.__dataclass_fields__})
-
-    def to_global(self, ctx) -> tuple[np.ndarray, np.ndarray]:
-        """全局坐标的位置和方向，各为 (N, 3)。/ Global positions and directions, (N, 3) each."""
-        rot, shift = global_matrix(ctx, self.surface)
-        p = np.stack([self.x, self.y, self.z], axis=1) @ rot.T + shift
-        d = np.stack([self.l, self.m, self.n], axis=1) @ rot.T
-        return p, d
 
 
 def pupil(n: int = 21) -> list[tuple[float, float]]:

@@ -9,16 +9,13 @@ from typing import Any
 
 from saos.protocol import ErrorCode, SaosError
 
-NUMERIC_PARAMS = ("radius", "thickness", "conic", "semi_diameter")
+# mech_semi_diameter：零件外缘（Lens Data 的 Mech Semi-Dia 列），交叠检查按它取零件边缘 / the part edge the interference check uses
+NUMERIC_PARAMS = ("radius", "thickness", "conic", "semi_diameter", "mech_semi_diameter")
 TEXT_PARAMS = ("material", "comment")
 SURFACE_PARAMS = NUMERIC_PARAMS + TEXT_PARAMS
 # 面型参数列（非球面系数、坐标断点的偏心和倾斜、菲涅尔基底等），按 Lens Data 的 Par 列号
 # surface-type parameter columns (aspheric terms, coordinate-break decenters and tilts, …) by their Lens Data Par number
 PAR_RE = re.compile(r"^par([1-9]\d{0,2})$")
-# 可设为变量的量：曲率半径、厚度与间隔、圆锥、面型参数（李晓彤 17.1：结构参数为曲率半径或非球面系数、厚度和间隔、折射率），以及材料
-# what can vary: radius, thickness and spacing, conic, surface-type parameters (Li Xiaotong 17.1: the structural parameters are
-# the radii or aspheric terms, the thicknesses and spacings and the indices), and the material
-VARY_PARAMS = ("radius", "thickness", "conic", "par<N>", "material")
 MATERIAL_MODES = ("model", "substitute")
 
 
@@ -43,6 +40,12 @@ def parse_numeric(param: str, value: Any) -> float:
     if math.isnan(number):
         raise SaosError(ErrorCode.BAD_ARGS, f"{param} cannot be NaN")
     return number
+
+
+def check_size(param: str, number: float) -> None:
+    """半口径和机械半口径是尺寸：有限且不为负。/ Semi-diameters are sizes: finite and not negative."""
+    if param in ("semi_diameter", "mech_semi_diameter") and not (math.isfinite(number) and number >= 0):
+        raise SaosError(ErrorCode.BAD_ARGS, f"{param} must be a finite size >= 0, got {number}")
 
 
 def same_number(a: float, b: float) -> bool:

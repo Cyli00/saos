@@ -176,9 +176,9 @@ def valid(record: dict[str, Any]) -> bool:
 
 
 def deliverable(record: dict[str, Any]) -> bool:
-    """含模型玻璃、测量出错、或常量/变量范围不满足的轮次不能交付。
-    Rounds with a model glass, failed checks or a broken constant / variable range are not deliverable."""
-    return not record.get("model_glass") and valid(record) and not record.get("hard_failing")
+    """含模型玻璃、测量出错、常量/变量范围不满足、或零件交叠的轮次不能交付。
+    Rounds with a model glass, failed checks, a broken constant / variable range or clashing parts are not deliverable."""
+    return not record.get("model_glass") and valid(record) and not record.get("hard_failing") and not record.get("parts_clash")
 
 
 def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str, Any] | None = None,

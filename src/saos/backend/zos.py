@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import os
 import re
@@ -20,13 +21,43 @@ from saos.backend.base import (
     PAR_RE,
     Backend,
     check_param,
+    check_size,
     is_par,
     parse_numeric,
     same_number,
 )
 from saos.protocol import ErrorCode, SaosError
 
+log = logging.getLogger("saos.backend.zos")
 _ZOSAPI = None
+# 分析没有完整读出时，结果里附上文本导出的开头这么多字符，给诊断用 / text export head attached when an analysis was not fully read
+TEXT_HEAD_CHARS = 3000
+
+
+def _mech_semi_diameter(row) -> float | None:
+    """Lens Data 的 Mech Semi-Dia；读不到时为 None，不让一列拖垮整张面表。/ Mech Semi-Dia; None when unreadable."""
+    try:
+        return float(row.MechanicalSemiDiameter)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _cell_solve(row, cell: str) -> str | None:
+    try:
+        return str(getattr(row, cell).GetSolveData().Type)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _read_text_export(path: Path) -> str:
+    """OpticStudio 的文本导出通常是带 BOM 的 UTF-16。/ OpticStudio's text exports are usually UTF-16 with a BOM."""
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return ""
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return raw.decode("utf-16", errors="replace")
+    return raw.decode("utf-8", errors="replace")
 
 
 def _load_zosapi(root: str):
@@ -49,6 +80,44 @@ def _load_zosapi(root: str):
 
     _ZOSAPI = ZOSAPI
     return ZOSAPI
+
+
+def par_cell(zosapi, row, index: int, param: str):
+    """面型参数列 par<N>；该面型没有这一列、列标为 unused 或不是数值时报错，不读写无效单元格。后端和 saos.kit 共用。
+    The par<N> cell of a row; refuses a column this surface type lacks, marks unused, or that holds no number. Shared with saos.kit."""
+    n = int(PAR_RE.match(param).group(1))
+    col = getattr(zosapi.Editors.LDE.SurfaceColumn, f"Par{n}", None)
+    cell = None
+    if col is not None:
+        try:
+            cell = row.GetSurfaceCell(col)
+        except Exception:  # noqa: BLE001 - 超出该面型的列 / beyond this surface type's columns
+            cell = None
+    header = str(cell.Header) if cell is not None else ""
+    if cell is None or not header or "unused" in header.lower() or str(cell.DataType) != "Double":
+        raise SaosError(ErrorCode.BAD_ARGS, f"surface {index} ({row.TypeName}) has no numeric parameter {n}")
+    return cell
+
+
+def catalog_constants(system, name: str) -> tuple[float, float] | None:
+    """启用目录里牌号 name 的 nd、νd（材料目录工具，按目录里的原写法选牌号）；不在任何启用目录里时为 None。后端和 saos.kit 共用。
+    nd and Vd of glass name from the catalogs in use (materials catalog tool, selected by the catalog's own spelling);
+    None when no catalog in use has it. Shared with saos.kit."""
+    catalogs = system.SystemData.MaterialCatalogs
+    for catalog in catalogs.GetCatalogsInUse():
+        # 在用目录列表里可能有空名，它的牌号表是 None（实测 ["SCHOTT", ""]）/ the list may hold an empty name whose material list is None
+        if not str(catalog):
+            continue
+        names = {str(m).upper(): str(m) for m in catalogs.GetMaterialsInCatalog(catalog) or []}
+        if name.upper() in names:
+            tool = system.Tools.OpenMaterialsCatalog()
+            try:
+                tool.SelectedCatalog = str(catalog)
+                tool.SelectedMaterial = names[name.upper()]
+                return float(tool.Nd), float(tool.Vd)
+            finally:
+                tool.Close()
+    return None
 
 
 def _to_local(tf, p):
@@ -196,13 +265,24 @@ class ZosBackend(Backend):
             message = run.ApplyAndWaitForCompletion()
             results = run.GetResults()
             if results is None:
-                raise SaosError(ErrorCode.ZOS_ERROR, f"{name} returned no results", {"message": str(message) if message else None})
+                raise SaosError(ErrorCode.ZOS_ERROR, f"{name} returned no results",
+                                {"kind": "no_results", "message": str(message) if message else None,
+                                 "settings": analysis.describe_settings(impl)})
+            # 文本导出先写：数值提取出问题时它仍是 OpticStudio 自己给出的完整依据
+            # the text export comes first: when extracting numbers fails it is still OpticStudio's own full record
+            text_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                text_file = bool(results.GetTextFile(str(text_path)))
+            except Exception:  # noqa: BLE001
+                text_file = False
             info = self.system_info()
             out = analysis.extract(results, len(info["fields"]["items"]), len(info["wavelengths"]))
-            text_path.parent.mkdir(parents=True, exist_ok=True)
-            out["text_file"] = bool(results.GetTextFile(str(text_path)))
+            out["text_file"] = text_file
             out["settings"] = analysis.describe_settings(impl)
             out["message"] = str(message) if message else None
+            out["status"] = analysis.outcome(out)
+            if out["status"] != "ok" and text_file:
+                out["text_head"] = _read_text_export(text_path)[:TEXT_HEAD_CHARS]
             return out
         finally:
             # 显性调试时可以留下窗口给用户看；隐式运行一律关闭，避免分析对象越积越多
@@ -412,6 +492,7 @@ class ZosBackend(Backend):
             "thickness": float(surf.Thickness),
             "material": str(surf.Material),
             "semi_diameter": float(surf.SemiDiameter),
+            "mech_semi_diameter": _mech_semi_diameter(surf),
             "conic": float(surf.Conic),
             "is_stop": bool(surf.IsStop),
             "solves": {
@@ -419,6 +500,7 @@ class ZosBackend(Backend):
                 "thickness": str(surf.ThicknessCell.GetSolveData().Type),
                 "material": str(surf.MaterialCell.GetSolveData().Type),
                 "semi_diameter": str(surf.SemiDiameterCell.GetSolveData().Type),
+                "mech_semi_diameter": _cell_solve(surf, "MechanicalSemiDiameterCell"),
                 "conic": str(surf.ConicCell.GetSolveData().Type),
             },
         }
@@ -663,6 +745,7 @@ class ZosBackend(Backend):
         "thickness": "Thickness",
         "conic": "Conic",
         "semi_diameter": "SemiDiameter",
+        "mech_semi_diameter": "MechanicalSemiDiameter",
         "material": "Material",
         "comment": "Comment",
     }
@@ -674,19 +757,7 @@ class ZosBackend(Backend):
         return lde.GetSurfaceAt(index)
 
     def _par_cell(self, row, index: int, param: str):
-        """面型参数列 par<N>；该面型没有这一列时报错，不写进无效单元格。"""
-        n = int(PAR_RE.match(param).group(1))
-        col = getattr(_load_zosapi(self.root).Editors.LDE.SurfaceColumn, f"Par{n}", None)
-        cell = None
-        if col is not None:
-            try:
-                cell = row.GetSurfaceCell(col)
-            except Exception:  # noqa: BLE001 - 超出该面型的列 / beyond this surface type's columns
-                cell = None
-        header = str(cell.Header) if cell is not None else ""
-        if cell is None or not header or "unused" in header.lower() or str(cell.DataType) != "Double":
-            raise SaosError(ErrorCode.BAD_ARGS, f"surface {index} ({row.TypeName}) has no numeric parameter {n}")
-        return cell
+        return par_cell(_load_zosapi(self.root), row, index, param)
 
     def surface_value(self, index: int, param: str) -> Any:
         if is_par(param):
@@ -708,6 +779,7 @@ class ZosBackend(Backend):
 
         if param in NUMERIC_PARAMS:
             target: Any = parse_numeric(param, value)
+            check_size(param, target)
         else:
             target = "" if value is None else str(value)
             if param == "material":
@@ -932,17 +1004,10 @@ class ZosBackend(Backend):
 
     def _glass_constants(self, name: str) -> tuple[float, float]:
         """目录玻璃的 nd、νd，用作模型玻璃的起点。/ nd and Vd of a catalog glass, the start of a model glass."""
-        mc = self.system.SystemData.MaterialCatalogs
-        catalog = next((c for c in self._catalogs_in_use() if name.upper() in {str(m).upper() for m in mc.GetMaterialsInCatalog(c)}), None)
-        if catalog is None:
+        constants = catalog_constants(self.system, name)
+        if constants is None:
             raise SaosError(ErrorCode.BAD_ARGS, f"{name} is not in the catalogs in use, so it has no nd / Vd to start a model glass from")
-        tool = self.system.Tools.OpenMaterialsCatalog()
-        try:
-            tool.SelectedCatalog = catalog
-            tool.SelectedMaterial = name
-            return float(tool.Nd), float(tool.Vd)
-        finally:
-            tool.Close()
+        return constants
 
     def _vary_material(self, row, surface: int, on: bool, mode: str | None, catalog: str | None) -> str:
         zosapi = _load_zosapi(self.root)
@@ -1152,23 +1217,52 @@ class ZosBackend(Backend):
     @staticmethod
     def _run_optimizer(tool, reading, max_seconds, on_progress, should_cancel) -> tuple[str | None, float]:
         """异步运行一个优化工具直到结束；超时或收到取消请求时调用 Cancel。返回 (stopped_by, 用时 s)。
-        Run an optimisation tool to its end; Cancel on a timeout or a cancel request. Returns (stopped_by, seconds)."""
+        进度回调出错（例如写 progress.json 被拒）只记日志，优化照常跑完；循环里其他异常先取消并等工具真正停下再抛出，
+        否则 Close 关不掉运行中的工具，它会一直占着系统，之后的追迹和优化都打不开工具（2026-10-19 nightvision 任务 021–024）。
+        Run an optimisation tool to its end; Cancel on a timeout or a cancel request. Returns (stopped_by, seconds).
+        A failing progress callback (progress.json refused, …) is only logged and the run goes on; any other error in the
+        loop first cancels the tool and waits until it has stopped, because Close does not close a running tool, which then
+        holds the system and blocks every later trace and optimisation (nightvision job, scripts 021–024, 2026-10-19)."""
         started = time.monotonic()
         stopped_by = None
+        progress_error = None
         tool.Run()
-        while tool.IsRunning:
-            time.sleep(0.5)
-            elapsed = time.monotonic() - started
-            if on_progress is not None:
-                on_progress({"progress": int(tool.Progress), **reading(), "elapsed_s": round(elapsed, 1)})
-            if stopped_by is None and should_cancel is not None and should_cancel():
-                stopped_by = "cancel"
-            elif stopped_by is None and max_seconds is not None and elapsed > max_seconds:
-                stopped_by = "timeout"
-            if stopped_by is not None and tool.CanCancel:
-                tool.Cancel()
+        try:
+            while tool.IsRunning:
+                time.sleep(0.5)
+                elapsed = time.monotonic() - started
+                if on_progress is not None:
+                    try:
+                        on_progress({"progress": int(tool.Progress), **reading(), "elapsed_s": round(elapsed, 1)})
+                    except Exception as exc:  # noqa: BLE001 - 进度只是显示 / progress is display only
+                        if progress_error is None:
+                            progress_error = f"{type(exc).__name__}: {exc}"
+                            log.warning("optimiser progress callback failed, the run goes on: %s", progress_error)
+                if stopped_by is None and should_cancel is not None and should_cancel():
+                    stopped_by = "cancel"
+                elif stopped_by is None and max_seconds is not None and elapsed > max_seconds:
+                    stopped_by = "timeout"
+                if stopped_by is not None and tool.CanCancel:
+                    tool.Cancel()
+        except BaseException:
+            ZosBackend._stop_tool(tool)
+            raise
         tool.WaitForCompletion()
         return stopped_by, round(time.monotonic() - started, 1)
+
+    @staticmethod
+    def _stop_tool(tool, wait_s: float = 30.0) -> None:
+        """出错后尽力让运行中的工具停下：Cancel，再等它结束（最多 wait_s 秒）。/ Stop a running tool after an error, best effort."""
+        try:
+            if tool.IsRunning and tool.CanCancel:
+                tool.Cancel()
+            deadline = time.monotonic() + wait_s
+            while tool.IsRunning and time.monotonic() < deadline:
+                time.sleep(0.2)
+            if not tool.IsRunning:
+                tool.WaitForCompletion()
+        except Exception:  # noqa: BLE001 - 已经在处理另一个异常 / already handling another error
+            log.exception("could not stop the optimisation tool")
 
     def quick_focus(self) -> dict[str, Any]:
         """OpticStudio 的 Quick Focus：按 RMS 光斑半径（质心参考）调整像面前一面的厚度。
@@ -1186,27 +1280,9 @@ class ZosBackend(Backend):
         return {"surface": self.system.LDE.NumberOfSurfaces - 2, "thickness_before": before, "thickness_after": float(surface.Thickness)}
 
     def trace_check(self, rays: list[tuple[int, float, float, float, float]]) -> list[dict[str, Any]]:
-        zosapi = _load_zosapi(self.root)
-        rt_ns = zosapi.Tools.RayTrace
-        system = self.system
-        image = system.LDE.NumberOfSurfaces - 1
-        tool = system.Tools.OpenBatchRayTrace()
-        try:
-            batch = tool.CreateNormUnpol(len(rays), rt_ns.RaysType.Real, image)
-            none_mode = getattr(rt_ns.OPDMode, "None")
-            for wave, hx, hy, px, py in rays:
-                batch.AddRay(int(wave), float(hx), float(hy), float(px), float(py), none_mode)
-            tool.RunAndWaitForCompletion()
-            batch.StartReadingResults()
-            failures = []
-            for ray in rays:
-                result = batch.ReadNextResult(0, 0, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-                error, vignette = int(result[2]), int(result[3])
-                if error or vignette:
-                    failures.append({"ray": list(ray), "error": error, "vignette": vignette})
-            return failures
-        finally:
-            tool.Close()
+        image = self.system.LDE.NumberOfSurfaces - 1
+        return [{"ray": list(ray), "error": error, "vignette": vignette}
+                for ray, (error, vignette, *_) in zip(rays, self._batch(rays, image)) if error or vignette]
 
     # ---- 每轮的可视化数据（saos ui 只读这些导出，不自己算光学量）----
 
@@ -1301,6 +1377,11 @@ class ZosBackend(Backend):
         return geometry.interference(self._geometry_items(range(1, lde.NumberOfSurfaces - 1), {}))
 
     def _geometry_items(self, indices, transforms: dict[int, Any]) -> list[dict[str, Any]]:
+        """交叠检查的面：网格取零件外缘（geometry.part_radii：机械半口径、崩边区，一片镜片一个外径），不只是净口径；
+        净口径外面形照常延伸，读不到时接平台。
+        Surfaces for the interference check, sampled out to the part's outer edge (geometry.part_radii: mechanical
+        semi-diameter, chip zone, one outer diameter per lens), not just the clear aperture; beyond the clear aperture the
+        surface shape continues, or a flat annulus where it has no sag."""
         lde = self.system.LDE
         items = []
         for i in indices:
@@ -1309,11 +1390,35 @@ class ZosBackend(Backend):
             item = {"index": i, "type": str(row.TypeName), "comment": str(row.Comment), "material": str(row.Material), "sd": float(row.SemiDiameter)}
             if tf is not None and item["sd"] > 0 and "Coordinate" not in item["type"]:
                 ap = geometry.aperture(self._aperture_dict(row), item["sd"])
-                grid = geometry.polar_points(geometry.extent(ap))
-                sags = geometry.fill_outside(grid, [self._sag(i, x, y) for x, y in grid], ap)
-                item.update(sd=geometry.extent(ap), ap=ap, rot=tf[0], off=tf[1], sags=sags)
+                item.update(clear=geometry.extent(ap), edge=self._part_edge(row), ap=ap, rot=tf[0], off=tf[1])
             items.append(item)
+        radii = geometry.part_radii(items)
+        for item in items:
+            if "clear" not in item:
+                continue
+            i, ap, clear = item["index"], item["ap"], item["clear"]
+            outer = radii.get(i, clear)
+            if not ap["explicit"] and outer > clear:
+                ap = {**ap, "hx": outer, "hy": outer}
+            grid = geometry.polar_points(geometry.extent(ap))
+            sags = geometry.fill_beyond(grid, [self._sag(i, x, y) for x, y in grid], clear)
+            item.update(sd=geometry.extent(ap), ap=ap, sags=geometry.fill_outside(grid, sags, ap))
         return items
+
+    @staticmethod
+    def _part_edge(row) -> float:
+        """零件外缘半径：机械半口径与净半口径加崩边区中的较大者；读不到的列跳过。
+        The part's outer edge radius: the larger of the mechanical semi-diameter and the clear one plus the chip zone."""
+        clear = float(row.SemiDiameter)
+        edge = clear
+        for read in (lambda: float(row.MechanicalSemiDiameter), lambda: clear + float(row.ChipZone)):
+            try:
+                value = read()
+            except Exception:  # noqa: BLE001 - 某些面型没有这些列 / some surface types lack these columns
+                continue
+            if math.isfinite(value):
+                edge = max(edge, value)
+        return edge
 
     def viz_data(self, folder: Path | None, *, pupil_grid: int = 31, fan: int = 7, full: bool = True, rays: bool = True) -> dict[str, Any]:
         """saos ui 用的数据：逐面全局几何、布局光线、Lens Data、交叠检查；full 时另有点列图光线、点列图 RMS/GEO 和 FFT MTF

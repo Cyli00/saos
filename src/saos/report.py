@@ -105,6 +105,8 @@ TEXT: dict[str, tuple[str, str]] = {
                      "<b>No deliverable lens</b>: the round below breaks a constant or variable range ({ids}); it is the best exploration result and is not a deliverable design."),
     "blocked.errors": ("<b>没有可交付的镜头</b>：下面这一轮有判定执行出错（{ids}），结论不可信。",
                        "<b>No deliverable lens</b>: checks of the round below failed to run ({ids}); its result cannot be trusted."),
+    "blocked.clash": ("<b>没有可交付的镜头</b>：下面这一轮的零件交叠（{what}），物理上不成立，不能作为设计交付。",
+                      "<b>No deliverable lens</b>: parts of the round below clash ({what}); it is physically impossible and is not a deliverable design."),
     "model_ok": ("建模说明：{model}（用户已确认）", "Model description: {model} (approved by the user)"),
     "confirmed": ("用户确认：{quote}", "Confirmed by the user: {quote}"),
     "not_recorded": ("（未记录）", "(not recorded)"),
@@ -421,6 +423,11 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
             text = t("blocked.errors", ids=e(", ".join(deliver["measurement_errors"])))
         elif deliver.get("hard_failing"):
             text = t("blocked.hard", ids=e(", ".join(deliver["hard_failing"])))
+        elif deliver.get("parts_clash"):
+            clash = deliver["parts_clash"]
+            what = [f"{a}–{b}" for a, b in (c["surfaces"] for c in clash.get("crossings") or [])]
+            what += [" / ".join("–".join(map(str, lens)) for lens in o["lenses"]) for o in clash.get("overlaps") or []]
+            text = t("blocked.clash", what=e("; ".join(what)))
         else:
             text = t("blocked", surfaces=e(", ".join(map(str, deliver.get("model_glass") or []))))
         blocked = f'<div class="card">{text}</div>'

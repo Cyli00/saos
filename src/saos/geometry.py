@@ -95,6 +95,17 @@ def fill_outside(points: list[tuple[float, float]], sags: list[float | None], ap
     return out
 
 
+def fill_beyond(points: list[tuple[float, float]], sags: list[float | None], clear: float) -> list[float | None]:
+    """净口径之外读不到矢高的点（例如球面在机械口径处已过半球）取同一辐线内一圈的值，即在净口径外接一圈平台。
+    Points beyond the clear aperture without a sag (a sphere past its hemisphere at the mechanical edge) take the next
+    inner ring's value on the same spoke, i.e. a flat annulus outside the clear aperture."""
+    out = list(sags)
+    for i, ((x, y), v) in enumerate(zip(points, out)):
+        if v is None and i > 0 and math.hypot(x, y) > clear:
+            out[i] = out[i - SPOKES] if i > SPOKES else out[0]
+    return out
+
+
 def polar_points(sd: float) -> list[tuple[float, float]]:
     """局部 (x, y) 采样点，顺序与 sags 一致：中心，然后逐圈逐辐线。/ Local (x, y) samples, centre first, then ring by ring."""
     out = [(0.0, 0.0)]
@@ -119,9 +130,11 @@ def _sag_at(s: dict[str, Any], x: float, y: float) -> float | None:
     """在极坐标网格上双线性插值；孔径之外返回 None。/ Bilinear interpolation on the polar grid; None outside the aperture."""
     sd, sags = s["sd"], s["sags"]
     r = math.hypot(x, y)
-    if r >= sd or ("ap" in s and not inside(s["ap"], x, y)):
+    # 外缘那一圈（r = sd）要算进来：正透镜最薄在那里，排除它会把边厚报成内一圈的值
+    # the rim ring (r = sd) counts: a positive lens is thinnest there, and leaving it out reports the next ring's thickness
+    if r > sd * (1 + 1e-9) or ("ap" in s and not inside(s["ap"], x, y)):
         return None
-    u = r / sd * RINGS
+    u = min(r / sd, 1.0) * RINGS
     k = min(int(u), RINGS - 1)
     fr = u - k
     v = (math.atan2(y, x) % (2 * math.pi)) / (2 * math.pi) * SPOKES
@@ -222,17 +235,14 @@ def overlaps(surfaces: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def interference(surfaces: list[dict[str, Any]]) -> dict[str, Any]:
-    """surfaces：按序号排列，每个带 index、type、comment、material（面后的材料）、sd（网格半径）、rot（行优先 3×3）、off、
-    sags（与 polar_points(sd) 对应），可选 ap（aperture() 的结果）。material 之前的介质取上一面的材料；两侧材料不同（或是
-    反射镜）的面才是分界面。
-    surfaces in index order, each with index, type, comment, material (after the surface), sd (grid radius), rot (row-major
-    3×3), off, sags matching polar_points(sd), and optionally ap (from aperture()). A surface is a boundary when the media on
-    its two sides differ, or it is a mirror."""
+def mark_boundaries(surfaces: list[dict[str, Any]]) -> None:
+    """给每个面标上 boundary（两侧材料不同，或是反射镜）和 in_glass_mirror（玻璃里的反射面）。material 是面后的材料，
+    面前的介质取上一面的材料；坐标断点不换介质。
+    Mark each surface with boundary (the media on its two sides differ, or it is a mirror) and in_glass_mirror. material
+    is the medium after the surface, the medium before it is the previous surface's; a coordinate break changes nothing."""
     before = ""
     for s in surfaces:
         if "Coordinate" in str(s.get("type", "")):
-            # 坐标断点不换介质 / a coordinate break does not change the medium
             s["boundary"] = False
             continue
         after = (s.get("material") or "").upper()
@@ -240,5 +250,75 @@ def interference(surfaces: list[dict[str, Any]]) -> dict[str, Any]:
         s["in_glass_mirror"] = after == "MIRROR" and before not in ("", "AIR")
         if after != "MIRROR":
             before = after
+
+
+def part_radii(surfaces: list[dict[str, Any]]) -> dict[int, float]:
+    """每个面的零件外缘半径。surfaces 带 index、type、material，能画的面另带 clear（净口径外接圆半径）、edge（机械半口径与
+    净口径加崩边区中的较大者）和 ap。没有显式孔径的面取 max(clear, edge)；一片镜片两面取两者中较大的外缘（镜片是一个外径），
+    胶合面取它所在各片中最大的。显式孔径（棱镜的矩形面等）保持原样。
+    The outer edge radius of each surface's part. surfaces carry index, type, material and, when drawable, clear (the
+    clear aperture's circumscribed radius), edge (the larger of the mechanical semi-diameter and clear plus chip zone) and
+    ap. A surface without an explicit aperture takes max(clear, edge); both faces of a lens take the larger outer edge of
+    the two (a lens has one outer diameter), a cemented face the largest of its lenses. Explicit apertures stay as they are."""
+    mark_boundaries(surfaces)
+    drawable = [s for s in surfaces if "clear" in s]
+    explicit = {s["index"] for s in drawable if (s.get("ap") or {}).get("explicit")}
+    radius = {s["index"]: s["clear"] if s["index"] in explicit else max(s["clear"], s.get("edge") or 0.0) for s in drawable}
+    for front, back in elements([dict(s, sd=s["clear"]) for s in drawable]):
+        a, b = front["index"], back["index"]
+        if a in explicit or b in explicit:
+            continue
+        outer = max(radius[a], radius[b])
+        radius[a] = max(radius[a], outer)
+        radius[b] = max(radius[b], outer)
+    return radius
+
+
+def clearances(surfaces: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """相邻两个折射分界面之间的最小间隔：后一面在前一面口径内的采样点，沿前一面局部 z 到前一面的距离取最小，
+    朝后一面顶点的方向为正。介质是玻璃时是这片镜片的最小厚度（正透镜在外缘、负透镜在中心），是空气时是最小空气间隔；
+    radius 是最小值所在处离前一面轴线的距离，outer 是两面中较大的外缘半径。负值说明两面已经相交。
+    The smallest separation between consecutive refracting boundaries: over the samples of the second surface inside the
+    first one's aperture, the distance along the first surface's local z, positive toward the second vertex. In glass it is
+    the lens's smallest thickness (at the edge of a positive lens, the centre of a negative one), in air the smallest air
+    gap; radius is where it occurs, measured from the first surface's axis; outer is the larger outer edge of the two.
+    A negative value means the surfaces cross."""
+    out = []
+    bounds = [s for s in surfaces if s.get("boundary")]
+    for a, b in zip(bounds, bounds[1:]):
+        if "MIRROR" in ((a.get("material") or "").upper(), (b.get("material") or "").upper()) or not _near(a, b):
+            continue
+        toward = _signed(a, tuple(b["off"]))
+        sign = math.copysign(1.0, toward) if toward else 1.0
+        best = None
+        for p in _points(b):
+            d = _signed(a, p)
+            if d is None:
+                continue
+            x, y, _ = _to_local(a, p)
+            if best is None or d * sign < best[0]:
+                best = (d * sign, math.hypot(x, y))
+        if best is not None:
+            medium = (a.get("material") or "").upper() or "AIR"
+            out.append({"surfaces": [a["index"], b["index"]], "comments": [a.get("comment", ""), b.get("comment", "")],
+                        "medium": medium, "glass": medium != "AIR", "min": best[0], "radius": best[1], "outer": max(a["sd"], b["sd"])})
+    return out
+
+
+def interference(surfaces: list[dict[str, Any]]) -> dict[str, Any]:
+    """surfaces：按序号排列，每个带 index、type、comment、material（面后的材料）、sd（网格半径，即零件外缘）、rot（行优先 3×3）、off、
+    sags（与 polar_points(sd) 对应），可选 ap（aperture() 的结果）和 clear（净口径半径，缺省同 sd）。两侧材料不同（或是反射镜）的面
+    才是分界面（mark_boundaries）。返回相交（crossings）、穿插（overlaps）、相邻面最小间隔（clearances）和各镜片的净口径与外缘（lenses）。
+    surfaces in index order, each with index, type, comment, material (after the surface), sd (grid radius: the part's
+    outer edge), rot (row-major 3×3), off, sags matching polar_points(sd), and optionally ap (from aperture()) and clear
+    (the clear radius, default sd). A surface is a boundary when the media on its two sides differ, or it is a mirror
+    (mark_boundaries). Returns crossings, overlaps, the smallest separation of consecutive surfaces (clearances) and each
+    lens's clear and outer radius (lenses)."""
+    mark_boundaries(surfaces)
     usable = [s for s in surfaces if s.get("sd") and s.get("rot") and s.get("sags") and None not in s["sags"]]
-    return {"crossings": crossings(usable), "overlaps": overlaps(usable), "tolerance": TOL}
+    lenses = [{"surfaces": [f["index"], b["index"]], "clear": max(f.get("clear", f["sd"]), b.get("clear", b["sd"])), "outer": max(f["sd"], b["sd"])}
+              for f, b in elements(usable)]
+    return {"crossings": crossings(usable), "overlaps": overlaps(usable), "clearances": clearances(usable), "lenses": lenses,
+            # 没有一片镜片的外缘大于净口径：检查只覆盖净口径，装配余量和机械外径都没算进去
+            # no lens edge beyond its clear aperture: the check covers clear apertures only, no allowance or mechanical diameter
+            "edges_from_clear": bool(lenses) and all(e["outer"] <= e["clear"] + TOL for e in lenses), "tolerance": TOL}

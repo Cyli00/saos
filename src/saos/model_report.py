@@ -103,6 +103,23 @@ TEXT: dict[str, tuple[str, str]] = {
         "镜片 {l1}（{c1}）和镜片 {l2}（{c2}）相互穿插：一片的表面落在另一片的玻璃里（{n} 个采样点），多半是空气间隔为负。",
         "Lenses {l1} ({c1}) and {l2} ({c2}) interpenetrate: {n} sample points of one lie inside the other's glass, usually a negative air gap.",
     ),
+    "w.edges_from_clear": (
+        "没有一片镜片的外缘大于净口径：交叠检查和边厚只按净口径算，没算装配余量。按 design-practice.md 表 17-1 给各镜片面设机械半口径"
+        "（lens set --param mech_semi_diameter），检查才对应实物零件；优化后才加余量，正透镜可能没有边厚。",
+        "No lens has an outer edge beyond its clear aperture: the interference check and edge thicknesses cover clear apertures only, "
+        "without a mounting allowance. Set the lens faces' mechanical semi-diameters (lens set --param mech_semi_diameter) per table 17-1 "
+        "in design-practice.md so the check sees the real parts; an allowance added after optimising can leave a positive lens without edge.",
+    ),
+    "w.thin_edge": (
+        "第 {a}–{b} 面之间的玻璃在外缘附近最薄 {min}（离轴 {r} 处，外径 {d}），低于 design-practice.md 表 17-2 正透镜最小边厚 {need}。",
+        "The glass between surfaces {a} and {b} is thinnest near its edge, {min} ({r} from the axis, outer diameter {d}), below the "
+        "minimum positive-lens edge {need} of table 17-2 in design-practice.md.",
+    ),
+    "w.thin_centre": (
+        "第 {a}–{b} 面之间的玻璃在中心附近最薄 {min}（离轴 {r} 处，外径 {d}），低于 design-practice.md 表 17-2 负透镜最小中心厚 {need}。",
+        "The glass between surfaces {a} and {b} is thinnest near its centre, {min} ({r} from the axis, outer diameter {d}), below the "
+        "minimum negative-lens centre {need} of table 17-2 in design-practice.md.",
+    ),
     "w.uncatalogued": ("第 {s} 面的材料 {name} 不在在用的材料目录里。", "Surface {s}: material {name} is not in the catalogs in use."),
     "w.obsolete_material": ("第 {s} 面的玻璃 {name} 在目录里标为 Obsolete（停产），通常买不到；交付前换成在产牌号或向厂家确认。",
                             "Surface {s}: glass {name} is marked Obsolete in its catalog and is usually unavailable; replace it with a glass in production or confirm with the maker before delivery."),
@@ -137,6 +154,22 @@ OBJECT_APERTURES = ("ObjectSpaceNA", "ObjectConeAngle")
 
 def _flat(radius: float) -> bool:
     return math.isinf(radius) or abs(radius) > 1e9
+
+
+# design-practice.md 表 17-2 的下限：(外径上限 mm, 正透镜最小边厚, 负透镜最小中心厚)；外径 3 mm 以下表里没有
+# lower bounds of table 17-2 in design-practice.md: (outer diameter up to, mm; min edge of a positive lens; min centre of a negative lens)
+MIN_GLASS = ((6, 0.4, 0.6), (10, 0.6, 0.8), (18, 0.8, 1.0), (30, 1.2, 1.5), (50, 1.8, 2.2), (80, 2.4, 3.5), (120, 3.0, 5.0), (math.inf, 4.0, 8.0))
+
+
+def _min_glass(c: dict[str, Any]) -> tuple[float, str] | None:
+    """一片玻璃最薄处的下限（毫米）：最薄处靠外缘按正透镜边厚，靠中心按负透镜中心厚。
+    The lower bound for a glass's thinnest point (mm): near the edge the positive-lens edge, near the centre the negative-lens centre."""
+    diameter = 2 * float(c["outer"])
+    if diameter < 3:
+        return None
+    _, edge, centre = next(row for row in MIN_GLASS if diameter <= row[0])
+    at_edge = float(c["radius"]) >= 0.5 * float(c["outer"])
+    return (edge, "edge") if at_edge else (centre, "centre")
 
 
 def environment_surfaces(notes: dict[str, Any] | None) -> list[int]:
@@ -191,6 +224,14 @@ def checks(desc: dict[str, Any], notes: dict[str, Any] | None = None, recorded: 
     for o in clash.get("overlaps") or []:
         out.append(("overlap", {"l1": "–".join(map(str, o["lenses"][0])), "l2": "–".join(map(str, o["lenses"][1])),
                                 "c1": o["comments"][0] or "-", "c2": o["comments"][1] or "-", "n": o["points"]}))
+    if clash.get("edges_from_clear"):
+        out.append(("edges_from_clear", {}))
+    if str(desc.get("lens_units", "")).lower().startswith("millimet"):
+        for c in clash.get("clearances") or []:
+            need = _min_glass(c)
+            if c.get("glass") and need is not None and c["min"] < need[0]:
+                out.append((f"thin_{need[1]}", {"a": c["surfaces"][0], "b": c["surfaces"][1], "min": fmt(c["min"]), "r": fmt(c["radius"]),
+                                                 "d": fmt(2 * c["outer"]), "need": fmt(need[0])}))
     # LDE 的注释只是名字；说明要写清这个面代表什么实物，所以每个面都要在 notes 里有一条
     # an LDE comment is only a name; the notes must say what each surface physically is
     missing = [str(s["index"]) for s in surfaces if not str(((notes or {}).get("surfaces") or {}).get(str(s["index"]), "")).strip()]
