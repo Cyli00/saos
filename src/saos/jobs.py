@@ -15,7 +15,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -65,10 +64,6 @@ class Job:
     @property
     def state_file(self) -> Path:
         return self.root / "job.json"
-
-    @property
-    def spec_dir(self) -> Path:
-        return self.root / "spec"
 
     @property
     def lenses_dir(self) -> Path:
@@ -236,14 +231,9 @@ def get_job(job_id: str) -> Job:
     return Job(job_id, root)
 
 
-def create_job(name: str, spec_path: str | None = None) -> Job:
+def create_job(name: str) -> Job:
     if not NAME_RE.match(name or ""):
         raise SaosError(ErrorCode.BAD_ARGS, "job names: letters, digits, - and _, 1–48 chars, starting with a letter or digit")
-    spec_src = None
-    if spec_path is not None:
-        spec_src = Path(spec_path)
-        if not spec_src.is_file():
-            raise SaosError(ErrorCode.FILE_NOT_FOUND, f"spec file does not exist: {spec_path}")
 
     job_id = f"{datetime.now():%Y%m%d-%H%M%S}-{name}"
     root = config.jobs_dir() / job_id
@@ -255,13 +245,6 @@ def create_job(name: str, spec_path: str | None = None) -> Job:
     job = Job(job_id, root)
     job.lenses_dir.mkdir()
     (root / "sources").mkdir()
-    spec_rel = None
-    if spec_src is not None:
-        # spec/ 只属于显微物镜配方的规格文件，通用流程不建
-        job.spec_dir.mkdir()
-        target = job.spec_dir / spec_src.name
-        shutil.copy2(spec_src, target)
-        spec_rel = target.relative_to(root).as_posix()
 
     created = now_iso()
     write_json(
@@ -272,12 +255,11 @@ def create_job(name: str, spec_path: str | None = None) -> Job:
             "status": "created",
             "created_at": created,
             "updated_at": created,
-            "spec": spec_rel,
             "current_lens": None,
             "last_saved": None,
         },
     )
-    job.append_log({"op": "job.create", "ok": True, "args": {"name": name, "spec": spec_path}})
+    job.append_log({"op": "job.create", "ok": True, "args": {"name": name}})
     return job
 
 

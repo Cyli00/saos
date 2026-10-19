@@ -5,7 +5,7 @@ import math
 import pytest
 
 from saos.protocol import SaosError
-from saos.recipes.microscope.spec import berek_check, parse_spec, sample_points
+from saos.recipes.microscope.spec import BEREK_OMEGA, LAMBDA_E_UM, parse_spec, sample_points
 
 
 def base(**overrides):
@@ -23,7 +23,7 @@ def base(**overrides):
 def test_berek_matches_iso_19012_1_annex_a():
     # ISO 19012-1:2013 附录 A 表值（µm）。三个表值都与 λ ≈ 0.5465 µm 吻合（附录文字写 0.55），
     # 本项目用 λe = 0.54607 µm；加上表值只印 3 位小数，差异不超过 0.05%
-    values = berek_check()
+    values = {f"{m}x/{na}": BEREK_OMEGA * 250000 / (na * 10 * m) + LAMBDA_E_UM / (2 * na**2) for m, na in ((4, 0.10), (10, 0.25), (40, 0.65))}
     assert values["4x/0.1"] == pytest.approx(114.825, rel=5e-4)
     assert values["10x/0.25"] == pytest.approx(18.372, rel=5e-4)
     assert values["40x/0.65"] == pytest.approx(1.993, rel=5e-4)

@@ -29,40 +29,6 @@ def test_entry_ids_are_restricted(lib):
         library.entry_dir("../x")
 
 
-def test_split_is_deterministic_balanced_and_stratified(lib):
-    entries = [make_entry(f"E{k}", na) for k, na in enumerate([0.1, 0.12, 0.25, 0.3, 0.4, 0.5, 0.6, 0.65])]
-    entries.append(make_entry("REJ", 0.3, status="rejected"))
-    entries.append(make_entry("NOTBENCH", 0.3, eligible=False))
-    a = library.split_benchmarks(entries)
-    b = library.split_benchmarks(list(reversed(entries)))
-    assert a["groups"] == b["groups"]
-    t, v = a["groups"]["tuning"], a["groups"]["validation"]
-    assert len(t) + len(v) == 8 and abs(len(t) - len(v)) <= 1
-    assert "REJ" not in t + v and "NOTBENCH" not in t + v
-    for band in ("low", "mid", "high"):
-        members = [c for c in a["cases"] if c["na_band"] == band]
-        groups = {c["group"] for c in members}
-        if len(members) >= 2:
-            assert groups == {"tuning", "validation"}
-
-
-def test_split_keeps_each_patent_in_one_group(lib):
-    entries = []
-    for patent, nas in {"P1": [0.3, 0.32, 0.35], "P2": [0.25, 0.4], "P3": [0.1, 0.5], "P4": [0.6]}.items():
-        for k, na in enumerate(nas):
-            e = make_entry(f"{patent}-e{k + 1}", na)
-            e["source"] = {"patent": patent}
-            entries.append(e)
-    out = library.split_benchmarks(entries)
-    by_patent = {}
-    for c in out["cases"]:
-        by_patent.setdefault(c["patent"], set()).add(c["group"])
-    assert all(len(g) == 1 for g in by_patent.values())
-    assert sum(c["patent"] == "P1" for c in out["cases"]) == library.MAX_PER_PATENT
-    # P3 按最高 NA 0.5 归入高档，与 P4 同档时分进不同组
-    assert by_patent["P3"] != by_patent["P4"]
-
-
 def test_query_prefers_sufficient_na_and_scales_dimensions(lib):
     for e in (make_entry("LOWNA", 0.25), make_entry("MATCH", 0.42), make_entry("ACHRO", 0.45, claimed="achromat")):
         library.save_entry(e["id"], e)

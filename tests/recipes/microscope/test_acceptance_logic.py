@@ -7,7 +7,7 @@ import math
 import pytest
 
 
-from saos.recipes.microscope.acceptance import Evaluator, acceptance_config, config_hash, field_wfe
+from saos.recipes.microscope.acceptance import Evaluator, field_wfe
 from saos.protocol import SaosError
 from saos.recipes.microscope.spec import Item, parse_spec
 
@@ -114,13 +114,6 @@ def test_spec_with_nan_threshold_is_rejected():
     data["magnification"] = float("nan")
     with pytest.raises(SaosError):
         parse_spec(data)
-
-
-def test_config_includes_evaluator_constants():
-    config = acceptance_config(spec_of())
-    assert config["evaluator"]["zern_max_term"] == 66
-    assert config["derived"]["delta_ob_um"] == pytest.approx(4.369, abs=1e-3)
-    assert config_hash(config) == config_hash(acceptance_config(spec_of()))
 
 
 # ---- 3b. 原始测量值在参与运算之前检查 ----
@@ -230,7 +223,6 @@ def test_model_glass_counts_as_violation_unless_allowed():
     data["limits"]["glass"]["allow_model"] = True
     lenient = Evaluator(None, parse_spec(data), [])
     assert lenient.glass_violations(rows)[0] == 0.0
-    assert acceptance_config(lenient.spec)["glass_allow_model"] is True
 
 
 class FocusBackend:
@@ -366,4 +358,4 @@ def test_evaluator_reports_focus_trace_and_has_no_precheck(monkeypatch):
     out = evaluator.run([])
     assert out["verdict"] == "invalid" and out["invalid"]["reason"] == "on-axis ray trace failed; cannot focus at the start or at the paraxial focus"
     assert [e["kind"] for e in out["focus_trace"]] == ["start", "paraxial"] and backend.zernike_at == []
-    assert "axis_precheck" not in out and "axis_precheck" not in acceptance_config(evaluator.spec)["evaluator"]
+    assert "axis_precheck" not in out

@@ -6,8 +6,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 import time
 from typing import Any
@@ -148,49 +146,6 @@ def paraxial_focus(
             break
         t0, p0, t1 = t1, p1, t1 - p1 * (t1 - t0) / (p1 - p0)
     raise InvalidEvaluation("paraxial focus did not converge", {"wave": wave, "last_thickness": t1, "last_pary": p1, "residual_limit": residual_limit})
-
-
-def acceptance_config(spec: Spec) -> dict[str, Any]:
-    """完整的验收配置：补全后的规格、全部达标线与尺度、派生量，以及评估器自身的常数。
-
-    设计任务第 0 轮冻结它的哈希，之后各轮必须一致，规格差距才可比较（文档 4.3 节）。
-    """
-    return {
-        "correction_class": spec.correction_class,
-        "magnification": spec.magnification,
-        "na": spec.na,
-        "tube_lens_focal_length": spec.tube_lens_focal_length,
-        "objective_field_number": spec.objective_field_number,
-        "receiver": spec.receiver,
-        "pixel_size": spec.pixel_size,
-        "wavelengths_um": list(spec.wavelengths_um),
-        "wavelength_weights": list(spec.wavelength_weights),
-        "cover_glass": spec.cover_glass,
-        "glass_catalogs": list(spec.glass_catalogs),
-        "glass_allowed_status": list(spec.glass_allowed_status),
-        "glass_allow_model": spec.glass_allow_model,
-        "items": [
-            {"id": i.id, "category": i.category, "kind": i.kind, "threshold": i.threshold, "scale": i.scale, "unit": i.unit, "params": i.params}
-            for i in spec.items
-        ],
-        "derived": spec.derived(),
-        "field_samples": spec.field_samples(),
-        "evaluator": {
-            "zern_samp": ZERN_SAMP,
-            "zern_max_term": ZERN_MAX_TERM,
-            "zern_fit_limit": ZERN_FIT_LIMIT,
-            "focus_max_iter": FOCUS_MAX_ITER,
-            "edge_rays": EDGE_RAYS,
-            "focus_ray_guard": {"axis_rays": EDGE_RAYS + 1, "backoff": FOCUS_BACKOFF, "paraxial_restart": "PARY"},
-            "zone_rays": ZONE_RAYS,
-            "tube_lens_opd_mode": 1,
-            "ray_aiming": "real",
-        },
-    }
-
-
-def config_hash(config: dict[str, Any]) -> str:
-    return hashlib.sha256(json.dumps(config, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
 def finite(value: Any, what: str, **context: Any) -> float:

@@ -98,7 +98,7 @@ def cmd_check(args: argparse.Namespace) -> Any:
 
 def _accept(job: jobs.Job, entry_id: str, name: str, spec: dict[str, Any], timeout: float) -> dict[str, Any]:
     spec_rel = f"spec/{entry_id}-{name}.yaml"
-    job.spec_dir.mkdir(exist_ok=True)
+    (job.root / "spec").mkdir(exist_ok=True)
     (job.root / spec_rel).write_text(yaml.safe_dump(spec, allow_unicode=True, sort_keys=False), encoding="utf-8")
     return calls.call("accept", job.id, timeout, spec=spec_rel)
 

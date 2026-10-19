@@ -54,7 +54,7 @@ def cmd_daemon(args: argparse.Namespace) -> Any:
 
 def cmd_job(args: argparse.Namespace) -> Any:
     if args.action == "create":
-        job = jobs.create_job(args.name, args.spec)
+        job = jobs.create_job(args.name)
         return {"job": job.id, "path": str(job.root), "state": job.read_state()}
     if args.action == "list":
         return {"jobs": jobs.list_jobs()}
@@ -66,7 +66,6 @@ def cmd_job(args: argparse.Namespace) -> Any:
             "path": str(job.root),
             "state": job.read_state(),
             "lenses": sorted(p.relative_to(job.lenses_dir).as_posix() for p in job.lenses_dir.rglob("*.zmx")),
-            "spec": sorted(p.name for p in job.spec_dir.iterdir()) if job.spec_dir.is_dir() else [],
             "log_tail": [json.loads(line) for line in lines[-args.log:]] if args.log > 0 else [],
             # 直接读文件，后台进程正忙时也能看 / read from the file, so it works while the daemon is busy
             "progress": job.read_progress(),
@@ -307,7 +306,6 @@ def build_parser() -> argparse.ArgumentParser:
     jsub = job.add_subparsers(dest="action", required=True, parser_class=_Parser)
     create = jsub.add_parser("create", help="create a design job")
     create.add_argument("--name", required=True)
-    create.add_argument("--spec", help="a spec file to copy into the job (microscope recipe)")
     jsub.add_parser("list", help="list design jobs")
     show = jsub.add_parser("show", help="show a design job, including the progress of a running computation (works while the daemon is busy)")
     show.add_argument("job")

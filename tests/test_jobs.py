@@ -8,18 +8,16 @@ from saos import jobs
 from saos.protocol import ErrorCode, SaosError
 
 
-def test_create_job_layout(saos_home, tmp_path):
-    spec = tmp_path / "spec.yaml"
-    spec.write_text("spec_version: 1\n", encoding="utf-8")
-    job = jobs.create_job("plan10x", str(spec))
+def test_create_job_layout(saos_home):
+    job = jobs.create_job("plan10x")
 
     assert job.root.parent == saos_home / "jobs"
     assert job.id.endswith("-plan10x")
-    assert (job.spec_dir / "spec.yaml").read_text(encoding="utf-8") == "spec_version: 1\n"
-    assert job.lenses_dir.is_dir()
+    assert job.lenses_dir.is_dir() and (job.root / "sources").is_dir()
+    # 核心工具不建配方目录 / the core creates no recipe folder
+    assert not (job.root / "spec").exists()
     state = job.read_state()
-    assert state["status"] == "created"
-    assert state["spec"] == "spec/spec.yaml"
+    assert state["status"] == "created" and "spec" not in state
     first_log = json.loads(job.log_file.read_text(encoding="utf-8").splitlines()[0])
     assert first_log["op"] == "job.create"
 
@@ -29,12 +27,6 @@ def test_create_job_rejects_bad_names(saos_home, name):
     with pytest.raises(SaosError) as exc:
         jobs.create_job(name)
     assert exc.value.code == ErrorCode.BAD_ARGS
-
-
-def test_create_job_missing_spec(saos_home):
-    with pytest.raises(SaosError) as exc:
-        jobs.create_job("a", "no-such-spec.yaml")
-    assert exc.value.code == ErrorCode.FILE_NOT_FOUND
 
 
 def test_get_job_unknown(saos_home):

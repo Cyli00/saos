@@ -296,12 +296,4 @@ def parse_spec(data: dict[str, Any]) -> Spec:
     )
 
 
-def berek_check() -> dict[str, float]:
-    """附录 A 表值核对用：返回 4×/0.10、10×/0.25、40×/0.65 的物方 Berek 景深（µm）。"""
-    out = {}
-    for m, na in ((4, 0.10), (10, 0.25), (40, 0.65)):
-        out[f"{m}x/{na}"] = BEREK_OMEGA * 250000 / (na * 10 * m) + LAMBDA_E_UM / (2 * na**2)
-    return out
-
-
-__all__ = ["Item", "Spec", "load_spec", "parse_spec", "sample_points", "berek_check"]
+__all__ = ["Item", "Spec", "load_spec", "parse_spec", "sample_points"]

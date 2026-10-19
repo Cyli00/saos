@@ -55,7 +55,7 @@ def register(sub, parser_class, default_timeout: float) -> None:
     p = op_cmd("repro", "reproduction check: focal length, NA, working distance and magnification against expected values")
     p.add_argument("expect", help="expected values JSON")
     p = op_cmd("accept", "acceptance evaluation of the saved lens against the optical spec")
-    p.add_argument("--spec", help="spec file inside the job (default: spec in job.json)")
+    p.add_argument("--spec", required=True, help="spec file inside the job, e.g. sources/spec.yaml or spec/benchmark.yaml")
     p = op_cmd("perturb", "controlled perturbation of objective radii and thicknesses with a fixed seed")
     p.add_argument("--seed", type=int, required=True)
     p.add_argument("--radius-rel", type=float, required=True, help="relative curvature change limit, e.g. 0.01")

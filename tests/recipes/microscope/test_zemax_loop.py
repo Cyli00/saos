@@ -84,6 +84,6 @@ def test_minimal_loop(saos_home):
         saos("lens", "save", "--job", job, "--as", "optimised.zmx", env=env)
         after = saos("microscope", "accept", "--job", job, "--spec", "spec/benchmark.yaml", env=env)
         assert after["verdict"] == "pass" and after["spec_shortfall"] == 0
-        assert json.loads((root / "job.json").read_text(encoding="utf-8"))["last_evaluation"]["file"] == "optimised.zmx"
+        assert (root / "eval" / "optimised.accept.json").is_file()
     finally:
         saos("daemon", "stop", "--discard", env=env)

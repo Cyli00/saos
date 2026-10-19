@@ -17,7 +17,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import math
 import os
 from pathlib import Path
@@ -39,7 +38,6 @@ CALIBRATION_MARGIN = 1.2
 # 有权威依据、不允许为基准放宽的项目（第 1 步文档 2.3 节标为“已定”），以及物理上必须满足的空气间隔非负
 FIXED_ITEMS = ("axial_rms_wfe", "axial_color", "osc", "plan_field", "magnification", "glass_status", "surface_types", "air_gap")
 PERTURBATION = {"seed": 1, "radius_rel": 0.01, "thickness_rel": 0.03}
-MAX_PER_PATENT = 2
 
 
 def library_dir() -> Path:
@@ -275,55 +273,3 @@ def query(
         )
     out.sort(key=lambda r: r["score"])
     return out[:limit]
-
-
-# ---- 优化基准分组 ----
-
-
-def na_band(na: float) -> str:
-    return "low" if na < 0.2 else ("mid" if na < 0.45 else "high")
-
-
-def _patent_of(entry: dict[str, Any]) -> str:
-    return ((entry.get("source") or {}).get("patent") or entry["id"]).replace(" ", "")
-
-
-def split_benchmarks(entries: list[dict[str, Any]]) -> dict[str, Any]:
-    """确定性划分：以专利为单位分组，同一专利的条目只进同一组。
-
-    同一专利的实施例往往只有细微差别，分进两组会让验证组含有调参组结构的近亲，所以每个专利最多取编号最前的
-    MAX_PER_PATENT 个条目，整体分入一组。专利按其最高 NA 分档（<0.2、0.2–0.45、≥0.45），档内按 SHA-1(专利号) 排序，
-    依次放进本档案例较少的组；本档持平时放进总案例较少的组，再持平放进调参组。
-    """
-    eligible = [e for e in entries if e.get("status") == "admitted" and (e.get("benchmark") or {}).get("eligible")]
-    units: dict[str, list[dict[str, Any]]] = {}
-    for e in sorted(eligible, key=lambda x: x["id"]):
-        unit = units.setdefault(_patent_of(e), [])
-        if len(unit) < MAX_PER_PATENT:
-            unit.append(e)
-    kept = [e for unit in units.values() for e in unit]
-    groups: dict[str, list[str]] = {"tuning": [], "validation": []}
-    for band in ("low", "mid", "high"):
-        in_band = {"tuning": 0, "validation": 0}
-        patents = sorted(
-            (p for p, unit in units.items() if na_band(max(e["metrics"]["na"] for e in unit)) == band),
-            key=lambda p: hashlib.sha1(p.encode("utf-8")).hexdigest(),
-        )
-        for p in patents:
-            target = min(("tuning", "validation"), key=lambda g: (in_band[g], len(groups[g]), g != "tuning"))
-            groups[target].extend(e["id"] for e in units[p])
-            in_band[target] += len(units[p])
-    return {
-        "rule": "group by patent so entries of one patent stay in one split; take at most the first 2 benchmark-eligible entries per patent; bin patents by their highest NA, sort within a bin by SHA-1(patent number) and put each into the split with fewer cases in that bin, ties going to the split with fewer cases overall",
-        "perturbation": PERTURBATION,
-        "groups": groups,
-        "cases": [
-            {
-                "entry": e["id"],
-                "patent": _patent_of(e),
-                "group": "tuning" if e["id"] in groups["tuning"] else "validation",
-                "na_band": na_band(e["metrics"]["na"]),
-            }
-            for e in kept
-        ],
-    }

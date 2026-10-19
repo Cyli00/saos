@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from saos import jobs
-from saos.protocol import ErrorCode, SaosError, jsonable, write_json
+from saos.protocol import ErrorCode, SaosError, write_json
 from saos.recipes.microscope import acceptance, layout
 from saos.recipes.microscope.spec import Spec, load_spec
 
@@ -67,14 +67,13 @@ def repro(ctx, expect: dict[str, Any]) -> dict[str, Any]:
 
 
 def accept(ctx, spec: str | None = None) -> dict[str, Any]:
-    """按光学规格对当前已保存的镜头做验收评估。"""
+    """按光学规格（任务内的规格文件）对当前已保存的镜头做验收评估。"""
     _lens(ctx)
     if ctx.dirty:
         raise SaosError(ErrorCode.UNSAVED_CHANGES, "acceptance evaluates the saved lens file; save first", ctx.describe())
-    spec_name = spec or ctx.job.read_state().get("spec")
-    if not spec_name:
-        raise SaosError(ErrorCode.BAD_ARGS, f"job {ctx.job.id} has no optical spec; pass spec or set it at job create")
-    return _accept(ctx, spec_name, _job_spec(ctx.job, spec_name))
+    if not spec:
+        raise SaosError(ErrorCode.BAD_ARGS, f"pass spec, a spec file inside job {ctx.job.id} (e.g. sources/spec.yaml)")
+    return _accept(ctx, spec, _job_spec(ctx.job, spec))
 
 
 def _accept(ctx, spec_name: str, spec: Spec) -> dict[str, Any]:
@@ -99,7 +98,6 @@ def _accept(ctx, spec_name: str, spec: Spec) -> dict[str, Any]:
     if model_path is not None:
         result["acceptance_model"] = model_path.relative_to(job.root).as_posix()
     write_json(job.root / "eval" / f"{lens.stem}.accept.json", result)
-    job.update_state(last_evaluation={"file": rel, "verdict": result["verdict"], "spec_shortfall": jsonable(result["spec_shortfall"])})
     return result
 
 
