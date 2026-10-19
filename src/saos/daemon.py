@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import glob
+import json
 import logging
 import math
 import os
@@ -43,6 +44,12 @@ REFRESH_AFTER = frozenset({"lens.load", "lens.set", "lens.build", "opt.local", "
 VIEW_DURING_OPT_S = 5.0
 # Hammer、全局搜索运行中在镜头文件旁写出的系统（文件名模式）/ systems Hammer and global search write next to the lens file
 SEARCH_FILES = {"hammer": "{stem}_*_HAMMER.zmx", "global": "GLOPT_*.zmx"}
+# 距上次记轮次累计到这么多次优化（或脚本）时，结果里提醒记一轮：执行记录很多而账本几乎空着，停止判断就没有依据
+# (nightvision 任务 59 个脚本后账本只有第 0 轮，2026-10-19)
+# remind to record a round once this many optimisations (or scripts) ran since the last one: a long run history with an
+# almost empty ledger leaves the stop rule without evidence (nightvision: one round after 59 scripts, 2026-10-19)
+ROUND_REMINDER = {"opt": 2, "exec": 15}
+RUN_KINDS = {"opt.local": "opt", "opt.hammer": "opt", "opt.global": "opt", "script.exec": "exec", "scan.run": "scan"}
 COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
 COMPARED_NUMBER_KEYS = ("radius", "thickness", "conic", "semi_diameter")
 
@@ -178,7 +185,44 @@ class Daemon:
         if op in LONG_OPS:
             self._progress_end(args, error, duration_ms)
         self._log_to_job(op, args, error, duration_ms)
+        if error is None and op in RUN_KINDS and isinstance(result, dict):
+            reminder = self._since_round(args)
+            if reminder:
+                result["since_round"] = reminder
         return fail(error) if error else ok(result)
+
+    def _since_round(self, args: dict[str, Any]) -> dict[str, Any] | None:
+        """设计阶段（需求已确认、有获确认的建模说明）里，上次成功记轮次之后跑了多少次优化、脚本和扫描；到 ROUND_REMINDER 时附一句提醒。
+        In the design phase (demand confirmed, a model approved), how many optimisations, scripts and scans ran since the
+        last recorded round; a note is added once ROUND_REMINDER is reached."""
+        from saos import demand, model_gate
+
+        try:
+            job = jobs.get_job(str(args.get("job")))
+            if not demand.confirmations(job.root) or not any((job.root / "models").glob(f"*/{model_gate.APPROVAL_FILE}")):
+                return None
+            lines = job.log_file.read_text(encoding="utf-8").splitlines() if job.log_file.is_file() else []
+        except (SaosError, OSError):
+            return None
+        counts = {"opt": 0, "exec": 0, "scan": 0}
+        rounds = False
+        for line in reversed(lines):
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            if row.get("op") == "round.record" and row.get("ok"):
+                rounds = True
+                break
+            kind = RUN_KINDS.get(row.get("op"))
+            if kind and row.get("ok"):
+                counts[kind] += 1
+        out: dict[str, Any] = {**counts, "round_recorded": rounds}
+        if counts["opt"] >= ROUND_REMINDER["opt"] or counts["exec"] >= ROUND_REMINDER["exec"]:
+            since = "since the last round" if rounds else "and no round is recorded yet"
+            out["note"] = (f"{counts['opt']} optimisation runs, {counts['exec']} scripts and {counts['scan']} scans {since}: once the lens is "
+                           "worth judging, record it with saos round so that the ledger and the stop rule see the progress")
+        return out
 
     def _progress_start(self, op: str, args: dict[str, Any]) -> jobs.Job | None:
         if op not in LONG_OPS or not isinstance(args.get("job"), str):
