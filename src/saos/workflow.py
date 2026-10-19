@@ -35,12 +35,13 @@ DOUBT_AFTER = 2
 def check(ctx, only: list[str] | None = None) -> dict[str, Any]:
     if ctx.lens is None:
         raise SaosError(ErrorCode.NO_LENS_LOADED, f"job {ctx.job.id} has no lens loaded")
-    before, sha = lens_state(ctx)
+    before, _ = lens_state(ctx)
     result = {**ctx.describe(), **demand.evaluate(ctx, demand.load_job(ctx.job.root), only=only)}
-    after, sha_after = lens_state(ctx)
-    if sha_after != sha:
+    after, _ = lens_state(ctx)
+    changed = lens_changes(before, after)
+    if changed:
         # 只取值时也提示：同样的判定在记录轮次时会被拒绝 / warn here too: the same checks would be refused when recording a round
-        result["lens_modified_by_checks"] = model_gate.diff(jsonable(before), jsonable(after))[:30]
+        result["lens_modified_by_checks"] = changed[:30]
     return result
 
 
@@ -124,6 +125,29 @@ def lens_state(ctx) -> tuple[dict[str, Any], str]:
     desc = ctx.backend.describe_model(None)
     body = jsonable({k: v for k, v in desc.items() if k not in ("file", "layout")})
     return desc, hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
+# 判定前后的镜头在这个容差内一致就算没改：检查把参数写回原值时，OpticStudio 舍到 15 位有效数字，末位会变
+# （2026-10-18 fiber-printed：−0.020209160377426934 → −0.0202091603774269，下游全局顶点差约 1e-17 mm）
+# within these the lens is unchanged: a check writing a value back gets it rounded to 15 significant digits by OpticStudio
+LENS_RTOL = 1e-12
+LENS_ATOL = 1e-15
+
+
+def lens_changes(before: dict[str, Any], after: dict[str, Any]) -> list[str]:
+    """判定前后镜头数据中超出写回舍入的不同之处。/ Paths where the lens data differ by more than write-back rounding."""
+    return _changes(jsonable(before), jsonable(after), "")
+
+
+def _changes(a: Any, b: Any, path: str) -> list[str]:
+    if isinstance(a, dict) and isinstance(b, dict):
+        return [d for k in sorted(set(a) | set(b)) for d in _changes(a.get(k), b.get(k), f"{path}.{k}" if path else k)]
+    if isinstance(a, list) and isinstance(b, list) and len(a) == len(b):
+        return [d for k, (x, y) in enumerate(zip(a, b)) for d in _changes(x, y, f"{path}[{k}]")]
+    numbers = all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (a, b))
+    if numbers and math.isclose(a, b, rel_tol=LENS_RTOL, abs_tol=LENS_ATOL):
+        return []
+    return [] if a == b else [path or "(root)"]
 
 
 def _set_aside(ctx, target) -> None:
@@ -215,9 +239,9 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
     evaluation = demand.evaluate(ctx, h, scripts)
     # 判定不能改动镜头：否则归档的镜头和测得的数值对不上，本轮不记录
     # checks must not change the lens; otherwise the archived lens would not be the one measured, so no round is recorded
-    desc_after, sha_after = lens_state(ctx)
-    if sha_after != lens_sha:
-        changed = model_gate.diff(jsonable(desc), jsonable(desc_after))
+    desc_after, _ = lens_state(ctx)
+    changed = lens_changes(desc, desc_after)
+    if changed:
         raise SaosError(ErrorCode.LENS_MODIFIED_BY_CHECK, "a check changed the lens while measuring; make the checks read-only (work on a copy or restore the lens), then record again",
                         {"changed": changed[:30], "evaluation": evaluation["evidence_dir"]})
     # 存一份本轮的归档镜头，然后回到原来的工作文件，避免之后的 lens save 改写归档
@@ -306,12 +330,12 @@ def _rebase(ctx, h: dict[str, Any], scripts: dict[str, Any], best: dict[str, Any
     try:
         ctx.job.write_progress(stage=f"rebase r{int(best['round']):03d}")
         ctx.backend.load(ctx.path(f"lenses/{best['file']}"))
-        _, before = lens_state(ctx)
+        desc_before, before = lens_state(ctx)
         ev = demand.evaluate(ctx, h, scripts, lens={"file": best["file"], "round": best["round"], "purpose": REBASE_PURPOSE})
-        _, after = lens_state(ctx)
+        desc_after, _ = lens_state(ctx)
     finally:
         ctx.backend.load(current)
-    if after != before:
+    if lens_changes(desc_before, desc_after):
         raise SaosError(ErrorCode.LENS_MODIFIED_BY_CHECK, f"a check changed the lens of round {best['round']} while re-measuring it; make the checks read-only",
                         {"evaluation": ev["evidence_dir"]})
     values = {i["id"]: i["value"] for i in ev["items"]}

@@ -122,7 +122,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 | `SCRIPT_ERROR` | `exec` 的脚本抛出异常，`details` 给出脚本存档路径和 traceback；后台进程继续运行 |
 | `SPEC_CHANGED` | 需求单或检查脚本改动后还没有新轮次时生成报告 |
 | `VALUE_NOT_APPLIED` | 修改没有生效（例如被求解覆盖），`details` 给出目标值、实际值和求解类型 |
-| `LENS_MODIFIED_BY_CHECK` | 记录轮次时，判定脚本改动了镜头（取值前后的镜头内容不同）；本轮不记录。把判定改成只读后重试 |
+| `LENS_MODIFIED_BY_CHECK` | 记录轮次时，判定脚本改动了镜头（取值前后的镜头数据相差超过相对 1e-12、绝对 1e-15；写回原值时 OpticStudio 舍到 15 位有效数字的末位差不算）；本轮不记录。把判定改成只读后重试 |
 | `DUPLICATE_ROUND` | 同一镜头在同一需求和判定版本下已经记过一轮（多为超时后的重试）；`details` 给出已有的轮次 |
 | `EVIDENCE_TAMPERED` | 生成报告时发现封存的证据文件被改动或删除（`saos job verify` 可列出） |
 | `DEMAND_NOT_CONFIRMED` | 记录轮次或运行优化时，当前需求单版本没有用户确认；`details.demand_sha` 给出版本。给用户看需求单，再 `demand confirm` |

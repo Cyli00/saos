@@ -8,7 +8,6 @@
 - `saos ui` 显性调试的窗口控制只用假后端和接口测试验证过，还没有在 Interactive Extension 下点过（需要用户打开的 OpticStudio 窗口）。
 - 交叠检查和布局按面孔径取零件边缘；没有显式孔径的非圆零件（例如只写了半口径的切边镜片）仍按圆处理，可能漏报或误报。柱面管壁按孔径画成一圈，看不出管子的长度。
 - 用户恢复目录 `Documents/Zemax/Autosave/Recovered` 中的 `fiber-air.*`（2026-10-14 00:29）会让每个新启动的 OpticStudio 弹出自动保存恢复提示；saos 遇到时返回 UI_BLOCKED。是否清理由用户决定。
-- 轮次的“检查不能改镜头”判定（`workflow.py` 比较前后 `lens_state` 的 sha，逐位相同）与检查的“改完写回”做法冲突（2026-10-18，fiber-printed 任务第 0 轮报 LENS_MODIFIED_BY_CHECK）：OpticStudio 写入厚度时舍到 15 位有效数字，检查把样品面厚度临时改动后写回原值，仍差最后一位（−0.020209160377426934 → −0.0202091603774269），连带下游面全局顶点变化约 1e-17 mm。该任务的检查已改为在 `IOpticalSystem.CopySystem()` 副本上测量（`Close(False)` 关闭）作为绕行。待定：工作流层面是给检查提供只读副本（例如 ctx 上的 `scratch_copy()`）并在 SKILL.md 写明，还是让比较对数值用相对容差；按 AGENTS.md 五处同步。
 - 轮次可视化导出的 MTF 为空（2026-10-18，fiber-printed 任务第 0–2 轮，`evaluations/023–025/viz.json`）：`mtf.series` 为空、`errors` 也为空，设置 `MaximumFrequency 0.0`（自动）、`S_64x64`。系统为物方 NA 0.5、像方在水中、经 45° 折转与柱面管壁；失败没有报出来，用户在流程图窗口看到 MTF 导出失败。待查：自动最高频率在这种系统上取到 0，还是 FFT MTF 本身不返回数据；失败应写进 `errors`。
 - 流程图窗口没有显示第 2 轮（2026-10-18，同一任务）：ledger 有第 0–2 轮，`evaluations/025/viz.json` 正常写出，用户反映第 2 轮结果没更新到界面、看不出第 1、2 轮的差别。界面服务 pid 103460 自 01:30 起运行。未查原因。
 - `saos report` 只交付目标差距最小的一轮（本例 r001），其他轮次只在历史里列一行 G。用户要“交付这两轮的报告”时没有办法指定轮次或并排比较两轮的各项数值。
