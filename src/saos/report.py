@@ -480,11 +480,27 @@ def write(job: jobs.Job, lang: str | None = None) -> dict[str, Any]:
     job.seal(archived)
     out = folder / "index.html"
     out.write_text(html, encoding="utf-8")
+    shown = data["deliver"]
+    kind = headline(data["decision"]["status"], shown, data.get("blocked"))
+    # deliver 只放可以交付的镜头；没有有效设计或最好一轮不可交付时为 None，那一轮放在 diagnostic 里供诊断，
+    # 免得读 JSON 的一方把失败的候选当成交付
+    # deliver holds a deliverable lens only; with no valid design or a non-deliverable best round it is None and that
+    # round goes to diagnostic, so whoever reads the JSON cannot take a failed candidate for the delivery
+    deliverable = kind in ("deliver", "best_so_far")
     return {
         "archived": archived.relative_to(job.root).as_posix(),
         "report": str(out),
         "lang": chosen,
         "status": data["decision"]["status"],
-        "deliver": data["deliver"]["file"],
-        "shortfall": data["deliver"]["shortfall"],
+        "headline": kind,
+        "deliverable": deliverable,
+        "achieved": bool(shown.get("achieved")) and deliverable,
+        "deliver": shown["file"] if deliverable else None,
+        "diagnostic": None if deliverable else {"file": shown["file"], "round": shown["round"],
+                                                "hard_failing": shown.get("hard_failing") or [],
+                                                "measurement_errors": shown.get("measurement_errors") or [],
+                                                "parts_clash": shown.get("parts_clash"),
+                                                "model_glass": bool(shown.get("model_glass"))},
+        "round": shown["round"],
+        "shortfall": shown["shortfall"],
     }
