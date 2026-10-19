@@ -230,6 +230,13 @@ tr.sel td { background: var(--accent-soft); }
 .tag { display: inline-block; padding: 0 6px; border-radius: 6px; font-size: 11px; background: var(--bg-raise); color: var(--text-2); margin-right: 4px; }
 .tag.ok { background: var(--done-soft); color: var(--done); }
 
+.notice {
+  display: flex; align-items: center; gap: 12px; padding: 8px 16px;
+  background: var(--accent); color: #fff; font-weight: 600; white-space: pre-wrap;
+}
+.notice[hidden] { display: none; }
+.notice span { flex: 1; }
+.notice button { border: 1px solid #fff8; background: transparent; color: #fff; border-radius: 6px; padding: 2px 10px; cursor: pointer; }
 .toast {
   position: fixed; right: 16px; bottom: 16px; max-width: 420px; padding: 9px 12px; border-radius: 10px;
   background: var(--bg-raise); border: 1px solid var(--border); box-shadow: 0 8px 24px #0006; font-size: 12px;

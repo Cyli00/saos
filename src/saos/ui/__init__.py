@@ -28,7 +28,9 @@ SEEN_WITHIN_S = 6.0
 HIDDEN_SEEN_WITHIN_S = 90.0
 # UI 专用的 Chrome 配置不放慢后台窗口 / the UI's own Chrome profile keeps background windows at full speed
 CHROME_FLAGS = ("--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows")
-FOREGROUND_WAIT_S = 4.0
+# 守焦点的后台进程最多等这么久：Chrome 冷启动后 4.5 s 才弹出窗口抢焦点（2026-10-19 实测）
+# how long the background focus guard waits: a cold Chrome took the focus 4.5 s after the start (measured 2026-10-19)
+FOREGROUND_WAIT_S = 15.0
 # 刚打开的窗口还没来得及轮询，这段时间内不再开第二个 / a window just opened has not polled yet; do not open a second one meanwhile
 OPENING_S = 20.0
 # 服务重启后，开着的窗口在原地址重连（端口和令牌沿用）；等这么久再决定要不要开新窗口
@@ -122,7 +124,8 @@ def ensure_window(job_id: str, *, gate: bool = False) -> dict[str, Any] | None:
     if polled is not None:
         seen, hidden = polled
         if seen.get(job_id, math.inf) <= (HIDDEN_SEEN_WITHIN_S if job_id in hidden else SEEN_WITHIN_S):
-            return None
+            # 开着的窗口在需要用户看的时候恢复（最小化时）并放到最上层 / at a gate an open window is restored and raised
+            return {"window": "raised" if _raise_window(job_id) else "open"} if gate else None
     elif job_id in _opened() and job_id not in server.closed_jobs():
         # 服务不在了，但这个任务的窗口可能还开着：先起服务，给窗口一个重连的机会 / the window may still be open: let it reconnect
         state = ensure_server()
@@ -132,10 +135,63 @@ def ensure_window(job_id: str, *, gate: bool = False) -> dict[str, Any] | None:
             if again is not None and job_id in again[0]:
                 return None
             time.sleep(0.3)
-    if time.time() - float(_opened().get(job_id, 0)) < OPENING_S:
+    # 刚打开的窗口还没来轮询时不再开第二个；用户已经关掉的窗口肯定不在了，不受这条限制
+    # no second window while one just opened has not polled yet; a window the user closed is certainly gone
+    if job_id not in server.closed_jobs() and time.time() - float(_opened().get(job_id, 0)) < OPENING_S:
         return None
     # 自动重开不抢焦点：用户可能正在别的窗口里打字 / an automatic reopen keeps the focus where the user is typing
     return open_window(job_id, activate=False)
+
+
+def _raise_window(job_id: str) -> bool:
+    """Windows：按标题（saos · <任务号>）找到这个任务的窗口，最小化的先恢复，再放到最上层，都不夺键盘焦点
+    （用户可能正在别的窗口里打字）。找不到窗口时 False。
+    Windows: find the job's window by its title, restore it if minimised and put it on top, both without taking the
+    keyboard focus. False when no window is found."""
+    if sys.platform != "win32":
+        return False
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    title = f"saos · {job_id}"
+    found: list[int] = []
+
+    @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    def visit(hwnd, _):
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length and user32.IsWindowVisible(hwnd):
+            buf = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buf, length + 1)
+            if buf.value.startswith(title):
+                found.append(hwnd)
+        return True
+
+    user32.EnumWindows(visit, 0)
+    # SW_SHOWNOACTIVATE；先置为 TOPMOST 再取消，窗口留在最上层而不激活 / topmost then not: on top, not activated
+    flags = 0x0001 | 0x0002 | 0x0010  # SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE
+    for hwnd in found:
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, 4)
+        user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, flags)
+        user32.SetWindowPos(hwnd, -2, 0, 0, 0, 0, flags)
+    return bool(found)
+
+
+def notify(job_id: str, message: str) -> dict[str, Any]:
+    """agent 停下来问用户之前调用：在窗口顶部留一句话，并像需要用户看的节点那样把窗口打开或置前。
+    Called before the agent stops to ask the user: leave a line at the top of the window and open or raise it like a gate."""
+    job = jobs.get_job(job_id)
+    if not message.strip():
+        raise SaosError(ErrorCode.BAD_ARGS, "--message must say what the user should look at or answer")
+    state = ensure_server()
+    body = json.dumps({"job": job.id, "message": message}).encode("utf-8")
+    req = urllib.request.Request(f"http://127.0.0.1:{state['port']}/api/notice?job={job.id}", data=body, method="POST",
+                                 headers={"X-Saos-Token": state["token"], "Content-Type": "application/json"})
+    with _DIRECT.open(req, timeout=5) as resp:
+        notice = json.loads(resp.read())["result"]["notice"]
+    window = None if os.environ.get("SAOS_UI") == "0" else ensure_window(job.id, gate=True)
+    return {"job": job.id, "notice": notice, "window": window}
 
 
 def _opened() -> dict[str, float]:
@@ -153,7 +209,7 @@ def _foreground() -> int:
     return int(ctypes.windll.user32.GetForegroundWindow() or 0)
 
 
-def _keep_focus(before: int) -> bool:
+def _keep_focus(before: int, wait: float = FOREGROUND_WAIT_S) -> bool:
     """Chrome 不理会 STARTUPINFO 的“显示但不激活”（2026-10-17 实测三种启动方式都抢焦点），所以等新窗口抢到前台后，
     挂到前台线程的输入队列上把焦点还给原来的窗口。返回是否还回去了。
     Chrome ignores STARTUPINFO's show-without-activating (all three start modes took the focus, measured 2026-10-17), so
@@ -163,7 +219,7 @@ def _keep_focus(before: int) -> bool:
     import ctypes
 
     user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
-    deadline = time.monotonic() + FOREGROUND_WAIT_S
+    deadline = time.monotonic() + wait
     while time.monotonic() < deadline:
         now = user32.GetForegroundWindow()
         if now and now != before:
@@ -174,16 +230,35 @@ def _keep_focus(before: int) -> bool:
                 user32.SetForegroundWindow(before)
             finally:
                 user32.AttachThreadInput(me, thread, False)
+            if int(user32.GetForegroundWindow() or 0) != before:
+                # 后台进程（agent 调用命令时就是）不许设前台窗口，上面这招失败：把新窗口最小化，激活自然回到原来的窗口，
+                # 再“显示但不激活”恢复它（2026-10-19 实测有效）
+                # a background process may not set the foreground window: minimise the new window so activation returns
+                # to the previous one, then restore it without activating (measured 2026-10-19)
+                user32.ShowWindow(now, 6)  # SW_MINIMIZE：激活 Z 序里的下一个窗口 / activates the next window in Z order
+                time.sleep(0.3)
+                user32.ShowWindow(now, 4)  # SW_SHOWNOACTIVATE
             return int(user32.GetForegroundWindow() or 0) == before
         time.sleep(0.05)
     return False
+
+
+def _guard_focus(before: int) -> None:
+    """在脱离的后台进程里守焦点，命令不必等 Chrome 启动完 / guard the focus in a detached process; the command does not wait"""
+    flags = client._CREATE_NO_WINDOW | client._CREATE_NEW_PROCESS_GROUP
+    cmd = [sys.executable, "-c", f"from saos.ui import _keep_focus; _keep_focus({int(before)})"]
+    try:
+        subprocess.Popen(cmd, creationflags=flags | client._CREATE_BREAKAWAY_FROM_JOB, stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+    except OSError:
+        subprocess.Popen(cmd, creationflags=flags, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
 
 
 def open_window(job_id: str, *, window: bool = True, activate: bool = True) -> dict[str, Any]:
     job = jobs.get_job(job_id)
     state = ensure_server()
     url = f"http://127.0.0.1:{state['port']}/?job={job.id}&t={state['token']}"
-    opened, focus_kept = None, None
+    opened, guarded = None, False
     if window:
         chrome = _chrome()
         if chrome:
@@ -194,12 +269,13 @@ def open_window(job_id: str, *, window: bool = True, activate: bool = True) -> d
                               "--no-first-run", "--no-default-browser-check", *CHROME_FLAGS], close_fds=True)
             opened = "chrome-app"
             if before:
-                focus_kept = _keep_focus(before)
+                _guard_focus(before)
+                guarded = True
         elif webbrowser.open(url):
             opened = "browser"
         if opened:
             write_json(config.daemon_dir() / OPENED_FILE, {**_opened(), job.id: time.time()})
     out = {"job": job.id, "url": url, "pid": state["pid"], "server_reused": state["reused"], "window": opened}
-    if focus_kept is not None:
-        out["focus_kept"] = focus_kept
+    if guarded:
+        out["focus_guard"] = True
     return out

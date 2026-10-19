@@ -171,7 +171,15 @@ class Handler(BaseHTTPRequestHandler):
             self.server.seen[job.id] = time.monotonic()
             _mark_closed(job.id, False)
             (self.server.hidden.add if args.get("hidden") == "1" else self.server.hidden.discard)(job.id)
-            return stage.snapshot(job)
+            return {**stage.snapshot(job), "notice": self.server.notices.get(job.id)}
+        if path == "/api/notice" and method == "POST":
+            # agent 停下来问用户时留的话（saos ui notify），用户在窗口里点掉 / what the agent left when it stopped to ask
+            message = str(args.get("message") or "").strip()
+            if message:
+                self.server.notices[job.id] = {"message": message[:2000], "time": datetime.now().astimezone().isoformat(timespec="seconds")}
+            else:
+                self.server.notices.pop(job.id, None)
+            return {"notice": self.server.notices.get(job.id)}
         if path == "/api/closed" and method == "POST":
             # 窗口关闭（或刷新）时发来；刷新后的页面马上轮询，标记随即去掉 / sent on close or reload; a reload polls right away
             self.server.seen.pop(job.id, None)
@@ -238,6 +246,7 @@ class UiServer(ThreadingHTTPServer):
         self.last_request = time.monotonic()
         self.seen: dict[str, float] = {}
         self.hidden: set[str] = set()
+        self.notices: dict[str, dict[str, str]] = {}
 
     def touch(self) -> None:
         self.last_request = time.monotonic()

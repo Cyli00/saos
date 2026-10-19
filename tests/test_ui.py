@@ -354,3 +354,27 @@ def test_a_restarted_service_keeps_its_address_so_open_windows_reconnect(saos_ho
     monkeypatch.setattr(ui_pkg, "_seen", lambda state: ({job.id: 0.3}, set()))
     monkeypatch.setattr(ui_pkg, "open_window", lambda job_id, **kw: pytest.fail("the old window reconnected; no second one"))
     assert ui_pkg.ensure_window(job.id) is None
+
+
+def test_gates_raise_an_open_window_and_notify_leaves_a_line_for_the_user(ui, monkeypatch):
+    """需要用户看的节点把开着的窗口置前；saos ui notify 在窗口顶部留一句话，用户点掉就清除。"""
+    import saos.ui as ui_pkg
+
+    (daemon, job), srv = ui
+    monkeypatch.delenv("SAOS_UI")
+    get(srv, f"/api/state?job={job.id}")
+    monkeypatch.setattr(server, "read_state", lambda: {"pid": 1, "port": srv.server_address[1], "token": srv.token})
+    monkeypatch.setattr(ui_pkg.client, "pid_alive", lambda pid: True)
+    raised = []
+    monkeypatch.setattr(ui_pkg, "_raise_window", lambda job_id: raised.append(job_id) or True)
+    assert ui_pkg.ensure_window(job.id) is None and raised == []  # 普通命令：开着就不动 / an ordinary command leaves it
+    assert ui_pkg.ensure_window(job.id, gate=True) == {"window": "raised"} and raised == [job.id]
+
+    monkeypatch.setattr(ui_pkg, "ensure_server", lambda: {"port": srv.server_address[1], "token": srv.token, "pid": 1, "reused": True})
+    out = ui_pkg.notify(job.id, "请看第 3 轮的光斑，选一个方向")
+    assert out["notice"]["message"] == "请看第 3 轮的光斑，选一个方向" and out["window"] == {"window": "raised"}
+    assert get(srv, f"/api/state?job={job.id}")[1]["result"]["notice"]["message"].startswith("请看第 3 轮")
+    get(srv, f"/api/notice?job={job.id}", data={"message": ""})  # 用户点“知道了” / the user dismisses it
+    assert get(srv, f"/api/state?job={job.id}")[1]["result"]["notice"] is None
+    with pytest.raises(ui_pkg.SaosError):
+        ui_pkg.notify(job.id, "  ")

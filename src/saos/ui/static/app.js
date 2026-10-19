@@ -31,7 +31,7 @@ const TEXT = {
     image_z: "像面 z", round: "轮", tiers: "层级", gap: "目标差距", state: "状态", note: "说明", achieved: "达成", deliverable: "可交付",
     pick_round: "点一行在其他视图中查看该轮", sag_flat: "部分面读不到面形，按平面画。", select_round: (n) => `r${String(n).padStart(3, "0")}`,
     live: "当前镜头", live_unsaved: "未保存", no_live: "后台进程加载或改动镜头后，这里显示当前镜头的布局。", live_failed: "当前视图导出失败：",
-    only_3d: "各面不在同一个对称平面里，只有 3D 视图", disconnected: "与 saos ui 服务断开，正在重连…", lens_data: "Lens Data", ld_type: "面型", ld_comment: "注释", ld_radius: "半径", ld_thickness: "厚度",
+    only_3d: "各面不在同一个对称平面里，只有 3D 视图", disconnected: "与 saos ui 服务断开，正在重连…", notice_close: "知道了", lens_data: "Lens Data", ld_type: "面型", ld_comment: "注释", ld_radius: "半径", ld_thickness: "厚度",
     ld_material: "材料", ld_sd: "半口径", ld_conic: "圆锥", ld_solve: "V 为变量，其他字母为求解或 pickup",
     clash_title: "结构交叠", crossing: (a, b, d) => `第 ${a} 面与第 ${b} 面在口径内相交（最深约 ${d}）`,
     overlap: (a, b, n) => `镜片 ${a} 与镜片 ${b} 相互穿插（${n} 个采样点落在另一片玻璃里）`,
@@ -63,7 +63,7 @@ const TEXT = {
     image_z: "image z", round: "Round", tiers: "Tiers", gap: "Shortfall", state: "State", note: "Note", achieved: "achieved", deliverable: "deliverable",
     pick_round: "Click a row to view that round in the other tabs", sag_flat: "Some surface shapes could not be read; drawn flat.", select_round: (n) => `r${String(n).padStart(3, "0")}`,
     live: "Current lens", live_unsaved: "unsaved", no_live: "Once the daemon loads or changes the lens, its layout appears here.", live_failed: "The live view export failed: ",
-    only_3d: "The surfaces share no plane of symmetry: 3D view only", disconnected: "Lost the saos ui service; reconnecting…", lens_data: "Lens Data", ld_type: "Type", ld_comment: "Comment", ld_radius: "Radius", ld_thickness: "Thickness",
+    only_3d: "The surfaces share no plane of symmetry: 3D view only", disconnected: "Lost the saos ui service; reconnecting…", notice_close: "Dismiss", lens_data: "Lens Data", ld_type: "Type", ld_comment: "Comment", ld_radius: "Radius", ld_thickness: "Thickness",
     ld_material: "Material", ld_sd: "Semi-dia.", ld_conic: "Conic", ld_solve: "V marks a variable, other letters a solve or pickup",
     clash_title: "Interference", crossing: (a, b, d) => `surfaces ${a} and ${b} cross inside their apertures (up to about ${d})`,
     overlap: (a, b, n) => `lenses ${a} and ${b} interpenetrate (${n} sample points inside the other's glass)`,
@@ -222,7 +222,11 @@ function renderFlow() {
 }
 
 function renderTop() {
-  document.title = `saos · ${state.name || JOB}`;
+  // 标题带任务号：命令行在需要用户看的时候按标题找到这个窗口并置前 / the CLI finds this window by its title to raise it
+  document.title = `saos · ${JOB}`;
+  const notice = $("notice");
+  notice.hidden = !state.notice;
+  if (state.notice) { $("notice-text").textContent = state.notice.message; $("notice-close").textContent = t("notice_close"); }
   $("job-name").textContent = state.job;
   const chip = $("mode-chip");
   const mode = state.daemon.running ? state.daemon.mode : null;
@@ -1029,6 +1033,10 @@ $("tabs").addEventListener("click", (e) => {
   if (!b || b.dataset.tab === tab) return;
   tab = b.dataset.tab;
   renderTabs(); renderView();
+});
+$("notice-close").addEventListener("click", async () => {
+  $("notice").hidden = true;
+  try { await api("notice", {}, { message: "" }); } catch { /* 下次轮询再显示 */ }
 });
 $("round-select").addEventListener("change", (e) => { pinnedRound = e.target.value === "live" ? "live" : Number(e.target.value); renderView(); });
 $("dim-seg").addEventListener("click", (e) => {

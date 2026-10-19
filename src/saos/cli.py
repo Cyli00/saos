@@ -243,6 +243,8 @@ def cmd_demand(args: argparse.Namespace) -> Any:
 def cmd_ui(args: argparse.Namespace) -> Any:
     from saos import ui
 
+    if args.action == "notify":
+        return ui.notify(args.job, args.message)
     return ui.open_window(args.job, window=not args.no_window)
 
 
@@ -461,6 +463,9 @@ def build_parser() -> argparse.ArgumentParser:
     q = usub.add_parser("open", help="start the local ui service if needed and open the window")
     q.add_argument("--job", required=True)
     q.add_argument("--no-window", action="store_true", help="only start the service and print the URL")
+    q = usub.add_parser("notify", help="before you stop to ask the user: show a line at the top of the window and open or raise it")
+    q.add_argument("--job", required=True)
+    q.add_argument("--message", required=True, help="what the user should look at or answer, in their language")
     usub.add_parser("serve", help="run the ui service in the foreground (used by open)")
     p.set_defaults(func=cmd_ui)
 
