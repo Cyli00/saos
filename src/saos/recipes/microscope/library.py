@@ -9,7 +9,7 @@
             adapt_report.json   适配报告（玻璃匹配、假设）
             repro.json          复现校验结果
             probe_accept.json   格式默认规格下的验收结果（标定证据）
-            benchmark.yaml      优化基准用的规格
+            benchmark.yaml      基准规格（原结构在它下面 G = 0；受控扰动后的验收口径）
             bench_accept.json   基准规格下的验收结果（应为 G = 0）
         candidates.json         检索到的候选及处理结论
         benchmarks.json         优化基准案例与调参组 / 验证组划分

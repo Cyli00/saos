@@ -148,7 +148,7 @@ OpticStudio 2024 R1 Premium 加 ZOS-API 能建模的系统都在范围内，包�
 | | `notes/*.md` | agent | 内部工作笔记，不作为报告交付 | 可改 |
 | 随时 | `seals.jsonl` | 工具 | 封存文件的哈希，`saos job verify` 和布局测试据此检查 | 只追加 |
 
-“封存”指工具写入后记下哈希，之后改动或删除都会被 `saos job verify` 和 `tests/test_repo_layout.py` 发现；有被改动或缺失的封存文件时 `saos report` 拒绝生成。agent 自己写的东西只放在 `sources/`（上表所列）、`checks/`、`notes/`、`explore/` 和工作镜头中。显微物镜配方另有 `spec/`、`eval/`、`rounds.jsonl`、`bench.jsonl`，只在用到时创建。
+“封存”指工具写入后记下哈希，之后改动或删除都会被 `saos job verify` 和 `tests/test_repo_layout.py` 发现；有被改动或缺失的封存文件时 `saos report` 拒绝生成。agent 自己写的东西只放在 `sources/`（上表所列）、`checks/`、`notes/`、`explore/` 和工作镜头中。显微物镜配方另有 `spec/`、`eval/`，只在用到时创建（配方原有的 `rounds.jsonl`、`bench.jsonl` 随并行轮次和优化基准工具删除，2026-10-15、2026-10-17）。
 
 ## 配方
 
@@ -167,7 +167,7 @@ OpticStudio 2024 R1 Premium 加 ZOS-API 能建模的系统都在范围内，包�
 
 ## 近期工作
 
-1. 用光纤侧视系统作为第一个真实任务：不预设配方，用工具加脚本完成，找出工具缺口，做完后提炼配方。
+1. 光纤侧视系统是第一个真实任务（不预设配方，用工具加脚本完成，找出工具缺口）。它的测量库已于 2026-10-17 上收为 `saos.recipes.fiber`（等价核对见 `docs/recipes/fiber/`）；任务本身尚未交付：fiber-printed-relay 截至 2026-10-19 记录到第 2 轮，当天需求单改写为 minimize 并重新确认。
 
 ## 尚未验证的环境事项
 

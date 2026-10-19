@@ -558,7 +558,7 @@ class Daemon:
         job.seal(*(folder / name for name in files))
         return {"files": [f"screens/{name}" for name in files]}
 
-    # ---- 优化与调整轮次 ----
+    # ---- 优化与调试轮次 ----
 
     def op_vary(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))

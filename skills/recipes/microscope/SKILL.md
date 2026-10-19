@@ -34,7 +34,7 @@ Standard layout surface comments `saos:object`, `saos:cover_top`, `saos:stop`, `
 
 ## 6. Optimisation
 
-Reference policy that recovered all 65 perturbed benchmark tasks (most in 1–2 rounds): local — radii + working distance with an RMS wavefront (centroid, 6 rings × 6 arms) merit plus EFL and structural limits (`CTGT`, `MNCG`, `MNEG`, `MNCA`, `MNEA`, `OPLT`, `MXSD`); variables — free all objective thicknesses; then weight the failing items ×3 per round (up to ×3⁵) with `AXCL`, `LACL`, `OSCD`, `FCGS/FCGT`. Code: `experiments/bench/runner.py`.
+Reference policy that recovered all 65 perturbed benchmark tasks (most in 1–2 rounds): local — radii + working distance with an RMS wavefront (centroid, 6 rings × 6 arms) merit plus EFL and structural limits (`CTGT`, `MNCG`, `MNEG`, `MNCA`, `MNEA`, `OPLT`, `MXSD`); variables — free all objective thicknesses; then weight the failing items ×3 per round (up to ×3⁵) with `AXCL`, `LACL`, `OSCD`, `FCGS/FCGT`. The benchmark tool was removed on 2026-10-17; its results and evidence are in `library/microscope/calibration/`.
 
 ## 7. Verified
 
