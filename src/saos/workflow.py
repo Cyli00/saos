@@ -97,7 +97,7 @@ def brief(d: dict[str, Any], evaluation: dict[str, Any], decision: dict[str, Any
     """每轮返回的需求提要：目标现状、硬条件、待确认问题，以及该停下来审视时的提醒。
     The demand brief returned with every round: where the objectives stand, hard conditions, open questions,
     and a prompt to stop and review when the evidence says so."""
-    objectives = [{k: i.get(k) for k in ("id", "origin", "weight", "value", "goal", "wish", "passed", "wish_met") if k in i}
+    objectives = [{k: i.get(k) for k in ("id", "origin", "weight", "value", "goal", "direction", "ideal", "pursuit", "wish", "passed", "wish_met") if k in i}
                   for i in evaluation["items"] if i["kind"] == "objective"]
     stalled = decision.get("rounds_without_gain", 0) >= REVIEW_AFTER
     escalating = decision.get("next_tier") in ("global", "structure")
@@ -245,6 +245,7 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
         "evaluation": evaluation["evidence_file"],
         "shortfall": evaluation["shortfall"],
         "achieved": evaluation["achieved"],
+        **({"pursuing": True} if evaluation.get("pursuing") else {}),
         "measurement_errors": evaluation["measurement_errors"],
         # 常量或变量范围不满足的轮次不能交付 / a round that breaks a constant or a variable range is not deliverable
         "hard_failing": evaluation["hard_failing"],
@@ -318,6 +319,7 @@ def _rebase(ctx, h: dict[str, Any], scripts: dict[str, Any], best: dict[str, Any
         # 数值不变说明只是换了写法，比较窗口延续；否则从这条开始新窗口 / same numbers: the window goes on; otherwise a new one starts here
         "equivalent": not diffs and not ev["measurement_errors"], "diffs": diffs,
         "evaluation": ev["evidence_file"], "shortfall": ev["shortfall"], "achieved": ev["achieved"],
+        **({"pursuing": True} if ev.get("pursuing") else {}),
         "measurement_errors": ev["measurement_errors"], "hard_failing": ev["hard_failing"], "values": values,
         "failing": {i["id"]: i["shortfall"] for i in ev["items"] if i.get("shortfall", 0) > 0},
         "merit": best.get("merit"), "demand_sha": sha, "method_sha": method_sha, "confirmation": confirmation,

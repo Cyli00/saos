@@ -89,6 +89,9 @@ TEXT: dict[str, tuple[str, str]] = {
     "h.questions": ("待确认问题", "Open questions"),
     "blocking": ("（阻塞）", " (blocking)"),
     "wish": ("期望 {goal}", "wish {goal}"),
+    "pursue.min": ("越小越好（理想值 {ideal}，尺度 {scale}）", "as small as possible (ideal {ideal}, scale {scale})"),
+    "pursue.max": ("越大越好（理想值 {ideal}，尺度 {scale}）", "as large as possible (ideal {ideal}, scale {scale})"),
+    "pursuit": ("离理想值 {g} 个尺度", "{g} scales from the ideal"),
     "h.materials": ("交付镜头的材料（第 {n} 轮）", "Materials of the delivered lens (round {n})"),
     "th.materials": ("面|材料|来源|各波长折射率", "Surface|Material|Source|Index per wavelength"),
     "mat.model": ("模型玻璃 nd {nd}，Vd {vd}（不是真实材料）", "model glass nd {nd}, Vd {vd} (not a real material)"),
@@ -108,8 +111,8 @@ TEXT: dict[str, tuple[str, str]] = {
     "h.items": ("逐项结果（第 {n} 轮）", "Results by item (round {n})"),
     "th.items": ("项|类别|达标线|实测值|结论|差多少|实测依据", "Item|Kind|Pass line|Measured|Verdict|Gap|Evidence"),
     "note.g": (
-        "目标差距 G 是所有带达标线的项的单项差距按权重的加权和，每项先按其尺度归一化；用户的目标权重高，agent 补充的低。期望值只报告，不决定是否达成。常量或变量范围不满足的轮次不能交付。",
-        "The shortfall G is the weighted sum of the normalised gaps of every item with a pass line; the user's objectives weigh more than those the agent added. Wishes are reported only and do not decide whether the demand is met. A round that breaks a constant or variable range is not deliverable.",
+        "目标差距 G 是所有带达标线的项的单项差距、加上越小/越大越好的目标离理想值的距离，按权重的加权和，每项先按其尺度归一化；用户的目标权重高，agent 补充的低。是否达成只看达标线；越小/越大越好的目标在达标后继续改进，交付达成轮次中 G 最小的一轮。期望值只报告。常量或变量范围不满足的轮次不能交付。",
+        "The shortfall G is the weighted sum of the normalised gaps of every item with a pass line plus the distance to the ideal of every objective to minimise or maximise; the user's objectives weigh more than those the agent added. Only the pass lines decide whether the demand is met; objectives to minimise or maximise keep improving afterwards, and the achieved round with the smallest G is delivered. Wishes are reported only. A round that breaks a constant or variable range is not deliverable.",
     ),
     "h.process": ("调试过程", "Rounds"),
     "merit.agent": ("（agent 报告）", " (reported by agent)"),
@@ -303,7 +306,11 @@ def build(job: jobs.Job) -> dict[str, Any]:
     # only rounds without a model glass that keep the hard conditions are deliverable; otherwise show the best one marked as not deliverable
     candidates = [r for r in rounds if ledger.deliverable(r)] or rounds
     best = min(candidates, key=lambda r: (r["shortfall"], r["round"]))
-    deliver = final if final.get("achieved") and ledger.deliverable(final) else best
+    # 达成的轮次里取 G 最小的（有越小/越大越好的目标时 G 在达标后还会变小）；相同取最新的，它用的是当前的判定
+    # among achieved rounds the smallest G (it keeps shrinking after the pass lines with objectives to pursue); the latest on a
+    # tie, judged with the current checks
+    achieved = [r for r in rounds if r.get("achieved") and ledger.deliverable(r)]
+    deliver = min(achieved, key=lambda r: (r["shortfall"], -r["round"])) if achieved else best
     if not math.isfinite(deliver["shortfall"]):
         # 没有任何有效轮次时，列最后一轮供诊断，而不是挑一个"最好"的 / with no valid round, show the last one for diagnosis instead of a "best"
         deliver = final
@@ -336,7 +343,7 @@ def kind_note(item: dict[str, Any], t: Tr) -> str:
     if item.get("origin") is None:
         return ""
     origin = t("origin." + item["origin"])
-    text = t("weighted", origin=origin, w=fmt(item.get("weight"))) if item.get("goal") else origin
+    text = t("weighted", origin=origin, w=fmt(item.get("weight"))) if item.get("goal") or item.get("direction") else origin
     return f'<div class="muted">{e(text)}</div>'
 
 
@@ -378,6 +385,12 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
         # 达标与否以判定结果为准（含容差），差多少只对未达标的项写出 / the verdict (with tolerance) decides; gaps only for unmet items
         gap = "—" if preference else t("met") if item.get("passed") else gap_text(goal, item.get("value"), t)
         line = goal_text(goal, t) if goal else ""
+        if item.get("direction"):
+            scale = item.get("scale", demand._default_scale(goal) if goal else None)
+            pursue = t("pursue." + item["direction"], ideal=fmt(item.get("ideal", 0.0)), scale=fmt(scale))
+            line = (line + "<br>" if line else "") + e(pursue)
+            far = t("pursuit", g=fmt(item.get("pursuit")))
+            gap = far if preference else f"{gap}<br>{e(far)}"
         if item.get("wish"):
             line = (line + "<br>" if line else "") + t("wish", goal=goal_text(item["wish"], t))
         rows.append(

@@ -79,7 +79,7 @@ def validate(plan: Any, d: dict[str, Any]) -> dict[str, Any]:
         raise _bad(f"give exactly one of {MODES}")
     mode = modes[0]
     items = {i["id"]: i for i in demand.checked(d)}
-    measure = plan.get("measure") or [i for i, item in items.items() if item["goal"] is not None or i == plan.get("target")]
+    measure = plan.get("measure") or [i for i, item in items.items() if item["goal"] is not None or "direction" in item or i == plan.get("target")]
     unknown = [m for m in measure if m not in items]
     if unknown:
         raise _bad(f"measure has ids that are not checks of the demand: {unknown}")

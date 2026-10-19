@@ -7,7 +7,7 @@ The file is the job's sources/demand.yaml; keys are English (the agent writes it
     schema: 2
     constants:     [{id, description, value, unit, source, check?, goal?}]       # 固定条件 / fixed conditions
     variables:     [{id, description, range?, options?, check?}]                  # 可调自由度 / design freedoms
-    objectives:    [{id, description, check, origin, must?, wish?, weight?}]      # 目标 / measured goals
+    objectives:    [{id, description, check, origin, must?, minimize|maximize?, ideal?, wish?, weight?}]  # 目标 / measured goals
     open_questions: [{question, blocking}]
     summary: 简短访谈总结，最后一句固定 / short interview summary, fixed last sentence
     lang: zh
@@ -60,7 +60,7 @@ TOP_KEYS = {"schema", *SECTIONS, "open_questions", "summary", "notes", "lang", "
 ITEM_KEYS = {
     "constants": {"id", "description", "value", "unit", "source", "check", "goal", "scale"},
     "variables": {"id", "description", "range", "options", "unit", "check", "scale", "source"},
-    "objectives": {"id", "description", "unit", "check", "origin", "must", "wish", "weight", "scale", "source"},
+    "objectives": {"id", "description", "unit", "check", "origin", "must", "minimize", "maximize", "ideal", "wish", "weight", "scale", "source"},
 }
 # 目标的来源和默认权重：user = 用户给出或明确认可的，agent = agent 补充、用户没有表态的
 # origin of an objective and its default weight: user = stated or explicitly accepted by the user, agent = filled in by the agent
@@ -129,6 +129,10 @@ def checked(demand: dict[str, Any]) -> list[dict[str, Any]]:
                     "weight": weight(entry) if section == "objectives" else 1.0}
             if section == "objectives":
                 item["origin"] = entry["origin"]
+                direction = pursuit_of(entry)
+                if direction:
+                    item["direction"] = direction
+                    item["ideal"] = float(entry.get("ideal", 0.0))
             if entry.get("wish") is not None:
                 item["wish"] = entry["wish"]
             if "scale" in entry:
@@ -159,6 +163,17 @@ def weak_basis(demand: dict[str, Any]) -> list[dict[str, Any]]:
 
 def weight(entry: dict[str, Any]) -> float:
     return float(entry.get("weight", DEFAULT_WEIGHT[entry["origin"]]))
+
+
+def pursuit_of(entry: dict[str, Any]) -> str | None:
+    """目标是否要求越小越好（"min"）或越大越好（"max"）。
+    Whether an objective is to be made as small ("min") or as large ("max") as possible."""
+    return "min" if entry.get("minimize") else "max" if entry.get("maximize") else None
+
+
+def scored(entry: dict[str, Any]) -> bool:
+    """进入 G 的目标：有达标线，或要求越小/越大越好 / an objective that enters G: a pass line or a direction to pursue"""
+    return entry.get("must") is not None or pursuit_of(entry) is not None
 
 
 def blocking_questions(demand: dict[str, Any]) -> list[str]:
@@ -291,8 +306,24 @@ def validate(data: Any) -> dict[str, Any]:
                     raise _bad(f"{where}: an objective needs a check")
                 if e.get("origin") not in DEFAULT_WEIGHT:
                     raise _bad(f"{where}: origin must be user (stated or explicitly accepted by the user) or agent (filled in by you)")
-                if "weight" in e and (e.get("must") is None or not _positive(e["weight"])):
-                    raise _bad(f"{where}: weight must be a positive number and needs must (only pass lines enter the shortfall)")
+                if e.get("minimize") not in (None, True) or e.get("maximize") not in (None, True) or (e.get("minimize") and e.get("maximize")):
+                    raise _bad(f"{where}: write minimize: true or maximize: true, not both")
+                direction = pursuit_of(e)
+                if "ideal" in e and (direction is None or not _finite_number(e["ideal"])):
+                    raise _bad(f"{where}: ideal is a finite number and goes with minimize / maximize")
+                if direction == "max" and "ideal" not in e:
+                    raise _bad(f"{where}: maximize needs ideal, the best value physically possible (e.g. 100 for a percentage); "
+                               "G counts the distance to it")
+                must = e.get("must")
+                if must is not None and set(must) == {"max"} and float(must["max"]) == 0.0:
+                    # “越小越好”写成 must ≤ 0 永远达不到，需求永远判不了达成 / "as small as possible" as must ≤ 0 can never pass
+                    raise _bad(f"{where}: must {{max: 0}} is a pass line no design can meet, so the demand could never be achieved. "
+                               "For 'as small as possible' write minimize: true with a scale, and keep must for the pass line the user "
+                               "actually gave (ask for one if there is none)")
+                if direction and not _positive(e.get("scale", _default_scale(must) if must else None)):
+                    raise _bad(f"{where}: minimize / maximize needs a positive scale (the size of a difference that matters)")
+                if "weight" in e and (not scored(e) or not _positive(e["weight"])):
+                    raise _bad(f"{where}: weight must be a positive number and needs must, minimize or maximize (only those enter the shortfall)")
             if "options" in e and not (isinstance(e["options"], list) and e["options"]):
                 raise _bad(f"{where}: options must be a non-empty list")
             for key in bounds[:1]:
@@ -302,9 +333,9 @@ def validate(data: Any) -> dict[str, Any]:
                         raise _bad(f"{where}: scale must be a positive number (the bound is 0, so give one explicitly)")
     if not data.get("objectives"):
         raise _bad("objectives must be a non-empty list")
-    scored = [o for o in data["objectives"] if o.get("must") is not None]
-    user = [weight(o) for o in scored if o["origin"] == "user"]
-    over = [o["id"] for o in scored if o["origin"] == "agent" and user and weight(o) > min(user)]
+    counted = [o for o in data["objectives"] if scored(o)]
+    user = [weight(o) for o in counted if o["origin"] == "user"]
+    over = [o["id"] for o in counted if o["origin"] == "agent" and user and weight(o) > min(user)]
     if over:
         # agent 补充的目标不能比用户的目标更重 / an objective you added never outweighs one the user gave
         raise _bad(f"agent objectives {over} weigh more than the lightest user objective ({min(user)})")
@@ -348,6 +379,19 @@ def excess(goal: dict[str, Any], value: float) -> float:
     if "max" in goal:
         return value - float(goal["max"])
     return float(goal["min"]) - value
+
+
+def pursuit(item: dict[str, Any], value: float | None) -> float:
+    """越小/越大越好的目标计入 G 的量：离理想值还差多少除以尺度，到了或越过理想值为 0；没有有效数值时为无穷大。
+    与达标线无关，达标后仍随设计变好而减小，所以 G 能继续比较。
+    The part of G for an objective to minimise or maximise: the distance still to go to the ideal value over the scale,
+    0 at or beyond it; infinity without a valid value. Independent of the pass line, it keeps shrinking as the design
+    improves after the line is met, so G still compares rounds."""
+    if value is None or not math.isfinite(value):
+        return math.inf
+    ideal = float(item.get("ideal", 0.0))
+    scale = float(item.get("scale", _default_scale(item["goal"]) if item.get("goal") else 1.0))
+    return max(0.0, (value - ideal) if item["direction"] == "min" else (ideal - value)) / scale
 
 
 def shortfall(item: dict[str, Any], value: float | None) -> float:
@@ -485,9 +529,11 @@ def measure(ctx: ScriptContext, item: dict[str, Any], folder: Path, scripts: dic
 
 def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict[str, Any]] | None = None,
              only: list[str] | None = None, lens: dict[str, Any] | None = None) -> dict[str, Any]:
-    """逐项取值和判定。目标差距 G 是所有带界限条目的单项差距按权重的加权和；常量或变量范围不满足时记入 hard_failing。
+    """逐项取值和判定。目标差距 G 是所有带界限条目的单项差距、以及越小/越大越好目标离理想值的距离，按权重的加权和；
+    常量或变量范围不满足时记入 hard_failing。达成只看界限，不看理想值。
     only 只测其中几项（探索用）：结果标为 partial，不宣布达成，G 只是这几项之和。
-    Measure and judge every check. G is the weighted sum of the shortfalls of every bounded item; broken constants or
+    Measure and judge every check. G is the weighted sum of the shortfalls of every bounded item and of the distance
+    to the ideal of every objective to minimise or maximise; achieved depends on the bounds only. Broken constants or
     variable ranges are listed in hard_failing. With only, measure just those items (exploration): the result is
     partial, never achieved, and G covers those items alone."""
     specs = checked(demand)
@@ -530,6 +576,9 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
             g = shortfall(spec, value)
             item.update(shortfall=g, passed=g == 0)
             total += spec["weight"] * g
+        if "direction" in spec:
+            item["pursuit"] = pursuit(spec, value)
+            total += spec["weight"] * item["pursuit"]
         if "wish" in spec:
             item["wish_met"] = value is not None and excess(spec["wish"], value) <= BOUND_TOLERANCE * (_default_scale(spec["wish"]) or 1.0)
         items.append(item)
@@ -539,6 +588,8 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
               # 没有任何带界限的条目时不能宣布达成 / nothing with a pass line means nothing can be declared achieved
               "achieved": only is None and bool(judged) and all(i["passed"] for i in judged), "items": items,
               "partial": only is not None,
+              # 有越小/越大越好的目标：达标后还要继续改进 / objectives to minimise or maximise: keep improving after the pass lines
+              "pursuing": any("direction" in i for i in items),
               "hard_failing": [i["id"] for i in judged if i["kind"] in HARD_KINDS and not i["passed"]],
               # 执行出错的判定（脚本异常、读不到文件）：这一轮的结论不可信，不能当作设计不达标
               # checks that failed to run: the round says nothing about the design and must not count as a shortfall result
@@ -574,17 +625,17 @@ def _prepared(root: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
 
 def quick(ctx, ids: list[str] | None = None) -> dict[str, Any]:
     """按需求单的判定测当前镜头，不存证据、不进 evaluations/：给 exec 脚本和并发 worker 的改镜头—测量循环用，
-    与 check、round 同一套定义。ids 省略时测所有带界限的项。shortfall 只含所测各项；invalid 是给不出有效值的项，
+    与 check、round 同一套定义。ids 省略时测所有进 G 的项（带界限或越小/越大越好）。shortfall 只含所测各项；invalid 是给不出有效值的项，
     errors 是判定本身出错的项。
     Measure the current lens with the demand's checks without evidence or evaluations/: for change–measure loops in exec
-    scripts and parallel workers, with the same definitions as check and round. Without ids, every bounded item.
+    scripts and parallel workers, with the same definitions as check and round. Without ids, every item that enters G.
     shortfall covers the measured items only; invalid lists items with no valid value, errors items whose check failed."""
     import shutil
     import tempfile
 
     d, scripts = _prepared(ctx.job.root)
     specs = {s["id"]: s for s in checked(d)}
-    wanted = list(ids) if ids is not None else [i for i, s in specs.items() if s["goal"] is not None]
+    wanted = list(ids) if ids is not None else [i for i, s in specs.items() if s["goal"] is not None or "direction" in s]
     unknown = [i for i in wanted if i not in specs]
     if unknown:
         raise SaosError(ErrorCode.BAD_ARGS, f"measure: unknown check ids {unknown}", {"known": sorted(specs)})
@@ -593,6 +644,7 @@ def quick(ctx, ids: list[str] | None = None) -> dict[str, Any]:
     values: dict[str, float | None] = {}
     errors: dict[str, str] = {}
     gaps: dict[str, float] = {}
+    pursued: dict[str, float] = {}
     total = 0.0
     try:
         for item_id in wanted:
@@ -606,8 +658,11 @@ def quick(ctx, ids: list[str] | None = None) -> dict[str, Any]:
             if spec["goal"] is not None:
                 gaps[item_id] = shortfall(spec, measured["value"])
                 total += spec["weight"] * gaps[item_id]
+            if "direction" in spec:
+                pursued[item_id] = pursuit(spec, measured["value"])
+                total += spec["weight"] * pursued[item_id]
     finally:
         shutil.rmtree(folder, ignore_errors=True)
-    return {"values": values, "shortfall": total, "gaps": gaps,
+    return {"values": values, "shortfall": total, "gaps": gaps, "pursuit": pursued,
             "hard_failing": [i for i, g in gaps.items() if specs[i]["kind"] in HARD_KINDS and g > 0],
             "invalid": [i for i, v in values.items() if v is None and i not in errors], "errors": errors}

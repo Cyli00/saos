@@ -21,8 +21,11 @@ has also been escalated. Tiers, low to high:
     structure  改结构 / change the structure
 
 判定（按顺序）/ Decision, in this order:
-    achieved   本轮所有带界限的条目（常量、变量范围、目标的 must）都达标，且不含模型玻璃
-               every bounded item (constants, variable ranges, objectives' must) is met and the lens has no model glass
+    achieved   本轮所有带界限的条目（常量、变量范围、目标的 must）都达标，且不含模型玻璃；需求里有越小/越大越好的目标
+               （minimize / maximize）时，还要自最后一次明显进步以来允许的每个层级都试过或排除，或者轮次数到了 max_rounds
+               every bounded item (constants, variable ranges, objectives' must) is met and the lens has no model glass; with
+               objectives to minimise or maximise, also every allowed tier tried or ruled out since the last significant gain,
+               or max_rounds reached
     limit      当前需求版本下的轮次数达到 max_rounds / rounds of the current demand version reached max_rounds
     exhausted  自最后一次明显进步（G 比此前最好值至少再小 rel）以来，允许的每个层级都试过一轮或带证据排除（saos rule-out），仍没有明显进步
                since the last significant gain (G at least rel below the best so far) every allowed tier was tried or ruled out with evidence;
@@ -208,7 +211,17 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str
         "rounds_in_version": sum(1 for r in window[1:] if not is_rebase(r)),
     }
     if current.get("achieved") and deliverable(current):
-        return {**base, "status": "achieved", "reason": "every constant, variable range and objective pass line is met"}
+        if not current.get("pursuing"):
+            return {**base, "status": "achieved", "reason": "every constant, variable range and objective pass line is met"}
+        # 达标后继续压越小/越大越好的目标，直到各手段都不再明显进步 / after the pass lines, keep pursuing until no tier gains
+        if not untried or len(window) - 1 >= cap:
+            return {**base, "status": "achieved",
+                    "reason": "every pass line is met and the objectives to minimise or maximise gained less than "
+                              f"{rel:.0%} since round {base['last_gain_round']} " + ("after trying or ruling out every allowed tier" if not untried
+                                                                                     else f"within max_rounds = {cap}")}
+        return {**base, "status": "continue", "next_tier": untried[0],
+                "reason": f"every pass line is met; keep improving the objectives to minimise or maximise, next escalate to {untried[0]} "
+                          "if the current tier stops gaining"}
     if stopped is not None and int(stopped["round"]) >= int(window[0]["round"]):
         return {**base, "status": "stopped", "stopped": stopped,
                 "reason": f"the user decided to stop after round {stopped['round']}: {stopped['reason']}"}

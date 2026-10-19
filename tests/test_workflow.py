@@ -64,6 +64,40 @@ def test_shortfall_and_validation():
             demand.validate(data)
 
 
+def test_as_small_as_possible_is_minimize_not_a_pass_line_of_zero():
+    """“越小越好”写 minimize（可以同时有真实的达标线），不能写成 must ≤ 0；maximize 要给理想值；两者都要尺度。"""
+    shorter = {**LENGTH, "minimize": True}
+    demand.validate(demand_with(shorter))
+    demand.validate(demand_with({**shorter, "weight": 2.0}))
+    demand.validate(demand_with({**LENGTH, "id": "rate", "must": {"min": 80.0}, "maximize": True, "ideal": 100.0}))
+    only = {k: v for k, v in shorter.items() if k not in ("must", "wish")}
+    demand.validate(demand_with(only))  # 没有达标线、只求越小越好 / no pass line, only as small as possible
+    with pytest.raises(SaosError, match=r"must \{max: 0\}.*minimize: true"):
+        demand.validate(demand_with({**LENGTH, "must": {"max": 0.0}}))
+    for bad in ({**LENGTH, "maximize": True},                                  # 没有理想值 / no ideal
+                {**shorter, "maximize": True, "ideal": 1.0},                    # 两个方向 / both directions
+                {**shorter, "minimize": "yes"},
+                {**LENGTH, "ideal": 1.0},                                      # 理想值要配方向 / ideal needs a direction
+                {k: v for k, v in only.items() if k != "scale"}):              # 没有尺度 / no scale
+        with pytest.raises(SaosError):
+            demand.validate(demand_with(bad))
+
+
+def test_stop_rule_keeps_pursuing_after_the_pass_lines():
+    """有越小/越大越好的目标：达标后继续，直到各层级都不再明显进步（或到 max_rounds）才判达成。"""
+    rows = [{**r, "pursuing": True} for r in rounds_of([21, 18, 18], ["baseline", "local", "local"])]
+    for r in rows[1:]:
+        r["achieved"] = True
+    d = ledger.decide(rows, STOP)
+    assert d["status"] == "continue" and d["next_tier"] == "variables" and "every pass line is met" in d["reason"]
+    tiers = ["baseline", "local", "local", "variables", "materials", "global", "structure"]
+    rows = [{**r, "pursuing": True, "achieved": k > 0} for k, r in enumerate(rounds_of([21, 17, 17, 17, 17, 17, 17], tiers))]
+    assert ledger.decide(rows, STOP)["status"] == "achieved"
+    assert ledger.decide(rows[:4], {**STOP, "max_rounds": 3})["status"] == "achieved"
+    rows[-1]["achieved"] = False  # 最后一轮又掉出达标线：照常判 / the last round fell below a pass line: judged as usual
+    assert ledger.decide(rows, STOP)["status"] == "exhausted"
+
+
 def test_digest_covers_meaning_not_wording():
     """总结、待确认问题和语言不改变需求版本；三类条目变了才变。"""
     base = demand.digest(demand.validate(DEMAND))
@@ -690,6 +724,27 @@ def test_hammer_and_global_need_a_budget_and_archive_the_systems_they_write(setu
     assert (lens_dir / "a_0009_HAMMER.zmx").read_text(encoding="utf-8") == "old"
     assert call(daemon, "opt.global", job=job.id, max_seconds=5)["result"]["files"][0].startswith("global/002/")
 
+
+
+def test_minimized_objective_keeps_counting_after_its_pass_line_and_the_smallest_achieved_round_is_delivered(setup):
+    """minimize 的目标按 值/尺度 计入 G：过了达标线还继续比较；交付达成轮次中 G 最小的，不是最后一轮。"""
+    daemon, job = setup
+    write_demand(job, demand_with({**LENGTH, "minimize": True}))
+    r0 = call(daemon, "round.record", job=job.id)["result"]
+    item = r0["brief"]["objectives"][0]
+    assert item["direction"] == "min" and item["pursuit"] == pytest.approx(100.0 / 5.0)
+    assert r0["record"]["shortfall"] == pytest.approx((100.0 - 95.0) / 5.0 + 100.0 / 5.0) and r0["record"]["pursuing"]
+    lengths = {}
+    for thickness in (85.0, 80.0, 84.0):
+        daemon.backend.lens["surfaces"][2]["thickness"] = thickness
+        out = call(daemon, "round.record", job=job.id, tier="local")["result"]
+        lengths[out["record"]["round"]] = out["record"]["values"]["length"]
+        assert out["record"]["achieved"] and out["record"]["shortfall"] == pytest.approx(lengths[out["record"]["round"]] / 5.0)
+        assert out["decision"]["status"] == "continue" and "every pass line is met" in out["decision"]["reason"]
+    best = min(lengths, key=lengths.get)
+    assert best == 2 and report.write(job, lang="en")["deliver"] == "rounds/r002.zmx"
+    html = (job.root / "report" / "index.html").read_text(encoding="utf-8")
+    assert "as small as possible (ideal 0, scale 5)" in html and "scales from the ideal" in html
 
 
 def test_job_show_and_cancel_work_without_the_daemon(saos_home):
