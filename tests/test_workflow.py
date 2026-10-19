@@ -672,17 +672,22 @@ def test_hammer_and_global_need_a_budget_and_archive_the_systems_they_write(setu
     demand.confirm(job.root, "确认，开始吧")
     assert call(daemon, "opt.global", job=job.id)["error"]["code"] == ErrorCode.BAD_ARGS  # 没有预算 / no budget
     assert call(daemon, "opt.hammer", job=job.id, max_seconds=0)["error"]["code"] == ErrorCode.BAD_ARGS
-    (lens_dir / "GLOPT_0001_009.zmx").write_text("old", encoding="utf-8")  # 运行前就有的不动 / left as it was
+    # 镜头旁已有 GLOPT 文件（如镜头取自 lenses/global/NNN/）会被同名覆盖：拒绝 / same-named GLOPT files would be overwritten
+    (lens_dir / "GLOPT_0001_009.zmx").write_text("old", encoding="utf-8")
+    assert call(daemon, "opt.global", job=job.id, max_seconds=5)["error"]["code"] == ErrorCode.BAD_ARGS and seen == {}
+    (lens_dir / "GLOPT_0001_009.zmx").unlink()
 
     out = call(daemon, "opt.global", job=job.id, max_seconds=5)["result"]
     assert out["files"] == ["global/001/GLOPT_0001_001.zmx", "global/001/GLOPT_0001_002.zmx"] and out["dirty"]
     assert seen == {"kind": "global", "cores": config.compute_cores(), "max_seconds": 5.0}
-    assert not (lens_dir / "GLOPT_0001_001.zmx").exists() and (lens_dir / "GLOPT_0001_009.zmx").read_text(encoding="utf-8") == "old"
+    assert not list(lens_dir.glob("GLOPT_*.zmx"))
     progress = job.read_progress()
     assert progress["op"] == "opt.global" and progress["stage"] == "opt.global" and progress["systems"] == 1000
     assert progress["stopped_by"] == "timeout" and progress["status"] == "done"
 
+    (lens_dir / "a_0009_HAMMER.zmx").write_text("old", encoding="utf-8")  # 运行前就有的不动 / left as it was
     assert call(daemon, "opt.hammer", job=job.id, max_seconds=5)["result"]["files"] == ["hammer/001/a_0001_HAMMER.zmx"]
+    assert (lens_dir / "a_0009_HAMMER.zmx").read_text(encoding="utf-8") == "old"
     assert call(daemon, "opt.global", job=job.id, max_seconds=5)["result"]["files"][0].startswith("global/002/")
 
 

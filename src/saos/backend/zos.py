@@ -524,7 +524,7 @@ class ZosBackend(Backend):
                 folder = Path(str(self.app.GlassDir)) if self.app is not None and str(getattr(self.app, "GlassDir", "") or "") else glasscat.DEFAULT_GLASSCAT_DIR
                 try:
                     self._glass_status[key] = {g.name.upper(): g.status for g in glasscat.load_catalogs([catalog], folder)}
-                except (OSError, FileNotFoundError):
+                except (OSError, ValueError):  # describe 每次都走到这里，坏文件不能让它失败 / describe always passes here
                     self._glass_status[key] = {}
             if name.upper() in self._glass_status[key]:
                 return self._glass_status[key][name.upper()]

@@ -630,6 +630,12 @@ class Daemon:
         lens_dir = loaded.path.parent
         pattern = SEARCH_FILES[kind].format(stem=glob.escape(loaded.path.stem))
         before = {p.name: p.stat().st_mtime_ns for p in lens_dir.glob(pattern)}
+        # GLOPT 的编号跟文件夹里已有的文件无关（实测每次运行前文件夹为空，编号仍是 0000、0001、0002），同名直接覆盖：
+        # 镜头取自 lenses/global/NNN/ 时会冲掉上一次的结果，甚至当前镜头本身
+        # GLOPT numbering ignores the files already there and overwrites same-named ones, e.g. a lens loaded from lenses/global/NNN/
+        if kind == "global" and before:
+            raise SaosError(ErrorCode.BAD_ARGS, f"{len(before)} GLOPT_*.zmx files already lie next to {job.relative_lens(loaded.path)}; "
+                            "global search would overwrite them. Save the lens elsewhere first (saos lens save --as NAME)")
         try:
             result = self.backend.optimize_search(kind, args.get("cores") or config.compute_cores(), max_seconds=float(max_seconds),
                                                   on_progress=self._optimizer_hooks(job, f"opt.{kind}"), should_cancel=job.cancel_requested)

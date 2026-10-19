@@ -126,7 +126,7 @@ OpticStudio 2024 R1 Premium 加 ZOS-API 能建模的系统都在范围内，包�
 | 并发评估 | `parallel/NNN/` | 工具 | `ctx.map` 的计划、脚本副本和每个条目的结果 | 封存 |
 | | `scans/NNN/` | 工具 | `saos scan` 的计划（扰动诊断含 agent 的预测）、镜头快照 `base.zmx`、每个点的测量（按目标差距排序）；分离运行时另有 `progress.json`。旧任务的 `probes/NNN/` 是并入前的扰动诊断 | 封存 |
 | | `lenses/scans/NNN/pPPP.zmx` | 工具 | 扫描中最好几个点的镜头，可直接 `lens load` | 可改 |
-| | `lenses/global/NNN/GLOPT_*.zmx` | 工具 | `opt global` 的前 10 名（OpticStudio 运行中写在镜头旁，结束后移来），可直接 `lens load`；`lenses/hammer/NNN/` 收 Hammer 残留的中间文件（正常结束时 OpticStudio 自己删掉） | 可改 |
+| | `lenses/global/NNN/GLOPT_*.zmx` | 工具 | `opt global` 的前 10 名（OpticStudio 运行中写在镜头旁，结束后移来），可直接 `lens load`；从中载入的镜头要先另存到别处才能再跑全局搜索，否则同名覆盖；`lenses/hammer/NNN/` 收 Hammer 残留的中间文件（正常结束时 OpticStudio 自己删掉） | 可改 |
 | 建模 | `lenses/<名称>.zmx` | agent | 工作镜头 | 可改 |
 | | `sources/materials.yaml` | agent | 每种材料的来源（格式见 `saos.materials_record`，字段沿用 `library/materials`） | 只追加或修正来源 |
 | | `scripts/NNN-<名>.py`、`.json` | 工具 | `saos exec` 的脚本副本和结果 | 封存 |
