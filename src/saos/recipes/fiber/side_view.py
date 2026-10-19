@@ -27,6 +27,7 @@ measurements that change the system temporarily (PSF plane and fields) restore i
 from __future__ import annotations
 
 import math
+import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -598,7 +599,7 @@ def psf_widths_um(ctx, layout: Layout = DEFAULT) -> list[dict[str, Any]]:
 def psf_z_um(ctx, step_um: float = 4.0, half_range_um: float = 60.0, layout: Layout = DEFAULT) -> float:
     """各视场 Huygens PSF 峰值随像面离焦的曲线的半高全宽（µm），5 个视场取最差。离焦面相对轴上最佳焦面，像元间距按最佳焦面定且
     各离焦面相同；离焦面不得进入外壁以内。曲线两侧都须降到峰值一半以下，否则扩大一次范围，仍不够则无效。
-    后台进程的 worker 池已经开着且空闲时，各视场分给 worker 并行（_psf_z_parallel），用不上的视场在主实例里串行算。"""
+    在后台进程里时各视场分给 worker 池并行（_psf_z_parallel，池没开就启动），池忙或 worker 没算成的视场在主实例里串行算。"""
     geometry_ok(ctx, layout)
     dz = best_focus_dz(ctx, layout)
     focus = sample_distance(ctx, layout) - dz
@@ -643,37 +644,56 @@ def _psf_z_field(ctx, tmp: _Temporary, hug: _Huygens, hx: float, hy: float, focu
     raise AssertionError("unreachable")
 
 
-# 池里至少有这么多个已开着的 worker 才把视场分出去；不为 psf_z 新开实例（每个冷启动 5–8 s，还占许可证）
-# share the fields out only when this many workers are already up; psf_z never starts instances (5–8 s each, and licences)
+# 自动开池时给用户留下的许可证数（他们自己的窗口、别的实例）；凑不出这么多个 worker 就不并行
+# licences left free for the user (their windows, other instances) when the pool starts itself; fewer workers than this: serial
+PSF_Z_KEEP_FREE = 2
 PSF_Z_MIN_WORKERS = 2
 
 
 def _psf_z_parallel(ctx, focus: float, step_um: float, half_range_um: float) -> dict[tuple[float, float], float]:
-    """池已开着且空闲时把 FIELDS5 分给 worker，返回算成的各视场半高全宽；任一视场设计失败就抛 DesignFailure，worker 出错的视场
-    不在返回值里，由调用方串行补算。worker 加载已保存的镜头文件，所以只在主实例里就是 ctx.lens、且没有未保存修改时使用
-    （rebase 重测归档镜头时主实例里不是 ctx.lens，走串行）。
-    Share FIELDS5 out to an idle pool that is already up and return the widths it got; a design failure in any field raises
-    DesignFailure, and fields a worker could not do are left out for the caller to compute serially. Workers load the
-    saved lens, so this runs only when the main instance holds ctx.lens without unsaved changes."""
-    pool = getattr(getattr(ctx, "_daemon", None), "pool", None)
-    if pool is None or ctx.lens is None or ctx.dirty:
-        return {}
-    try:
-        if Path(str(ctx.system.SystemFile)).resolve() != Path(ctx.lens).resolve():
-            return {}
-    except Exception:  # noqa: BLE001 - 读不到当前文件就不并行 / no current file: no sharing
-        return {}
-    alive = sum(1 for w in pool.workers if w.alive)
-    if alive < PSF_Z_MIN_WORKERS or not pool.lock.acquire(blocking=False):
-        return {}
-    from saos import parallel
+    """把 FIELDS5 分给后台进程的 worker 池（没开就按需启动；新开 worker 前给用户留 PSF_Z_KEEP_FREE 个许可证，凑不出 2 个 worker 就串行），返回算成的各视场半高全宽；任一视场
+    设计失败就抛 DesignFailure，worker 没算成的视场不在返回值里，由调用方串行补算。池正被分离扫描占用或不在后台进程里时返回空。
+    worker 拿到的是主实例当前内存状态的快照（CopySystem 另存），所以未保存的修改、rebase 时装着的归档镜头都照样测。
+    Share FIELDS5 out to the daemon's worker pool, starting it if needed while leaving PSF_Z_KEEP_FREE licences free (serial when fewer than 2 workers fit), and return
+    the widths it got; a design failure in any field raises DesignFailure, fields no worker finished are left out for the
+    caller to compute serially. Empty when the pool is busy with a detached scan or there is no daemon. Workers get a
+    snapshot of the main instance's state in memory (CopySystem, saved aside), so unsaved changes and the archived lens
+    of a rebase are measured as they are."""
+    from saos import client, config, parallel
 
-    items = [{"hx": hx, "hy": hy, "focus": focus, "step": step_um, "half": half_range_um} for hx, hy in FIELDS5]
+    pool = getattr(getattr(ctx, "_daemon", None), "pool", None)
+    if pool is None:
+        return {}
+    # 已开着的 worker 照用；新开的只用许可证余量减去留给用户的部分，凑不出 2 个 worker 就串行
+    # workers already up are used; new ones only from the free licences minus the share kept for the user; fewer than 2: serial
+    alive = sum(1 for w in pool.workers if w.alive)
+    free = config.LICENSED_INSTANCES - len(client.process_pids("OpticStudio.exe"))
+    count = min(len(FIELDS5), config.compute_cores(), alive + max(0, free - PSF_Z_KEEP_FREE))
+    if count < PSF_Z_MIN_WORKERS or not pool.lock.acquire(blocking=False):
+        return {}
+    folder: Path | None = None
     try:
-        out = parallel.dispatch(pool, ctx.job, Path(ctx.lens), "saos.recipes.fiber.side_view:psf_z_field", None, items,
-                                min(alive, len(items)), True, None, progress=lambda stage: None, cancelled=lambda: False)
+        # 取得锁之后的每一步都在 try 里，出任何错都会释放锁，池不会一直被占着
+        # everything after taking the lock sits in the try, so any failure releases it and the pool is never left held
+        folder = Path(tempfile.mkdtemp(prefix="saos-psfz-"))
+        snapshot = folder / "lens.zmx"
+        try:
+            copy = ctx.system.CopySystem()
+            try:
+                copy.SaveAs(str(snapshot))
+            finally:
+                copy.Close(False)
+        except Exception:  # noqa: BLE001 - 存不出快照就在主实例串行 / no snapshot: measure serially in the main instance
+            return {}
+        if not snapshot.is_file():
+            return {}
+        items = [{"hx": hx, "hy": hy, "focus": focus, "step": step_um, "half": half_range_um} for hx, hy in FIELDS5]
+        out = parallel.dispatch(pool, ctx.job, snapshot, "saos.recipes.fiber.side_view:psf_z_field", None, items, count, True, None,
+                                progress=lambda stage: ctx.job.write_progress(stage=f"psf_z {stage}"), cancelled=lambda: False)
     finally:
         pool.lock.release()
+        if folder is not None:
+            shutil.rmtree(folder, ignore_errors=True)
     widths: dict[tuple[float, float], float] = {}
     for i, field in enumerate(FIELDS5):
         error = out["errors"].get(str(i))
@@ -702,10 +722,11 @@ def wfe_rms_waves(ctx, layout: Layout = DEFAULT) -> float:
     with _Temporary(ctx, layout) as tmp:
         tmp.set_plane(focus)
         for hx, hy in FIELDS5:
-            folder = Path(tempfile.mkdtemp(prefix="saos-wfe-"))
-            ctx.backend.analysis("ZernikeStandardCoefficients", {"Field": tmp.field_number(hx, hy), "Wavelength": layout.emission},
-                                 folder / "z.txt")
-            lines = (folder / "z.txt").read_text(encoding="utf-16", errors="ignore").splitlines()
+            # 读完就删；OpticStudio 偶尔还占着文件时不让清理失败打断测量 / removed once read; a file OpticStudio still holds must not fail the check
+            with tempfile.TemporaryDirectory(prefix="saos-wfe-", ignore_cleanup_errors=True) as folder:
+                text = Path(folder) / "z.txt"
+                ctx.backend.analysis("ZernikeStandardCoefficients", {"Field": tmp.field_number(hx, hy), "Wavelength": layout.emission}, text)
+                lines = text.read_text(encoding="utf-16", errors="ignore").splitlines()
             v = None
             for k, line in enumerate(lines):
                 if line.startswith("From integration of the rays"):
