@@ -47,7 +47,7 @@ def run(ctx):
 | `lens_index` (nd), `lens_base` | highest printed-material nd; base diameter of the prism-exit lens |
 | `collect_center`, `collect_mid`, `collect_edge` | geometric collection fraction of 4π, forward solid-angle method |
 
-Every measurement first checks the part geometry (thicknesses along the propagation direction, surfaces defined at their semi-diameters, edge thicknesses) and returns `inf` through `DesignFailure` when it fails. Surface names and dimensions come from `side_view.Layout`; pass `layout=Layout(...)` for a model with other comments or another fibre.
+Every measurement first checks the part geometry (thicknesses along the propagation direction, surfaces defined at their semi-diameters, edge thicknesses) and returns `inf` through `DesignFailure` when it fails. The best focus is `kit.focus_shift` (closed form for straight rays after the sample plane): a parallel beam, or fewer than 3 usable rays, has no focus and is a `DesignFailure` too; rays with |n| ≤ 1e-12 are left out of extrapolation along z, as in `kit.spot`. Surface names and dimensions come from `side_view.Layout`; pass `layout=Layout(...)` for a model with other comments or another fibre.
 
 After switching an existing job's checks to this library, the next `saos round` re-measures the best round with it first; equal numbers keep the comparison window open.
 
@@ -61,4 +61,5 @@ After switching an existing job's checks to this library, the next `saos round` 
 ## 8. Verified
 
 - 2026-10-17: the library reproduced `fiberlib.py` v6 on real OpticStudio, all 20 checks, on lenses of fiber-printed-relay; results and timings in `docs/recipes/fiber/equivalence-2026-10-17.md`.
+- 2026-10-19: statistics moved to `saos.kit` (`focus_shift`, `spread`) and collection traces only in-circle pupil points; 16 real lenses × 20 checks against the previous library: 261/320 bit-identical, the rest within 1.4e-13 relative, every inf unchanged; details in the same equivalence document.
 - Not verified: any delivered design; the GRIN variant; behaviour on non-sequential models.

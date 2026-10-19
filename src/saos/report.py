@@ -195,14 +195,8 @@ def gap_text(goal: dict[str, Any] | None, value: float | None, t: Tr) -> str:
     """差多少：用目标本身的单位写出超出达标线的量。"""
     if not goal or value is None:
         return t("no_value") if goal else "—"
-    if "equals" in goal:
-        excess = abs(value - float(goal["equals"])) - float(goal["tol"])
-    elif "max" in goal and value > float(goal["max"]):
-        excess = value - float(goal["max"])
-    elif "min" in goal and value < float(goal["min"]):
-        excess = float(goal["min"]) - value
-    else:
-        excess = 0.0
+    # 只在判定为未达标时调用（判定带容差）；这里只把超出量写出来 / called for unmet items only; this only words the excess
+    excess = demand.excess(goal, value)
     return t("met") if excess <= 0 else t("over", gap=fmt(excess))
 
 

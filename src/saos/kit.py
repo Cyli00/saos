@@ -403,7 +403,8 @@ def trace(ctx, rays: Iterable[Iterable[float]], to: int | str | None = None) -> 
                 l=out[:, 5], m=out[:, 6], n=out[:, 7], intensity=out[:, 8], surface=target)
 
 
-def _spread(x: np.ndarray, y: np.ndarray) -> dict[str, Any]:
+def spread(x: np.ndarray, y: np.ndarray) -> dict[str, Any]:
+    """点列的质心、RMS 半径和最大半径（相对质心）/ centroid, RMS radius and largest radius about the centroid"""
     cx, cy = float(x.mean()), float(y.mean())
     d2 = (x - cx) ** 2 + (y - cy) ** 2
     return {"centroid": [cx, cy], "rms_radius": float(math.sqrt(d2.mean())), "geo_radius": float(math.sqrt(d2.max()))}
@@ -415,10 +416,16 @@ def best_focus(rays: Rays) -> float | None:
     The shift along the target surface's local z that minimises the RMS spot (closed form). Precondition: a homogeneous
     medium after the target surface, so rays are straight; this extrapolates OpticStudio's traced rays, it traces nothing."""
     good = rays.ok & (np.abs(rays.n) > 1e-12)
-    if good.sum() < 3:
+    return focus_shift(rays.x[good], rays.y[good], rays.l[good] / rays.n[good], rays.m[good] / rays.n[good])
+
+
+def focus_shift(x: np.ndarray, y: np.ndarray, u: np.ndarray, v: np.ndarray) -> float | None:
+    """best_focus 的闭式解本身：位置 (x, y)、斜率 (u, v) = (l/n, m/n) 的直线束沿 z 平移多少时 RMS 最小。
+    少于 3 条光线，或各光线斜率相同（平行光，没有焦点）时为 None。
+    The closed form behind best_focus for straight rays at (x, y) with slopes (u, v) = (l/n, m/n). None with fewer
+    than 3 rays or when every slope is the same (a collimated beam has no focus)."""
+    if len(x) < 3:
         return None
-    u, v = rays.l[good] / rays.n[good], rays.m[good] / rays.n[good]
-    x, y = rays.x[good], rays.y[good]
     du, dv = u - u.mean(), v - v.mean()
     den = float((du * du + dv * dv).sum())
     return None if den == 0 else float(-((x - x.mean()) * du + (y - y.mean()) * dv).sum() / den)
@@ -455,13 +462,13 @@ def spot(ctx, fields: Iterable[Iterable[float]] = ((0.0, 0.0),), wave: int | Ite
         arrived = len(sub.x)
         row.update(launched=len(grid_pts), arrived=arrived, pass_rate=100.0 * arrived / len(grid_pts), valid=arrived >= min_rays)
         if arrived >= min_rays:
-            row.update(_spread(sub.x, sub.y))
+            row.update(spread(sub.x, sub.y))
             if refocus:
                 dz = best_focus(sub)
                 row["best_dz"] = dz
                 if dz is not None:
                     keep = np.abs(sub.n) > 1e-12
-                    row["rms_radius_best"] = _spread(sub.x[keep] + sub.l[keep] / sub.n[keep] * dz,
+                    row["rms_radius_best"] = spread(sub.x[keep] + sub.l[keep] / sub.n[keep] * dz,
                                                      sub.y[keep] + sub.m[keep] / sub.n[keep] * dz)["rms_radius"]
                 else:
                     row["rms_radius_best"] = None

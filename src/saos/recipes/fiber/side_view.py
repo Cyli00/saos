@@ -32,6 +32,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+import numpy as np
+
 from saos import kit
 
 W488, W532 = 1, 2
@@ -119,26 +121,54 @@ def field_hits(ctx, fields, wave=W532, n=GRID):
     return _once(ctx, ("field_hits", fields, int(wave), int(n)), lambda: _field_hits_raw(ctx, fields, wave, n))
 
 
+def _arrays(hits, extrapolate: bool):
+    """到达光线的 x、y 与斜率 l/n、m/n。要沿 z 外推时去掉 |n| ≤ 1e-12 的光线（几乎平行于样品面，外推不了；与 kit.spot 相同）。
+    x, y and slopes l/n, m/n of the arriving rays; for extrapolation along z rays with |n| <= 1e-12 are dropped, as in kit.spot."""
+    bad = TypeError("hits must be (x, y, z, l, m, n) rows: a sequence of 6-number tuples")
+    try:
+        if len(hits) == 0:   # 没有光线：交给调用方判为 DesignFailure / no rays: the callers turn this into DesignFailure
+            return (np.empty(0),) * 4
+        raw = np.array(hits)   # 不带 dtype：参差、None、字符串行不会被悄悄转成数字 / no dtype, so ragged, None or string rows are not coerced
+    except (TypeError, ValueError) as e:
+        raise bad from e
+    if raw.ndim != 2 or raw.shape[1] != 6 or raw.dtype.kind not in "iuf":
+        raise bad
+    a = raw.astype(float)
+    if extrapolate:
+        a = a[np.abs(a[:, 5]) > 1e-12]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return a[:, 0], a[:, 1], a[:, 3] / a[:, 5], a[:, 4] / a[:, 5]
+
+
 def _best_focus(hits) -> float:
-    """像方是均匀介质，光线是直线：沿局部 z 平移 dz 后弥散斑 RMS 最小的 dz（闭式解）。"""
-    pts = [(x, y, l / n, m / n) for x, y, _, l, m, n in hits]
-    k = len(pts)
-    cx, cy = sum(p[0] for p in pts) / k, sum(p[1] for p in pts) / k
-    cu, cv = sum(p[2] for p in pts) / k, sum(p[3] for p in pts) / k
-    num = sum((p[0] - cx) * (p[2] - cu) + (p[1] - cy) * (p[3] - cv) for p in pts)
-    den = sum((p[2] - cu) ** 2 + (p[3] - cv) ** 2 for p in pts)
-    return -num / den if den else 0.0
+    """像方是均匀介质，光线是直线：沿局部 z 平移 dz 后弥散斑 RMS 最小的 dz（闭式解，kit.focus_shift）。
+    平行光或可用光线不足 3 条时没有焦点，记为设计给不出有效值（原先返回 0，把焦点当成在样品面上）。"""
+    dz = kit.focus_shift(*_arrays(hits, True))
+    if dz is None:
+        raise DesignFailure("the rays reaching the sample are parallel (or fewer than 3 usable): there is no focus")
+    if not math.isfinite(dz):   # 坐标含 NaN/inf 时闭式解会给出非有限值 / NaN or inf coordinates give a non-finite shift
+        raise DesignFailure("the traced rays have no valid focus (non-finite focus shift)")
+    return dz
 
 
 def _rms(hits, dz: float = 0.0) -> float:
-    pts = [(x + l / n * dz, y + m / n * dz) for x, y, _, l, m, n in hits]
-    k = len(pts)
-    cx, cy = sum(p[0] for p in pts) / k, sum(p[1] for p in pts) / k
-    return math.sqrt(sum((p[0] - cx) ** 2 + (p[1] - cy) ** 2 for p in pts) / k)
+    x, y, u, v = _arrays(hits, dz != 0.0)
+    if len(x) == 0:   # 空输入或外推时全部光线被滤掉 / empty input, or every ray dropped before extrapolating
+        raise DesignFailure("no ray reaching the sample can be used (none arrive, or all are parallel to the sample plane)")
+    r = kit.spread(x + u * dz, y + v * dz)["rms_radius"] if dz != 0.0 else kit.spread(x, y)["rms_radius"]
+    if not math.isfinite(r):   # 坐标或 dz 含 NaN/inf / NaN or inf coordinates, or a non-finite dz
+        raise DesignFailure("the traced rays give a non-finite RMS spot radius (NaN/inf coordinates or focus shift)")
+    return r
 
 
 def _centroid(h):
-    return sum(p[0] for p in h) / len(h), sum(p[1] for p in h) / len(h)
+    x, y, _, _ = _arrays(h, False)
+    if len(x) == 0:
+        raise DesignFailure("no ray reaches the sample: the centroid is undefined")
+    c = kit.spread(x, y)["centroid"]
+    if not (math.isfinite(c[0]) and math.isfinite(c[1])):
+        raise DesignFailure("the traced rays give a non-finite centroid (NaN/inf coordinates)")
+    return c[0], c[1]
 
 
 def sample_distance(ctx, layout: Layout = DEFAULT) -> float:
@@ -403,7 +433,9 @@ def fov_resolved_um(ctx, limit_um: float = 3.7, layout: Layout = DEFAULT) -> flo
 
 def _collection(ctx, fields, n: int, layout: Layout) -> float:
     geometry_ok(ctx, layout)
-    coords = [(-1 + 2 * i / (n - 1), -1 + 2 * j / (n - 1)) for i in range(n) for j in range(n)]
+    # 只追单位圆内的点：圆外的点原先也追，但随后就丢掉了；坐标与 kit.pupil 逐位相同，各光线独立追迹
+    # trace only points inside the unit circle: outer ones were traced and then dropped; same coordinates as kit.pupil
+    coords = kit.pupil(n)
     step = 2 / (n - 1)
     fractions = []
     for hx, hy in fields:
