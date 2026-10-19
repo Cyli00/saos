@@ -110,6 +110,11 @@ class Backend(ABC):
         """单个面参数的当前值（含 par<N> 面型参数）。/ The current value of one surface parameter (par<N> included)."""
         return self.surfaces()[index].get(param)
 
+    def substitute_catalog(self, catalog: str | None) -> str:
+        """玻璃替换实际使用的目录名；空串表示当前使用的全部目录。
+        The catalog glass substitution will use; empty means every catalog in use."""
+        return (catalog or "").upper()
+
     def vary(self, surface: int, param: str, on: bool, mode: str | None = None, catalog: str | None = None) -> str:
         """设变量或取消变量；material 用 mode 选模型玻璃（nd、νd 可变）或目录内替换。返回求解类型。
         Make a parameter variable or fixed; for material, mode picks a model glass (nd and Vd vary) or catalog substitution."""

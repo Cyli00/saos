@@ -567,9 +567,12 @@ class Daemon:
         on = bool(args.get("on", True))
         mode = _arg(args, "mode", str, default=None)
         catalog = _arg(args, "catalog", str, default=None)
+        substitute = param == "material" and on and mode == "substitute"
+        if substitute:
+            catalog = self.backend.substitute_catalog(catalog)
         solves = {int(s): self.backend.vary(int(s), param, on, mode, catalog) for s in surfaces}
         loaded.dirty = True
-        return {**loaded.describe(), "param": param, "solves": solves}
+        return {**loaded.describe(), "param": param, "solves": solves, **({"catalog": catalog or "all catalogs in use"} if substitute else {})}
 
     def op_merit(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))

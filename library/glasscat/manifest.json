@@ -1,0 +1,27 @@
+{
+  "note": "厂家玻璃目录的来源。厂家文件不进仓库，装在 OpticStudio 的 Glasscat 文件夹里（file 为文件名）；inprod.py 核对 sha256 后生成在产目录 <catalog>.AGF。",
+  "catalogs": [
+    {
+      "vendor": "CDGM",
+      "maker": "成都光明光电股份有限公司",
+      "file": "CDGM_202609.AGF",
+      "catalog": "SAOS_CDGM_INPROD",
+      "edition": "CC Updated Sep. 2026",
+      "url": "http://www.cdgmgd.com/downloadFile.htm?uid=vkYlfwDmuNtvITOp4NV",
+      "page": "http://www.cdgmgd.com/go.htm?k=ge_lei_xia_zai&url=downList",
+      "retrieved": "2026-10-19，用户下载（原文件名 CDGM-ZEMAX202609.AGF）",
+      "sha256": "e0933fe14749919b2b7c5170f814765af570ef53b78171dc98dae6b542f8e9ce"
+    },
+    {
+      "vendor": "NHG",
+      "maker": "湖北新华光信息材料有限公司",
+      "file": "NHG_202608.AGF",
+      "catalog": "SAOS_NHG_INPROD",
+      "edition": "CC 20260827",
+      "url": "http://www.hbnhg.com/uploadfiles/2026/09/NHG202608.zip",
+      "page": "http://www.hbnhg.com/AllKindsOfDownloads/index.aspx",
+      "retrieved": "2026-10-19，官网“Zemax数据包(AGF).zip”（整理时间 2026-08-26），zip sha256 f89fe28a65cec1afb0c5381c0a05e00971835272d9fa424fe8448a52aa15ab57，内含 NHG202608.AGF",
+      "sha256": "04062f360f00eee6c40f625c8a3202c43b0bd499d58b0228f9c02f843e652bcf"
+    }
+  ]
+}

@@ -43,6 +43,36 @@ def load_catalog(path: Path) -> list[Glass]:
     return glasses
 
 
+# 在产：厂家目录里标为 Standard 或 Preferred 的牌号（2026-10-19 用户决定）/ in production: Standard or Preferred in the maker's catalog
+IN_PRODUCTION = ("Standard", "Preferred")
+CRLF = chr(13) + chr(10)
+
+
+def in_production(text: str, note: str) -> tuple[str, dict[str, int]]:
+    """从 AGF 文本里只留在产牌号：每个牌号是 NM 行加到下一个 NM 行之前的数据行，原样保留；开头的说明行换成 note。
+    返回新文本和各状态的牌号数（含去掉的）。
+    Keep only the glasses in production from an AGF text: each glass is its NM line and the data lines up to the next
+    NM line, kept verbatim; the leading comment lines are replaced by note. Returns the text and the count per status."""
+    blocks: list[list[str]] = []
+    for line in text.splitlines():
+        if line.startswith("NM "):
+            blocks.append([line])
+        elif blocks:
+            blocks[-1].append(line)
+    counts: dict[str, int] = {}
+    kept = []
+    for block in blocks:
+        parts = block[0].split()
+        try:
+            status = STATUS_NAMES.get(int(float(parts[7])), parts[7]) if len(parts) > 7 else "Standard"
+        except ValueError:
+            status = parts[7]
+        counts[status] = counts.get(status, 0) + 1
+        if status in IN_PRODUCTION:
+            kept.extend(block)
+    return CRLF.join([f"CC {note}", *kept]) + CRLF, counts
+
+
 def load_catalogs(names: list[str], directory: Path = DEFAULT_GLASSCAT_DIR) -> list[Glass]:
     found = {p.stem.upper(): p for p in directory.iterdir() if p.suffix.lower() == ".agf"}
     glasses = []

@@ -867,6 +867,10 @@ def test_surface_parameters_and_materials_can_vary(setup):
     assert call(daemon, "opt.vary", job=job.id, param="par4", surfaces=[1])["result"]["solves"] == {1: "Variable"}
     solves = call(daemon, "opt.vary", job=job.id, param="material", surfaces=[1], mode="model")["result"]["solves"]
     assert list(solves.values()) == ["MaterialModel"]
+    # 替换的结果写明用了哪个目录；假后端没有在产目录，就是全部在用目录 / the result names the catalog substitution uses
+    out = call(daemon, "opt.vary", job=job.id, param="material", surfaces=[1], mode="substitute")["result"]
+    assert out["solves"] == {1: "MaterialSubstitute"} and out["catalog"] == "all catalogs in use"
+    assert call(daemon, "opt.vary", job=job.id, param="material", surfaces=[1], mode="substitute", catalog="saos_nhg_inprod")["result"]["catalog"] == "SAOS_NHG_INPROD"
     assert call(daemon, "opt.vary", job=job.id, param="material", surfaces=[1])["error"]["code"] == ErrorCode.BAD_ARGS  # 缺 mode
     assert call(daemon, "opt.vary", job=job.id, param="material", surfaces=[2], mode="substitute")["error"]["code"] == ErrorCode.BAD_ARGS  # 空气面
     assert call(daemon, "opt.vary", job=job.id, param="semi_diameter", surfaces=[1])["error"]["code"] == ErrorCode.BAD_ARGS

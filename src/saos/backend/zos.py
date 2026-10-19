@@ -71,6 +71,10 @@ GRIN_TYPE_RE = re.compile(r"gradi|grin", re.IGNORECASE)
 GRIN_SLICES = 8
 
 
+# 不指定目录时玻璃替换用的目录：成都光明的在产牌号（2026-10-19 用户决定）/ the default catalog for glass substitution
+DEFAULT_SUBSTITUTE_CATALOG = "SAOS_CDGM_INPROD"
+
+
 class ZosBackend(Backend):
     def __init__(self, mode: str = "standalone"):
         if mode not in ("standalone", "extension"):
@@ -521,7 +525,7 @@ class ZosBackend(Backend):
         for catalog in catalogs:
             key = catalog.upper()
             if key not in self._glass_status:
-                folder = Path(str(self.app.GlassDir)) if self.app is not None and str(getattr(self.app, "GlassDir", "") or "") else glasscat.DEFAULT_GLASSCAT_DIR
+                folder = self._glass_dir()
                 try:
                     self._glass_status[key] = {g.name.upper(): g.status for g in glasscat.load_catalogs([catalog], folder)}
                 except (OSError, ValueError):  # describe 每次都走到这里，坏文件不能让它失败 / describe always passes here
@@ -529,6 +533,28 @@ class ZosBackend(Backend):
             if name.upper() in self._glass_status[key]:
                 return self._glass_status[key][name.upper()]
         return None
+
+    def _glass_dir(self) -> Path:
+        glass_dir = str(getattr(self.app, "GlassDir", "") or "") if self.app is not None else ""
+        return Path(glass_dir) if glass_dir else glasscat.DEFAULT_GLASSCAT_DIR
+
+    def substitute_catalog(self, catalog: str | None) -> str:
+        """玻璃替换用的目录：指定了就用指定的，否则用成都光明的在产目录（Standard、Preferred，library/glasscat 生成；
+        Glasscat 里没有它时退回全部在用目录）。目录不在镜头的在用列表里就加进去，替换求解只认在用的目录。
+        The catalog for glass substitution: the one given, else CDGM's in-production catalog (made by library/glasscat;
+        every catalog in use when it is not installed). A catalog not in use is added, as the solve only takes those."""
+        name = (catalog or "").upper()
+        if not name:
+            if not (self._glass_dir() / f"{DEFAULT_SUBSTITUTE_CATALOG}.AGF").is_file():
+                return ""
+            name = DEFAULT_SUBSTITUTE_CATALOG
+        mc = self.system.SystemData.MaterialCatalogs
+        if not mc.IsCatalogInUse(name):
+            mc.AddCatalog(name)
+            self._material_cache.clear()
+            if not mc.IsCatalogInUse(name):
+                raise SaosError(ErrorCode.BAD_ARGS, f"cannot load glass catalog {name} from {self._glass_dir()}")
+        return name
 
     @staticmethod
     def _tilt_decenter(row) -> dict[str, Any]:
@@ -929,7 +955,7 @@ class ZosBackend(Backend):
         else:
             new = cell.CreateSolveType(zosapi.Editors.SolveType.MaterialSubstitute)
             # 空目录名表示在当前使用的全部目录中替换 / an empty catalog substitutes within every catalog in use
-            new._S_MaterialSubstitute.Catalog = str(catalog or "")
+            new._S_MaterialSubstitute.Catalog = self.substitute_catalog(catalog)
         cell.SetSolveData(new)
         return str(cell.GetSolveData().Type)
 
