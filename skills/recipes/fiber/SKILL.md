@@ -41,7 +41,7 @@ def run(ctx):
 | `spot`, `spot_axis`, `spot_mid`, `spot_edge` | worst 532 nm RMS spot diameter at the 532 nm on-axis best focus |
 | `pass_rate` | worst share (%) of the 21×21 pupil grid reaching the sample, axis and ±0.7 fields |
 | `fov_resolved` | field diameter with RMS diameter ≤ 3.7 µm (report only) |
-| `psf_x`, `psf_y`, `ee80`, `psf_z` | Huygens PSF FWHM in X, Y, 80% encircled-energy diameter, axial FWHM of the peak |
+| `psf_x`, `psf_y`, `ee80`, `psf_z` | Huygens PSF FWHM in X, Y, 80% encircled-energy diameter, axial FWHM of the peak. `psf_z` is the slowest item: 31–61 Huygens PSFs per field at about 0.175 s each (6.8–27 s on the fiber-printed lenses, 2026-10-19); keep it out of search objectives. When the daemon's worker pool is already up (2+ workers) and idle, `check` and `round` share its five fields out to the workers; it never starts the pool itself, so run it after a `scan` or `ctx.map` has the pool up if you want the speed-up |
 | `wfe_rms` | worst RMS wavefront error to centroid (waves), Zernike standard text export |
 | `wall_clearance` | minimum gap of every part to the tube inner wall, from sampled real sags |
 | `lens_index` (nd), `lens_base` | highest printed-material nd; base diameter of the prism-exit lens |

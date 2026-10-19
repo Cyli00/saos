@@ -271,6 +271,9 @@ def _wall_clearance(ctx, layout: Layout) -> float:
                 a = 2 * math.pi * k / 36
                 x, y = r * math.cos(a), r * math.sin(a)
                 z = kit.op(ctx, "SSAG", i, 0, x, y)
+                # 取不到矢高的点原先被 max 悄悄跳过（NaN）；前提不成立应判无效 / an undefined sag was silently skipped by max; it voids the check
+                if not math.isfinite(z):
+                    raise DesignFailure(f"surface {i} ({s.Comment}) is undefined at r = {r * 1000:.1f} um inside its aperture")
                 p = [tr[9 + j] + tr[3 * j] * x + tr[3 * j + 1] * y + tr[3 * j + 2] * z for j in range(3)]
                 far = max(far, radial(p))
     clearance = (r_in - far) * 1000
@@ -594,34 +597,99 @@ def psf_widths_um(ctx, layout: Layout = DEFAULT) -> list[dict[str, Any]]:
 
 def psf_z_um(ctx, step_um: float = 4.0, half_range_um: float = 60.0, layout: Layout = DEFAULT) -> float:
     """各视场 Huygens PSF 峰值随像面离焦的曲线的半高全宽（µm），5 个视场取最差。离焦面相对轴上最佳焦面，像元间距按最佳焦面定且
-    各离焦面相同；离焦面不得进入外壁以内。曲线两侧都须降到峰值一半以下，否则扩大一次范围，仍不够则无效。"""
+    各离焦面相同；离焦面不得进入外壁以内。曲线两侧都须降到峰值一半以下，否则扩大一次范围，仍不够则无效。
+    后台进程的 worker 池已经开着且空闲时，各视场分给 worker 并行（_psf_z_parallel），用不上的视场在主实例里串行算。"""
     geometry_ok(ctx, layout)
     dz = best_focus_dz(ctx, layout)
     focus = sample_distance(ctx, layout) - dz
-    worst = 0.0
-    with _Temporary(ctx, layout) as tmp, _Huygens(ctx, layout.emission) as hug:
-        for hx, hy in FIELDS5:
-            tmp.set_plane(focus)
-            delta = _delta_for(ctx, hx, hy, 0.0, layout)
-            fno = tmp.field_number(hx, hy)
-            for half in (half_range_um, 2 * half_range_um):
-                zs = [k * step_um for k in range(-int(half / step_um), int(half / step_um) + 1)]
-                peaks = []
-                for z in zs:
-                    plane = focus + z / 1000
-                    if plane <= 0:
-                        peaks.append(0.0)
-                        continue
-                    tmp.set_plane(plane)
-                    g = hug.grid(fno, delta)
-                    peaks.append(max(v or 0.0 for row in g["values"] for v in row))
-                try:
-                    worst = max(worst, _fwhm_1d(peaks, step_um))
-                    break
-                except DesignFailure:
-                    if half != half_range_um:
-                        raise
+    widths = _psf_z_parallel(ctx, focus, step_um, half_range_um) if layout == DEFAULT else {}
+    worst = max(widths.values(), default=0.0)
+    rest = [f for f in FIELDS5 if f not in widths]
+    if rest:
+        with _Temporary(ctx, layout) as tmp, _Huygens(ctx, layout.emission) as hug:
+            for hx, hy in rest:
+                worst = max(worst, _psf_z_field(ctx, tmp, hug, hx, hy, focus, step_um, half_range_um, layout))
     return worst
+
+
+def _psf_z_field(ctx, tmp: _Temporary, hug: _Huygens, hx: float, hy: float, focus: float, step_um: float, half_range_um: float,
+                 layout: Layout) -> float:
+    """一个视场的离焦曲线半高全宽（µm）。/ The axial FWHM of one field (µm)."""
+    tmp.set_plane(focus)
+    delta = _delta_for(ctx, hx, hy, 0.0, layout)
+    fno = tmp.field_number(hx, hy)
+    cache: dict[int, float] = {}
+
+    def peak_at(k: int) -> float:
+        if k not in cache:
+            plane = focus + k * step_um / 1000
+            if plane <= 0:
+                cache[k] = 0.0
+            else:
+                tmp.set_plane(plane)
+                g = hug.grid(fno, delta)
+                cache[k] = max(v or 0.0 for row in g["values"] for v in row)
+        return cache[k]
+
+    for half in (half_range_um, 2 * half_range_um):
+        try:
+            # 窗口内全部取值，与原定义相同；扩到 ±2×half 时已算过的离焦面直接复用
+            # every plane in the window, as before; widening reuses the planes already computed
+            reach = int(half / step_um)
+            return _fwhm_1d([peak_at(k) for k in range(-reach, reach + 1)], step_um)
+        except DesignFailure:
+            if half != half_range_um:
+                raise
+    raise AssertionError("unreachable")
+
+
+# 池里至少有这么多个已开着的 worker 才把视场分出去；不为 psf_z 新开实例（每个冷启动 5–8 s，还占许可证）
+# share the fields out only when this many workers are already up; psf_z never starts instances (5–8 s each, and licences)
+PSF_Z_MIN_WORKERS = 2
+
+
+def _psf_z_parallel(ctx, focus: float, step_um: float, half_range_um: float) -> dict[tuple[float, float], float]:
+    """池已开着且空闲时把 FIELDS5 分给 worker，返回算成的各视场半高全宽；任一视场设计失败就抛 DesignFailure，worker 出错的视场
+    不在返回值里，由调用方串行补算。worker 加载已保存的镜头文件，所以只在主实例里就是 ctx.lens、且没有未保存修改时使用
+    （rebase 重测归档镜头时主实例里不是 ctx.lens，走串行）。
+    Share FIELDS5 out to an idle pool that is already up and return the widths it got; a design failure in any field raises
+    DesignFailure, and fields a worker could not do are left out for the caller to compute serially. Workers load the
+    saved lens, so this runs only when the main instance holds ctx.lens without unsaved changes."""
+    pool = getattr(getattr(ctx, "_daemon", None), "pool", None)
+    if pool is None or ctx.lens is None or ctx.dirty:
+        return {}
+    try:
+        if Path(str(ctx.system.SystemFile)).resolve() != Path(ctx.lens).resolve():
+            return {}
+    except Exception:  # noqa: BLE001 - 读不到当前文件就不并行 / no current file: no sharing
+        return {}
+    alive = sum(1 for w in pool.workers if w.alive)
+    if alive < PSF_Z_MIN_WORKERS or not pool.lock.acquire(blocking=False):
+        return {}
+    from saos import parallel
+
+    items = [{"hx": hx, "hy": hy, "focus": focus, "step": step_um, "half": half_range_um} for hx, hy in FIELDS5]
+    try:
+        out = parallel.dispatch(pool, ctx.job, Path(ctx.lens), "saos.recipes.fiber.side_view:psf_z_field", None, items,
+                                min(alive, len(items)), True, None, progress=lambda stage: None, cancelled=lambda: False)
+    finally:
+        pool.lock.release()
+    widths: dict[tuple[float, float], float] = {}
+    for i, field in enumerate(FIELDS5):
+        error = out["errors"].get(str(i))
+        if error and "DesignFailure:" in error:
+            raise DesignFailure(error.split("DesignFailure:", 1)[1].strip())
+        if error is None and i not in out["not_run"] and out["results"][i] is not None:
+            widths[field] = float(out["results"][i])
+    return widths
+
+
+def psf_z_field(w, item: dict[str, Any]) -> float:
+    """worker 里测一个视场的 psf_z（由 _psf_z_parallel 分派，只用于默认 Layout）。
+    One field of psf_z inside a worker (dispatched by _psf_z_parallel, default Layout only)."""
+    with _Temporary(w, DEFAULT) as tmp, _Huygens(w, DEFAULT.emission) as hug:
+        return _psf_z_field(w, tmp, hug, float(item["hx"]), float(item["hy"]), float(item["focus"]), float(item["step"]),
+                            float(item["half"]), DEFAULT)
 
 
 def wfe_rms_waves(ctx, layout: Layout = DEFAULT) -> float:
