@@ -54,7 +54,9 @@ log = logging.getLogger(__name__)
 SCANS_DIR = "scans"
 MODES = ("vars", "points", "minimize", "probes")
 MAX_POINTS = 5000
-DIRECTIONS = ("up", "down", "none")
+# valley / peak：±delta 两侧都比基准差（或都好）超过 NONE_BELOW，基准正在这个变量的极值上，一阶斜率看不出
+# valley / peak: both sides above (or below) the base by more than NONE_BELOW; the base sits at an extremum the slope cannot show
+DIRECTIONS = ("up", "down", "none", "valley", "peak")
 MAX_PROBES = 6
 # 归一化变化（Δ/scale）小于这个值算"没有变化" / a normalised change below this counts as "none"
 NONE_BELOW = 0.05
@@ -179,6 +181,10 @@ def _probe_items(ctx, plan: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def _finite(value: Any) -> float | None:
+    return float(value) if isinstance(value, (int, float)) and math.isfinite(value) else None
+
+
 def _direction(change: float | None, scale: float) -> str | None:
     if change is None:
         return None
@@ -194,7 +200,7 @@ def _probe_result(plan: dict[str, Any], scales: dict[str, float | None], rows: l
     by = {(r.get("probe"), r.get("side")): r for r in rows}
     baseline = by[("base", None)]
     base_values = baseline.get("values") or {}
-    if base_values.get(target) is None:
+    if _finite(base_values.get(target)) is None:
         # 前提不成立（例如没有实焦点、零件交叠）时，扰动出的变化没有意义；先确认可行性
         # without a valid baseline value (no real focus, overlapping parts) changes mean nothing: establish feasibility first
         return {"target": target, "baseline": baseline, "probes": [], "ranking": [],
@@ -205,14 +211,31 @@ def _probe_result(plan: dict[str, Any], scales: dict[str, float | None], rows: l
         row: dict[str, Any] = {"id": p["id"], "control": bool(p.get("control")), "prediction": p["prediction"], "delta": p["delta"],
                                "minus": by[(p["id"], "minus")], "plus": by[(p["id"], "plus")]}
         # 斜率按 +delta 与 −delta 的差算，方向相对 +delta / the slope uses plus − minus; direction is for +delta
-        observed, effect = {}, {}
+        observed, effect, one_sided = {}, {}, {}
         for k in plan["measure"]:
-            lo, hi = (row["minus"].get("values") or {}).get(k), (row["plus"].get("values") or {}).get(k)
-            change = None if lo is None or hi is None else (hi - lo) / 2
-            scale = scales.get(k) or (abs(base_values[k]) if base_values.get(k) else None) or 1.0
+            # inf、NaN 与缺失一样算没有有效值 / inf and NaN count as no valid value, like a missing one
+            lo, hi = (_finite((row[side].get("values") or {}).get(k)) for side in ("minus", "plus"))
+            b = _finite(base_values.get(k))
+            scale = scales.get(k) or (abs(b) if b else None) or 1.0
+            if lo is not None and hi is not None:
+                change = (hi - lo) / 2
+            elif b is not None and (lo is None) != (hi is None):
+                # 一侧没有有效值（例如越过全反射）时用另一侧对基准的差，不把整个扰动丢掉
+                # one side has no valid value (e.g. past TIR): use the other side against the base instead of dropping the probe
+                change = hi - b if hi is not None else b - lo
+                one_sided[k] = "plus" if hi is not None else "minus"
+            else:
+                change = None
             observed[k] = _direction(change, scale)
+            if observed[k] == "none" and k not in one_sided and b is not None and lo is not None:
+                if min(lo - b, hi - b) / scale >= NONE_BELOW:
+                    observed[k] = "valley"
+                elif max(lo - b, hi - b) / scale <= -NONE_BELOW:
+                    observed[k] = "peak"
             effect[k] = None if change is None or scales.get(k) is None else abs(change) / scales[k]
         row["observed"], row["normalised_effect"] = observed, effect
+        if one_sided:
+            row["one_sided"] = one_sided
         row["mismatch"] = {k: {"expected": v, "observed": observed.get(k)} for k, v in (p.get("expect") or {}).items()
                            if observed.get(k) is not None and observed[k] != v}
         results.append(row)
@@ -220,7 +243,17 @@ def _probe_result(plan: dict[str, Any], scales: dict[str, float | None], rows: l
     controls_moving = [r["id"] for r in results if r["control"] and (r["normalised_effect"].get(target) or 0) >= NONE_BELOW]
     mismatches = [r["id"] for r in results if r["mismatch"]]
     review = []
-    if not movers:
+    extrema = [r["id"] for r in results if not r["control"] and r["observed"].get(target) in ("valley", "peak")]
+    unreadable = [r["id"] for r in results if not r["control"] and r["observed"].get(target) is None]
+    if not movers and unreadable:
+        # 两侧都没有有效值时读不出任何效应，不能据此说结构到顶 / with no valid value on either side nothing is measured, so no structure verdict
+        review.append(f"probes {unreadable} gave no valid {target} at -delta or +delta, so their effect cannot be read; "
+                      "use a smaller delta or fix the compensation before calling it a structure question")
+    if not movers and extrema:
+        # 两侧都变差说明这些变量已在极值上，不说明结构到顶 / both sides worse means these variables are at an extremum, not that the structure is capped
+        review.append(f"no probed variable moves {target} at first order, but {extrema} sit at an extremum of it (both sides move the same way): "
+                      "they are already optimal here, so optimising them gains nothing; probe other variables before calling it a structure question")
+    elif not movers and not unreadable:
         review.append(f"no probed variable moves {target}; if the first-order reasoning agrees, this is a structure question: ask the user")
     if not any(r["control"] for r in results):
         # 阴性对照：原理上不该动目标的变量；没有它，排名里的小效应无法和测量噪声区分
