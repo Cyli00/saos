@@ -856,7 +856,9 @@ def test_doubts_come_from_evidence_not_every_round(setup):
             "objectives": [{**LENGTH, "must": {"max": 120.0}}, focus]}
     write_demand(job, hard)
     first = call(daemon, "round.record", job=job.id)["result"]["brief"]
-    assert any("focus fails and its limit rests on agent assumption" in x for x in first["doubts"]) and "reminder" in first
+    # 需求是中文的，给 agent 的提醒仍是英文 / a Chinese demand still gets the English reminder
+    assert any("focus fails and its limit rests on agent assumption" in x for x in first["doubts"])
+    assert first["reminder"] == demand.QUESTION_LINE["en"]
     call(daemon, "lens.set", job=job.id, surface=1, param="radius", value=60.0)
     second = call(daemon, "round.record", job=job.id, tier="local")["result"]["brief"]
     assert any(x.startswith("focus has had no valid value for 2 rounds") for x in second["doubts"])

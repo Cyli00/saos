@@ -108,13 +108,12 @@ def brief(d: dict[str, Any], evaluation: dict[str, Any], decision: dict[str, Any
                else f"next tier is {decision['next_tier']}")
         review = (f"{why}. Before spending more compute, reread the demand summary and your first-order analysis. If the demand, "
                   "the structure or a measurement looks wrong or unreachable, stop and ask the user, with the evidence, its impact and options.")
-    lang = d.get("lang") or "zh"
     found = doubts(d, window or [])
     out = {"objectives": objectives, "hard_failing": evaluation.get("hard_failing", []),
            "open_questions": [q["question"] for q in d.get("open_questions") or []], "review": review, "doubts": found}
     if found:
-        # 只在有证据时提醒质疑需求 / the reminder to question the demand comes only with evidence
-        out["reminder"] = demand.QUESTION_LINE.get(lang, demand.QUESTION_LINE["zh"])
+        # 只在有证据时提醒质疑需求；给 agent 的文字一律英文 / only with evidence; text for the agent is always English
+        out["reminder"] = demand.QUESTION_LINE["en"]
     return out
 
 

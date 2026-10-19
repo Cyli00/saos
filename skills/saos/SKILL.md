@@ -15,7 +15,7 @@ You are the designer. The workflow fixes only a few gates and invariants; how yo
 2. **Measured evidence.** Every number you deliver comes from an actual OpticStudio computation (operand, analysis export, script) archived in the job. Never report an estimate as a result.
 3. **No silent relaxing.** If a goal cannot be met, say by how much. Changing a constant, a variable range or an objective requires going back to the user and a new confirmation.
 4. **Real materials in what you deliver.** A delivered lens uses only materials with a source (catalog, library, datasheet, paper). A model glass (`nd`/`Vd` only) is fine for exploration; the tools mark such rounds as not deliverable.
-5. **报告统一使用 HTML。** 所有面向用户的报告（模型审阅、设计分析、探索结果、验证结果、装配方案、最终交付），无论工具生成还是手写，都生成 `.html`，报告之间的链接也指向 HTML。技能文件、需求 YAML、访谈记录、内部工作笔记和原始测量 JSON 保持工作流规定的格式。
+5. **Reports are HTML.** Every report for the user (model review, design analysis, exploration results, verification, assembly plan, final delivery), whether a tool or you write it, is an `.html` file, and links between reports point to HTML. Skill files, the demand YAML, the interview record, internal working notes and raw measurement JSON keep the formats the workflow sets.
 
 ## Gates (where you always wait for the user)
 
@@ -173,8 +173,8 @@ Instance directory `work/<instance>/` holds only `daemon/` and `jobs/`. Files of
 | exploration | `explore/<topic>/` with `README.md` | you | code, intermediate lenses, logs run outside `saos exec`; README states purpose, outcome, superseded or not | free |
 | delivery | `report/NNN-rMMM-<status>.html` | tools | every generated report | sealed |
 | | `report/index.html` | tools | the latest report | regenerated |
-| any time | `notes/*.html` | you | 面向用户的设计、探索、验证等报告 | free |
-| | `notes/*.md` | you | 内部工作笔记，不作为报告交付 | free |
+| any time | `notes/*.html` | you | reports for the user: design, exploration, verification and the like | free |
+| | `notes/*.md` | you | internal working notes, never delivered as reports | free |
 | any time | `seals.jsonl` | tools | hashes of sealed files | append only |
 
 Sealed means the tools recorded the file's hash; `uv run saos job verify <job>` and `tests/test_repo_layout.py` report any later change or deletion, and `saos report` refuses to run while one exists. Nothing about a specific job goes into the repository (see DESIGN.md "仓库目录"). Temporary files go to the system temp directory.
