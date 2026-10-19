@@ -163,7 +163,9 @@ def _raise_window(job_id: str) -> bool:
         if length and user32.IsWindowVisible(hwnd):
             buf = ctypes.create_unicode_buffer(length + 1)
             user32.GetWindowTextW(hwnd, buf, length + 1)
-            if buf.value.startswith(title):
+            # 整个标题相同，或其后是空格（浏览器追加的后缀）；任务号 abc 不会匹配到 abc-2 的窗口
+            # the whole title, or it followed by a space (a browser's suffix); job abc never matches the window of abc-2
+            if buf.value == title or buf.value.startswith(title + " "):
                 found.append(hwnd)
         return True
 
