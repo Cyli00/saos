@@ -31,7 +31,7 @@ const TEXT = {
     image_z: "像面 z", round: "轮", tiers: "层级", gap: "目标差距", state: "状态", note: "说明", achieved: "达成", deliverable: "可交付",
     pick_round: "点一行在其他视图中查看该轮", sag_flat: "部分面读不到面形，按平面画。", select_round: (n) => `r${String(n).padStart(3, "0")}`,
     live: "当前镜头", live_unsaved: "未保存", no_live: "后台进程加载或改动镜头后，这里显示当前镜头的布局。", live_failed: "当前视图导出失败：",
-    only_3d: "非轴对称系统只有 3D 视图", lens_data: "Lens Data", ld_type: "面型", ld_comment: "注释", ld_radius: "半径", ld_thickness: "厚度",
+    only_3d: "各面不在同一个对称平面里，只有 3D 视图", disconnected: "与 saos ui 服务断开，正在重连…", lens_data: "Lens Data", ld_type: "面型", ld_comment: "注释", ld_radius: "半径", ld_thickness: "厚度",
     ld_material: "材料", ld_sd: "半口径", ld_conic: "圆锥", ld_solve: "V 为变量，其他字母为求解或 pickup",
     clash_title: "结构交叠", crossing: (a, b, d) => `第 ${a} 面与第 ${b} 面在口径内相交（最深约 ${d}）`,
     overlap: (a, b, n) => `镜片 ${a} 与镜片 ${b} 相互穿插（${n} 个采样点落在另一片玻璃里）`,
@@ -63,7 +63,7 @@ const TEXT = {
     image_z: "image z", round: "Round", tiers: "Tiers", gap: "Shortfall", state: "State", note: "Note", achieved: "achieved", deliverable: "deliverable",
     pick_round: "Click a row to view that round in the other tabs", sag_flat: "Some surface shapes could not be read; drawn flat.", select_round: (n) => `r${String(n).padStart(3, "0")}`,
     live: "Current lens", live_unsaved: "unsaved", no_live: "Once the daemon loads or changes the lens, its layout appears here.", live_failed: "The live view export failed: ",
-    only_3d: "Non-axial systems have the 3D view only", lens_data: "Lens Data", ld_type: "Type", ld_comment: "Comment", ld_radius: "Radius", ld_thickness: "Thickness",
+    only_3d: "The surfaces share no plane of symmetry: 3D view only", disconnected: "Lost the saos ui service; reconnecting…", lens_data: "Lens Data", ld_type: "Type", ld_comment: "Comment", ld_radius: "Radius", ld_thickness: "Thickness",
     ld_material: "Material", ld_sd: "Semi-dia.", ld_conic: "Conic", ld_solve: "V marks a variable, other letters a solve or pickup",
     clash_title: "Interference", crossing: (a, b, d) => `surfaces ${a} and ${b} cross inside their apertures (up to about ${d})`,
     overlap: (a, b, n) => `lenses ${a} and ${b} interpenetrate (${n} sample points inside the other's glass)`,
@@ -1009,10 +1009,20 @@ async function poll() {
     }
     renderTop();
   } catch (e) {
-    $("mode-chip").textContent = e.message;
+    // 服务重启后沿用同一端口和令牌，继续轮询就能重连 / a restarted service keeps the port and token: keep polling
+    $("mode-chip").textContent = e instanceof TypeError ? t("disconnected") : e.message;
   }
   setTimeout(poll, POLL_MS);
 }
+
+// 用户关掉窗口：告诉服务，之后的命令不再自动重开，直到需要用户看的节点；刷新时页面马上又会轮询，标记随即去掉
+// the user closed the window: later commands leave it closed until the user has to look; a reload polls again at once
+window.addEventListener("pagehide", (e) => {
+  if (e.persisted || !JOB) return;
+  try {
+    fetch(`/api/closed?job=${encodeURIComponent(JOB)}`, { method: "POST", keepalive: true, headers: { "X-Saos-Token": TOKEN } });
+  } catch { /* 服务不在时什么也做不了 */ }
+});
 
 $("tabs").addEventListener("click", (e) => {
   const b = e.target.closest("[data-tab]");

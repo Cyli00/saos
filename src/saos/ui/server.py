@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import secrets
+import sys
 import threading
 import time
 from datetime import datetime
@@ -45,6 +46,30 @@ VIEWERS = ("cross-section", "3d", "shaded")
 
 def state_file() -> Path:
     return config.daemon_dir() / "ui.json"
+
+
+def endpoint_file() -> Path:
+    # 上次的端口和令牌，退出后保留：重启时沿用，已经开着的窗口不用换地址就能重连
+    # the last port and token, kept after exit: a restart reuses them so open windows reconnect at the same address
+    return config.daemon_dir() / "ui-endpoint.json"
+
+
+def closed_file() -> Path:
+    # 用户关掉了窗口的任务；窗口再来轮询时去掉 / jobs whose window the user closed; dropped when the window polls again
+    return config.daemon_dir() / "ui-closed.json"
+
+
+def closed_jobs() -> set[str]:
+    try:
+        return set(json.loads(closed_file().read_text(encoding="utf-8")))
+    except (OSError, ValueError, TypeError):
+        return set()
+
+
+def _mark_closed(job_id: str, closed: bool) -> None:
+    jobs_closed = closed_jobs()
+    if (job_id in jobs_closed) != closed:
+        write_json(closed_file(), sorted(jobs_closed | {job_id} if closed else jobs_closed - {job_id}))
 
 
 def read_state() -> dict[str, Any] | None:
@@ -144,8 +169,14 @@ class Handler(BaseHTTPRequestHandler):
         job = jobs.get_job(str(args.get("job", "")))
         if path == "/api/state":
             self.server.seen[job.id] = time.monotonic()
+            _mark_closed(job.id, False)
             (self.server.hidden.add if args.get("hidden") == "1" else self.server.hidden.discard)(job.id)
             return stage.snapshot(job)
+        if path == "/api/closed" and method == "POST":
+            # 窗口关闭（或刷新）时发来；刷新后的页面马上轮询，标记随即去掉 / sent on close or reload; a reload polls right away
+            self.server.seen.pop(job.id, None)
+            _mark_closed(job.id, True)
+            return {"closed": job.id}
         if path == "/api/live":
             return live_of(job)
         if path == "/api/viz":
@@ -196,6 +227,9 @@ class Handler(BaseHTTPRequestHandler):
 
 class UiServer(ThreadingHTTPServer):
     daemon_threads = True
+    # Windows 的 SO_REUSEADDR 允许两个进程绑同一端口；沿用旧端口时要在被占用时报错
+    # on Windows SO_REUSEADDR lets two processes bind one port; reusing the last port must fail when it is taken
+    allow_reuse_address = sys.platform != "win32"
 
     def __init__(self, port: int = 0, token: str | None = None, idle_exit_s: float = IDLE_EXIT_S) -> None:
         super().__init__(("127.0.0.1", port), Handler)
@@ -217,10 +251,22 @@ class UiServer(ThreadingHTTPServer):
                 return
 
 
+def _make_server() -> UiServer:
+    """沿用上次的端口和令牌；第一次启动或那个端口被占了就换新的，并记下来。
+    Reuse the last port and token; take new ones on the first start or when that port is taken, and record them."""
+    try:
+        last = json.loads(endpoint_file().read_text(encoding="utf-8"))
+        server = UiServer(int(last["port"]), str(last["token"]))
+    except (OSError, ValueError, KeyError, TypeError):
+        server = UiServer()
+    write_json(endpoint_file(), {"port": server.server_address[1], "token": server.token})
+    return server
+
+
 def serve() -> int:
     """前台运行服务（saos ui 以后台进程方式调用它）；写 daemon/ui.json，退出时删掉。"""
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    server = UiServer()
+    server = _make_server()
     port = server.server_address[1]
     write_json(state_file(), {"pid": os.getpid(), "port": port, "token": server.token,
                               "started_at": datetime.now().astimezone().isoformat(timespec="seconds")})

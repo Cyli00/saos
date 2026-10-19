@@ -227,12 +227,13 @@ def cmd_demand(args: argparse.Namespace) -> Any:
     root = jobs.get_job(args.job).root
     if args.action == "confirm":
         result = demand.confirm(root, args.quote)
-        # 需求确认后打开流程图小窗口；SAOS_UI=0 时不开（测试、无界面环境）/ open the workflow window once the demand is confirmed
+        # 需求确认后确保流程图小窗口开着（已开着就不再开第二个）；SAOS_UI=0 时不开
+        # make sure the workflow window is open once the demand is confirmed (no second one); not with SAOS_UI=0
         if os.environ.get("SAOS_UI") != "0":
             from saos import ui
 
             try:
-                result["ui"] = ui.open_window(args.job)
+                result["ui"] = ui.ensure_window(args.job, gate=True)
             except SaosError as exc:
                 result["ui"] = {"error": exc.to_dict()}
         return result
@@ -473,19 +474,40 @@ def _emit(message: dict[str, Any]) -> None:
     print(json.dumps(jsonable(message), ensure_ascii=False, indent=2))
 
 
+def _gate(args: argparse.Namespace, job: jobs.Job) -> bool:
+    """需要用户看的节点：记一轮、建模说明、待确认的需求单。用户关掉的窗口在这些地方重新打开。
+    Points where the user has to look: a round, a model description, a demand awaiting confirmation."""
+    if args.func is cmd_round or (args.func is cmd_lens and args.action == "describe"):
+        return True
+    if args.func is cmd_demand and args.action == "show":
+        from saos import demand
+
+        try:
+            return demand.confirmation_for(job.root, demand.digest(demand.load_job(job.root))) is None
+        except SaosError:
+            return True
+    return False
+
+
 def _ensure_window(args: argparse.Namespace) -> dict[str, Any] | None:
     """改动或计算镜头的带任务命令先确保用户的流程图窗口开着（saos.ui.ensure_window）；打不开不影响命令本身。
     Job commands that change or compute the lens first make sure the user's workflow window is open; failing to open it
     never fails the command."""
-    if args.func not in (cmd_lens, cmd_exec, cmd_opt, cmd_scan, cmd_check, cmd_round) or not getattr(args, "job", None):
+    if not getattr(args, "job", None):
+        return None
+    showing_demand = args.func is cmd_demand and args.action == "show"
+    if args.func not in (cmd_lens, cmd_exec, cmd_opt, cmd_scan, cmd_check, cmd_round) and not showing_demand:
         return None
     if args.func is cmd_scan and args.show is not None:
         return None
     from saos import ui
 
     try:
-        jobs.get_job(args.job)
-        return ui.ensure_window(args.job)
+        job = jobs.get_job(args.job)
+        gate = _gate(args, job)
+        if showing_demand and not gate:
+            return None
+        return ui.ensure_window(args.job, gate=gate)
     except Exception as exc:  # noqa: BLE001
         return {"error": f"{type(exc).__name__}: {exc}"[:300]}
 

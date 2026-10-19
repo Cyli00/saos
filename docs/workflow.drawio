@@ -130,7 +130,7 @@
         <mxCell id="a5" value="&lt;b&gt;建模前补查&lt;/b&gt;&lt;br&gt;会话预检看不到的：材料目录 · 许可证&lt;br&gt;缺失时问用户一次，不绕过" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="910.0" width="320" height="66" as="geometry" />
         </mxCell>
-        <mxCell id="t3" value="&lt;b&gt;saos ui 当前镜头视图（任何模式）&lt;/b&gt;&lt;br&gt;每条改镜头的命令后写 view.json：布局 2D/3D · Lens Data · 交叠检查&lt;br&gt;窗口没在轮询就自动重开；extension 模式可选（SAOS_UI_PID）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+        <mxCell id="t3" value="&lt;b&gt;saos ui 当前镜头视图（任何模式）&lt;/b&gt;&lt;br&gt;每条改镜头的命令后写 view.json：布局 2D/3D · Lens Data · 交叠检查&lt;br&gt;没在轮询就重开；用户关掉的等需求待确认 / 建模说明 / round 再开&lt;br&gt;extension 模式可选（SAOS_UI_PID）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
           <mxGeometry x="980" y="906.0" width="400" height="86" as="geometry" />
         </mxCell>
         <mxCell id="a6" value="&lt;b&gt;建模&lt;/b&gt;&lt;br&gt;lens import / lens build / exec 脚本 + ctx.save_as" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">

@@ -31,6 +31,9 @@ CHROME_FLAGS = ("--disable-background-timer-throttling", "--disable-renderer-bac
 FOREGROUND_WAIT_S = 4.0
 # 刚打开的窗口还没来得及轮询，这段时间内不再开第二个 / a window just opened has not polled yet; do not open a second one meanwhile
 OPENING_S = 20.0
+# 服务重启后，开着的窗口在原地址重连（端口和令牌沿用）；等这么久再决定要不要开新窗口
+# after a restart open windows reconnect at the same address; wait this long before opening another one
+RECONNECT_WAIT_S = 4.0
 OPENED_FILE = "ui-opened.json"
 WINDOW_SIZE = (1080, 720)
 CHROME_SUBPATH = Path("Google") / "Chrome" / "Application" / "chrome.exe"
@@ -101,22 +104,34 @@ def _seen(state: dict[str, Any]) -> tuple[dict[str, float], set[str]] | None:
         return None
 
 
-def ensure_window(job_id: str) -> dict[str, Any] | None:
-    """带任务的命令执行前调用：这个任务的流程图窗口最近没有轮询过（没打开、被关掉、服务已退出）就打开它，
-    不靠 agent 记得。SAOS_UI=0 时什么都不做。返回打开的结果，窗口本来就开着时返回 None。
-    Called before a job command: when no window of this job has polled lately (never opened, closed, service gone),
-    open one, so it does not depend on the agent remembering. Does nothing with SAOS_UI=0. None when it is already open."""
+def ensure_window(job_id: str, *, gate: bool = False) -> dict[str, Any] | None:
+    """带任务的命令执行前调用：这个任务的流程图窗口最近没有轮询过（没打开、服务已退出）就打开它，不靠 agent 记得。
+    用户自己关掉的窗口不再打开，直到需要用户看的节点（gate=True：需求待确认、建模说明、记一轮）。
+    SAOS_UI=0 时什么都不做。返回打开的结果，没有打开时返回 None。
+    Called before a job command: when no window of this job has polled lately (never opened, service gone), open one,
+    so it does not depend on the agent remembering. A window the user closed stays closed until a point where the user
+    has to look (gate=True: a demand awaiting confirmation, a model description, a round). Does nothing with SAOS_UI=0."""
     from saos.ui import server
 
     if os.environ.get("SAOS_UI") == "0":
         return None
+    if not gate and job_id in server.closed_jobs():
+        return None
     state = server.read_state()
-    if state and client.pid_alive(int(state.get("pid", 0))):
-        polled = _seen(state)
-        if polled is not None:
-            seen, hidden = polled
-            if seen.get(job_id, math.inf) <= (HIDDEN_SEEN_WITHIN_S if job_id in hidden else SEEN_WITHIN_S):
+    polled = _seen(state) if state and client.pid_alive(int(state.get("pid", 0))) else None
+    if polled is not None:
+        seen, hidden = polled
+        if seen.get(job_id, math.inf) <= (HIDDEN_SEEN_WITHIN_S if job_id in hidden else SEEN_WITHIN_S):
+            return None
+    elif job_id in _opened() and job_id not in server.closed_jobs():
+        # 服务不在了，但这个任务的窗口可能还开着：先起服务，给窗口一个重连的机会 / the window may still be open: let it reconnect
+        state = ensure_server()
+        deadline = time.monotonic() + RECONNECT_WAIT_S
+        while time.monotonic() < deadline:
+            again = _seen(state)
+            if again is not None and job_id in again[0]:
                 return None
+            time.sleep(0.3)
     if time.time() - float(_opened().get(job_id, 0)) < OPENING_S:
         return None
     # 自动重开不抢焦点：用户可能正在别的窗口里打字 / an automatic reopen keeps the focus where the user is typing

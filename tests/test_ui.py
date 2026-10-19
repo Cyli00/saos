@@ -231,6 +231,7 @@ def test_job_commands_reopen_the_window_unless_one_is_polling(saos_home, monkeyp
     launched = []
     monkeypatch.setattr(ui_pkg.subprocess, "Popen", lambda cmd, **kw: launched.append(cmd))
     monkeypatch.setattr(ui_pkg, "_foreground", lambda: 0)
+    monkeypatch.setattr(ui_pkg, "RECONNECT_WAIT_S", 0.0)
     assert ui_pkg.ensure_window(job.id)["window"] == "chrome-app" and len(launched) == 1
     assert "--disable-background-timer-throttling" in launched[0]  # 最小化后照常轮询 / keeps polling when minimised
     assert ui_pkg.ensure_window(job.id) is None and len(launched) == 1  # 刚打开，还没轮询 / just opened, not polled yet
@@ -253,13 +254,21 @@ def test_job_commands_reopen_the_window_unless_one_is_polling(saos_home, monkeyp
     monkeypatch.setattr(ui_pkg.time, "time", lambda: 4e12)
     assert ui_pkg.ensure_window(job.id) is None and len(launched) == 3
     # 命令行只对改动或计算镜头的带任务命令这样做 / the CLI does it for job commands that change or compute the lens
+    # 记一轮、建模说明、待确认的需求单是需要用户看的节点（gate），用户关掉的窗口在这里重开
+    # a round, a model description and a demand awaiting confirmation are gates, where a window the user closed reopens
     asked = []
-    monkeypatch.setattr(ui_pkg, "ensure_window", lambda job_id: asked.append(job_id) or {"window": "chrome-app"})
+    monkeypatch.setattr(ui_pkg, "ensure_window", lambda job_id, gate=False: asked.append((job_id, gate)) or {"window": "chrome-app"})
     parser = cli.build_parser()
     assert cli._ensure_window(parser.parse_args(["round", "--job", job.id])) == {"window": "chrome-app"}
     assert cli._ensure_window(parser.parse_args(["scan", "--job", job.id, "--show"])) is None
     assert cli._ensure_window(parser.parse_args(["report", "--job", job.id])) is None
-    assert asked == [job.id]
+    cli._ensure_window(parser.parse_args(["opt", "local", "--job", job.id]))
+    cli._ensure_window(parser.parse_args(["lens", "describe", "--job", job.id]))
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
+    cli._ensure_window(parser.parse_args(["demand", "show", "--job", job.id]))
+    demand.confirm(job.root, "可以")
+    assert cli._ensure_window(parser.parse_args(["demand", "show", "--job", job.id])) is None  # 已确认：只是重读 / just rereading
+    assert asked == [(job.id, True), (job.id, False), (job.id, True), (job.id, True)]
 
 
 def test_snapshot_shows_a_detached_scan_as_the_running_operation(saos_home):
@@ -305,3 +314,43 @@ def test_folded_systems_get_a_2d_section_in_their_plane_of_symmetry():
     skew = {"surfaces": [_surface(1, (0, 0, 0), Y, X), _surface(2, (1, 0, 1), Y, X), _surface(3, (0, 1, 2), Y, X),
                          _surface(4, (1, 1, 5), Y, X)], "layout": {"rays": []}}
     assert section.section_plane(skew) is None
+
+
+def test_a_window_the_user_closed_stays_closed_until_a_gate(ui, monkeypatch):
+    """关掉窗口时页面发 /api/closed；之后的普通命令不重开，记一轮等节点才重开；窗口再轮询就去掉标记。"""
+    import saos.ui as ui_pkg
+
+    (daemon, job), srv = ui
+    monkeypatch.delenv("SAOS_UI")
+    get(srv, f"/api/state?job={job.id}")
+    assert get(srv, f"/api/closed?job={job.id}", data={})[1]["ok"]
+    assert server.closed_jobs() == {job.id} and job.id not in get(srv, "/api/ping")[1]["result"]["seen_s"]
+    opened = []
+    monkeypatch.setattr(ui_pkg, "open_window", lambda job_id, **kw: opened.append(job_id) or {"window": "chrome-app"})
+    assert ui_pkg.ensure_window(job.id) is None and opened == []
+    assert ui_pkg.ensure_window(job.id, gate=True) == {"window": "chrome-app"} and opened == [job.id]
+    get(srv, f"/api/state?job={job.id}")  # 重开的窗口来轮询 / the reopened window polls
+    assert server.closed_jobs() == set()
+
+
+def test_a_restarted_service_keeps_its_address_so_open_windows_reconnect(saos_home, monkeypatch):
+    """服务重启沿用上次的端口和令牌；端口被占了才换新的。服务不在时先等窗口重连，不急着开第二个。"""
+    import saos.ui as ui_pkg
+
+    first = server._make_server()
+    port, token = first.server_address[1], first.token
+    first.server_close()
+    second = server._make_server()
+    assert (second.server_address[1], second.token) == (port, token)
+    third = server._make_server()  # 端口还被第二个占着 / the port is still held by the second
+    assert third.server_address[1] != port and json.loads(server.endpoint_file().read_text())["port"] == third.server_address[1]
+    second.server_close()
+    third.server_close()
+
+    job = jobs.create_job("again")
+    monkeypatch.delenv("SAOS_UI")
+    ui_pkg.write_json(ui_pkg.config.daemon_dir() / ui_pkg.OPENED_FILE, {job.id: 0.0})
+    monkeypatch.setattr(ui_pkg, "ensure_server", lambda: {"port": 1, "token": "x", "pid": 2, "reused": False})
+    monkeypatch.setattr(ui_pkg, "_seen", lambda state: ({job.id: 0.3}, set()))
+    monkeypatch.setattr(ui_pkg, "open_window", lambda job_id, **kw: pytest.fail("the old window reconnected; no second one"))
+    assert ui_pkg.ensure_window(job.id) is None
