@@ -635,7 +635,8 @@ def quick(ctx, ids: list[str] | None = None) -> dict[str, Any]:
 
     d, scripts = _prepared(ctx.job.root)
     specs = {s["id"]: s for s in checked(d)}
-    wanted = list(ids) if ids is not None else [i for i, s in specs.items() if s["goal"] is not None or "direction" in s]
+    # 重复的 id 只测一次 / a repeated id is measured once
+    wanted = list(dict.fromkeys(ids)) if ids is not None else [i for i, s in specs.items() if s["goal"] is not None or "direction" in s]
     unknown = [i for i in wanted if i not in specs]
     if unknown:
         raise SaosError(ErrorCode.BAD_ARGS, f"measure: unknown check ids {unknown}", {"known": sorted(specs)})

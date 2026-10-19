@@ -628,19 +628,115 @@ class Daemon:
 
         return on_progress
 
+    def _measure_ids(self, job: jobs.Job, args: dict[str, Any]) -> list[str] | None:
+        """--measure：hard 为常量和变量范围，all 为所有进 G 的项，否则逗号分隔的判定 id；没给时 None。
+        --measure: hard means the constants and variable ranges, all every item entering G, else comma-separated ids."""
+        from saos import demand
+
+        spec = _arg(args, "measure", str, default=None)
+        if not spec:
+            return None
+        specs = demand.checked(demand.load_job(job.root))
+        if spec == "hard":
+            return [s["id"] for s in specs if s["kind"] in demand.HARD_KINDS]
+        if spec == "all":
+            return [s["id"] for s in specs if s["goal"] is not None or "direction" in s]
+        ids = list(dict.fromkeys(x.strip() for x in spec.split(",") if x.strip()))
+        unknown = [i for i in ids if i not in {s["id"] for s in specs}]
+        if unknown or not ids:
+            raise SaosError(ErrorCode.BAD_ARGS, f"--measure: unknown check ids {unknown}" if unknown else "--measure lists no check id",
+                            {"known": sorted(s["id"] for s in specs)})
+        return ids
+
+    def _measure_before(self, job: jobs.Job, ids: list[str] | None) -> dict[str, Any] | None:
+        from saos import demand
+
+        if ids is None:
+            return None
+        job.write_progress(stage="measure before")
+        return demand.quick(scripting.ScriptContext(self, job, {}), ids)
+
+    def _review(self, job: jobs.Job, ids: list[str] | None, before: dict[str, Any] | None) -> dict[str, Any]:
+        """优化之后复核：交叠检查（零件相交、穿插、最薄玻璃和最小空气间隔），给了 measure 时正式判定的前后对比。
+        merit 变小不等于设计变好（nightvision 出现过 merit 下降而轴外像质恶化的候选），所以把变差的项和无效状态直接列出来。
+        Review after an optimisation: the interference check (crossing or interpenetrating parts, thinnest glass, smallest
+        air gap) and, with measure, the demand's own checks before and after. A smaller merit is no proof of a better design
+        (nightvision had a candidate whose merit fell while off-axis image quality got worse), so worse items and invalid
+        states are listed outright."""
+        from saos import demand
+
+        out: dict[str, Any] = {}
+        warnings: list[str] = []
+        valid = True
+        try:
+            clash = self.backend.interference()
+            near = {}
+            for glass in (True, False):
+                rows = [c for c in clash.get("clearances") or [] if bool(c.get("glass")) == glass]
+                if rows:
+                    c = min(rows, key=lambda r: r["min"])
+                    near["thinnest_glass" if glass else "smallest_air_gap"] = {k: c[k] for k in ("surfaces", "min", "radius", "outer")}
+            out["interference"] = {"crossings": clash.get("crossings") or [], "overlaps": clash.get("overlaps") or [],
+                                   "edges_from_clear": clash.get("edges_from_clear"), **near}
+            if clash.get("crossings") or clash.get("overlaps"):
+                valid = False
+                warnings.append("parts cross or interpenetrate: the editor holds a physically invalid system")
+        except Exception as exc:  # noqa: BLE001 - 复核出错不能吞掉已经完成的优化结果 / a failing review must not lose a finished run
+            log.exception("interference check after the optimisation failed")
+            out["interference"] = {"error": f"{type(exc).__name__}: {getattr(exc, 'message', exc)}"[:500]}
+            # 没检查完不能说没问题 / an unfinished check is no clean bill
+            valid = False
+            warnings.append("the interference check after the run failed; check the lens before you trust it")
+        if ids is not None and before is not None:
+            job.write_progress(stage="measure after")
+            try:
+                after = demand.quick(scripting.ScriptContext(self, job, {}), ids)
+            except Exception as exc:  # noqa: BLE001 - 同上 / as above
+                log.exception("measuring after the optimisation failed")
+                out["measured"] = {"error": f"{type(exc).__name__}: {getattr(exc, 'message', exc)}"[:500]}
+                out["valid"] = False
+                out["warnings"] = [*warnings, "measuring the demand's checks after the run failed; the result is not judged"]
+                return out
+
+            def score(r: dict[str, Any], i: str) -> float:
+                return float(r["gaps"].get(i, 0.0)) + float(r["pursuit"].get(i, 0.0))
+
+            items = {i: {"before": before["values"].get(i), "after": after["values"].get(i),
+                         "gap_before": score(before, i), "gap_after": score(after, i)} for i in ids}
+            tol = 1e-9
+            worse = [i for i, v in items.items() if v["gap_after"] > v["gap_before"] + tol * max(1.0, abs(v["gap_before"]))]
+            better = [i for i, v in items.items() if v["gap_after"] < v["gap_before"] - tol * max(1.0, abs(v["gap_before"]))]
+            out["measured"] = {"items": items, "shortfall": {"before": before["shortfall"], "after": after["shortfall"]},
+                               "better": better, "worse": worse, "hard_failing": after["hard_failing"], "invalid": after["invalid"],
+                               "errors": after["errors"]}
+            if worse:
+                warnings.append(f"the demand's checks got worse on {', '.join(worse)} whatever the merit function did")
+            if after["hard_failing"] or after["invalid"] or after["errors"]:
+                valid = False
+                warnings.append("after the run, hard limits fail or checks give no valid value: "
+                                f"{', '.join(after['hard_failing'] + after['invalid'] + sorted(after['errors']))}")
+        out["valid"] = valid
+        out["warnings"] = warnings
+        return out
+
     def op_optimize(self, args: dict[str, Any]) -> dict[str, Any]:
         job = self._job(args)
         loaded = self._require_loaded(job)
         # 优化可能跑很久：需求未确认或有 blocking 问题时先问用户，不进入优化
         # an optimisation may run for a long time: with an unconfirmed demand or a blocking question, ask the user first
         workflow.preflight(job.root)
-        result = self.backend.optimize(str(args.get("cycles", "auto")), args.get("cores") or config.compute_cores(),
-                                       max_seconds=_arg(args, "max_seconds", (int, float), default=None),
-                                       on_progress=self._optimizer_hooks(job, "opt.local"), should_cancel=job.cancel_requested)
+        ids = self._measure_ids(job, args)
+        before = self._measure_before(job, ids)
+        try:
+            result = self.backend.optimize(str(args.get("cycles", "auto")), args.get("cores") or config.compute_cores(),
+                                           max_seconds=_arg(args, "max_seconds", (int, float), default=None),
+                                           on_progress=self._optimizer_hooks(job, "opt.local"), should_cancel=job.cancel_requested)
+        finally:
+            # 出错时编辑器里也是优化器走到的系统，不能当作未改动 / after an error the editor still holds what the optimiser reached
+            loaded.dirty = True
         if result.get("stopped_by"):
             job.write_progress(stopped_by=result["stopped_by"])
-        loaded.dirty = True
-        return {**loaded.describe(), **result}
+        return {**loaded.describe(), **result, "review": self._review(job, ids, before)}
 
     def op_search(self, args: dict[str, Any]) -> dict[str, Any]:
         """Hammer 或全局搜索。两者都不会自己结束，必须给 max_seconds。OpticStudio 运行中把找到的系统写在镜头文件旁边，
@@ -665,16 +761,18 @@ class Daemon:
         if kind == "global" and before:
             raise SaosError(ErrorCode.BAD_ARGS, f"{len(before)} GLOPT_*.zmx files already lie next to {job.relative_lens(loaded.path)}; "
                             "global search would overwrite them. Save the lens elsewhere first (saos lens save --as NAME)")
+        ids = self._measure_ids(job, args)
+        measured = self._measure_before(job, ids)
         try:
             result = self.backend.optimize_search(kind, args.get("cores") or config.compute_cores(), max_seconds=float(max_seconds),
                                                   on_progress=self._optimizer_hooks(job, f"opt.{kind}"), should_cancel=job.cancel_requested)
         finally:
+            loaded.dirty = True
             written = sorted(p for p in lens_dir.glob(pattern) if before.get(p.name) != p.stat().st_mtime_ns)
             files = self._archive_search_files(job, kind, written)
         if result.get("stopped_by"):
             job.write_progress(stopped_by=result["stopped_by"])
-        loaded.dirty = True
-        return {**loaded.describe(), **result, "files": files}
+        return {**loaded.describe(), **result, "files": files, "review": self._review(job, ids, measured)}
 
     @staticmethod
     def _archive_search_files(job: jobs.Job, kind: str, written: list[Path]) -> list[str]:

@@ -185,11 +185,12 @@ def cmd_opt(args: argparse.Namespace) -> Any:
             payload["rows"] = _read_json(args.file)
         return client.request("opt.merit", payload, timeout=args.timeout)
     if args.action == "local":
-        return client.request("opt.local", {"job": args.job, "cycles": args.cycles, "cores": args.cores, "max_seconds": args.max_seconds}, timeout=args.timeout)
+        return _send("opt.local", args, {"job": args.job, "cycles": args.cycles, "cores": args.cores, "max_seconds": args.max_seconds,
+                                         "measure": args.measure}, args.timeout)
     if args.action in ("hammer", "global"):
         # 运行时长已知：客户端至少等到它结束后再留 2 分钟收尾 / the run length is known: wait for it plus 2 minutes to wrap up
-        return client.request(f"opt.{args.action}", {"job": args.job, "cores": args.cores, "max_seconds": args.max_seconds},
-                              timeout=max(args.timeout, args.max_seconds + 120))
+        return _send(f"opt.{args.action}", args, {"job": args.job, "cores": args.cores, "max_seconds": args.max_seconds, "measure": args.measure},
+                     max(args.timeout, args.max_seconds + 120))
     raise AssertionError(args.action)
 
 
@@ -428,6 +429,11 @@ def build_parser() -> argparse.ArgumentParser:
         q = opt_cmd(name, help_text)
         q.add_argument("--max-seconds", type=float, required=True, help="required: it never ends on its own; cancel after this many seconds")
         q.add_argument("--cores", type=int, help="CPU cores for OpticStudio (default: all logical cores but 2)")
+    for name in ("local", "hammer", "global"):
+        q = osub.choices[name]
+        q.add_argument("--measure", help="measure these demand checks before and after the run and list what got better or worse: "
+                                         "comma-separated ids, hard (constants and variable ranges) or all; pick fast checks")
+        q.add_argument("--detach", action="store_true", help="return at once; a detached process waits for the daemon and writes the response to the job's runs/NNN-<op>.json (saos job show lists it). Use it for anything that may outlast your own command time limit")
     op.set_defaults(func=cmd_opt)
 
     dm = sub.add_parser("demand", help="the job's demand (sources/demand.yaml); no OpticStudio needed")
