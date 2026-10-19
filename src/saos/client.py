@@ -16,6 +16,8 @@ from saos import config
 from saos.protocol import ErrorCode, SaosError, decode, encode
 
 DEFAULT_REQUEST_TIMEOUT_S = 600.0
+# 分离运行的子进程等多久（一周）：计算本身有 --max-seconds 和 saos job cancel 管着 / how long a detached child waits (a week)
+DETACHED_TIMEOUT_S = 7 * 24 * 3600.0
 DEFAULT_START_TIMEOUT_S = 120.0
 STOP_WAIT_S = 60.0
 
@@ -104,11 +106,41 @@ def _clear_stale_state() -> None:
     config.daemon_authkey_file().unlink(missing_ok=True)
 
 
-def request(op: str, args: dict[str, Any] | None = None, timeout: float = DEFAULT_REQUEST_TIMEOUT_S) -> Any:
-    """发送一个请求，成功时返回 result，失败时抛出 SaosError。"""
+def running_ops(pid: int, home=None) -> list[dict[str, Any]]:
+    """后台进程 pid 正在跑的长操作（各任务 progress.json 里 status 为 running、daemon_pid 相同的），只读文件。
+    The long operations daemon pid is running (status running with its daemon_pid in a job's progress.json); files only."""
+    found = []
+    for progress_file in sorted(((home or config.saos_home()) / "jobs").glob("*/progress.json")):
+        try:
+            progress = json.loads(progress_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if progress.get("status") == "running" and progress.get("daemon_pid") == pid:
+            found.append({k: progress.get(k) for k in ("op", "detail", "started", "stage", "updated")} | {"job": progress_file.parent.name})
+    return found
+
+
+# 后台进程忙着长操作时照样排队的请求：ping 有自己的短超时，shutdown 由后台进程自己判断能否退出
+# requests that still queue behind a long operation: ping has its own short timeout, shutdown is judged by the daemon
+QUEUE_WHEN_BUSY = frozenset({"ping", "shutdown"})
+
+
+def request(op: str, args: dict[str, Any] | None = None, timeout: float = DEFAULT_REQUEST_TIMEOUT_S, *, queue: bool = False) -> Any:
+    """发送一个请求，成功时返回 result，失败时抛出 SaosError。后台进程一次只处理一个请求：它正跑着长操作时直接报 BUSY，
+    不排在后面等到客户端超时，免得调用方把超时当失败、重复提交昂贵的计算。
+    Send a request; return its result or raise SaosError. The daemon serves one request at a time: while it runs a long
+    operation the request fails at once with BUSY instead of queueing until the client times out, so that a caller does
+    not take the timeout for a failure and submit an expensive computation again. queue=True waits its turn instead
+    (the workflow window's control panel, which tells the user it is queued)."""
     state = read_state()
     if state is None or not pid_alive(int(state.get("pid", 0))):
         raise SaosError(ErrorCode.DAEMON_NOT_RUNNING, "the daemon is not running; run saos daemon start first")
+    if op not in QUEUE_WHEN_BUSY and not queue:
+        busy = running_ops(int(state["pid"]))
+        if busy:
+            raise SaosError(ErrorCode.BUSY, f"the daemon is still running {busy[0]['op']} for job {busy[0]['job']}; it keeps computing. "
+                                            "Follow it with saos job show <job> (or saos job cancel <job>) and send this request when it is done",
+                            {"running": busy, "op": op})
     try:
         authkey = config.daemon_authkey_file().read_bytes()
         conn = Client(state["address"], family="AF_PIPE", authkey=authkey)
@@ -117,7 +149,12 @@ def request(op: str, args: dict[str, Any] | None = None, timeout: float = DEFAUL
     try:
         conn.send_bytes(encode({"op": op, "args": args or {}}))
         if not conn.poll(timeout):
-            raise SaosError(ErrorCode.DAEMON_TIMEOUT, f"no response within {timeout:.0f} s", {"op": op})
+            job = (args or {}).get("job")
+            raise SaosError(ErrorCode.DAEMON_TIMEOUT,
+                            f"no response within {timeout:.0f} s. This only stops waiting: the daemon keeps computing {op} until it "
+                            "finishes or is cancelled, so do not send it again. Follow it with saos job show"
+                            + (f" {job}" if job else " <job>") + "; next time pass --detach to get the result in the job's runs/ instead",
+                            {"op": op, "still_running": True, "running": running_ops(int(state["pid"]))})
         response = decode(conn.recv_bytes())
     except (EOFError, OSError) as exc:
         raise SaosError(ErrorCode.DAEMON_NOT_RUNNING, f"connection to the daemon broke: {exc}") from exc
@@ -184,17 +221,97 @@ def instance_daemons() -> list[dict[str, Any]]:
             continue
         pid = int(state.get("pid", 0))
         item = {"instance": home.name, "current": home.resolve() == current, "pid": pid, "alive": pid_alive(pid),
-                "mode": state.get("mode"), "started_at": state.get("started_at"), "running_jobs": []}
-        for progress_file in sorted((home / "jobs").glob("*/progress.json")):
-            try:
-                progress = json.loads(progress_file.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
-            if progress.get("status") == "running" and progress.get("daemon_pid") == pid:
-                item["running_jobs"].append({k: progress.get(k) for k in ("op", "detail", "started", "stage")}
-                                            | {"job": progress_file.parent.name})
+                "mode": state.get("mode"), "started_at": state.get("started_at"),
+                "running_jobs": [{k: r[k] for k in ("op", "detail", "started", "stage", "job")} for r in running_ops(pid, home)]}
         found.append(item)
     return found
+
+
+# ---- 分离运行：命令立即返回，结果写进任务的 runs/ / detached runs: the command returns at once, the result goes to the job's runs/ ----
+
+RUNS_DIR = "runs"
+
+
+def detach(op: str, args: dict[str, Any], job_root) -> dict[str, Any]:
+    """在一个脱离的子进程里发送请求并等到结束，结果写成 runs/NNN-<op>.json；本命令立即返回。调用方的等待时限
+    （代理工具常见 2–4 分钟）因此不再决定一次计算的成败。
+    Send the request from a detached child process that waits for the end and writes runs/NNN-<op>.json; this command
+    returns at once, so the caller's own wait limit (often 2–4 minutes for agent tools) no longer decides a computation."""
+    from saos import jobs
+    from saos.protocol import write_json
+
+    state = read_state()
+    if state is None or not pid_alive(int(state.get("pid", 0))):
+        raise SaosError(ErrorCode.DAEMON_NOT_RUNNING, "the daemon is not running; run saos daemon start first")
+    busy = running_ops(int(state["pid"]))
+    if busy:
+        raise SaosError(ErrorCode.BUSY, f"the daemon is still running {busy[0]['op']} for job {busy[0]['job']}; follow it with saos job show",
+                        {"running": busy, "op": op})
+    folder = job_root / RUNS_DIR
+    folder.mkdir(exist_ok=True)
+    stem = f"{jobs.next_archive_number(folder):03d}-{op.replace('.', '-')}"
+    request_file = folder / f"{stem}.request.json"
+    write_json(request_file, {"op": op, "args": args, "created": jobs.now_iso()})
+    cmd = [sys.executable, "-c", "import sys; from saos.client import run_detached; sys.exit(run_detached(sys.argv[1]))", str(request_file)]
+    base_flags = _CREATE_NO_WINDOW | _CREATE_NEW_PROCESS_GROUP
+    kwargs = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=str(config.saos_home()),
+                  close_fds=True, env={**os.environ, "SAOS_HOME": str(config.saos_home())})
+    try:
+        proc = subprocess.Popen(cmd, creationflags=base_flags | _CREATE_BREAKAWAY_FROM_JOB, **kwargs)
+    except OSError:
+        proc = subprocess.Popen(cmd, creationflags=base_flags, **kwargs)
+    rel = f"{RUNS_DIR}/{stem}.json"
+    # venv 的 python.exe 是启动器，真正发请求的解释器是它的子进程，PID 写在结果文件的 pid 里
+    # the venv python.exe is a launcher; the interpreter that sends the request is its child, whose PID the run file records
+    return {"detached": True, "op": op, "run": rel, "launcher_pid": proc.pid,
+            "follow": f"saos job show {job_root.name} (progress and this run's status); the result lands in {rel}"}
+
+
+def run_detached(request_path: str) -> int:
+    """分离子进程的入口：发送 request.json 里的请求，等到结束（不设客户端时限），把响应写到同名的 .json。
+    Entry of the detached child: send the request in request.json, wait for its end without a client limit, and write
+    the response next to it as .json."""
+    from pathlib import Path
+
+    from saos import jobs
+    from saos.protocol import jsonable, write_json
+
+    path = Path(request_path)
+    out = path.with_name(path.name.replace(".request.json", ".json"))
+    spec = json.loads(path.read_text(encoding="utf-8"))
+    record: dict[str, Any] = {"op": spec["op"], "status": "running", "pid": os.getpid(), "started": jobs.now_iso()}
+    write_json(out, record)
+    try:
+        record.update(status="done", ok=True, result=jsonable(request(spec["op"], spec.get("args") or {}, timeout=DETACHED_TIMEOUT_S)))
+    except SaosError as exc:
+        record.update(status="failed", ok=False, error=exc.to_dict())
+    except Exception as exc:  # noqa: BLE001 - 结果文件必须写出来 / the result file must be written
+        record.update(status="failed", ok=False, error={"code": ErrorCode.INTERNAL_ERROR, "message": f"{type(exc).__name__}: {exc}"})
+    record["finished"] = jobs.now_iso()
+    write_json(out, record)
+    return 0 if record["ok"] else 1
+
+
+def detached_runs(job_root, last: int = 5) -> list[dict[str, Any]]:
+    """任务最近几次分离运行的状态；子进程已不在而结果没写出来的记为 lost。/ Recent detached runs; a vanished child without a result is lost."""
+    folder = job_root / RUNS_DIR
+    if not folder.is_dir():
+        return []
+    out = []
+    for request_file in sorted(folder.glob("*.request.json"))[-last:]:
+        result_file = request_file.with_name(request_file.name.replace(".request.json", ".json"))
+        try:
+            record = json.loads(result_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            record = {"status": "starting"}
+        if record.get("status") == "running" and not pid_alive(int(record.get("pid") or 0)):
+            record["status"] = "lost"
+        row = {"run": f"{RUNS_DIR}/{result_file.name}", "status": record.get("status")}
+        row.update({k: record[k] for k in ("op", "started", "finished", "ok") if k in record})
+        if record.get("error"):
+            row["error"] = {k: record["error"].get(k) for k in ("code", "message")}
+        out.append(row)
+    return out
 
 
 def environment() -> dict[str, Any]:

@@ -26,6 +26,14 @@ def _lens_request(op: str, args: argparse.Namespace, payload: dict[str, Any]) ->
     return client.request(op, {"job": args.job, **payload}, timeout=args.timeout)
 
 
+def _send(op: str, args: argparse.Namespace, payload: dict[str, Any], timeout: float) -> Any:
+    """--detach 时交给分离子进程、立即返回 runs/ 下的结果文件名；否则照常等待。
+    With --detach hand the request to a detached child and return the runs/ result file at once; otherwise wait as usual."""
+    if getattr(args, "detach", False):
+        return client.detach(op, payload, jobs.get_job(payload["job"]).root)
+    return client.request(op, payload, timeout=timeout)
+
+
 def _key_values(items: list[str], flag: str) -> dict[str, Any]:
     """KEY=VALUE 列表 → 字典；VALUE 按 JSON 解析，失败时当字符串。"""
     out: dict[str, Any] = {}
@@ -70,6 +78,8 @@ def cmd_job(args: argparse.Namespace) -> Any:
             # 直接读文件，后台进程正忙时也能看 / read from the file, so it works while the daemon is busy
             "progress": job.read_progress(),
             "cancel_requested": job.cancel_requested(),
+            # --detach 的运行：状态和结果文件 / runs started with --detach: status and result file
+            "runs": client.detached_runs(job.root),
         }
     if args.action == "cancel":
         return jobs.get_job(args.job).request_cancel()
@@ -195,14 +205,14 @@ def cmd_exec(args: argparse.Namespace) -> Any:
     script_args.update(_key_values(args.arg, "--arg"))
     name = args.name or "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in script.stem)[:48] or "script"
     payload = {"job": args.job, "name": name, "source": source, "args": script_args, "live": args.live}
-    return client.request("script.exec", payload, timeout=args.timeout)
+    return _send("script.exec", args, payload, args.timeout)
 
 
 def cmd_check(args: argparse.Namespace) -> Any:
     payload: dict[str, Any] = {"job": args.job}
     if args.only:
         payload["only"] = [x.strip() for x in args.only.split(",") if x.strip()]
-    return client.request("demand.check", payload, timeout=args.timeout)
+    return _send("demand.check", args, payload, args.timeout)
 
 
 def cmd_scan(args: argparse.Namespace) -> Any:
@@ -264,8 +274,8 @@ def cmd_round(args: argparse.Namespace) -> Any:
     # 传输时 NaN 会变成 null、inf 变成字符串，所以发送前就要拒绝 / NaN would travel as null and inf as a string, so refuse them before sending
     if args.merit is not None and not math.isfinite(args.merit):
         raise SaosError(ErrorCode.BAD_ARGS, f"--merit must be a finite number (got {args.merit})")
-    return client.request("round.record", {"job": args.job, "tier": args.tier, "note": args.note, "merit": args.merit, "viz": not args.no_viz},
-                          timeout=args.timeout)
+    return _send("round.record", args, {"job": args.job, "tier": args.tier, "note": args.note, "merit": args.merit, "viz": not args.no_viz},
+                 args.timeout)
 
 
 def cmd_report(args: argparse.Namespace) -> Any:
@@ -307,7 +317,8 @@ def build_parser() -> argparse.ArgumentParser:
     create = jsub.add_parser("create", help="create a design job")
     create.add_argument("--name", required=True)
     jsub.add_parser("list", help="list design jobs")
-    show = jsub.add_parser("show", help="show a design job, including the progress of a running computation (works while the daemon is busy)")
+    show = jsub.add_parser("show", help="show a design job, including the progress of a running computation and the recent --detach runs "
+                                        "(works while the daemon is busy)")
     show.add_argument("job")
     show.add_argument("--log", type=int, default=10, help="number of recent log records to show")
     verify = jsub.add_parser("verify", help="check that no evidence file written by the tools was changed or deleted (seals.jsonl)")
@@ -385,6 +396,7 @@ def build_parser() -> argparse.ArgumentParser:
     ex.add_argument("--arg", action="append", default=[], metavar="KEY=VALUE", help="passed in ctx.args; VALUE is parsed as JSON, else kept as a string")
     ex.add_argument("--args-file", help="JSON object file used as the initial ctx.args")
     ex.add_argument("--live", action="store_true", help="in extension mode, update the OpticStudio windows while the script runs (slower; by default they refresh once at the end)")
+    ex.add_argument("--detach", action="store_true", help="return at once; a detached process waits for the daemon and writes the response to the job's runs/NNN-<op>.json (saos job show lists it). Use it for anything that may outlast your own command time limit")
     ex.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     ex.set_defaults(func=cmd_exec)
 
@@ -444,6 +456,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--job", required=True)
     p.add_argument("--only", help="comma-separated check ids to measure (exploration): the result is partial and never achieved; "
                                   "rounds always measure every check")
+    p.add_argument("--detach", action="store_true", help="return at once; a detached process waits for the daemon and writes the response to the job's runs/NNN-<op>.json (saos job show lists it). Use it for anything that may outlast your own command time limit")
     p.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     p.set_defaults(func=cmd_check)
     p = sub.add_parser("round", help="record a round: save lenses/rounds/rNNN.zmx, measure the demand, append ledger.jsonl and return the stop decision with a demand brief")
@@ -453,6 +466,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--merit", type=float, default=None,
                    help="value of the objective you actually optimised, when you optimised outside the OpticStudio merit function; recorded instead of the lens's merit function value")
     p.add_argument("--no-viz", action="store_true", help="skip the spot / layout / MTF export for saos ui (evaluations/NNN/viz.json)")
+    p.add_argument("--detach", action="store_true", help="return at once; a detached process waits for the daemon and writes the response to the job's runs/NNN-<op>.json (saos job show lists it). Use it for anything that may outlast your own command time limit")
     p.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     p.set_defaults(func=cmd_round)
     p = sub.add_parser("rule-out", help="rule out strategy tiers that your evidence says cannot help, so the stop rule does not wait for them (holds until the next clear gain; no OpticStudio needed)")

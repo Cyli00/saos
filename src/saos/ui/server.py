@@ -195,10 +195,10 @@ class Handler(BaseHTTPRequestHandler):
             return viz_of(job, number)
         if path == "/api/system":
             _explicit()
-            return client.request("lens.info", {"job": job.id})
+            return client.request("lens.info", {"job": job.id}, queue=True)
         if path == "/api/analyses":
             _explicit()
-            available = set(client.request("lens.analysis", {"job": job.id, "list": True})["types"])
+            available = set(client.request("lens.analysis", {"job": job.id, "list": True}, queue=True)["types"])
             return {"analyses": [a for a in ANALYSES if a in available]}
         if path == "/api/view" and method == "POST":
             _explicit()
@@ -211,7 +211,7 @@ class Handler(BaseHTTPRequestHandler):
                 if args["analysis"] not in ANALYSES:
                     raise SaosError(ErrorCode.BAD_ARGS, f"analysis must be one of {ANALYSES}")
                 payload["analysis"] = args["analysis"]
-            return client.request("lens.view", payload)
+            return client.request("lens.view", payload, queue=True)
         raise SaosError(ErrorCode.BAD_ARGS, f"unknown endpoint {method} {path}")
 
     def do_GET(self) -> None:  # noqa: N802
