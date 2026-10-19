@@ -99,44 +99,60 @@ def _finite(x: float) -> float | None:
     return x if math.isfinite(x) else None
 
 
-def _series(r) -> list[dict[str, Any]]:
+def _series(r, problems: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out = []
     for i in range(int(r.NumberOfDataSeries)):
-        s = r.GetDataSeries(i)
-        x = [float(v) for v in s.XData.Data]
-        data = s.YData.Data
-        cols = int(s.YData.Cols)
-        labels = [str(label) for label in s.SeriesLabels]
-        y = {labels[c] if c < len(labels) else str(c): [_finite(float(data[k, c])) for k in range(len(x))] for c in range(cols)}
-        out.append({"description": str(s.Description), "x_label": str(s.XLabel), "x": x, "y": y})
+        try:
+            s = r.GetDataSeries(i)
+            # 实测相对照度在模型给不出结果时 XData 为 None（2026-10-19 nightvision）；记下而不是在 .Data 上抛 AttributeError
+            # relative illumination had XData None on a model without a result (nightvision, 2026-10-19); note it instead of failing on .Data
+            if s is None or s.XData is None or s.YData is None:
+                problems.append({"part": f"series[{i}]", "kind": "empty_series",
+                                 "message": "OpticStudio returned this data series without X or Y data",
+                                 "description": str(s.Description) if s is not None else None})
+                continue
+            x = [float(v) for v in s.XData.Data]
+            data = s.YData.Data
+            cols = int(s.YData.Cols)
+            labels = [str(label) for label in s.SeriesLabels]
+            y = {labels[c] if c < len(labels) else str(c): [_finite(float(data[k, c])) for k in range(len(x))] for c in range(cols)}
+            out.append({"description": str(s.Description), "x_label": str(s.XLabel), "x": x, "y": y})
+        except Exception as exc:  # noqa: BLE001 - 一条序列读不出不连累其他结果 / one unreadable series spares the rest
+            problems.append({"part": f"series[{i}]", "kind": "extract_failed", "message": f"{type(exc).__name__}: {exc}"[:300]})
     return out
 
 
-def _grids(r) -> list[dict[str, Any]]:
+def _grids(r, problems: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out = []
     for i in range(int(r.NumberOfDataGrids)):
-        g = r.GetDataGrid(i)
-        nx, ny = int(g.Nx), int(g.Ny)
-        values = g.Values
-        step = max(1, math.ceil(max(nx, ny) / MAX_GRID))
-        rows = [[_finite(float(values[iy, ix])) for ix in range(0, nx, step)] for iy in range(0, ny, step)]
-        flat = [v for row in rows for v in row if v is not None]
-        out.append(
-            {
-                "description": str(g.Description),
-                "nx": nx,
-                "ny": ny,
-                "dx": float(g.Dx),
-                "dy": float(g.Dy),
-                "min_x": float(g.MinX),
-                "min_y": float(g.MinY),
-                "value_label": str(g.ValueLabel),
-                "step": step,
-                "values": rows,
-                "stats": {"min": min(flat), "max": max(flat), "mean": sum(flat) / len(flat)} if flat else None,
-            }
-        )
+        try:
+            out.append(_grid(r.GetDataGrid(i)))
+        except Exception as exc:  # noqa: BLE001 - 同上 / as above
+            problems.append({"part": f"grids[{i}]", "kind": "extract_failed", "message": f"{type(exc).__name__}: {exc}"[:300]})
     return out
+
+
+def _grid(g) -> dict[str, Any]:
+    if g is None or g.Values is None:
+        raise SaosError(ErrorCode.ZOS_ERROR, "OpticStudio returned a data grid without values")
+    nx, ny = int(g.Nx), int(g.Ny)
+    values = g.Values
+    step = max(1, math.ceil(max(nx, ny) / MAX_GRID))
+    rows = [[_finite(float(values[iy, ix])) for ix in range(0, nx, step)] for iy in range(0, ny, step)]
+    flat = [v for row in rows for v in row if v is not None]
+    return {
+        "description": str(g.Description),
+        "nx": nx,
+        "ny": ny,
+        "dx": float(g.Dx),
+        "dy": float(g.Dy),
+        "min_x": float(g.MinX),
+        "min_y": float(g.MinY),
+        "value_label": str(g.ValueLabel),
+        "step": step,
+        "values": rows,
+        "stats": {"min": min(flat), "max": max(flat), "mean": sum(flat) / len(flat)} if flat else None,
+    }
 
 
 def _spot(r, fields: int, waves: int) -> dict[str, Any] | None:
@@ -153,11 +169,36 @@ def _spot(r, fields: int, waves: int) -> dict[str, Any] | None:
     return {"rms_radius": rms, "geo_radius": geo, "index": "[field-1][wave-1]"}
 
 
+def _guarded(problems: list[dict[str, Any]], part: str, read, default):
+    try:
+        return read()
+    except Exception as exc:  # noqa: BLE001
+        problems.append({"part": part, "kind": "extract_failed", "message": f"{type(exc).__name__}: {exc}"[:300]})
+        return default
+
+
 def extract(results, fields: int, waves: int) -> dict[str, Any]:
-    header = [str(line) for line in results.HeaderData.Lines] if results.HeaderData is not None else []
-    messages = [str(results.GetMessageAt(i)) for i in range(int(results.NumberOfMessages))]
-    out: dict[str, Any] = {"header": header, "messages": messages, "series": _series(results), "grids": _grids(results)}
+    """导出结果的各部分，读不出的部分记在 problems 里（part、kind、message），其余照常返回。
+    Export every part of the results; parts that cannot be read go to problems (part, kind, message), the rest is returned."""
+    problems: list[dict[str, Any]] = []
+    header = _guarded(problems, "header",
+                      lambda: [str(line) for line in results.HeaderData.Lines] if results.HeaderData is not None else [], [])
+    messages = _guarded(problems, "messages", lambda: [str(results.GetMessageAt(i)) for i in range(int(results.NumberOfMessages))], [])
+    out: dict[str, Any] = {"header": header, "messages": messages,
+                           "series": _guarded(problems, "series", lambda: _series(results, problems), []),
+                           "grids": _guarded(problems, "grids", lambda: _grids(results, problems), [])}
     spot = _spot(results, fields, waves)
     if spot:
         out["spot"] = spot
+    out["problems"] = problems
     return out
+
+
+def outcome(out: dict[str, Any]) -> str:
+    """ok：全部读出；partial：读出了一部分；empty：没有任何数值（模型给不出结果、接口限制或提取缺陷，看 problems、messages 和文本导出）。
+    ok: everything was read; partial: some of it; empty: no numbers at all (no result for this model, an interface
+    limit or an extractor defect; see problems, messages and the text export)."""
+    has_data = bool(out.get("series") or out.get("grids") or out.get("spot"))
+    if not out.get("problems"):
+        return "ok" if has_data else "empty"
+    return "partial" if has_data else "empty"

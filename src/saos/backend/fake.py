@@ -182,7 +182,7 @@ class FakeBackend(Backend):
         text_path.parent.mkdir(parents=True, exist_ok=True)
         text_path.write_text("fake analysis" + chr(10), encoding="utf-8")
         return {"header": ["fake"], "messages": [], "series": [{"description": "line", "x_label": "x", "x": x, "y": {"v": [slope * v for v in x]}}],
-                "grids": [], "text_file": True, "settings": dict(settings), "message": None}
+                "grids": [], "problems": [], "status": "ok", "text_file": True, "settings": dict(settings), "message": None}
 
     def _geometry_items(self) -> list[dict[str, Any]]:
         """假几何：平面沿 z 轴排开，交叠检查照常算。/ Flat surfaces along z; the interference check runs as usual."""
