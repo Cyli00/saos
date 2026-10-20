@@ -1,0 +1,52 @@
+{
+  "version": "2026-10-20",
+  "note": "Raw manufacturer tables, not fitted to Zemax TD coefficients (user decision 2026-10-20). dn/dT in 1e-6/K, wavelength in nm unless stated, CTE in 1e-6/K, temperature in degC.",
+  "dndt_tables": [
+    {"id": "heraeus-homosil-family", "materials": ["HOMOSIL", "HERASIL", "INFRASIL", "HOQ"], "grade": "manufacturer",
+     "source": "heraeus_quartz_hqs_mo_2018", "page": "1",
+     "rows": [
+       {"t_range": [0, 20], "values": {"237.8": 15.2, "365": 11.5, "546.1": 10.6, "587.6": 10.5, "643.8": 10.4}},
+       {"t_range": [20, 40], "values": {"237.8": 15.3, "365": 11.6, "546.1": 10.7, "587.6": 10.6, "643.8": 10.5}}]},
+    {"id": "heraeus-suprasil-family", "materials": ["SUPRASIL", "SPECTROSIL"], "grade": "manufacturer",
+     "source": "heraeus_quartz_hqs_mo_2018", "page": "1",
+     "rows": [
+       {"t_range": [0, 20], "values": {"237.8": 14.6, "365": 11.0, "546.1": 9.9, "587.6": 9.8, "643.8": 9.6}},
+       {"t_range": [20, 40], "values": {"237.8": 14.9, "365": 11.2, "546.1": 10.1, "587.6": 10.0, "643.8": 9.8}}]},
+    {"id": "corning-7980", "materials": ["Corning HPFS 7980"], "grade": "manufacturer",
+     "source": "corning_hpfs_7979_7980_8655_2014", "page": "6",
+     "at_587_725nm_22C": 10.1,
+     "formula": {"t_range": [20, 25], "wavelength_unit": "um", "expression": "C0 + C1*l^-2 + C2*l^-4 + C3*l^-6",
+                 "C0": 9.390590, "C1": 0.235290, "C2": -1.318560e-3, "C3": 3.028870e-4}},
+    {"id": "corning-7979-8655", "materials": ["Corning HPFS 7979", "Corning HPFS 8655"], "grade": "manufacturer",
+     "source": "corning_hpfs_7979_7980_8655_2014", "page": "7",
+     "at_587_725nm_22C": 10.2,
+     "formula": {"t_range": [20, 25], "wavelength_unit": "um", "expression": "D0 + D1*l^2 + D2*l^-2 + D3*l^-4 + D4*l^-6",
+                 "D0": 9.545124, "D1": -9.835579e-2, "D2": 2.003170e-1, "D3": 2.209816e-3, "D4": 1.980644e-4},
+     "dispersion_22C": {"form": "Sellmeier, 4 terms, l in um", "A": [0.03550277875, 0.7353314507, 0.3334560303, 0.9269506614],
+                        "B": [-0.004826183477, 0.005808687673, 0.01399572492, 101.2182926], "nd_587_725": 1.458522},
+     "note": "no local OpticStudio catalog entry for 7979 or 8655"},
+    {"id": "schott-irg27", "materials": ["IRG27"], "grade": "manufacturer", "source": "schott_irg27_flyer_2018", "page": "1",
+     "rows": [{"t": 22, "wavelength_unit": "um", "values": {"1.0": 15.6, "5": -3.2, "10": -3.7, "10.6": -3.7, "11": -3.7, "12": -3.7}}]},
+    {"id": "umicore-gasir1", "materials": ["GASIR1"], "grade": "manufacturer", "source": "umicore_gasir1_old_pdf",
+     "rows": [{"t": 20, "wavelength_unit": "um", "values": {"1.06": 8.4, "10.66": 5.5}},
+              {"t": 100, "wavelength_unit": "um", "values": {"1.06": 10.1, "10.66": 6.7}}],
+     "note": "recorded as printed: the PDF gives the unit as K^-1 without a power of ten, and the GASIR5 product page prints 32 where its PDF prints 3.2, so the scale (1e-5/K or 1e-6/K) is unconfirmed; check the original before use"}
+  ],
+  "cte_manufacturer": [
+    {"material": "ZEONEX K22R", "value": 58, "range": [-50, 100], "method": "ASTM E831", "local_agf": {"entry": "ZEONEX_K22R&K26R_2016/2017", "value": 62}, "source": "zeon_en_brochure_200323391", "page": "4"},
+    {"material": "Makrolon (polycarbonate), 14 grades", "value": 65, "range": [23, 55], "method": "ISO 11359", "local_agf": {"entry": "MISC POLYCARB", "value": 67}, "source": "covestro_makrolon_apec_optical", "page": "24"},
+    {"material": "PLEXIGLAS 8N (PMMA)", "value": 80, "range": [0, 50], "method": "ISO 11359-2", "local_agf": {"entry": "MISC PMMA", "value": 0}, "source": "evonik_plexiglas8n_tds_2018", "page": "2"},
+    {"material": "IRG27", "value": 22.5, "range": [20, 100], "local_agf": {"entry": "SCHOTT_IRG IRG27", "value": 21.0}, "source": "schott_irg27_flyer_2018", "page": "1"}
+  ],
+  "sources": {
+    "heraeus_quartz_hqs_mo_2018": {"url": "https://www.uqgoptics.com/wp-content/uploads/2019/03/Heraeus-Herasil-102.pdf", "title": "Heraeus Quartz Glass for Optics, HQS-MO_01.7/E/04.2018 (UQG copy)", "retrieved": "2026-10-20"},
+    "corning_hpfs_7979_7980_8655_2014": {"url": "https://www.edmundoptics.co.uk/ViewDocument/Corning%20Fused%20Silica%20Grades.pdf", "title": "Corning HPFS 7979, 7980, 8655 product information, Feb 2014 (copy)", "retrieved": "2026-10-20"},
+    "schott_irg27_flyer_2018": {"url": "https://media.schott.com/api/public/content/bef2171f769a4b6b93d6525e12a008d0", "title": "SCHOTT IRG 27, Version September 2018", "retrieved": "2026-10-20"},
+    "schott_ir_technical_details": {"url": "https://www.schott.com/en-au/products/ir-materials/technical-details", "title": "SCHOTT technical details of infrared glasses (IRG22, 24, 25, 26, 27)", "retrieved": "2026-10-20"},
+    "umicore_gasir1_old_pdf": {"url": "https://eom.umicore.com/storage/eom/gasir1-for-infrared-optics-old.pdf", "title": "Umicore GASIR1, Document revision 02", "retrieved": "2026-10-20"},
+    "umicore_gasir5_old_pdf": {"url": "https://eom.umicore.com/storage/eom/gasir5-for-infrared-optics-old.pdf", "title": "Umicore GASIR5, Document revision 02", "retrieved": "2026-10-20"},
+    "zeon_en_brochure_200323391": {"url": "https://www.zeon.co.jp/en/business/enterprise/resin/pdf/200323391.pdf", "title": "ZEONEX brochure (EN, 200323391)", "retrieved": "2026-10-20"},
+    "covestro_makrolon_apec_optical": {"url": "https://solutions.covestro.com/-/media/covestro/solution-center/brochures/pcs/brochures/optical-properties-of-makrolon-and-apec.pdf", "title": "Optical properties of Makrolon and Apec, Edition 2017-07", "retrieved": "2026-10-20"},
+    "evonik_plexiglas8n_tds_2018": {"url": "https://www.uqgoptics.com/wp-content/uploads/2019/11/plexiglas-8n.pdf", "title": "Evonik PLEXIGLAS 8N TDS 3.2018 (UQG copy)", "retrieved": "2026-10-20"}
+  }
+}

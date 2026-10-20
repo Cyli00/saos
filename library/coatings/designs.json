@@ -1,0 +1,52 @@
+{
+  "version": "2026-10-20",
+  "note": "Published coating designs checked against the original documents. Layers run from the substrate outwards. They are not written as COAT entries in SAOS_COATING.DAT because each needs a layer material this library does not have with a matching process (see missing). thickness_nm is physical thickness; where the original gives optical thickness, the conversion and the indices used are stated.",
+  "designs": [
+    {"id": "us4057316-ex-c", "substrate": "Ge", "band_um": [2.8, 5.2], "angle_deg": null,
+     "layers": [["Ge", 1.5], ["ZnSe", 135], ["Si", 119], ["Al2O3", 629]],
+     "performance": "no numbers; text: reflection 'reduced to a very small value'; FIG. 2 only",
+     "check": "consistent: table, text and claims 1, 3, 4, 5 agree (PDF pp. 3-4)",
+     "missing": ["Ge film (k suspect, see README)", "Si with infrared k", "e-beam Al2O3 in the infrared (only sputtered Kischkat data)"],
+     "source": "us4057316"},
+    {"id": "us4057316-ex-a", "substrate": "Ge", "band_um": [2.5, 3.2], "angle_deg": null,
+     "layers": [["Ge", 1.5], ["ZnSe", 184], ["Al2O3", 278]],
+     "performance": "not given (no figure or text for this example)", "check": "layers and band consistent with the table",
+     "missing": ["Ge film", "e-beam Al2O3 in the infrared"], "source": "us4057316"},
+    {"id": "us4057316-ex-d", "substrate": "Si", "band_um": [2.8, 5.2], "angle_deg": null,
+     "layers": [["Ge", 1.5], ["ZnSe", 207], ["Ge", 45], ["Al2O3", 639]],
+     "performance": "FIG. 3 only", "check": "consistent with the table and claims 9, 10",
+     "missing": ["Ge film", "e-beam Al2O3 in the infrared"], "source": "us4057316"},
+    {"id": "us5963365-ex-1", "substrate": "quartz (n = 1.56 in the patent)", "band_um": [0.1934, 0.1934], "angle_deg": 0,
+     "layers": [["MgF2", 13.62], ["LaF3", 34.33], ["MgF2", 34.05]],
+     "optical_thickness": {"lambda0_nm": 193.4, "quarter_units": [0.10, 0.30, 0.25], "n_used": {"MgF2": 1.42, "LaF3": 1.69},
+                           "note": "physical thickness = optical thickness x lambda0 / n, with the patent's indices (wavelength of those indices not stated)"},
+     "performance": "text: reflectance 'almost 0' at 194.3 nm (the patent's lambda0 is 193.4 nm; the difference is not explained)",
+     "check": "layer order (claim 1(c)) and optical thicknesses consistent (PDF pp. 9-10)",
+     "missing": ["LaF3 n,k at 193 nm"], "source": "us5963365"},
+    {"id": "us5963365-prior-art-2layer", "substrate": "quartz", "band_um": [0.1934, 0.1934], "angle_deg": 0,
+     "layers": [["LaF3", 28.61], ["MgF2", 34.05]],
+     "optical_thickness": {"lambda0_nm": 193.4, "quarter_units": [0.25, 0.25], "n_used": {"MgF2": 1.42, "LaF3": 1.69}},
+     "performance": "about 0.2 % residual reflectance (text)", "check": "consistent (PDF pp. 8-9)",
+     "missing": ["LaF3 n,k at 193 nm"], "source": "us5963365"},
+    {"id": "metu-ucer-2009-ge-8-12", "substrate": "Ge", "band_um": [8, 12], "angle_deg": 0,
+     "layers": [["ZnSe", 276.81], ["PbTe", 157.64], ["ZnSe", 1374.74], ["PbTe", 152.95], ["ZnSe", 345.00], ["PbTe", 568.83], ["ZnSe", 1012.20]],
+     "performance": "target T >= 97 % (text p. 50); FIG. 34 (3 mm Ge, both sides) reads about 93-94 % - target and curve differ",
+     "check": "read from the Macleod screenshot in FIG. 33 (thesis p. 52, PDF p. 69); the thesis uses PbTe n 4.37440, k 0.00497 and Ge n 4.00291, k 0.04382 at 10 um",
+     "missing": ["PbTe n,k over 8-12 um (the thesis gives one value at 10 um)", "ZnSe film n,k (only bulk Querry data)"], "source": "metu_ucer_2009"}
+  ],
+  "abstract_only": [
+    {"id": "iut-zareimoghadam-zns-8-12", "substrate": "ZnS", "band_um": [8, 12],
+     "layers_from_abstract": [["Ge", 162], ["ZnS", 395], ["Ge", 551], ["ZnS", 1293]],
+     "note": "abstract only (full text not obtained): layer order assumed from substrate, physical or optical thickness not stated, Y2O3 interface layer thickness not given, average transmission 93 % (English abstract) or 92 % (Persian abstract)",
+     "source": "iut_zareimoghadam_2013"},
+    {"id": "gainutdinov-2009", "substrate": "Ge and Si", "band_um": [3, 12],
+     "note": "abstract names ZnS, Ge, YF3 and MgF2; layers not obtained", "source": "gainutdinov_2009"}
+  ],
+  "sources": {
+    "us4057316": {"url": "https://patentimages.storage.googleapis.com/77/e6/7f/5c3c2674665579/US4057316.pdf", "title": "US4057316A, Reflection reducing multilayer system on a highly refractive infrared transmitting substrate (Balzers, 1977)", "sha256": "ff417b24d4b23519bfad72f6d4a543faea14396cad360a49c6643ef68fe8f70e", "retrieved": "2026-10-20"},
+    "us5963365": {"url": "https://patentimages.storage.googleapis.com/a2/88/5a/3f7d983f81a259/US5963365.pdf", "title": "US5963365A, Three layer anti-reflective coating for optical substrate (Nikon, 1999)", "sha256": "6cbf70deac2f532cedc70f9600d4c49a82b9737772d3aa47b7deb1ca73caa20a", "retrieved": "2026-10-20"},
+    "metu_ucer_2009": {"url": "https://open.metu.edu.tr/handle/11511/19220", "title": "Ucer, Design and production of antireflection coating for Ge, ZnSe and ZnS in 8-12 micrometer wavelength region (MSc, METU, 2009)", "sha256": "6e414dc81dedd78eeda3266319afbc3f52cea3cff451b010fa295bc4180eadc0", "retrieved": "2026-10-20"},
+    "iut_zareimoghadam_2013": {"url": "https://thesis.iut.ac.ir/design-fabrication-and-hardening-multi-layer-anti-reflection-coating-range-8-12-micro-meter", "title": "Zareimoghadam, MSc thesis, Isfahan University of Technology (abstract page)", "retrieved": "2026-10-20"},
+    "gainutdinov_2009": {"url": "https://doi.org/10.1364/JOT.76.000302", "title": "Gainutdinov et al., J. Opt. Technol. 76(5), 302 (2009), abstract only", "retrieved": "2026-10-20"}
+  }
+}
