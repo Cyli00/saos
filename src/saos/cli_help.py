@@ -395,9 +395,10 @@ MERIT_HELP_EPILOG = """Input: wizard --file JSON object (all fields optional)
   type/data/reference match OpticStudio wizard choices, ignoring case/spaces;
   invalid names report available choices. Defaults shown above, except glass
   and air are disabled if omitted. Each is [minimum, maximum, edge] thickness
-  in lens units. arms supports 6/8/10; rings is 1-based. Folded, cylindrical and
-  other non-rotationally symmetric systems must use assume_axial_symmetry:false
-  or the wizard samples only half the pupil. Omitting --file uses defaults.
+  in lens units. arms is 6, 8 or 10; rings and start_at are integers from 1;
+  other keys are rejected. Folded, cylindrical and other non-rotationally
+  symmetric systems must use assume_axial_symmetry:false or the wizard samples
+  only half the pupil. Omitting --file uses defaults.
 
 Input: wizard --file for a non-sequential system (OpticStudio's NSC wizard)
   {

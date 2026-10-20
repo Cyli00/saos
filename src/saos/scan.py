@@ -74,7 +74,7 @@ MODES = ("vars", "points", "minimize", "probes", "candidates", "tolerance")
 MAX_TOLERANCES = 200
 TOL_DISTS = ("uniform", "normal")
 MAX_POINTS = 5000
-HELP_EPILOG = """Input: --plan JSON (choose exactly one of the six modes)
+HELP_EPILOG = """Input: --plan FILE, a JSON file (choose exactly one of the six modes)
   Parameter keys use a surface index (negative counts from image; -1 is image)
   or a unique Lens Data comment: "3.radius", "lens dome.curvature", "12.par1".
   Surface parameters: radius, curvature (1/R, 0 for flat), thickness, conic,
@@ -217,6 +217,8 @@ Results and files
 Common errors
   BAD_ARGS, NO_LENS_LOADED, JOB_MISMATCH, UNSAVED_CHANGES, DEMAND_NOT_CONFIRMED,
   DEMAND_BLOCKED, POOL_BUSY (wait or cancel), ZOS_ERROR (no usable workers).
+  --show: FILE_NOT_FOUND for a name not under scans/, EVIDENCE_TAMPERED for an
+  unreadable result.json.
 """
 # valley / peak：±delta 两侧都比基准差（或都好）超过 NONE_BELOW，基准正在这个变量的极值上，一阶斜率看不出
 # valley / peak: both sides above (or below) the base by more than NONE_BELOW; the base sits at an extremum the slope cannot show
@@ -915,13 +917,32 @@ def show(job: jobs.Job, scan: str | None = None) -> dict[str, Any]:
     names = sorted(p.name for p in root.iterdir() if p.is_dir()) if root.is_dir() else []
     if not names:
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"job {job.id} has no scans")
-    name = f"{int(scan):03d}" if scan is not None and str(scan).isdigit() else (scan or names[-1])
+    # 编号按字符串补零，不转 int：超长数字串会让 int() 抛 ValueError / pad as text: int() raises on very long digit strings
+    name = (str(scan).lstrip("0") or "0").zfill(3) if scan is not None and str(scan).isdigit() else (scan or names[-1])
+    # 只认 scans/ 下已有的目录名：绝对路径或 .. 会让 pathlib 拼到 scans/ 之外
+    # only folder names under scans/: an absolute path or .. would make pathlib join outside scans/
     folder = root / str(name)
-    if not folder.is_dir():
-        raise SaosError(ErrorCode.FILE_NOT_FOUND, f"no scan {name}", {"scans": names})
+    if name not in names or not folder.is_dir():
+        raise SaosError(ErrorCode.FILE_NOT_FOUND, f"no scan {str(name)[:64]}", {"scans": names})
     if (folder / "result.json").is_file():
-        return {"finished": True, **summarize(json.loads((folder / "result.json").read_text(encoding="utf-8")))}
-    progress = json.loads((folder / jobs.PROGRESS_FILE).read_text(encoding="utf-8")) if (folder / jobs.PROGRESS_FILE).is_file() else None
+        try:
+            result = json.loads((folder / "result.json").read_text(encoding="utf-8"))
+            if not (isinstance(result, dict) and isinstance(result.get("folder"), str) and isinstance(result.get("rows"), list)
+                    and all(isinstance(r, dict) for r in result["rows"]) and "best" in result
+                    and (result["best"] is None or isinstance(result["best"], dict))):
+                raise ValueError("unexpected structure")
+            return {"finished": True, **summarize(result)}
+        except (ValueError, RecursionError) as e:
+            # result.json 是封存的证据，读不出就是被改过或写坏了 / result.json is sealed evidence: unreadable means altered or damaged
+            raise SaosError(ErrorCode.EVIDENCE_TAMPERED, f"{SCANS_DIR}/{name}/result.json is unreadable ({type(e).__name__}); "
+                            f"uv run saos job verify {job.id} lists sealed-file problems") from e
+    try:
+        progress = json.loads((folder / jobs.PROGRESS_FILE).read_text(encoding="utf-8")) if (folder / jobs.PROGRESS_FILE).is_file() else None
+    except (OSError, ValueError, RecursionError):
+        # 进度文件可能正被写入 / the progress file may be mid-write
+        progress = None
+    if not isinstance(progress, dict):
+        progress = None
     running = any(r["folder"] == f"{SCANS_DIR}/{name}" for r in jobs.detached_runs(job.root))
     out = {"folder": f"{SCANS_DIR}/{name}", "finished": False, "running": running, "progress": progress}
     if not running and not (progress or {}).get("error"):

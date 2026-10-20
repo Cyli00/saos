@@ -221,11 +221,14 @@ def detached_runs(root: Path) -> list[dict[str, Any]]:
         if not base.is_dir():
             continue
         for folder in sorted(base.iterdir()):
+            # 写坏或被改过的进度文件只跳过，不让同一任务的其他查询失败 / a damaged progress file is skipped, not fatal for the job
             try:
                 progress = json.loads((folder / PROGRESS_FILE).read_text(encoding="utf-8"))
-            except (OSError, ValueError):
+                alive = (isinstance(progress, dict) and progress.get("status") == "running"
+                         and client.pid_alive(int(progress.get("daemon_pid") or 0)))
+            except (OSError, ValueError, TypeError, OverflowError, RecursionError):
                 continue
-            if progress.get("status") == "running" and client.pid_alive(int(progress.get("daemon_pid") or 0)):
+            if alive:
                 out.append({**progress, "folder": folder.relative_to(root).as_posix()})
     return out
 

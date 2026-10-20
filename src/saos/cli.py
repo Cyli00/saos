@@ -173,8 +173,8 @@ def _surface_list(text: str, flag: str = "--surfaces") -> list[int]:
 def cmd_opt(args: argparse.Namespace) -> Any:
     if args.action == "vary":
         if args.config_rows:
-            if args.param or args.surfaces:
-                raise SaosError(ErrorCode.BAD_ARGS, "give either --param with --surfaces or --config-rows, not both")
+            if args.param or args.surfaces or args.objects:
+                raise SaosError(ErrorCode.BAD_ARGS, "give one of --param with --surfaces, --param with --objects, or --config-rows")
             payload = {"job": args.job, "config_rows": _surface_list(args.config_rows, "--config-rows"),
                        "configs": _surface_list(args.configs, "--configs") if args.configs else None, "on": not args.off}
             return client.request("opt.vary", payload, timeout=args.timeout)
@@ -474,8 +474,8 @@ def build_parser() -> argparse.ArgumentParser:
                                     "solve one variable, compensate, measure with the demand's checks; lens left unchanged; archived in scans/NNN/, "
                                     "the best lenses in lenses/scans/NNN/")
     p.add_argument("--job", required=True)
-    p.add_argument("--plan", help="JSON plan: one of vars (grid), points, minimize, probes or candidates (structure exploration), plus fixed, solve, "
-                                  "compensate, measure, operands, keep; formats and examples below")
+    p.add_argument("--plan", help="JSON plan file: one of vars (grid), points, minimize, probes, candidates (structure exploration) or tolerance, "
+                                  "plus fixed, solve, compensate, measure, operands, keep; formats and examples below")
     p.add_argument("--workers", type=int, default=None, help="OpticStudio instances to use (default the plan's workers, else 4; count the licence)")
     p.add_argument("--detach", action="store_true", help="return at once and run the scan in the background on the worker pool; the daemon keeps "
                                                          "serving other commands meanwhile; follow it with --show")

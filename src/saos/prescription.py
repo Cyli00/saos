@@ -1047,6 +1047,7 @@ Surfaces and image
     {"type": "f_number", "value": 4} (radius only).
     Material pickups omit scale/offset; solves are applied after all surfaces
     exist and may pick up a later surface.
+  object (required): thickness (a number or "inf"), material, comment.
   image accepts surface fields except thickness, material, stop, focal_length
     and opd_mode. Use it for curved or tilted image surfaces.
 
@@ -1206,12 +1207,14 @@ Non-sequential fields and constraints
     direction. Partial volume overlaps cause trace errors; a later object fully
     inside an earlier object is valid nesting and takes precedence.
   Model approval locks types, files, ref, inside_of and medium categories;
-    source and detector positions, tilts, parameters (except ray counts) and
-    face properties; all material, parameter, placement, volume scattering,
-    face and Scatter To settings of notes.environment objects; for designed
-    parts only the volume scattering model/DLL and each face's reflective/
-    absorbing state and scatter model (coatings, scatter fractions and
-    importance sampling may change between rounds). Wavelengths, coating_file
+    for sources and detectors their positions, tilts, parameters (except ray
+    counts) and every tab (faces, scatter_to, source, type_options,
+    diffraction, index_model); for notes.environment objects also material,
+    parameters, placement, volume scattering and every tab; for designed parts
+    only the volume scattering model/DLL, each face's reflective/absorbing
+    state and scatter model, the diffraction split and the index_model type
+    (coatings, scatter fractions and importance sampling may change between
+    rounds). Wavelengths, coating_file
     and simple_ray_splitting are also locked. Notes use objects rather than surfaces:
     uv run saos lens describe --help.
 

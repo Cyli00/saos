@@ -1588,6 +1588,31 @@ class ZosBackend(Backend):
     def merit_wizard(self, settings: dict[str, Any]) -> int:
         if nsc.is_nsc(self.system):
             return self.merit_wizard_nsc(settings)
+        known = {"type", "data", "reference", "rings", "arms", "glass", "air", "start_at", "assume_axial_symmetry"}
+        extra = sorted(set(settings) - known)
+        if extra:
+            raise SaosError(ErrorCode.BAD_ARGS, f"optimization wizard settings {extra} unknown; allowed {sorted(known)}")
+        for key in ("type", "data", "reference"):
+            if key in settings and not isinstance(settings[key], str):
+                raise SaosError(ErrorCode.BAD_ARGS, f"optimization wizard {key} must be a name, got {settings[key]!r}")
+
+        def integer(key: str, default: int) -> int:
+            v = settings.get(key, default)
+            if isinstance(v, bool) or not isinstance(v, int) or v < 1:
+                raise SaosError(ErrorCode.BAD_ARGS, f"optimization wizard {key} must be an integer from 1, got {v!r}")
+            return v
+
+        rings, arms, start_at = integer("rings", 3), integer("arms", 6), integer("start_at", 1)
+        symmetric = settings.get("assume_axial_symmetry", True)
+        if not isinstance(symmetric, bool):
+            raise SaosError(ErrorCode.BAD_ARGS, f"optimization wizard assume_axial_symmetry must be true or false, got {symmetric!r}")
+        if arms not in (6, 8, 10):
+            raise SaosError(ErrorCode.BAD_ARGS, f"optimization wizard arms must be 6, 8 or 10, got {arms!r}")
+        for key in ("glass", "air"):
+            v = settings.get(key)
+            if v is not None and not (isinstance(v, list) and len(v) == 3
+                                      and all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) for x in v)):
+                raise SaosError(ErrorCode.BAD_ARGS, f"optimization wizard {key} must be [minimum, maximum, edge] numbers, got {v!r}")
         wiz = self.system.MFE.SEQOptimizationWizard
 
         def pick(name: str, count_attr: str, getter: str, wanted: str) -> int:
@@ -1600,8 +1625,8 @@ class ZosBackend(Backend):
         wiz.Type = pick("type", "NumberOfTypes", "GetTypeAt", settings.get("type", "RMS"))
         wiz.Data = pick("data", "NumberOfDataTypes", "GetDataTypeAt", settings.get("data", "Wavefront"))
         wiz.Reference = pick("reference", "NumberOfReferences", "GetReferenceAt", settings.get("reference", "Centroid"))
-        wiz.Ring = int(settings.get("rings", 3)) - 1
-        wiz.Arm = 0 if int(settings.get("arms", 6)) == 6 else (1 if int(settings.get("arms", 6)) == 8 else 2)
+        wiz.Ring = rings - 1
+        wiz.Arm = {6: 0, 8: 1, 10: 2}[arms]
         glass = settings.get("glass")
         wiz.IsGlassUsed = glass is not None
         if glass:
@@ -1610,9 +1635,9 @@ class ZosBackend(Backend):
         wiz.IsAirUsed = air is not None
         if air:
             wiz.AirMin, wiz.AirMax, wiz.AirEdge = float(air[0]), float(air[1]), float(air[2])
-        wiz.StartAt = int(settings.get("start_at", 1))
+        wiz.StartAt = start_at
         # 折转、双圆锥、柱面等非旋转对称系统必须关掉，否则向导只追半个光瞳 / must be off for systems that are not rotationally symmetric
-        wiz.IsAssumeAxialSymmetryUsed = bool(settings.get("assume_axial_symmetry", True))
+        wiz.IsAssumeAxialSymmetryUsed = symmetric
         wiz.Apply()
         return int(self.system.MFE.NumberOfOperands)
 

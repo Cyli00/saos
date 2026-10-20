@@ -667,7 +667,7 @@ def test_long_operations_report_progress_and_honour_cancel(setup, monkeypatch):
 
     seen = {}
 
-    def optimize(cycles, cores, *, max_seconds=None, on_progress=None, should_cancel=None):
+    def optimize(cycles, cores, *, max_seconds=None, on_progress=None, should_cancel=None, algorithm=None):
         on_progress({"progress": 10, "merit": 2.0, "elapsed_s": 0.5})
         # 运行中的视图只有几何 / the mid-run view has geometry only
         seen["mid_view"] = json.loads((job.root / jobs.VIEW_FILE).read_text(encoding="utf-8"))["layout"]

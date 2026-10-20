@@ -35,7 +35,8 @@ _kernel32.CloseHandle.argtypes = (ctypes.c_void_p,)
 
 def pid_alive(pid: int) -> bool:
     # 不能用 os.kill(pid, 0)：Windows 上 0 是 CTRL_C_EVENT
-    if pid <= 0:
+    # PID 是 32 位 DWORD；更大的数会被 ctypes 截成低 32 位，误判成别的进程（如 2**32 + 4 → System）
+    if not 0 < pid < 2**32:
         return False
     handle = _kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
     if not handle:

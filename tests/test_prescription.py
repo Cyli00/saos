@@ -39,7 +39,7 @@ def test_normalize_defaults_and_materials():
     "change",
     [
         {"aperture": {"type": "epd", "value": 5}},
-        {"fields": {"type": "angle", "y": [0]}},
+        {"fields": {"type": "angle", "y": [0, 95]}},
         {"wavelengths": {"um": [0.5], "primary": 2}},
         {"surfaces": []},
         {"ray_aiming": "maybe"},
