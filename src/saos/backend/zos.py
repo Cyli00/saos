@@ -26,6 +26,18 @@ from saos.backend.base import (
     parse_numeric,
     same_number,
 )
+from saos.prescription import (
+    AFOCAL_UNITS,
+    APERTURES,
+    APODIZATIONS,
+    FIELDS,
+    NORMALIZATIONS,
+    ORDERS,
+    POLARIZATION_METHODS,
+    RAY_AIMING_FLAGS,
+    SURFACE_APERTURES,
+    UNITS,
+)
 from saos.protocol import ErrorCode, SaosError
 
 log = logging.getLogger("saos.backend.zos")
@@ -97,6 +109,128 @@ def par_cell(zosapi, row, index: int, param: str):
     if cell is None or not header or "unused" in header.lower() or str(cell.DataType) != "Double":
         raise SaosError(ErrorCode.BAD_ARGS, f"surface {index} ({row.TypeName}) has no numeric parameter {n}")
     return cell
+
+
+def enum_member(enum, sample: str, wanted: str, label: str):
+    """ZOS-API 枚举成员，按名字不分大小写匹配；没有时列出全部可选名。sample 是该枚举里确定存在的一个名字。
+    A ZOS-API enum member by case-insensitive name; the error lists every name. sample is a name the enum surely has."""
+    kind = type(getattr(enum, sample))
+    names = [str(n) for n in kind.GetNames(kind)]
+    for n in names:
+        if n.lower() == wanted.lower():
+            return getattr(enum, n)
+    raise SaosError(ErrorCode.BAD_ARGS, f"{label}: OpticStudio has no {wanted!r}", {"choices": names})
+
+
+def _usable_cell(zosapi, row, n: int):
+    try:
+        cell = row.GetSurfaceCell(getattr(zosapi.Editors.LDE.SurfaceColumn, f"Par{n}"))
+    except Exception:  # noqa: BLE001 - 超出该面型的列 / beyond this surface type's columns
+        return None
+    header = str(cell.Header) if cell is not None else ""
+    return cell if header and "unused" not in header.lower() else None
+
+
+def param_cells(zosapi, row) -> dict[int, Any]:
+    """该面型可用的参数列 {列号: 单元格}。扫一遍 254 列约 0.2 s（2026-10-19 验证实测），同一个面按标题查几项时复用。
+    The usable parameter columns of the row's type; one scan of 254 columns takes about 0.2 s, so reuse it on one surface."""
+    return {n: c for n in range(1, 255) if (c := _usable_cell(zosapi, row, n)) is not None}
+
+
+def type_param_cell(zosapi, row, label: str, key: str, cells: dict[int, Any] | None = None):
+    """面型参数单元格：par<N> 按列号，其余按 Lens Data 的列标题（不分大小写）；没有这一列或列标为 unused 时报错并列出该面型的参数。
+    cells 是 param_cells 的结果，按标题查不到时重扫一次（写了项数之后会多出列）。
+    A surface-type parameter cell by par<N> or by its Lens Data column header; the error lists the type's parameters.
+    cells is a param_cells result, rescanned once on a miss (writing a term count adds columns)."""
+    m = PAR_RE.match(key)
+    if m:
+        cell = _usable_cell(zosapi, row, int(m.group(1)))
+        if cell is not None:
+            return cell
+    for attempt in (cells, None):
+        if attempt is None:
+            cells = param_cells(zosapi, row)
+        if not m:
+            for c in cells.values():
+                if str(c.Header).strip().lower() == key.strip().lower():
+                    return c
+        if attempt is None:
+            break
+    raise SaosError(ErrorCode.BAD_ARGS, f"{label} ({row.TypeName}) has no parameter {key!r}",
+                    {"parameters": {f"par{n}": str(c.Header) for n, c in cells.items()}})
+
+
+def cell_value(cell) -> Any:
+    """按数据类型读一个编辑器单元格。/ Read an editor cell by its data type."""
+    kind = str(cell.DataType)
+    return float(cell.DoubleValue) if kind == "Double" else int(cell.IntegerValue) if kind == "Integer" else str(cell.Value)
+
+
+def set_cell(cell, value: Any, label: str) -> None:
+    """按单元格的数据类型（Double、Integer、String）写值并回读核对。/ Write a value by the cell's data type and read it back."""
+    if cell.IsReadOnly:
+        raise SaosError(ErrorCode.BAD_ARGS, f"{label} is read-only")
+    kind = str(cell.DataType)
+    if kind in ("Double", "Integer") and (isinstance(value, bool) or not isinstance(value, (int, float))):
+        raise SaosError(ErrorCode.BAD_ARGS, f"{label} needs a number, got {value!r}")
+    # NaN 写进去会被 OpticStudio 存成 inf（2026-10-20 验证实测），所以写之前拒绝 / OpticStudio stores NaN as inf, so refuse before writing
+    if kind in ("Double", "Integer") and (math.isnan(value) or (kind == "Integer" and not math.isfinite(value))):
+        raise SaosError(ErrorCode.BAD_ARGS, f"{label} needs a {'finite integer' if kind == 'Integer' else 'number, not NaN'}, got {value!r}")
+    before = cell_value(cell)
+    if kind == "Double":
+        cell.DoubleValue = float(value)
+        actual: Any = float(cell.DoubleValue)
+        applied = same_number(actual, float(value))
+    elif kind == "Integer":
+        if value != int(value):
+            raise SaosError(ErrorCode.BAD_ARGS, f"{label} needs an integer, got {value!r}")
+        cell.IntegerValue = int(value)
+        actual = int(cell.IntegerValue)
+        applied = actual == int(value)
+    else:
+        cell.Value = str(value)
+        actual = str(cell.Value)
+        applied = actual == str(value)
+    if not applied:
+        try:
+            # 没写进去的值不留在镜头里 / a value that did not take is not left in the lens
+            set_value = {"Double": "DoubleValue", "Integer": "IntegerValue"}.get(kind, "Value")
+            setattr(cell, set_value, before)
+        except Exception:  # noqa: BLE001 - 写回失败时仍报原错误 / the original error is reported either way
+            pass
+        raise SaosError(ErrorCode.BAD_ARGS, f"{label} did not take {value!r} (now {actual!r}; the previous value {before!r} was written back)")
+
+
+def pick_name(names: list[str], wanted: str, label: str) -> str:
+    """在 OpticStudio 给出的名字里按不分大小写取原写法；没有时列出全部。/ The listed name matching case-insensitively."""
+    for n in names:
+        if n.lower() == wanted.lower():
+            return n
+    raise SaosError(ErrorCode.BAD_ARGS, f"{label}: OpticStudio has no {wanted!r}", {"choices": names})
+
+
+def _plain(value: Any) -> Any:
+    return value if isinstance(value, bool) else float(value)
+
+
+def _same(a: Any, b: Any) -> bool:
+    """回读核对：数值按 same_number，列表逐项。/ Read-back comparison: numbers by same_number, lists item by item."""
+    if isinstance(a, list) and isinstance(b, list):
+        return len(a) == len(b) and all(_same(x, y) for x, y in zip(a, b))
+    if isinstance(a, float) and isinstance(b, (int, float)) and not isinstance(b, bool):
+        return same_number(a, float(b))
+    return a == b
+
+
+@contextmanager
+def _named(label: str):
+    """ZOS-API 的异常带上是哪一项。/ Name the item in a ZOS-API error."""
+    try:
+        yield
+    except SaosError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise SaosError(ErrorCode.BAD_ARGS, f"{label}: {type(exc).__name__}: {exc}"[:500]) from exc
 
 
 def catalog_constants(system, name: str) -> tuple[float, float] | None:
@@ -541,9 +675,16 @@ class ZosBackend(Backend):
             ],
             "material_catalogs": catalogs,
             "stop_surface": int(lde.StopSurface),
+            **self._system_extras(),
         }
+        if info["aperture"]["afocal_image"]:
+            info["aperture"]["afocal_units"] = str(sd.Units.AfocalModeUnits)
         mc = sd.MaterialCatalogs
         members = {c: {str(m).upper() for m in mc.GetMaterialsInCatalog(c)} for c in catalogs}
+        for op in info["configurations"]["operands"]:
+            # 多重结构换进的玻璃同样要有来源、查停产状态 / glasses swapped in by GLSS need a source and a status check too
+            if op["type"] == "GLSS":
+                op["sources"] = [self._name_source(str(v).upper(), members) for v in op["values"]]
         columns = zosapi.Editors.LDE.SurfaceColumn
         surfaces = []
         for i in range(lde.NumberOfSurfaces):
@@ -576,6 +717,7 @@ class ZosBackend(Backend):
                     params.append({"par": n, "name": header, "value": value, "solve": str(cell.GetSolveData().Type)})
             item["params"] = params
             item["tilt_decenter"] = self._tilt_decenter(row)
+            item["coating"] = str(row.Coating)
             m = lde.GetGlobalMatrix(i, *([0.0] * 12))
             item["global_vertex"] = [float(v) for v in m[10:13]] if m[0] else None
             surfaces.append(item)
@@ -583,12 +725,73 @@ class ZosBackend(Backend):
         info["layout"] = {} if folder is None else self._export_layouts(folder, prefix)
         return info
 
+    def _system_extras(self) -> dict[str, Any]:
+        """处方第二期的系统设置和多重结构，供建模说明、结构指纹和交付报告用。
+        The system settings beyond the basics and the multi-configuration data, for the model page, fingerprint and report."""
+        sd = self.system.SystemData
+        pol, aim = sd.Polarization, sd.RayAiming
+        return {
+            "environment": {"temperature": float(sd.Environment.Temperature), "pressure": float(sd.Environment.Pressure),
+                            "adjust_index": bool(sd.Environment.AdjustIndexToEnvironment)},
+            "apodization": {"type": str(sd.Aperture.ApodizationType),
+                            **({"factor": float(sd.Aperture.ApodizationFactor)} if sd.Aperture.ApodizationFactorIsUsed else {})},
+            "polarization": {"unpolarized": bool(pol.Unpolarized), "jx": float(pol.Jx), "jy": float(pol.Jy), "x_phase": float(pol.XPhase),
+                             "y_phase": float(pol.YPhase), "method": str(pol.Method),
+                             "convert_thin_film_phase": bool(pol.ConvertThinFilmPhaseToRayEquivalent)},
+            "ray_aiming_options": {**{k: bool(getattr(aim, a)) for k, a in RAY_AIMING_FLAGS.items()},
+                                   "pupil_shift": [float(aim.PupilShiftX), float(aim.PupilShiftY), float(aim.PupilShiftZ)],
+                                   "pupil_compress": [float(aim.PupilCompressX), float(aim.PupilCompressY)]},
+            "coating_file": str(sd.Files.CoatingFile),
+            "configurations": self._configurations(),
+        }
+
+    def _configurations(self) -> dict[str, Any]:
+        """多重结构：结构数、当前结构和每行操作数（类型、整数参数、各结构的值与求解）。单结构时 operands 为空。
+        Multi-configuration: count, current configuration and each operand row (type, integer parameters, values and solves)."""
+        mce = self.system.MCE
+        count = int(mce.NumberOfConfigurations)
+        operands = []
+        for j in range(1, int(mce.NumberOfOperands) + 1):
+            row = mce.GetOperandAt(j)
+            kind = str(row.TypeName)
+            if kind == "MOFF":
+                continue
+            cells = [row.GetOperandCell(c) for c in range(1, count + 1)]
+            operands.append({
+                "row": j, "type": kind,
+                "params": [int(getattr(row, f"Param{n}")) for n in (1, 2, 3) if getattr(row, f"Param{n}Enabled")],
+                "values": [cell_value(c) for c in cells],
+                "solves": [str(c.GetSolveData().Type) for c in cells],
+            })
+        return {"count": count, "current": int(mce.CurrentConfiguration), "operands": operands}
+
+    def vary_config(self, rows: list[int], configs: list[int] | None, on: bool) -> dict[str, str]:
+        """把多重结构的格设为变量或固定；configs 为空时是该行的全部结构。返回 {"<行>.<结构>": 求解类型}。
+        Make multi-configuration cells variable or fixed; configs empty means every configuration of the row."""
+        mce = self.system.MCE
+        count, n_rows = int(mce.NumberOfConfigurations), int(mce.NumberOfOperands)
+        configs = configs or list(range(1, count + 1))
+        bad = [r for r in rows if not 1 <= r <= n_rows] + [c for c in configs if not 1 <= c <= count]
+        if count < 2 or bad:
+            raise SaosError(ErrorCode.BAD_ARGS, f"multi-configuration rows 1–{n_rows} and configurations 1–{count} (at least 2 configurations); got {bad}")
+        out = {}
+        for r in rows:
+            for c in configs:
+                cell = mce.GetOperandAt(r).GetOperandCell(c)
+                cell.MakeSolveVariable() if on else cell.MakeSolveFixed()
+                out[f"{r}.{c}"] = str(cell.GetSolveData().Type)
+        return out
+
     def _material_source(self, row, members: dict[str, set[str]]) -> dict[str, Any]:
         solve = row.MaterialCell.GetSolveData()
         if str(solve.Type) == "MaterialModel":
             data = solve._S_MaterialModel
             return {"kind": "model", "nd": float(data.IndexNd), "vd": float(data.AbbeVd), "dpgf": float(data.dPgF)}
-        name = str(row.Material).upper()
+        return self._name_source(str(row.Material).upper(), members)
+
+    def _name_source(self, name: str, members: dict[str, set[str]]) -> dict[str, Any]:
+        """按名字判断介质来源：空气、反射镜、坐标断点沿用、目录玻璃（含所在目录和停产状态）。
+        The source of a medium by name: air, mirror, coordinate-break inherit, catalog glass with catalogs and status."""
         if name == "-":  # 坐标断点不定义介质，沿用前一个面之后的介质
             return {"kind": "inherit"}
         if not name:
@@ -848,7 +1051,8 @@ class ZosBackend(Backend):
         system.New(False)
         self._material_cache.clear()
         sd = system.SystemData
-        sd.Units.LensUnits = zosapi.SystemData.ZemaxSystemUnits.Millimeters
+        sd.TitleNotes.Title = p["title"]
+        sd.Units.LensUnits = getattr(zosapi.SystemData.ZemaxSystemUnits, UNITS[p["units"]])
 
         mc = sd.MaterialCatalogs
         wanted = [c.upper() for c in p["catalogs"]]
@@ -861,21 +1065,46 @@ class ZosBackend(Backend):
         missing = [c for c in wanted if c not in [str(x).upper() for x in mc.GetCatalogsInUse()]]
         if missing:
             raise SaosError(ErrorCode.BAD_ARGS, f"cannot load glass catalogs {missing}")
+        if p["coating_file"]:
+            # 面的膜层名在这个文件里查，所以先于各面设定 / surface coatings are looked up in this file, so it goes first
+            sd.Files.CoatingFile = pick_name([str(c) for c in sd.Files.GetCoatingFiles()], p["coating_file"], "coating_file")
 
-        sd.Aperture.ApertureType = zosapi.SystemData.ZemaxApertureType.ObjectSpaceNA
-        sd.Aperture.ApertureValue = p["aperture"]["value"]
+        env = p["environment"]
+        sd.Environment.AdjustIndexToEnvironment = env["adjust_index"]
+        sd.Environment.Temperature = env["temperature"]
+        sd.Environment.Pressure = env["pressure"]
+
+        aperture_type = APERTURES[p["aperture"]["type"]]
+        sd.Aperture.ApertureType = getattr(zosapi.SystemData.ZemaxApertureType, aperture_type)
+        if p["aperture"]["value"] is not None:
+            sd.Aperture.ApertureValue = p["aperture"]["value"]
         # 光阑在物镜后焦面时入瞳在无穷远；用 OpticStudio 的物方远心设置表达，避免光线瞄准在退化情形下失败
         sd.Aperture.TelecentricObjectSpace = bool(p.get("telecentric_object", False))
+        sd.Aperture.AFocalImageSpace = p["afocal"] is not None
+        if p["afocal"] and "units" in p["afocal"]:
+            sd.Units.AfocalModeUnits = getattr(zosapi.SystemData.ZemaxAfocalModeUnits, AFOCAL_UNITS[p["afocal"]["units"]])
+        if p["apodization"]:
+            apod = p["apodization"]
+            sd.Aperture.ApodizationType = getattr(zosapi.SystemData.ZemaxApodizationType, APODIZATIONS[apod["type"]])
+            if "factor" in apod:
+                if not sd.Aperture.ApodizationFactorIsUsed:
+                    raise SaosError(ErrorCode.BAD_ARGS, f"OpticStudio uses no apodization factor with {apod['type']} apodization")
+                sd.Aperture.ApodizationFactor = apod["factor"]
+        if p["polarization"]:
+            with _named("polarization"):
+                self._set_polarization(zosapi, sd.Polarization, p["polarization"])
 
+        f = p["fields"]
+        field_type = FIELDS[f["type"]]
         fields = sd.Fields
-        fields.SetFieldType(zosapi.SystemData.FieldType.ObjectHeight)
+        fields.SetFieldType(getattr(zosapi.SystemData.FieldType, field_type))
+        fields.Normalization = getattr(zosapi.SystemData.FieldNormalizationType, NORMALIZATIONS[f["normalization"]])
         while fields.NumberOfFields > 1:
             fields.RemoveField(fields.NumberOfFields)
         first = fields.GetField(1)
-        first.X, first.Y, first.Weight = 0.0, p["fields"]["y"][0], 1.0
-        for y in p["fields"]["y"][1:]:
-            fields.AddField(0.0, y, 1.0)
-        fields.ClearVignetting()
+        first.X, first.Y, first.Weight = f["x"][0], f["y"][0], f["weights"][0]
+        for x, y, w in zip(f["x"][1:], f["y"][1:], f["weights"][1:]):
+            fields.AddField(x, y, w)
 
         waves = sd.Wavelengths
         while waves.NumberOfWavelengths > 1:
@@ -889,6 +1118,14 @@ class ZosBackend(Backend):
 
         aiming = zosapi.SystemData.RayAimingMethod
         sd.RayAiming.RayAiming = {"off": aiming.Off, "paraxial": aiming.Paraxial, "real": aiming.Real}[p["ray_aiming"]]
+        options = p["ray_aiming_options"] or {}
+        for key, attr in RAY_AIMING_FLAGS.items():
+            if key in options:
+                setattr(sd.RayAiming, attr, options[key])
+        if "pupil_shift" in options:
+            sd.RayAiming.PupilShiftX, sd.RayAiming.PupilShiftY, sd.RayAiming.PupilShiftZ = options["pupil_shift"]
+        if "pupil_compress" in options:
+            sd.RayAiming.PupilCompressX, sd.RayAiming.PupilCompressY = options["pupil_compress"]
 
         lde = system.LDE
         surfaces = p["surfaces"]
@@ -900,24 +1137,190 @@ class ZosBackend(Backend):
         obj.Comment = p["object"]["comment"]
         if p["object"]["material"]:
             self._set_material(obj, p["object"]["material"], "object surface")
-        columns = zosapi.Editors.LDE.SurfaceColumn
-        for k, s in enumerate(surfaces, start=1):
-            row = lde.GetSurfaceAt(k)
-            if s["type"] == "paraxial":
-                row.ChangeType(row.GetSurfaceTypeSettings(zosapi.Editors.LDE.SurfaceType.Paraxial))
-                row.GetSurfaceCell(columns.Par1).DoubleValue = s["focal_length"]
-                row.GetSurfaceCell(columns.Par2).IntegerValue = s["opd_mode"]
-            else:
-                row.Radius = s["radius"]
-                row.Conic = s["conic"]
-                if s["material"]:
-                    self._set_material(row, s["material"], f"surface {k}")
-            row.Thickness = s["thickness"]
-            row.Comment = s["comment"]
+        rows = [(k, s, f"surface {k}") for k, s in enumerate(surfaces, start=1)]
+        if p.get("image"):
+            rows.append((len(surfaces) + 1, p["image"], "image surface"))
+        for k, s, label in rows:
+            self._build_surface(zosapi, lde.GetSurfaceAt(k), s, label)
         for k, s in enumerate(surfaces, start=1):
             if s["stop"]:
                 lde.GetSurfaceAt(k).IsStop = True
-        self.clear_apertures()
+        # 求解最后设：拾取可能读后面的面
+        for k, s, label in rows:
+            for column, solve in (s.get("solves") or {}).items():
+                with _named(f"{label} {column}"):
+                    self._set_solve(zosapi, lde.GetSurfaceAt(k), solve, column, f"{label} {column}")
+        if p["configurations"]:
+            with _named("configurations"):
+                self._build_configurations(zosapi, p["configurations"])
+        fields.ClearVignetting()
+
+        # OpticStudio 遇到不成立的组合会悄悄改设置，搭完回读一次
+        got = {"aperture.type": (str(sd.Aperture.ApertureType), aperture_type), "fields.type": (str(fields.GetFieldType()), field_type),
+               "telecentric_object": (bool(sd.Aperture.TelecentricObjectSpace), bool(p.get("telecentric_object", False))),
+               "afocal": (bool(sd.Aperture.AFocalImageSpace), p["afocal"] is not None),
+               "environment.temperature": (float(sd.Environment.Temperature), env["temperature"]),
+               "environment.pressure": (float(sd.Environment.Pressure), env["pressure"])}
+        # 偏振和光线瞄准选项彼此有默认联动（非偏振盖掉琼斯矢量、自动光瞳偏移盖掉手动值），逐项回读
+        # polarization and ray-aiming options override each other by default, so each given item is read back
+        pol = sd.Polarization
+        for key, attr in (("unpolarized", "Unpolarized"), ("jx", "Jx"), ("jy", "Jy"), ("x_phase", "XPhase"), ("y_phase", "YPhase"),
+                          ("convert_thin_film_phase", "ConvertThinFilmPhaseToRayEquivalent")):
+            if key in (p["polarization"] or {}):
+                got[f"polarization.{key}"] = (_plain(getattr(pol, attr)), p["polarization"][key])
+        if "method" in (p["polarization"] or {}):
+            got["polarization.method"] = (str(pol.Method), POLARIZATION_METHODS[p["polarization"]["method"]])
+        for key, attr in RAY_AIMING_FLAGS.items():
+            if key in options:
+                got[f"ray_aiming_options.{key}"] = (bool(getattr(sd.RayAiming, attr)), options[key])
+        for key, attrs in (("pupil_shift", ("PupilShiftX", "PupilShiftY", "PupilShiftZ")), ("pupil_compress", ("PupilCompressX", "PupilCompressY"))):
+            if key in options:
+                got[f"ray_aiming_options.{key}"] = ([float(getattr(sd.RayAiming, a)) for a in attrs], options[key])
+        changed = {k: {"requested": want, "actual": have} for k, (have, want) in got.items() if not _same(have, want)}
+        if changed:
+            raise SaosError(ErrorCode.BAD_ARGS, f"OpticStudio did not keep {', '.join(changed)}; the combination of settings is not valid", changed)
+
+    def _build_surface(self, zosapi, row, s: dict[str, Any], label: str) -> None:
+        """处方里的一个面（或像面）：面型、通用项、面型参数、倾斜偏心、半口径、孔径。求解另设。"""
+        with _named(label):
+            kind = s["type"]
+            if kind != "standard":
+                surface_type = enum_member(zosapi.Editors.LDE.SurfaceType, "Standard", "Paraxial" if kind == "paraxial" else kind, f"{label} type")
+                if not row.ChangeType(row.GetSurfaceTypeSettings(surface_type)):
+                    raise SaosError(ErrorCode.BAD_ARGS, f"{label}: OpticStudio refused surface type {kind}")
+            if kind == "paraxial":
+                columns = zosapi.Editors.LDE.SurfaceColumn
+                row.GetSurfaceCell(columns.Par1).DoubleValue = s["focal_length"]
+                row.GetSurfaceCell(columns.Par2).IntegerValue = s["opd_mode"]
+            for key, attr in (("radius", "Radius"), ("conic", "Conic")):
+                if key in s:
+                    setattr(row, attr, s[key])
+            if s.get("material"):
+                self._set_material(row, s["material"], label)
+            if "thickness" in s:
+                row.Thickness = s["thickness"]
+            row.Comment = s["comment"]
+            cells = None
+            for key, value in (s.get("params") or {}).items():
+                if cells is None and not is_par(key):
+                    cells = param_cells(zosapi, row)
+                cell = type_param_cell(zosapi, row, label, key, cells)
+                set_cell(cell, value, f"{label} {key}")
+                if str(cell.DataType) == "Integer":
+                    cells = None  # 项数一类的整数列会增减后面的列 / a term count adds or removes later columns
+            if s.get("decenter_tilt"):
+                self._set_decenter_tilt(zosapi, row, s["decenter_tilt"], label)
+            if "semi_diameter" in s:
+                row.SemiDiameterCell.MakeSolveFixed()
+                row.SemiDiameter = s["semi_diameter"]
+                if not same_number(float(row.SemiDiameter), s["semi_diameter"]):
+                    raise SaosError(ErrorCode.BAD_ARGS, f"{label}: semi_diameter did not take {s['semi_diameter']} (now {float(row.SemiDiameter)})")
+            if "mech_semi_diameter" in s:
+                row.MechanicalSemiDiameter = s["mech_semi_diameter"]
+            if s.get("aperture"):
+                self._set_surface_aperture(zosapi, row, s["aperture"], label)
+            if s.get("coating"):
+                name = pick_name([str(c) for c in row.CoatingData.GetAvailableCoatings()], s["coating"], f"{label} coating")
+                row.Coating = name
+                if str(row.Coating) != name:
+                    raise SaosError(ErrorCode.BAD_ARGS, f"{label}: coating did not take {name!r} (now {str(row.Coating)!r})")
+
+    def _set_polarization(self, zosapi, pol, d: dict[str, Any]) -> None:
+        if "unpolarized" in d:
+            pol.Unpolarized = d["unpolarized"]
+        for key, attr in (("jx", "Jx"), ("jy", "Jy"), ("x_phase", "XPhase"), ("y_phase", "YPhase")):
+            if key in d:
+                setattr(pol, attr, d[key])
+        if "method" in d:
+            pol.Method = getattr(zosapi.SystemData.PolarizationMethod, POLARIZATION_METHODS[d["method"]])
+        if "convert_thin_film_phase" in d:
+            pol.ConvertThinFilmPhaseToRayEquivalent = d["convert_thin_film_phase"]
+
+    def _set_decenter_tilt(self, zosapi, row, dt: dict[str, Any], label: str) -> None:
+        td = row.TiltDecenterData
+        if not td.BeforeAfterSurfaceEnabled:
+            raise SaosError(ErrorCode.BAD_ARGS, f"{label} ({row.TypeName}) takes no tilt/decenter; use a CoordinateBreak surface")
+        orders = zosapi.Editors.LDE.TiltDecenterOrderType
+        if dt["before"]:
+            b = dt["before"]
+            td.BeforeSurfaceDecenterX, td.BeforeSurfaceDecenterY = b["decenter_x"], b["decenter_y"]
+            td.BeforeSurfaceTiltX, td.BeforeSurfaceTiltY, td.BeforeSurfaceTiltZ = b["tilt_x"], b["tilt_y"], b["tilt_z"]
+            td.BeforeSurfaceOrder = getattr(orders, ORDERS[b["order"]])
+        after = dt["after"]
+        if after == "reverse":
+            if not td.SetAfterSurfaceModeReverseThis():
+                raise SaosError(ErrorCode.BAD_ARGS, f"{label}: OpticStudio refused to reverse the tilt/decenter after the surface")
+        elif after:
+            td.SetAfterSurfaceModeExplicit()
+            td.AfterSurfaceDecenterX, td.AfterSurfaceDecenterY = after["decenter_x"], after["decenter_y"]
+            td.AfterSurfaceTiltX, td.AfterSurfaceTiltY, td.AfterSurfaceTiltZ = after["tilt_x"], after["tilt_y"], after["tilt_z"]
+            td.AfterSurfaceOrder = getattr(orders, ORDERS[after["order"]])
+
+    def _set_surface_aperture(self, zosapi, row, a: dict[str, Any], label: str) -> None:
+        name = SURFACE_APERTURES[a["type"]]
+        settings = row.ApertureData.CreateApertureTypeSettings(getattr(zosapi.Editors.LDE.SurfaceApertureTypes, name))
+        data = getattr(settings, f"_S_{name}")
+        if a["type"].startswith("circular"):
+            data.MinimumRadius, data.MaximumRadius = a["min"], a["max"]
+        elif a["type"] == "spider":
+            data.NumberOfArms, data.WidthOfArms = a["arms"], a["width"]
+        else:
+            data.XHalfWidth, data.YHalfWidth = a["x_half"], a["y_half"]
+        data.ApertureXDecenter, data.ApertureYDecenter = a["x_decenter"], a["y_decenter"]
+        if not row.ApertureData.ChangeApertureTypeSettings(settings):
+            raise SaosError(ErrorCode.BAD_ARGS, f"{label}: OpticStudio refused the {a['type']} aperture")
+
+    def _set_solve(self, zosapi, row, solve: dict[str, Any], column: str, label: str) -> None:
+        cell = type_param_cell(zosapi, row, label, column) if is_par(column) else getattr(row, f"{column.capitalize()}Cell")
+        kind = solve["type"]
+        if kind == "variable":
+            cell.MakeSolveVariable()
+            expected = "Variable"
+        else:
+            expected = {"pickup": "SurfacePickup", "marginal_ray_height": "MarginalRayHeight", "f_number": "FNumber"}[kind]
+            solve_type = getattr(zosapi.Editors.SolveType, expected)
+            if not cell.IsSolveTypeSupported(solve_type):
+                raise SaosError(ErrorCode.BAD_ARGS, f"{label}: OpticStudio does not support a {kind} solve here")
+            data = cell.CreateSolveType(solve_type)
+            d = getattr(data, f"_S_{expected}")
+            if kind == "pickup":
+                d.Surface = solve["surface"]
+                if "scale" in solve:
+                    if d.SupportsScale:
+                        d.ScaleFactor = solve["scale"]
+                    if d.SupportsOffset:
+                        d.Offset = solve["offset"]
+            elif kind == "marginal_ray_height":
+                d.Height, d.PupilZone = solve["height"], solve["zone"]
+            else:
+                d.FNumber = solve["value"]
+            cell.SetSolveData(data)
+        actual = str(cell.GetSolveData().Type)
+        if actual != expected:
+            raise SaosError(ErrorCode.BAD_ARGS, f"{label}: the {kind} solve did not take (the cell holds {actual})")
+
+    def _build_configurations(self, zosapi, rows: list[dict[str, Any]]) -> None:
+        """多重结构：每行一个操作数，按结构写值；搭完回到结构 1。"""
+        mce = self.system.MCE
+        for _ in range(len(rows[0]["values"]) - 1):
+            mce.AddConfiguration(False)
+        for j, op in enumerate(rows, start=1):
+            label = f"configurations[{j}] {op['operand']}"
+            row = mce.GetOperandAt(j) if j <= mce.NumberOfOperands else mce.AddOperand()
+            if not row.ChangeType(enum_member(zosapi.Editors.MCE.MultiConfigOperandType, "THIC", op["operand"], label)):
+                raise SaosError(ErrorCode.BAD_ARGS, f"{label}: OpticStudio refused the operand")
+            for n, value in enumerate(op["params"], start=1):
+                if not getattr(row, f"Param{n}Enabled"):
+                    raise SaosError(ErrorCode.BAD_ARGS, f"{label} has no parameter {n}")
+                setattr(row, f"Param{n}", value)
+            for c, value in enumerate(op["values"], start=1):
+                if op["operand"] == "GLSS" and isinstance(value, str):
+                    value = self._check_material(value)
+                cell = row.GetOperandCell(c)
+                set_cell(cell, value, f"{label} configuration {c}")
+                if op["vary"]:
+                    cell.MakeSolveVariable()
+        mce.SetCurrentConfiguration(1)
 
     def clear_apertures(self) -> list[dict[str, Any]]:
         """删除所有面孔径和遮拦、半口径改为自动；返回原来设置了孔径的面。"""
@@ -947,7 +1350,8 @@ class ZosBackend(Backend):
             type_name = str(row.TypeName)
             item: dict[str, Any] = {
                 "index": i,
-                "type": type_name.lower() if type_name in ("Standard", "Paraxial") else type_name,
+                # 其他面型用 ZOS-API 的枚举名，处方按它重建 / other types by their ZOS-API enum name, which a prescription rebuilds
+                "type": type_name.lower() if type_name in ("Standard", "Paraxial") else str(row.Type),
                 "thickness": float(row.Thickness),
                 "comment": str(row.Comment),
                 "stop": bool(row.IsStop),
@@ -960,6 +1364,9 @@ class ZosBackend(Backend):
             else:
                 item["radius"] = float(row.Radius)
                 item["conic"] = float(row.Conic)
+                if type_name != "Standard":
+                    # 按列序给出全部可写的参数列（项数一类的整数列在系数之前）/ every writable parameter column in column order
+                    item["params"] = {f"par{n}": cell_value(c) for n, c in param_cells(zosapi, row).items() if not c.IsReadOnly}
             solve = row.MaterialCell.GetSolveData()
             if str(solve.Type) == "MaterialModel":
                 m = solve._S_MaterialModel
@@ -1372,9 +1779,23 @@ class ZosBackend(Backend):
         return out
 
     def interference(self) -> dict[str, Any]:
-        """结构交叠检查（saos.geometry）：面相交、镜片穿插。/ Interference check (saos.geometry): crossing surfaces, interpenetrating lenses."""
-        lde = self.system.LDE
-        return geometry.interference(self._geometry_items(range(1, lde.NumberOfSurfaces - 1), {}))
+        """结构交叠检查（saos.geometry）：面相交、镜片穿插。多重结构时逐个结构检查（变焦、调焦的镜组在别的结构里可能相撞），
+        结果按结构合并，结束时回到原来的结构。
+        Interference check (saos.geometry): crossing surfaces, interpenetrating lenses. With several configurations each is
+        checked (zoom or focus groups may collide in another one), the results are merged and the current configuration restored."""
+        lde, mce = self.system.LDE, self.system.MCE
+        count = int(mce.NumberOfConfigurations)
+        if count < 2:
+            return geometry.interference(self._geometry_items(range(1, lde.NumberOfSurfaces - 1), {}))
+        current = int(mce.CurrentConfiguration)
+        results = []
+        try:
+            for c in range(1, count + 1):
+                mce.SetCurrentConfiguration(c)
+                results.append(geometry.interference(self._geometry_items(range(1, lde.NumberOfSurfaces - 1), {})))
+        finally:
+            mce.SetCurrentConfiguration(current)
+        return geometry.merge_configurations(results)
 
     def _geometry_items(self, indices, transforms: dict[int, Any]) -> list[dict[str, Any]]:
         """交叠检查的面：网格取零件外缘（geometry.part_radii：机械半口径、崩边区，一片镜片一个外径），不只是净口径；

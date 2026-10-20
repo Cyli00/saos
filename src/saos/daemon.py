@@ -21,7 +21,7 @@ from multiprocessing.connection import Connection, Listener
 from pathlib import Path
 from typing import Any, Callable
 
-from saos import config, i18n, jobs, parallel, prescription, scripting, workflow
+from saos import config, geometry, i18n, jobs, parallel, prescription, scripting, workflow
 from saos.backend import Backend, make_backend
 from saos.backend.base import same_number
 from saos.protocol import ErrorCode, SaosError, decode, encode, fail, ok, write_json
@@ -606,6 +606,8 @@ class Daemon:
 
     def op_vary(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))
+        if args.get("config_rows") is not None:
+            return self._vary_config(loaded, args)
         param = _arg(args, "param", str)
         surfaces = _arg(args, "surfaces", list)
         # 面号先校验成整数：否则 int() 的异常出在循环里，会被当成改动途中的错误而把镜头标为未保存
@@ -643,6 +645,26 @@ class Daemon:
             if solves:
                 loaded.dirty = True
         return {**loaded.describe(), "param": param, "solves": solves, **extra}
+
+    def _vary_config(self, loaded, args: dict[str, Any]) -> dict[str, Any]:
+        """多重结构的格设为变量或固定（变焦间隔、调焦量等）。/ Multi-configuration cells variable or fixed (zoom spacings, focus, …)."""
+        rows = _arg(args, "config_rows", list)
+        configs = _arg(args, "configs", list, default=None)
+        if any(isinstance(x, bool) or not isinstance(x, int) for x in rows + (configs or [])):
+            raise SaosError(ErrorCode.BAD_ARGS, "config_rows and configs must be integers")
+        if args.get("param") is not None or args.get("surfaces"):
+            raise SaosError(ErrorCode.BAD_ARGS, "give either --param with --surfaces or --config-rows, not both")
+        try:
+            solves = self.backend.vary_config(rows, configs, bool(args.get("on", True)))
+        except SaosError as exc:
+            if exc.code != ErrorCode.BAD_ARGS:
+                loaded.dirty = True
+            raise
+        except Exception:
+            loaded.dirty = True
+            raise
+        loaded.dirty = True
+        return {**loaded.describe(), "config_solves": solves}
 
     def op_merit(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))
@@ -714,14 +736,7 @@ class Daemon:
         valid = True
         try:
             clash = self.backend.interference()
-            near = {}
-            for glass in (True, False):
-                rows = [c for c in clash.get("clearances") or [] if bool(c.get("glass")) == glass]
-                if rows:
-                    c = min(rows, key=lambda r: r["min"])
-                    near["thinnest_glass" if glass else "smallest_air_gap"] = {k: c[k] for k in ("surfaces", "min", "radius", "outer")}
-            out["interference"] = {"crossings": clash.get("crossings") or [], "overlaps": clash.get("overlaps") or [],
-                                   "edges_from_clear": clash.get("edges_from_clear"), **near}
+            out["interference"] = geometry.summary(clash)
             if clash.get("crossings") or clash.get("overlaps"):
                 valid = False
                 warnings.append("parts cross or interpenetrate: the editor holds a physically invalid system")

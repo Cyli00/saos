@@ -51,6 +51,18 @@ TEXT: dict[str, tuple[str, str]] = {
     "telecentric": ("物方远心", "Telecentric object space"),
     "afocal": ("像方无焦", "Afocal image space"),
     "aiming": ("光线瞄准", "Ray aiming"),
+    "aiming_options": ("光线瞄准选项", "Ray aiming options"),
+    "afocal_units": ("无焦单位", "Afocal units"),
+    "environment": ("环境", "Environment"),
+    "env_value": ("{t} °C，{p} atm，按环境修正折射率：{adj}", "{t} °C, {p} atm, index adjusted to environment: {adj}"),
+    "apodization": ("切趾", "Apodization"),
+    "polarization": ("偏振", "Polarization"),
+    "unpolarized": ("非偏振", "unpolarized"),
+    "coating_file": ("膜层文件", "Coating file"),
+    "h.configs": ("多重结构", "Multiple configurations"),
+    "configs_note": ("共 {n} 个结构，当前为结构 {cur}。交叠检查逐个结构做；TEMP、PRES 的值和各行操作数属于确认的模型，其余值是设计变量。",
+                     "{n} configurations, configuration {cur} is current. The interference check covers each configuration; TEMP and PRES values and the operand rows belong to the approved model, the other values are design variables."),
+    "th.configs": ("行|操作数|参数|{cols}", "Row|Operand|Parameters|{cols}"),
     "stop": ("光阑面", "Stop surface"),
     "catalogs": ("使用的材料目录", "Material catalogs in use"),
     "yes": ("是", "yes"),
@@ -96,12 +108,12 @@ TEXT: dict[str, tuple[str, str]] = {
         "The medium after surface {s} has the same index at every wavelength ({n}); only a truly non-dispersive medium should be modelled this way.",
     ),
     "w.crossing": (
-        "第 {a} 面（{ca}）和第 {b} 面（{cb}）在口径内相交，最深约 {depth}：镜片边缘厚度为负，或两个零件互相穿过。",
-        "Surfaces {a} ({ca}) and {b} ({cb}) cross inside their apertures, by up to about {depth}: a negative edge thickness, or two parts passing through each other.",
+        "{cfg}第 {a} 面（{ca}）和第 {b} 面（{cb}）在口径内相交，最深约 {depth}：镜片边缘厚度为负，或两个零件互相穿过。",
+        "{cfg}Surfaces {a} ({ca}) and {b} ({cb}) cross inside their apertures, by up to about {depth}: a negative edge thickness, or two parts passing through each other.",
     ),
     "w.overlap": (
-        "镜片 {l1}（{c1}）和镜片 {l2}（{c2}）相互穿插：一片的表面落在另一片的玻璃里（{n} 个采样点），多半是空气间隔为负。",
-        "Lenses {l1} ({c1}) and {l2} ({c2}) interpenetrate: {n} sample points of one lie inside the other's glass, usually a negative air gap.",
+        "{cfg}镜片 {l1}（{c1}）和镜片 {l2}（{c2}）相互穿插：一片的表面落在另一片的玻璃里（{n} 个采样点），多半是空气间隔为负。",
+        "{cfg}Lenses {l1} ({c1}) and {l2} ({c2}) interpenetrate: {n} sample points of one lie inside the other's glass, usually a negative air gap.",
     ),
     "w.edges_from_clear": (
         "没有一片镜片的外缘大于净口径：交叠检查和边厚只按净口径算，没算装配余量。按 design-practice.md 表 17-1 给各镜片面设机械半口径"
@@ -218,12 +230,14 @@ def checks(desc: dict[str, Any], notes: dict[str, Any] | None = None, recorded: 
         if any(abs(v) > 0 for v in (f.get("vignetting") or {}).values()):
             out.append(("vignetting", {"f": k}))
     clash = desc.get("interference") or {}
+    # 多重结构时标出结构号；警告文字给 agent 读，统一用英文写结构号 / the configuration, when there are several
+    cfg = lambda x: f"[configuration {x['configuration']}] " if "configuration" in x else ""  # noqa: E731
     for c in clash.get("crossings") or []:
         out.append(("crossing", {"a": c["surfaces"][0], "b": c["surfaces"][1], "ca": c["comments"][0] or "-", "cb": c["comments"][1] or "-",
-                                 "depth": fmt(c["depth"])}))
+                                 "depth": fmt(c["depth"]), "cfg": cfg(c)}))
     for o in clash.get("overlaps") or []:
         out.append(("overlap", {"l1": "–".join(map(str, o["lenses"][0])), "l2": "–".join(map(str, o["lenses"][1])),
-                                "c1": o["comments"][0] or "-", "c2": o["comments"][1] or "-", "n": o["points"]}))
+                                "c1": o["comments"][0] or "-", "c2": o["comments"][1] or "-", "n": o["points"], "cfg": cfg(o)}))
     if clash.get("edges_from_clear"):
         out.append(("edges_from_clear", {}))
     if str(desc.get("lens_units", "")).lower().startswith("millimet"):
@@ -280,6 +294,42 @@ def _solve_text(s: dict[str, Any]) -> str:
     return e("; ".join(parts)) or "—"
 
 
+def _extra_rows(desc: dict[str, Any], t: Tr, yn) -> list[tuple[str, Any]]:
+    """环境、切趾、偏振、膜层文件、光线瞄准选项；旧的描述里没有的项不列。/ Rows for the later system settings, when present."""
+    rows: list[tuple[str, Any]] = []
+    env = desc.get("environment")
+    if env:
+        rows.append((t("environment"), t("env_value", t=fmt(env["temperature"]), p=fmt(env["pressure"]), adj=yn(env["adjust_index"]))))
+    apod = desc.get("apodization")
+    if apod:
+        rows.append((t("apodization"), apod["type"] + (f" (G = {fmt(apod['factor'])})" if "factor" in apod else "")))
+    pol = desc.get("polarization")
+    if pol:
+        rows.append((t("polarization"), t("unpolarized") if pol["unpolarized"] else
+                     f"Jx = {fmt(pol['jx'])}, Jy = {fmt(pol['jy'])}, X {fmt(pol['x_phase'])}°, Y {fmt(pol['y_phase'])}°, {pol['method']}"))
+    if desc.get("coating_file"):
+        rows.append((t("coating_file"), desc["coating_file"]))
+    opts = desc.get("ray_aiming_options")
+    if opts:
+        on = [k for k, v in opts.items() if v is True]
+        shift = ", ".join(f"{k} = {' / '.join(fmt(x) for x in opts[k])}" for k in ("pupil_shift", "pupil_compress") if any(opts.get(k) or []))
+        rows.append((t("aiming_options"), "; ".join(x for x in (", ".join(on), shift) if x) or t("none")))
+    return rows
+
+
+def _configs_html(cfg: dict[str, Any], t: Tr) -> str:
+    if (cfg.get("count") or 1) < 2:
+        return ""
+    cols = "|".join(str(c) for c in range(1, cfg["count"] + 1))
+    rows = []
+    for o in cfg.get("operands") or []:
+        cells = "".join(f"<td class='num'>{e(fmt(v) if isinstance(v, (int, float)) else v)}{'' if s in ('Fixed', 'None') else f' ({e(s)})'}</td>"
+                        for v, s in zip(o["values"], o.get("solves") or [""] * len(o["values"])))
+        rows.append(f"<tr><td class='num'>{o['row']}</td><td>{e(o['type'])}</td><td>{e(', '.join(map(str, o.get('params') or [])))}</td>{cells}</tr>")
+    return (f"<h2>{t('h.configs')}</h2><p class='muted'>{e(t('configs_note', n=cfg['count'], cur=cfg.get('current', 1)))}</p>"
+            f"<div class='wrap'><table><thead><tr>{header_row(t('th.configs', cols=cols))}</tr></thead><tbody>{''.join(rows)}</tbody></table></div>")
+
+
 def render(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[str, Any], lang: str,
            found: list[tuple[str, dict[str, Any]]] | None = None) -> str:
     t = Tr(lang)
@@ -300,6 +350,9 @@ def render(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[str, A
         (t("stop"), desc.get("stop_surface")),
         (t("catalogs"), ", ".join(desc.get("material_catalogs") or []) or t("none")),
     ]
+    if "afocal_units" in ap:
+        system_rows.insert(4, (t("afocal_units"), ap["afocal_units"]))
+    system_rows += _extra_rows(desc, t, yn)
     system = "".join(f"<tr><th>{e(k)}</th><td>{e(v)}</td></tr>" for k, v in system_rows)
     fields = "".join(
         f"<tr><td class='num'>{k}</td><td class='num'>{fmt(f['x'])}</td><td class='num'>{fmt(f['y'])}</td><td class='num'>{fmt(f['weight'])}</td>"
@@ -342,6 +395,8 @@ def render(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[str, A
         )
         if s.get("tilt_decenter"):
             param_rows.append(f"<tr><td class='num'>{i}</td><td>Tilt/Decenter</td><td>{e('; '.join(f'{k} = {fmt(v)}' for k, v in s['tilt_decenter'].items()))}</td></tr>")
+        if s.get("coating"):
+            param_rows.append(f"<tr><td class='num'>{i}</td><td>Coating</td><td>{e(s['coating'])}</td></tr>")
         if s.get("params"):
             vals = "; ".join(f"par{p['par']} {p['name']} = {fmt(p['value'])}" + ("" if p.get("solve") in (None, "Fixed") else f" ({p['solve']})") for p in s["params"])
             param_rows.append(f"<tr><td class='num'>{i}</td><td>{e(s['type'])}</td><td>{e(vals)}</td></tr>")
@@ -353,6 +408,7 @@ def render(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[str, A
             layouts.append(f"<h3>{e(key)}</h3><p class='muted'>{e(t('layout_missing', err=value.get('error', '')))}</p>")
     assumptions = "".join(f"<li>{e(a)}</li>" for a in notes.get("assumptions") or []) or f"<li>{t('none')}</li>"
     first_order = "".join(f"<li>{e(a)}</li>" for a in notes.get("first_order") or []) or f"<li>{t('none')}</li>"
+    configs_html = _configs_html(desc.get("configurations") or {}, t)
     params_html = (
         f"<h2>{t('h.params')}</h2><div class='wrap'><table><tbody>{''.join(param_rows)}</tbody></table></div>" if param_rows else ""
     )
@@ -370,6 +426,7 @@ def render(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[str, A
 <h2>{t('h.surfaces')}</h2><div class="wrap"><table><thead><tr>{header_row(t('th.surfaces'))}</tr></thead><tbody>{''.join(surf_rows)}</tbody></table></div>
 <p class="muted">{t('thick_note')}</p>
 {params_html}
+{configs_html}
 <h2>{t('h.first_order')}</h2><ul>{first_order}</ul>
 <h2>{t('h.assumptions')}</h2><ul>{assumptions}</ul>
 <h2>{t('h.layout')}</h2>{''.join(layouts)}

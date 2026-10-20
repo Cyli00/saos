@@ -12,6 +12,11 @@ ctx.spot(...)); kit.<function>(ctx, ...) works as well.
                     material、comment、par<N>
     "aperture"      系统孔径值 / the system aperture value
     "field.<n>.x"、"field.<n>.y"、"wave.<n>"   第 n 个视场坐标、第 n 个波长（µm）/ field n coordinates, wavelength n (µm)
+    "config.<c>.<r>" 多重结构第 r 行在结构 c 的值（变焦间隔、温度等）/ multi-configuration row r in configuration c
+
+多重结构的判定按结构分别测量：with ctx.configuration(c): ...，块结束时回到原来的结构，判定结束时镜头不变。
+Checks of a multi-configuration lens measure each configuration inside with ctx.configuration(c): ...; the original
+configuration returns when the block ends, so the lens is unchanged after the checks.
 """
 
 from __future__ import annotations
@@ -34,7 +39,7 @@ PARAMS = ("radius", "curvature", "thickness", "conic", "semi_diameter", "mech_se
 _ROW_ATTRS = {"radius": "Radius", "thickness": "Thickness", "conic": "Conic", "semi_diameter": "SemiDiameter",
               "mech_semi_diameter": "MechanicalSemiDiameter"}
 _INT_RE = re.compile(r"^-?\d+$")
-_SYSTEM_RE = re.compile(r"^(aperture|wave\.(\d+)|field\.(\d+)\.([xy]))$")
+_SYSTEM_RE = re.compile(r"^(aperture|wave\.(\d+)|field\.(\d+)\.([xy])|config\.(\d+)\.(\d+))$")
 # ReadNextResult 的返回：(成功, 光线号, 错误, 渐晕, X, Y, Z, L, M, N, l2, m2, n2, opd, 强度)
 # ReadNextResult returns (ok, ray number, error, vignette, X, Y, Z, L, M, N, l2, m2, n2, opd, intensity)
 _READ_ARGS = (0, 0, 0, *([0.0] * 11))
@@ -109,11 +114,13 @@ def parse_key(key: str) -> tuple[str, Any, str]:
             return "system", "aperture", ""
         if m.group(2):
             return "system", "wave", m.group(2)
+        if m.group(5):
+            return "system", "config", f"{m.group(5)}.{m.group(6)}"
         return "system", f"field_{m.group(4)}", m.group(3)
     ref, sep, param = key.rpartition(".")
     if not sep or not ref or not (param in PARAMS or PAR_RE.match(param)):
         raise SaosError(ErrorCode.BAD_ARGS, f"parameter key {key!r}: use <surface>.<param> with param in {PARAMS} or par<N>, "
-                                            "or aperture, field.<n>.x|y, wave.<n>")
+                                            "or aperture, field.<n>.x|y, wave.<n>, config.<c>.<row>")
     return "surface", ref, param
 
 
@@ -123,9 +130,23 @@ def _par_cell(ctx, row, param: str, index: int):
     return par_cell(zosapi(ctx), row, index, param)
 
 
+def _config_cell(sysm, param: str):
+    """多重结构第 r 行在结构 c 的单元格。/ The cell of row r in configuration c."""
+    c, r = (int(x) for x in param.split("."))
+    mce = sysm.MCE
+    count, rows = int(mce.NumberOfConfigurations), int(mce.NumberOfOperands)
+    if count < 2 or not (1 <= c <= count and 1 <= r <= rows):
+        raise SaosError(ErrorCode.BAD_ARGS, f"config.{c}.{r}: the lens has {count} configuration(s) and {rows} multi-configuration row(s)")
+    return mce, c, mce.GetOperandAt(r).GetOperandCell(c)
+
+
 def _get_zos(ctx, sysm, kind: str, ref: Any, param: str, names: dict[str, int]) -> Any:
     if kind == "system":
         sd = sysm.SystemData
+        if ref == "config":
+            from saos.backend.zos import cell_value
+
+            return cell_value(_config_cell(sysm, param)[2])
         if ref == "aperture":
             return float(sd.Aperture.ApertureValue)
         if ref == "wave":
@@ -147,6 +168,17 @@ def _get_zos(ctx, sysm, kind: str, ref: Any, param: str, names: dict[str, int]) 
 def _set_zos(ctx, sysm, kind: str, ref: Any, param: str, value: Any, names: dict[str, int]) -> None:
     if kind == "system":
         sd = sysm.SystemData
+        if ref == "config":
+            from saos.backend.zos import set_cell
+
+            mce, c, cell = _config_cell(sysm, param)
+            if isinstance(value, str) and mce.GetOperandAt(int(param.split(".")[1])).TypeName == "GLSS":
+                value = ctx.backend._check_material(value)
+            set_cell(cell, value, f"config.{param}")
+            if c == int(mce.CurrentConfiguration):
+                # 改的是当前结构：重新套用，镜头才跟着变 / the current configuration: re-apply it so the lens follows
+                mce.SetCurrentConfiguration(c)
+            return
         if ref == "aperture":
             sd.Aperture.ApertureValue = float(value)
         elif ref == "wave":
@@ -235,6 +267,29 @@ def kept(ctx, keys: Iterable[str]) -> Iterator[dict[str, Any]]:
         yield dict(before)
     finally:
         set(ctx, before)
+
+
+def configurations(ctx) -> int:
+    """结构数（单结构为 1）。/ The number of configurations (1 for a single one)."""
+    return int(_need_system(ctx, "configurations").MCE.NumberOfConfigurations)
+
+
+@contextmanager
+def configuration(ctx, n: int) -> Iterator[None]:
+    """with 块内切到第 n 个结构，结束时回到原来的结构（出错也回）。按结构分别测量的判定用它，判定结束时镜头不变；
+    ctx.memo 的键要带上结构号。
+    Switch to configuration n inside the block and back to the original one when it ends, errors included. Checks that
+    measure each configuration use it, so the lens is unchanged after them; include the configuration in ctx.memo keys."""
+    mce = _need_system(ctx, "configuration").MCE
+    count = int(mce.NumberOfConfigurations)
+    if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= count:
+        raise SaosError(ErrorCode.BAD_ARGS, f"configuration must be 1–{count}, got {n!r}")
+    before = int(mce.CurrentConfiguration)
+    mce.SetCurrentConfiguration(n)
+    try:
+        yield
+    finally:
+        mce.SetCurrentConfiguration(before)
 
 
 @contextmanager
@@ -432,6 +487,13 @@ def spot(ctx, fields: Iterable[Iterable[float]] = ((0.0, 0.0),), wave: int | Ite
     pass_rate (%), chief (None when it does not arrive), centroid, rms_radius, geo_radius (about the centroid, lens
     units); with refocus=True also best_dz (see best_focus) and rms_radius_best there. Rows with fewer than min_rays
     arriving rays have valid False and None statistics."""
+    sysm = system(ctx)
+    if to is None and sysm is not None and bool(sysm.SystemData.Aperture.AFocalImageSpace):
+        # 无焦系统的像在无穷远：像面上的落点不反映像质，量会被当成镜头单位误读
+        # an afocal system images to infinity: landing points on the image surface say nothing and would be read as lengths
+        raise SaosError(ErrorCode.BAD_ARGS, "the system is afocal (image at infinity), so spot sizes on the image surface mean nothing; "
+                        "measure the angular spread from the ray directions (ctx.trace gives l, m, n) or an operand/analysis "
+                        "that reports afocal units, or pass to=<a surface> deliberately")
     fields = [tuple(float(v) for v in f) for f in fields]
     waves = [primary_wave(ctx)] if wave is None else [int(wave)] if isinstance(wave, (int, np.integer)) else [int(w) for w in wave]
     grid_pts = pupil(grid)
@@ -687,6 +749,12 @@ class KitMethods:
 
     def restored(self):
         return restored(self)
+
+    def configurations(self):
+        return configurations(self)
+
+    def configuration(self, n):
+        return configuration(self, n)
 
     def op(self, name, int1=0, int2=0, *data):
         return op(self, name, int1, int2, *data)

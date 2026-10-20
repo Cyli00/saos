@@ -312,6 +312,8 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
         # 所用材料逐轮留档；含模型玻璃的轮次只是探索，不能交付
         # materials are archived per round; a round with a model glass is exploration only and cannot be delivered
         "materials": model_gate.materials(desc),
+        # 本设计要做的面的膜层是设计变量，逐轮留档 / coatings of the surfaces this design makes are design variables, archived per round
+        "coatings": model_gate.coatings(desc),
         # 环境面和外购件（建模说明中声明）不受模型玻璃限制 / environment and bought-in surfaces (declared in the approved model) are exempt
         "model_glass": [i for i in model_gate.model_glass_surfaces(desc) if i not in approved["environment"]],
         "environment": approved["environment"],
@@ -377,5 +379,5 @@ def _rebase(ctx, h: dict[str, Any], scripts: dict[str, Any], best: dict[str, Any
         "measurement_errors": ev["measurement_errors"], "hard_failing": ev["hard_failing"], "values": values,
         "failing": {i["id"]: i["shortfall"] for i in ev["items"] if i.get("shortfall", 0) > 0},
         "merit": best.get("merit"), "demand_sha": sha, "method_sha": method_sha, "confirmation": confirmation,
-        **{k: best.get(k) for k in ("model", "materials", "model_glass", "environment")}, "time": jobs.now_iso(),
+        **{k: best.get(k) for k in ("model", "materials", "coatings", "model_glass", "environment")}, "time": jobs.now_iso(),
     }

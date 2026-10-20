@@ -305,6 +305,44 @@ def clearances(surfaces: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+def summary(clash: dict[str, Any]) -> dict[str, Any]:
+    """interference() 结果的摘要：相交、穿插、最薄玻璃、最小空气间隔、是否只按净口径算。
+    A digest of interference(): crossings, overlaps, thinnest glass, smallest air gap, whether only clear apertures counted."""
+    out: dict[str, Any] = {"crossings": clash.get("crossings") or [], "overlaps": clash.get("overlaps") or [],
+                           "edges_from_clear": clash.get("edges_from_clear")}
+    for glass, name in ((True, "thinnest_glass"), (False, "smallest_air_gap")):
+        rows = [c for c in clash.get("clearances") or [] if bool(c.get("glass")) == glass]
+        if rows:
+            c = min(rows, key=lambda r: r["min"])
+            out[name] = {k: c[k] for k in ("surfaces", "min", "radius", "outer")}
+    return out
+
+
+def merge_configurations(results: list[dict[str, Any]]) -> dict[str, Any]:
+    """几个结构的 interference() 结果合成一份：相交和穿插逐条标上结构号（从 1 起），相邻面间隔取各结构中最小的并标出结构，
+    镜片的净口径和外缘取各结构中最大的。
+    Merge interference() results of several configurations: crossings and overlaps tagged with their configuration (from 1),
+    each clearance the smallest over the configurations (tagged), each lens's clear and outer radius the largest."""
+    out: dict[str, Any] = {"crossings": [], "overlaps": [], "configurations": len(results), "tolerance": TOL}
+    gaps: dict[tuple[int, ...], dict[str, Any]] = {}
+    lenses: dict[tuple[int, ...], dict[str, Any]] = {}
+    for c, r in enumerate(results, start=1):
+        out["crossings"] += [{**x, "configuration": c} for x in r.get("crossings") or []]
+        out["overlaps"] += [{**x, "configuration": c} for x in r.get("overlaps") or []]
+        for gap in r.get("clearances") or []:
+            key = tuple(gap["surfaces"])
+            if key not in gaps or gap["min"] < gaps[key]["min"]:
+                gaps[key] = {**gap, "configuration": c}
+        for e in r.get("lenses") or []:
+            key = tuple(e["surfaces"])
+            old = lenses.get(key)
+            lenses[key] = e if old is None else {**e, "clear": max(e["clear"], old["clear"]), "outer": max(e["outer"], old["outer"])}
+    out["clearances"] = list(gaps.values())
+    out["lenses"] = list(lenses.values())
+    out["edges_from_clear"] = bool(out["lenses"]) and all(e["outer"] <= e["clear"] + TOL for e in out["lenses"])
+    return out
+
+
 def interference(surfaces: list[dict[str, Any]]) -> dict[str, Any]:
     """surfaces：按序号排列，每个带 index、type、comment、material（面后的材料）、sd（网格半径，即零件外缘）、rot（行优先 3×3）、off、
     sags（与 polar_points(sd) 对应），可选 ap（aperture() 的结果）和 clear（净口径半径，缺省同 sd）。两侧材料不同（或是反射镜）的面

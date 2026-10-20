@@ -129,6 +129,11 @@ class Backend(ABC):
         catalog is the name substitute_catalog resolved, used as given; empty means every catalog in use."""
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support vary")
 
+    def vary_config(self, rows: list[int], configs: list[int] | None, on: bool) -> dict[str, str]:
+        """把多重结构的格设为变量或固定；configs 为空时是全部结构。返回 {"<行>.<结构>": 求解类型}。
+        Make multi-configuration cells variable or fixed; configs empty means every configuration."""
+        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} has no multiple configurations")
+
     def show_windows(self, viewer: str | None = None, analysis: str | None = None, settings: dict[str, Any] | None = None) -> dict[str, Any]:
         """显性调试：在连接的窗口中打开 Lens Data 和一个布局窗口（剖面图画不了时用 3D 视图），按需再开一个像质分析。"""
         raise SaosError(ErrorCode.BAD_ARGS, "explicit debugging windows need extension mode (saos daemon start --mode extension)")

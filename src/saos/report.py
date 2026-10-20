@@ -98,6 +98,8 @@ TEXT: dict[str, tuple[str, str]] = {
     "mat.catalog": ("目录 {cats}", "catalog {cats}"),
     "mat.status": ("，{status}", ", {status}"),
     "mat.obsolete": ("，Obsolete（停产，通常买不到）", ", Obsolete (discontinued, usually unavailable)"),
+    "mat.config": ("（结构 {c}）", " (configuration {c})"),
+    "mat.coating": ("膜层（取自镜头的膜层文件）", "coating (from the lens's coating file)"),
     "mat.env": ("（环境或外购件）", " (environment or bought-in)"),
     "blocked": ("<b>没有可交付的镜头</b>：所有轮次都还含模型玻璃（第 {surfaces} 面），下面列的是探索中最好的一轮，不能作为设计交付。",
                 "<b>No deliverable lens</b>: every round still uses a model glass (surfaces {surfaces}); the round below is the best exploration result and is not a deliverable design."),
@@ -442,7 +444,10 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
         n = " / ".join(f"{v:.6f}" for v in m.get("n") or [])
         if m["surface"] in (deliver.get("environment") or []):
             source += t("mat.env")
-        mat_rows.append(f'<tr><td class="num">{m["surface"]}</td><td>{e(name)}</td><td>{e(source)}</td><td class="num">{e(n)}</td></tr>')
+        where = str(m["surface"]) + (t("mat.config", c=m["configuration"]) if "configuration" in m else "")
+        mat_rows.append(f'<tr><td class="num">{e(where)}</td><td>{e(name)}</td><td>{e(source)}</td><td class="num">{e(n)}</td></tr>')
+    for c in deliver.get("coatings") or []:
+        mat_rows.append(f'<tr><td class="num">{c["surface"]}</td><td>{e(c["coating"])}</td><td>{e(t("mat.coating"))}</td><td></td></tr>')
     model_line = f'<p class="muted">{t("model_ok", model=e(deliver["model"]))}</p>' if deliver.get("model") else ""
     materials = (f'<div class="wrap"><table><thead><tr>{header_row(t("th.materials"))}</tr></thead><tbody>{"".join(mat_rows)}</tbody></table></div>'
                  if mat_rows else f"<p>{t('none')}</p>") + model_line

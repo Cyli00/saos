@@ -263,8 +263,11 @@ class Evaluator:
         for r in self.objective:
             if r["type"] == "paraxial":
                 surfaces.append({k: r[k] for k in ("type", "focal_length", "opd_mode", "thickness", "comment", "stop")})
-            else:
+            elif r["type"] == "standard":
                 surfaces.append({**{k: r[k] for k in ("radius", "conic", "thickness", "material", "comment", "stop")}, "type": "standard"})
+            else:
+                # 非球面等其他面型连同面型参数一起重建；验收仍按 surface_types 记为偏离 / rebuilt with its parameters, still scored by surface_types
+                surfaces.append({k: r[k] for k in ("type", "radius", "conic", "thickness", "material", "comment", "stop", "params") if k in r})
         f_tl = spec.tube_lens_focal_length
         surfaces.append({"type": "paraxial", "focal_length": f_tl, "opd_mode": 1, "thickness": f_tl, "comment": layout.TAG_TUBE, "stop": tube["stop"]})
 

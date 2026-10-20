@@ -150,7 +150,7 @@ def cmd_lens(args: argparse.Namespace) -> Any:
 MAX_SURFACES = 10000
 
 
-def _surface_list(text: str) -> list[int]:
+def _surface_list(text: str, flag: str = "--surfaces") -> list[int]:
     """"1-16" 或 "1,3,5-7" → 面序号列表；写错的段、倒序区间和空列表报 BAD_ARGS，不当作内部错误或悄悄变成空列表。"""
     out: list[int] = []
     for part in text.split(","):
@@ -158,20 +158,28 @@ def _surface_list(text: str) -> list[int]:
         # ASCII digits only, at most 5: a huge digit string makes int() fail, and full-width or other scripts' digits are no surface numbers
         m = re.fullmatch(r"[ \t]*([0-9]{1,5})[ \t]*(?:-[ \t]*([0-9]{1,5})[ \t]*)?", part)
         if not m:
-            raise SaosError(ErrorCode.BAD_ARGS, f"--surfaces takes surface numbers and ranges like 1,3,5-7; cannot read {part[:40]!r}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"{flag} takes numbers and ranges like 1,3,5-7; cannot read {part[:40]!r}")
         a, b = int(m[1]), int(m[2] or m[1])
         if a > b:
-            raise SaosError(ErrorCode.BAD_ARGS, f"--surfaces range {a}-{b} runs backwards; write it as {b}-{a}")
+            raise SaosError(ErrorCode.BAD_ARGS, f"{flag} range {a}-{b} runs backwards; write it as {b}-{a}")
         out.extend(range(a, b + 1))
         # 每段最多 5 位，单段至多十万个面号；总数再设上限，免得几段大区间在发往后台之前占满内存
         # at most 5 digits bound one range; the total is capped too, so wide ranges cannot fill memory before reaching the daemon
         if len(out) > MAX_SURFACES:
-            raise SaosError(ErrorCode.BAD_ARGS, f"--surfaces lists more than {MAX_SURFACES} surfaces")
+            raise SaosError(ErrorCode.BAD_ARGS, f"{flag} lists more than {MAX_SURFACES} entries")
     return out
 
 
 def cmd_opt(args: argparse.Namespace) -> Any:
     if args.action == "vary":
+        if args.config_rows:
+            if args.param or args.surfaces:
+                raise SaosError(ErrorCode.BAD_ARGS, "give either --param with --surfaces or --config-rows, not both")
+            payload = {"job": args.job, "config_rows": _surface_list(args.config_rows, "--config-rows"),
+                       "configs": _surface_list(args.configs, "--configs") if args.configs else None, "on": not args.off}
+            return client.request("opt.vary", payload, timeout=args.timeout)
+        if not (args.param and args.surfaces):
+            raise SaosError(ErrorCode.BAD_ARGS, "opt vary needs --param and --surfaces, or --config-rows")
         payload = {"job": args.job, "param": args.param, "surfaces": _surface_list(args.surfaces), "on": not args.off,
                    "mode": args.mode, "catalog": args.catalog}
         return client.request("opt.vary", payload, timeout=args.timeout)
@@ -411,10 +419,12 @@ def build_parser() -> argparse.ArgumentParser:
         return q
 
     q = opt_cmd("vary", "make surface parameters variable or fixed")
-    q.add_argument("--param", required=True, help="radius, thickness, conic, par<N> (a Lens Data parameter column: aspheric terms, tilts, …) or material")
+    q.add_argument("--param", help="radius, thickness, conic, par<N> (a Lens Data parameter column: aspheric terms, tilts, …) or material")
     q.add_argument("--mode", choices=("model", "substitute"), help="for material: model = a model glass whose nd and Vd vary (exploration, not deliverable); substitute = OpticStudio swaps real glasses (Hammer / global search)")
     q.add_argument("--catalog", help="for --mode substitute: the catalog to substitute from (default: every catalog in use)")
-    q.add_argument("--surfaces", required=True, help="e.g. 1-16 or 1,3,5-7")
+    q.add_argument("--surfaces", help="e.g. 1-16 or 1,3,5-7")
+    q.add_argument("--config-rows", help="multi-configuration rows instead of surfaces (zoom spacings, focus, …), e.g. 1,3")
+    q.add_argument("--configs", help="with --config-rows: the configurations (default: all), e.g. 2-3")
     q.add_argument("--off", action="store_true", help="make them fixed")
     q = opt_cmd("merit", "merit function: clear / wizard / add / show")
     q.add_argument("merit_action", choices=("clear", "wizard", "add", "show"))

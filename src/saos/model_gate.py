@@ -19,6 +19,16 @@ The structural fingerprint keeps only what the model *is*, in two kinds:
   conic, aperture parameters and tilt/decenter, so the physical setting cannot change to pass a gate.
 System settings (aperture, telecentricity, ray aiming, fields, wavelengths) are included; fields and wavelengths may gain
 sampling points at the end, but approved points cannot change, because checks address them by number.
+
+判定的条件也在指纹中（2026-10-19 用户决定）：多重结构的结构数和每行操作数的类型与参数、TEMP 和 PRES 的值、环境温度气压、
+切趾、偏振、膜层文件和无焦单位，改了就等于换了题目。多重结构里其余的值（变焦间隔等）和本设计要做的面的膜层是设计变量，
+膜层逐轮记录；环境面的膜层固定。确认时的建模说明里还没有某项（这些项出现之前确认的）时，这一项不比较。
+The conditions of the checks are in the fingerprint as well (user decision 2026-10-19): the number of configurations,
+each operand row's type and parameters, the TEMP and PRES values, environment temperature and pressure, apodization,
+polarization, the coating file and the afocal units; changing them changes the problem. Other multi-configuration
+values (zoom spacings, …) and the coatings of surfaces this design makes are design variables, coatings recorded per
+round; an environment surface's coating is fixed. An item missing from the approved description (approved before the
+item existed) is not compared.
 """
 
 from __future__ import annotations
@@ -59,6 +69,18 @@ def _tilted(s: dict[str, Any]) -> bool:
     return s["type"] == "Coordinate Break" and any(_num(p["value"]) not in (0, 0.0) for p in s.get("params") or [])
 
 
+# TEMP、PRES 的值是判定条件，不是设计变量 / TEMP and PRES values are conditions of the checks, not design variables
+CONDITION_OPERANDS = ("TEMP", "PRES")
+# 指纹里后来加的项：确认时的描述里没有就不比较 / items added to the fingerprint later: not compared when the approval lacks them
+LATER_KEYS = ("configurations", "environment", "apodization", "polarization", "coating_file")
+
+
+def _configurations(cfg: dict[str, Any]) -> dict[str, Any]:
+    return {"count": cfg.get("count", 1),
+            "operands": [[o["type"], o.get("params") or [], [_num(v) for v in o["values"]] if o["type"] in CONDITION_OPERANDS else None]
+                         for o in cfg.get("operands") or []]}
+
+
 def fingerprint(desc: dict[str, Any], environment: Any = ()) -> dict[str, Any]:
     ap = desc["aperture"]
     given = {int(i) for i in environment or ()}
@@ -74,6 +96,8 @@ def fingerprint(desc: dict[str, Any], environment: Any = ()) -> dict[str, Any]:
                 item["break"] = {p["name"]: _num(p["value"]) for p in s.get("params") or []}
             if s.get("tilt_decenter"):
                 item["tilt_decenter"] = {k: _num(v) for k, v in s["tilt_decenter"].items()}
+            if "coating" in s:
+                item["coating"] = str(s["coating"]).upper()
         else:
             item.update(medium=medium_class(s), aperture={"type": aperture.get("type")}, tilted=_tilted(s))
             if "Fresnel" in str(s["type"]):
@@ -81,7 +105,7 @@ def fingerprint(desc: dict[str, Any], environment: Any = ()) -> dict[str, Any]:
                 # a flat and a curved substrate are different parts (in the fiber job an optimised substrate bent through the plate)
                 item["substrate_flat"] = math.isinf(float(s["radius"]))
         surfaces.append(item)
-    return {
+    out = {
         "aperture": {k: _num(ap.get(k)) for k in ("type", "value", "telecentric_object", "afocal_image")},
         "ray_aiming": desc.get("ray_aiming"),
         "fields": {"type": desc["fields"]["type"], "normalization": desc["fields"].get("normalization"),
@@ -89,12 +113,36 @@ def fingerprint(desc: dict[str, Any], environment: Any = ()) -> dict[str, Any]:
         "wavelengths": [[_num(w["um"]), bool(w["primary"])] for w in desc["wavelengths"]],
         "surfaces": surfaces,
     }
+    if "afocal_units" in ap:
+        out["aperture"]["afocal_units"] = ap["afocal_units"]
+    if "configurations" in desc:
+        out["configurations"] = _configurations(desc["configurations"])
+    for key in ("environment", "apodization", "polarization"):
+        if key in desc:
+            out[key] = {k: [_num(x) for x in v] if isinstance(v, list) else _num(v) for k, v in desc[key].items()}
+    if "coating_file" in desc:
+        out["coating_file"] = str(desc["coating_file"]).upper()
+    return out
+
+
+def _align(approved: dict[str, Any], current: dict[str, Any]) -> None:
+    """确认时还没有的指纹项从当前指纹里去掉，旧的确认照样适用。/ Drop from current what the approved fingerprint predates."""
+    for key in LATER_KEYS:
+        if key not in approved:
+            current.pop(key, None)
+    if "afocal_units" not in approved.get("aperture", {}):
+        # 不是无焦时两边都没有这项；确认时无焦而没记单位的是旧描述 / absent when not afocal, or an old description
+        current.get("aperture", {}).pop("afocal_units", None)
+    for a, b in zip(approved.get("surfaces") or [], current.get("surfaces") or []):
+        if "coating" not in a:
+            b.pop("coating", None)
 
 
 def structure_changes(approved: dict[str, Any], current: dict[str, Any], environment: Any = ()) -> list[str]:
     """已确认模型与当前镜头在结构上的不同之处；视场和波长在末尾追加的采样点不算。
     Structural differences between an approved model and the current lens; sampling points appended to fields or wavelengths do not count."""
     a, b = fingerprint(approved, environment), fingerprint(current, environment)
+    _align(a, b)
     for get, put in ((lambda f: f["fields"]["items"], lambda f, v: f["fields"].__setitem__("items", v)),
                      (lambda f: f["wavelengths"], lambda f, v: f.__setitem__("wavelengths", v))):
         old, new = get(a), get(b)
@@ -107,8 +155,13 @@ def digest(fp: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(fp, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
+# 多重结构里给模型玻璃赋值的操作数（折射率、阿贝数、部分色散）/ multi-configuration operands that set model-glass data
+MODEL_GLASS_OPERANDS = ("MIND", "MABB", "MDPG")
+
+
 def materials(desc: dict[str, Any]) -> list[dict[str, Any]]:
-    """逐面的介质及来源，记入每个调试轮次。 / Medium and source per surface, stored with every round."""
+    """逐面的介质及来源，记入每个调试轮次；多重结构用 GLSS 换进的玻璃逐个结构列出（带 configuration）。
+    Medium and source per surface, stored with every round; glasses a GLSS row swaps in are listed per configuration."""
     out = []
     for s in desc["surfaces"]:
         src = s.get("material_source") or {}
@@ -117,11 +170,27 @@ def materials(desc: dict[str, Any]) -> list[dict[str, Any]]:
             item.update({"name": src.get("name"), "catalogs": src.get("catalogs"), "status": src.get("status")} if src["kind"] == "catalog"
                         else {"nd": src.get("nd"), "vd": src.get("vd"), "dpgf": src.get("dpgf")})
             out.append(item)
+    for op in (desc.get("configurations") or {}).get("operands") or []:
+        if op["type"] == "GLSS" and op.get("params"):
+            for c, (name, src) in enumerate(zip(op["values"], op.get("sources") or [{}] * len(op["values"])), start=1):
+                if src.get("kind") == "catalog":
+                    out.append({"surface": op["params"][0], "configuration": c, "kind": "catalog", "name": str(name).upper(),
+                                "catalogs": src.get("catalogs"), "status": src.get("status")})
     return out
 
 
 def model_glass_surfaces(desc: dict[str, Any]) -> list[int]:
-    return [s["index"] for s in desc["surfaces"] if medium_kind(s) == "model"]
+    """用模型玻璃的面，含多重结构里设模型玻璃数据的面。/ Surfaces with a model glass, the multi-configuration ones included."""
+    out = [s["index"] for s in desc["surfaces"] if medium_kind(s) == "model"]
+    for op in (desc.get("configurations") or {}).get("operands") or []:
+        if op["type"] in MODEL_GLASS_OPERANDS and op.get("params") and op["params"][0] not in out:
+            out.append(op["params"][0])
+    return sorted(out)
+
+
+def coatings(desc: dict[str, Any]) -> list[dict[str, Any]]:
+    """逐面的膜层（设计变量，记入每个调试轮次）。/ Coatings per surface, a design variable stored with every round."""
+    return [{"surface": s["index"], "coating": s["coating"]} for s in desc["surfaces"] if s.get("coating")]
 
 
 def diff(a: Any, b: Any, path: str = "") -> list[str]:
@@ -179,7 +248,9 @@ def require_approved(job: jobs.Job, desc: dict[str, Any]) -> dict[str, Any]:
             changes = structure_changes(record["desc"], desc, env)
         else:
             # 早期的 model.json 没有存完整描述，只能比较当时的指纹 / early model.json files lack the description: compare the stored fingerprint
-            changes = diff(record["fingerprint"], fingerprint(desc, env)) if digest(fingerprint(desc, env)) != record["fingerprint_sha"] else []
+            now = fingerprint(desc, env)
+            _align(record["fingerprint"], now)
+            changes = diff(record["fingerprint"], now) if digest(fingerprint(desc, env)) != record["fingerprint_sha"] else []
         if not changes:
             return {"model": record["model"], "fingerprint_sha": digest(fingerprint(desc, env)), "environment": env}
         if record is found[-1]:
