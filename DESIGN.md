@@ -2,7 +2,7 @@
 
 saos 给 agent 提供驱动 Zemax OpticStudio 的工具，agent 从用户需求出发自主完成建模、仿真和优化，交付有实测依据的结果。项目介绍和上手见 [README.md](./README.md)。
 
-本文件只记三类东西：设计原则、用户做过的决定及其理由、目录规定。怎么做以代码和执行任务的技能为准：工作方式与需求单格式见 `skills/saos/SKILL.md`、`skills/saos/demand.md`，命令与参数见 `docs/cli.md`，术语见 [GLOSSARY.md](./GLOSSARY.md)，关键决策见 [docs/adr/](./docs/adr/)，暂缓的事项见 [TODO.md](./TODO.md)。
+本文件只记三类东西：设计原则、用户做过的决定及其理由、目录规定。怎么做以代码和执行任务的技能为准：工作方式与需求单格式见 `skills/saos/SKILL.md`、`skills/saos/demand.md`，命令的参数与输入输出格式见各命令的 `--help`，中文速览见 `docs/cli.md`，术语见 [GLOSSARY.md](./GLOSSARY.md)，关键决策见 [docs/adr/](./docs/adr/)，暂缓的事项见 [TODO.md](./TODO.md)。
 
 ## 范围
 
@@ -57,6 +57,7 @@ OpticStudio 2024 R1 Premium 加 ZOS-API 能建模的系统都在范围内，包�
 - **所有光学计算经 ZOS-API 由 OpticStudio 完成**，一阶量也一样，不自写追迹、像差或近轴计算；并发时开多个 standalone 实例（ADR-0008）。分离运行的扫描只用 worker 池和镜头快照，主实例照常处理其他命令（ADR-0009）。
 - **代码分三层**：固定命令、库函数（`saos.kit`、`saos.search`、配方测量库）、任务内脚本。固定命令只收通用操作；同一类脚本在多个任务里反复出现，或涉及覆盖文件、丢失未保存修改这类安全问题时，才升级为固定命令。agent 的脚本在后台进程内运行，副本和结果存进任务目录（ADR-0007）。
 - **技能**：只有一个入口技能 `saos`，配方是按需加载的子技能；同时支持 Claude Code 和 Codex，不用某一平台独有的功能；仓库内的技能目录通过链接接入 `~/.agents/skills`。
+- **命令帮助**：英文 `--help` 是参数、输入格式和返回值的唯一详细说明，格式随实现就近维护；中文 `docs/cli.md` 只留速览，避免重复维护和 agent 为一个命令读取整篇文档。
 - **语言**：给 agent 读的内容（技能、配方、需求单格式、命令返回的错误和提示）用英文；程序生成、给人看的输出（交付报告、建模说明、后台日志）有中英两版，按需求单的 `lang`、`SAOS_LANG`、系统界面语言依次选择；给人看的文档（README、本文件、TODO、docs/）和代码注释用中文；访谈记录中的用户原话按原文保留。
 
 ## 环境

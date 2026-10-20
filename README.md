@@ -7,7 +7,7 @@ OpticStudio 2024 R1 Premium 加 ZOS-API 能建模的系统都在范围内：序�
 ## 怎么工作
 
 - **agent 读技能**：执行设计任务的 agent 读 [skills/saos/SKILL.md](skills/saos/SKILL.md)（入口技能）和按需加载的配方 `skills/recipes/<系统>/`。Claude Code 通过 `.claude/skills/saos` 自动发现入口技能；Codex 等平台从 `~/.agents/skills` 链接。
-- **命令行**：agent 只通过 `uv run saos …` 操作，每条命令打印一个 JSON 对象。命令说明见 [docs/cli.md](docs/cli.md)。
+- **命令行**：agent 只通过 `uv run saos …` 操作，每条命令打印一个 JSON 对象。参数、输入格式和返回值见 `uv run saos <命令> --help`，中文速览见 [docs/cli.md](docs/cli.md)。
 - **常驻后台进程**：持有 OpticStudio 连接，命令行把请求转发给它；需要并发时另带一个 standalone 实例组成的 worker 池。
 - **两个必经停顿**：用户确认需求单（`saos demand confirm`）、确认建模说明（`saos lens approve`），其余由 agent 自己决定。
 - **流程图窗口**：需求确认后打开的本机小窗口（`saos ui`），用户在里面看流程走到哪一步、当前镜头的布局和每轮的点列图、MTF。
@@ -37,7 +37,7 @@ uv run saos job create --name <名字>
 | 文件 | 内容 |
 |---|---|
 | [skills/saos/SKILL.md](skills/saos/SKILL.md)、[demand.md](skills/saos/demand.md) | 执行任务的 agent 的工作方式、需求单格式、终止规则（英文） |
-| [docs/cli.md](docs/cli.md) | 每条命令、参数、返回值、错误码 |
+| [docs/cli.md](docs/cli.md) | 中文命令速览、输出协议、环境变量和错误码；详细格式见各命令的 `--help` |
 | [DESIGN.md](DESIGN.md) | 设计原则、用户做过的决定及理由、环境事实、目录规定 |
 | [GLOSSARY.md](GLOSSARY.md) | 术语（中英并列）和不要用的叫法 |
 | [docs/adr/](docs/adr/) | 关键决策记录 |

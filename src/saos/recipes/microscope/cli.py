@@ -73,3 +73,7 @@ def register(sub, parser_class, default_timeout: float) -> None:
     p.set_defaults(func=cmd_adapt)
 
     library_cli.register(msub, parser_class, default_timeout)
+    from saos.cli_help import configure
+    from saos.recipes.microscope import cli_help
+
+    configure(group, "microscope", commands=cli_help.COMMANDS, groups=cli_help.GROUPS)

@@ -74,6 +74,150 @@ MODES = ("vars", "points", "minimize", "probes", "candidates", "tolerance")
 MAX_TOLERANCES = 200
 TOL_DISTS = ("uniform", "normal")
 MAX_POINTS = 5000
+HELP_EPILOG = """Input: --plan JSON (choose exactly one of the six modes)
+  Parameter keys use a surface index (negative counts from image; -1 is image)
+  or a unique Lens Data comment: "3.radius", "lens dome.curvature", "12.par1".
+  Surface parameters: radius, curvature (1/R, 0 for flat), thickness, conic,
+  semi_diameter, mech_semi_diameter, material, comment, par<N>, nd, vd (writing
+  nd or vd turns the material into a model glass; workers reload every point).
+  System keys: aperture, field.<n>.x/y, wave.<n>, config.<configuration>.<row>.
+  NSC keys: object.<number or comment>.<parameter>, e.g. object.Cortex.vp.g;
+  parameters: x/y/z, tilt_x/tilt_y/tilt_z, material, comment, par<N>, column
+  header, mean_path, vp.<DLL parameter>, nd, vd, face<N>.is|coating|fraction|
+  sigma|rays. Mixed mode: object.<object>@<NonSequential surface>.<parameter>.
+  File-based objects are referenced by number or file name, never by comment.
+  Details: uv run saos exec --help.
+
+  Grid (vars): lists or inclusive ranges; at most 5000 points.
+    {"vars": {"3.radius": [20, 25, 30],
+              "5.conic": {"from": -1, "to": 0, "steps": 5}},
+     "measure": ["spot"], "workers": 4, "keep": 3}
+
+  Explicit points (1 to 5000 nonempty parameter dictionaries):
+    {"points": [{"3.radius": 20}, {"3.radius": 25}], "measure": ["spot"]}
+
+  Structure candidates (2 to 12; workflow requires at least 3 different structures
+  unless the user prescribed the structure):
+    {"candidates": [
+       {"id": "triplet", "lens": "explore/start/triplet.zmx",
+        "hypothesis": "Fewer elements may meet the target"},
+       {"id": "petzval", "prescription": "explore/start/petzval.json",
+        "hypothesis": "Separate field flattening may improve the edge"},
+       {"id": "double_gauss", "lens": "explore/start/double_gauss.zmx",
+        "hypothesis": "Symmetry may reduce off-axis aberrations"}],
+     "prepare": "explore/start/prepare.py",
+     "stages": [{"local": {"max_seconds": 60, "cycles": "auto"}},
+                {"hammer": {"max_seconds": 120}},
+                {"global": {"max_seconds": 120}}],
+     "measure": ["spot"], "workers": 3, "keep": 3}
+    Each candidate needs unique id, hypothesis and exactly one job-relative lens
+    (.zmx) or prescription (.json). Format: uv run saos lens build --help.
+    Every stage requires a positive max_seconds; local cycles are auto, 1, 5,
+    10 or 50. Optional prepare defines run(w), setting variables/merit for each
+    candidate. fixed/solve/compensate do not apply; use prepare instead.
+    No current lens is needed. Each worker builds/loads a private candidate copy,
+    runs prepare, records the start and every stage, then checks interference
+    and glass status. All hard conditions are always measured. Valid candidates
+    rank first, then by shortfall. A last-stage relative gain > demand.stop.rel
+    means still_improving (budget-limited), so keep it regardless of rank.
+    Default keep: 3 valid candidates plus all budget-limited candidates.
+    plan.json records budget_s: sum of stage budgets times ceil(candidates/workers),
+    excluding loading/measurement; detached response also reports it.
+
+  Multi-start minimization (one search per start):
+    {"minimize": {"vars": {"3.radius": {"step": 0.1, "min": 15, "max": 40},
+                           "5.conic": {"step": 0.02}},
+                  "starts": [{"3.radius": 20}, {"3.radius": 30}],
+                  "method": "nelder-mead", "max_evals": 200, "max_seconds": 900},
+     "measure": ["spot"], "workers": 2}
+    starts defaults to "current"; method is nelder-mead or powell. Each variable
+    needs a nonzero step; bounds min/max are optional. The objective is the same
+    shortfall definition as the demand, over measured items, not a new merit.
+    minimize and candidates require a confirmed demand without blocking questions.
+
+  Perturbation probes (1 to 6; base plus +/-delta = 2N+1 points):
+    {"target": "spot", "mechanism": "Petzval field curvature limits the edge",
+     "compensate": "quick_focus",
+     "probes": [
+       {"id": "rear_r", "key": "3.radius", "delta": 0.02,
+        "prediction": "Less power should lower edge spot by a few micrometres",
+        "expect": {"spot": "down"}},
+       {"id": "control", "script": "explore/control.py", "delta": 0.001,
+        "control": true, "prediction": "This changes only astigmatism",
+        "expect": {"spot": "none"}}]}
+    target is a demand check id; write mechanism and each prediction beforehand.
+    Each probe needs unique id, nonzero finite delta and exactly one numeric key
+    or job-relative script defining run(w, delta). Probe flat faces by curvature.
+    expect maps measured ids to up/down/none/valley/peak. No confirmation needed.
+    ranking reports normalized effects and one_sided when only one side is valid;
+    valley/peak means the baseline is already at an extremum in that variable.
+    review flags a missing/moving control, failed prediction, no variable moving
+    the target, or ineffective focus compensation. An invalid baseline target
+    must be fixed before interpreting the probes.
+
+  Tolerance (sensitivity and Monte Carlo on the current lens):
+    {"tolerance": {"items": [
+       {"key": "3.thickness", "min": -0.05, "max": 0.05, "source": "maker's table"},
+       {"key": "4.nd", "min": -0.001, "max": 0.001, "dist": "normal", "source": "..."},
+       {"key": "object.lens.tilt_x", "min": -0.1, "max": 0.1, "source": "..."},
+       {"key": "2.radius", "min": -0.002, "max": 0.002, "relative": true,
+        "source": "..."}],
+     "samples": 200, "seed": 1, "sensitivity": true},
+     "compensate": "quick_focus", "workers": 6}
+    1 to 200 items, each a unique numeric parameter key (thickness, radius or
+    curvature, par<N>, <surface>.nd/.vd, object.<object>.x|tilt_x|...; not
+    material or comment) with deviations min < max from nominal (fractions
+    when relative) and a required source; optional id. dist is uniform
+    (default) or normal (sigma = (max - min)/4, truncated to [min, max]).
+    samples is 0 to 5000; sensitivity defaults to true; at least one of them.
+    Points: nominal, sensitivity (each item alone at min and at max) and
+    samples Monte Carlo draws (all items at once; fixed seed repeats). With
+    nd/vd items an extra model-glass nominal is added: writing nd/vd swaps the
+    catalog glass for a model glass whose dispersion differs slightly even at
+    zero deviation (Cooke sample: EFL +0.0005 mm), so those sensitivities use it
+    as baseline and the swap itself is model_glass_offset (included in samples).
+    Every point is compensated, then measured with the demand's checks. Result
+    adds nominal (values, failing items), sensitivity (both sides, change and
+    effect normalized by the demand scale, sorted by largest; worst names the
+    most affected check) and monte_carlo (per check n, mean, std, min, max,
+    5/50/95% percentiles, pass rate; yield_hard: all hard bounds met; yield_all:
+    every measured item met). Requires a confirmed demand without blocking
+    questions. uv run saos report includes the latest tolerance scan.
+
+  Common optional fields (except candidates' restrictions above):
+    {"fixed": {"5.thickness": 2},
+     "solve": {"var": "3.curvature", "lo": 0, "hi": 0.1,
+               "target": {"item": "working_distance"}, "value": 15, "scan": 9},
+     "compensate": {"script": "explore/refocus.py"},
+     "measure": ["spot"], "operands": {"efl": ["EFFL", 0, 1]},
+     "workers": 4, "keep": 3, "note": "Purpose of this scan"}
+    Order: fixed, point values/probe script, solve, compensate, demand checks.
+    solve.target can instead be {"operand": ["EFFL", 0, 1]}; value defaults to 0,
+    scan to 9; optional xtol. Scan for a sign change then Brent root finding.
+    compensate is null, "quick_focus" or {"script": "job-relative.py"} (run(w)).
+    measure defaults to bounded/directional demand items; probes add target.
+    keep defaults to 3 (probes and tolerance: 0). --workers overrides plan
+    workers, default 4, limited by point count and available cores; count the
+    8-instance licence, including user windows and daemon. Cold worker startup
+    is about 6-8 s each.
+
+Results and files
+  Non-candidate modes require a loaded, saved lens of this job; it stays unchanged.
+  scans/NNN/ seals plan.json, base.zmx (or candidates/<id>/ copies), result.json
+  and all rows. The response summarizes the top 10 rows ranked by shortfall.
+  Kept point lenses: lenses/scans/NNN/pPPP.zmx, ready for uv run saos lens load.
+  Candidate lenses use <id>.zmx; results add kept, budget_limited, best and page
+  (scans/NNN/index.html: hypotheses, validity, stages, measurements, interference,
+  glass status and variable/merit source, prepare or candidate).
+  --detach uses a background worker-pool thread, not runs/; the daemon remains
+  available. Read scans/NNN/progress.json via uv run saos scan --job J --show [NNN]
+  (default latest). The pool serves one scan or ctx.map at a time.
+  uv run saos job cancel J stops after workers finish their current points.
+
+Common errors
+  BAD_ARGS, NO_LENS_LOADED, JOB_MISMATCH, UNSAVED_CHANGES, DEMAND_NOT_CONFIRMED,
+  DEMAND_BLOCKED, POOL_BUSY (wait or cancel), ZOS_ERROR (no usable workers).
+"""
 # valley / peak：±delta 两侧都比基准差（或都好）超过 NONE_BELOW，基准正在这个变量的极值上，一阶斜率看不出
 # valley / peak: both sides above (or below) the base by more than NONE_BELOW; the base sits at an extremum the slope cannot show
 DIRECTIONS = ("up", "down", "none", "valley", "peak")

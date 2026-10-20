@@ -1,6 +1,6 @@
 """工作流写在四处（AGENTS.md），DESIGN.md 也会提到命令：这里自动核对其中能机械核对的部分，减少靠人记得同步。
 
-- SKILL.md、demand.md、DESIGN.md、docs/cli.md 代码片段里和 workflow.drawio 命令框里出现的 `saos <命令> [<子命令>]` 都存在于命令行；
+- SKILL.md、demand.md、DESIGN.md、docs/cli.md、各级命令帮助和 workflow.drawio 中出现的命令都存在于命令行；
   已删除的命令只能以历史说明出现。
 - workflow.drawio 能被 draw.io 官方查看器渲染（默认跳过，需要 Chrome 和网络：SAOS_RENDER_DRAWIO=1 uv run pytest tests/test_docs_sync.py -s，
   打印出 PNG 路径，供人看图核对）。
@@ -23,7 +23,7 @@ from saos import cli, config
 ROOT = config.REPO_ROOT
 DOCS = ("skills/saos/SKILL.md", "skills/saos/demand.md", "DESIGN.md", "docs/cli.md")
 DIAGRAM = ROOT / "docs" / "workflow.drawio"
-COMMAND_RE = re.compile(r"(?<!from )\bsaos ([a-z][a-z-]*)(?: ([a-z][a-z-]*))?")
+COMMAND_RE = re.compile(r"(?<!from )\bsaos ([a-z][a-z-]*)(?: ([a-z][a-z-]*))?(?: ([a-z][a-z-]*))?")
 # 已删除的命令：只能出现在“原……并入 / 已取消”这类历史说明里 / removed commands may only appear in historical notes
 REMOVED = {"probe", "reverify"}
 HISTORY_MARKS = ("原", "并入", "取消", "旧", "removed", "folded", "former")
@@ -40,6 +40,16 @@ def _code_spans(text: str) -> list[str]:
     return re.findall(r"`([^`\n]+)`", text)
 
 
+def _help_sources(parser, command="saos") -> list[tuple[str, str, str]]:
+    sources = []
+    for field in ("description", "epilog"):
+        value = getattr(parser, field) or ""
+        sources.append((f"{command} --help ({field})", value, value))
+    for name, child in _subcommands(parser).items():
+        sources.extend(_help_sources(child, f"{command} {name}"))
+    return sources
+
+
 def _diagram_boxes(fill: str | None = None) -> list[str]:
     """drawio 各框的文字；fill 给定时只取该填充色的框（#d5e8d4 是 saos 命令 / 工具行为）。
     The text of the diagram's boxes; with fill, only boxes of that colour (#d5e8d4: saos commands / tool behaviour)."""
@@ -52,24 +62,30 @@ def _diagram_boxes(fill: str | None = None) -> list[str]:
 
 
 def test_every_saos_command_in_the_docs_exists():
-    top = _subcommands(cli.build_parser())
+    parser = cli.build_parser()
     sources = [(name, span, text) for name in DOCS for text in [(ROOT / name).read_text(encoding="utf-8")] for span in _code_spans(text)]
     sources += [("docs/workflow.drawio", box, box) for box in _diagram_boxes("#d5e8d4")]
+    sources += _help_sources(parser)
     assert len(sources) > 200
     unknown = set()
     for name, span, text in sources:
         for m in COMMAND_RE.finditer(span):
-            cmd, sub = m.group(1), m.group(2)
+            cmd = m.group(1)
             if cmd in REMOVED:
                 at = text.find(m.group(0))
                 context = text[max(0, at - 40): at + 60]
                 if not any(mark in context for mark in HISTORY_MARKS):
                     unknown.add(f"{name}: removed command {m.group(0)!r} outside a historical note")
                 continue
-            if cmd not in top:
-                unknown.add(f"{name}: {m.group(0)!r}")
-            elif sub and _subcommands(top[cmd]) and sub not in _subcommands(top[cmd]):
-                unknown.add(f"{name}: {m.group(0)!r}")
+            current = parser
+            for token in m.groups():
+                choices = _subcommands(current)
+                if token is None or not choices:
+                    break
+                if token not in choices:
+                    unknown.add(f"{name}: {m.group(0)!r}")
+                    break
+                current = choices[token]
     assert not unknown, sorted(unknown)
 
 

@@ -4,7 +4,7 @@
 saos 自己校验骨架（系统设置、每个面的通用项、多重结构），并拒绝不成立的组合（如物在无穷远时用物方 NA）。
 面型和面型参数不逐个写代码：面型写 OpticStudio 的面型名（ZOS-API 的 SurfaceType，如 EvenAspheric、
 CoordinateBreak、Toroidal、XYPolynomial、Binary2），参数按 Par 列号（par4）或列标题（"4th Order Term"）填写，
-名字或参数写错时由 OpticStudio 在搭建时拒绝。格式见 docs/cli.md 的「处方格式」。
+名字或参数写错时由 OpticStudio 在搭建时拒绝。格式见 saos lens build --help。
 """
 
 
@@ -964,3 +964,264 @@ def normalize(p: dict[str, Any]) -> dict[str, Any]:
     if image is not None:
         out["image"] = image
     return out
+
+
+HELP_EPILOG = """Input: sequential Prescription JSON
+  Unknown keys are rejected. Switches accept JSON true/false only; enum values
+  must be listed names. A prescription builds a system; checks and recipes
+  define how to judge it. The title is written into OpticStudio.
+
+  {
+    "title": "Sequential example", "units": "mm",
+    "aperture": {"type": "entrance_pupil_diameter", "value": 10},
+    "telecentric_object": false,
+    "fields": {"type": "angle", "y": [0, 10, 14], "x": [0, 0, 0],
+               "weights": [1, 1, 1], "normalization": "radial"},
+    "wavelengths": {"um": [0.486, 0.588, 0.656], "weights": [1, 1, 1], "primary": 2},
+    "catalogs": ["CDGM"], "ray_aiming": "real",
+    "environment": {"temperature": 20, "pressure": 1, "adjust_index": true},
+    "polarization": {"unpolarized": true}, "coating_file": "COATING.DAT",
+    "ray_aiming_options": {"robust": true},
+    "object": {"thickness": "inf", "material": "", "comment": ""},
+    "surfaces": [
+      {"radius": 30, "thickness": 4, "material": "H-ZK9B",
+       "mech_semi_diameter": 7, "coating": "AR"},
+      {"type": "EvenAspheric", "radius": -80, "conic": -1.2, "thickness": 2,
+       "params": {"par2": 1.2e-5, "6th Order Term": -3e-8},
+       "solves": {"radius": "variable", "par2": "variable"}},
+      {"radius": "inf", "thickness": 5, "stop": true, "semi_diameter": 4},
+      {"type": "CoordinateBreak", "params": {"par3": 12}},
+      {"radius": "inf", "thickness": 0, "material": "MIRROR",
+       "aperture": {"type": "rectangular", "x_half": 8, "y_half": 6}},
+      {"type": "CoordinateBreak", "params": {"par3": 12}, "thickness": -20},
+      {"radius": -60, "thickness": 18,
+       "decenter_tilt": {"before": {"decenter_y": 0.5, "tilt_x": 1}, "after": "reverse"},
+       "solves": {"thickness": {"type": "marginal_ray_height", "height": 0}}}
+    ],
+    "image": {"radius": -120},
+    "configurations": [{"operand": "THIC", "params": [3], "values": [5, 5.6]},
+                       {"operand": "TEMP", "values": [20, -40]}]
+  }
+
+System fields
+  units: mm (default), cm, in, m.
+  aperture.type: object_na, entrance_pupil_diameter, image_f_number,
+    working_f_number, object_cone_angle (half angle in degrees), float_by_stop.
+    float_by_stop forbids value and requires semi_diameter on the stop surface.
+  fields.type: object_height, angle (<90 degrees), paraxial_image_height,
+    real_image_height, theodolite_angle. x defaults to 0 and weights to 1;
+    normalization is radial (default) or rectangular.
+  wavelengths: um and weights arrays; primary is a 1-based wavelength number.
+  environment defaults: temperature 20 C, pressure 1 atm, adjust_index false.
+  ray_aiming: off, paraxial, real.
+  Rejected combinations: infinite object with object_na, object_cone_angle or
+    object_height; telecentric_object with infinite object, angular fields or
+    entrance_pupil_diameter; TEMP/PRES configurations without adjust_index true.
+    Aperture, field type and telecentric settings are read back after building;
+    OpticStudio changing them is BAD_ARGS.
+
+Surfaces and image
+  type defaults to standard; paraxial uses focal_length and opd_mode (default 1).
+  Other types use case-insensitive ZOS-API SurfaceType names: EvenAspheric,
+    OddAsphere, QTypeAsphere, Toroidal, Biconic, XYPolynomial, ZernikeStandardSag,
+    Binary2, CoordinateBreak, Gradient1 through Gradient12, Gradium, etc.
+  Common fields: radius ("inf" for flat), conic, thickness, comment, stop (at most
+    one), semi_diameter (fixed if given, otherwise automatic), mech_semi_diameter
+    (part outer edge used by interference checks), material, coating.
+  material: catalog name, MIRROR, or {"model": {"nd": 1.5, "vd": 60, "dpgf": 0}}.
+  params: {"par2": 1e-5, "6th Order Term": -3e-8}. Keys are Par column numbers or
+    case-insensitive column headers; values follow the cell's number/integer/text
+    type. Entries are applied in order (some types expose columns after setting
+    a term count), read back individually, and unused columns cannot be set.
+  decenter_tilt.before: decenter_x, decenter_y, tilt_x, tilt_y, tilt_z, order
+    (decenter_tilt or tilt_decenter). after is "reverse" or the same explicit
+    fields. CoordinateBreak uses params par1 through par6 instead.
+  aperture: circular/circular_obscuration with min,max;
+    rectangular/rectangular_obscuration/elliptical/elliptical_obscuration with
+    x_half,y_half; spider with arms,width. All allow x_decenter,y_decenter.
+    Use two surfaces for a central obscuration plus support arms.
+  solves maps radius/thickness/conic/material/par<N> to:
+    "variable" (material variables use saos opt vary --mode instead),
+    {"type": "pickup", "surface": 3, "scale": 1, "offset": 0},
+    {"type": "marginal_ray_height", "height": 0, "zone": 0} (thickness only),
+    {"type": "f_number", "value": 4} (radius only).
+    Material pickups omit scale/offset; solves are applied after all surfaces
+    exist and may pick up a later surface.
+  image accepts surface fields except thickness, material, stop, focal_length
+    and opd_mode. Use it for curved or tilted image surfaces.
+
+Configurations and optional system settings
+  configurations: one row per ZOS-API MultiConfigOperandType (THIC, GLSS, TEMP,
+    PRES, PRAM, COTN, etc.); params has up to 3 integer operand parameters;
+    values has one value per configuration (at least 2, same count in every row).
+    vary:true makes the row variable. Building ends in configuration 1.
+    TEMP/PRES each allow at most one row; configuration 1 sets the corresponding
+    environment value. An explicit conflicting environment value is rejected;
+    temperature and pressure are read back after building.
+  afocal: true or {"units": "milliradians"}; units: microradians, milliradians,
+    radians, arcseconds, arcminutes, degrees. Omitted means off. Rejects image
+    height fields and image_f_number/working_f_number apertures; read back after
+    building. Analyses then report angles, not image-plane spot positions.
+  apodization: {"type": "uniform"}, {"type": "gaussian", "factor": 1}, or
+    {"type": "cosine_cubed"}; factor is required only for gaussian.
+  polarization: unpolarized, jx, jy, x_phase, y_phase (degrees), method
+    (x_axis/y_axis/z_axis), convert_thin_film_phase. Only given fields are set
+    and read back. unpolarized:true forbids Jones-vector fields; Jones fields
+    imply unpolarized:false when omitted. jx and jy cannot both be zero.
+  coating_file must be an OpticStudio-listed file. A surface coating names a
+    coating in it (case-insensitive); unknown names return details.choices.
+    Define custom coating layers in that file, not in the prescription.
+  ray_aiming_options: robust, enhanced, cache, auto_pupil_shift,
+    scale_pupil_shift_by_field (booleans), pupil_shift [x,y,z], pupil_compress
+    [x,y]. Requires ray_aiming other than off; explicit pupil_shift conflicts
+    with auto_pupil_shift:true and otherwise disables automatic shift. Read back.
+  Gratings, holograms and binary optics use ordinary types (DiffractionGrating,
+    EllipticalGrating1, VariableLineSpaceGrating, ToroidalGrat, Hologram1, Binary2)
+    and params for groove density, order and phase coefficients.
+  Mixed mode: a surface of type NonSequential may carry "objects" (written as
+    in the non-sequential prescription below; object numbers start at 1 within
+    the group). Its parameters use column headers: Exit Loc X/Y/Z, Exit Tilt
+    X/Y/Z, Order, Reverse Rays, Back Propagation Distance. The build selects
+    the group with NCE.SetActiveSurface; objects survive saving and sequential
+    rays pass through the group (2024 R1). A sequential prescription also takes
+    nsc, source_units and analysis_units. The workflow window's sequential
+    layout does not draw group objects yet.
+  Physical optics and coating layer definitions require a script:
+    uv run saos exec --help. Tolerancing is a scan tolerance plan:
+    uv run saos scan --help.
+
+Input: pure non-sequential Prescription JSON
+  {
+    "mode": "non_sequential", "title": "Volume scattering", "units": "mm",
+    "wavelengths": {"um": [0.5, 0.515, 0.53, 0.545],
+                    "weights": [1, 1, 1, 1], "primary": 2},
+    "catalogs": ["SCHOTT", "MISC"],
+    "nsc": {"max_segments": 20000, "max_intersections": 4000,
+            "simple_ray_splitting": true},
+    "objects": [
+      {"type": "CylinderVolume", "comment": "Cortex", "position": [0, 0, 1.15],
+       "material": {"model": {"nd": 1.36, "vd": 65}},
+       "params": {"Front R": 5, "Z Length": 0.7, "Back R": 5},
+       "volume_physics": {"model": "dll", "dll": "Henyey-Greenstein-bulk.dll",
+                          "mean_path": 0.05, "params": {"Transmission": 0.99, "g": 0.9}}},
+      {"type": "SourceVolumeCylindrical", "comment": "GFP", "inside_of": 1,
+       "params": {"# Analysis Rays": 100000, "Power(Watts)": 1,
+                  "X Half Width": 5, "Y Half Width": 5, "Z Half Width": 0.5}},
+      {"type": "DetectorRectangle", "comment": "top", "position": [0, 0, 2.02],
+       "params": {"X Half Width": 5, "Y Half Width": 5,
+                  "# X Pixels": 100, "# Y Pixels": 100}}
+    ]
+  }
+
+Non-sequential fields and constraints
+  Top-level keys only: mode, title, units, wavelengths, catalogs, coating_file,
+    nsc, objects, source_units, analysis_units. No aperture, fields or surfaces.
+  source_units: watts, lumens, joules. analysis_units: W/mm2, W/cm2, W/in2,
+    W/m2, W/ft2. Both are also accepted by sequential prescriptions.
+  nsc: max_intersections (at most 4000 in 2024 R1), max_segments, max_nested,
+    min_relative_intensity, min_absolute_intensity, glue_distance,
+    simple_ray_splitting. Only given settings are written. Too few segments
+    truncate scattered rays; checks must inspect nsc_trace.dead_ray_errors.
+  objects: ordered ZOS-API ObjectType names (CylinderVolume, RectangularVolume,
+    SourceVolumeCylindrical, SourceTwoAngle, DetectorRectangle, DetectorVolume).
+    ref and inside_of refer only to earlier objects or 0; position and tilt
+    have 3 numbers each (default zeros). material accepts catalog names, MIRROR,
+    ABSORB or model glass as above; sources and detectors do not accept it.
+    Model glass is read back with NCE.GetIndex; a primary-wave index differing
+    from nd by more than 0.05 is rejected. Do not encode it as a string of numbers.
+    params uses par<N> or NCE column headers (e.g. "Z Length", "# Analysis Rays").
+    Object keys: type, comment, ref, inside_of, position, tilt, material, params,
+    volume_physics, file, file2, faces, scatter_to, source, type_options,
+    diffraction, index_model.
+  file (and file2): file-based types (CADPartSTEPIGESSAT, CADPartSTL,
+    PolygonObject, SourceFile, SourceDLL, UserDefinedObject, GridSagLens, etc.)
+    pick a file OpticStudio lists (case-insensitive); a missing or wrong name
+    returns details.choices. Put your own files in the matching folder under
+    Documents/Zemax/Objects first. Their comment column is the file name
+    (2024 R1: writing a comment renames the file to <comment>.<ext> and the
+    trace silently finds no rays), so comment is rejected; refer to them by
+    number or file name (e.g. block.STL). A ray-file source's # Analysis Rays
+    cannot exceed the rays in the file (sample.SDF has 11).
+  faces: keys are face numbers (from 0; lens surfaces lists numbers and names,
+    e.g. Standard Lens 0 Side Faces, 1 Front Face, 2 Back Face) or "all"
+    (written first, then overridden by numbers). Each face takes is (default,
+    reflective, absorbing), coating (a name in the coating file) and scatter,
+    or only profile (a stored OpticStudio face profile applied whole).
+    Reflective/absorbing clears the coating, so is and coating together are
+    rejected. scatter by model, extra fields rejected: {"model": "none"},
+    lambertian (fraction), gaussian (fraction, sigma), abg (reflect, transmit:
+    ABg data names), abg_file, bsdf (reflect, transmit: file names), user (dll,
+    fraction, file, params); every model accepts rays (scatter rays for that
+    face). Wrong names list the choices; each face is read back. Sources have
+    no faces.
+  scatter_to, one of: {"objects": [n, ...]} is the Scatter To list; scattered
+    rays not heading for them are dropped (2024 R1: with 100% Lambertian and
+    only a small off-axis detector listed, a near large detector fell from
+    0.917 W to 0). Written space-separated and read back.
+    {"importance": [{"towards": n, "size": r, "limit": 1}, ...]} (at most 6
+    rows) aims scattered rays at a sphere of radius size around the target's
+    origin, weighting energy by the scatter distribution. size must enclose
+    the whole target: for a +/-2 mm square detector (half diagonal 2.83 mm),
+    size 3 or 5 agreed with no importance sampling within about 2 standard
+    errors with 200-400x more hits; size 2 read 17% low (experiments/nsc_probe).
+  source (sources only): polarization ("random" or {"jx", "jy", "x_phase",
+    "y_phase"}), initial_phase, coherence_length, reverse_rays, pre_propagation,
+    sampling (random, sobol), bulk_scatter (many, once, never), array
+    ({"type": "rectangular|circular|hexapolar|hexagonal", "number_x",
+    "number_y", "spacing_x", "spacing_y", "number", "radius", "rings",
+    "spacing"}), color ({"mode": "system_wavelengths|uniform|blackbody|
+    color_temperature|d65|spectrum_file|cie1931_xyz|cie1931_xy|cie1931_rgb|
+    cie1976", ...} with temperature, from, to (um), count, file (a listed
+    .spcd etc.), x/y/z, cx/cy, r/g/b, u/v; fields a mode lacks are rejected
+    with the usable ones).
+  type_options (Type tab): rays_ignore (never, always, on_launch), consider,
+    ignore (object number lists), is_detector, pixel_interpolation,
+    global_xyz_rotation, consider_ignore_when_splitting.
+  diffraction (types with a Diffraction tab: gratings, Binary, ...): split
+    (none, table, dll), dll, start_order, stop_order, reflect, transmit (DLL
+    parameter name to value).
+  index_model (Index tab; not "index", which is the object number in
+    read-backs): {"type": "isotropic"}, {"type": "birefringent", "axis":
+    [x, y, z], "mode", "reflections"} (OpticStudio enum names, listed when
+    wrong) or {"type": "grin", "dll", "file"?, "max_step"?, "params"}.
+  Every tab is read back after writing; a mismatch is BAD_ARGS with both
+    values. lens surfaces also lists source and type_options, and diffraction
+    and index_model when changed from default.
+  volume_physics: {"model": "none"},
+    {"model": "angle", "mean_path": 0.05, "angle": 10}, or
+    {"model": "dll", "dll": "Henyey-Greenstein-bulk.DLL", "mean_path": 0.05,
+     "params": {"Transmission": 0.99, "g": 0.9}}.
+    DLL/parameter names are case-insensitive and read back. Mie.dll exposes
+    Particle index, Size (microns), Density (cm^-3), Min. thresh., Transmission.
+    {"model": "photoluminescence", ...}: efficiency (quantum_yield or
+    excitation), pl_density, extinction_coefficient, extinction_wavelength,
+    threshold, basic_algorithm, consider_mie, particle_index,
+    particle_density, particle_radius, use_mie_density, mie_mean_path,
+    pl_mean_path, each read back (no generic mean_path). Absorption, emission,
+    excitation and quantum-yield spectrum files written through ZOS-API are
+    silently ignored (2024 R1), so the prescription rejects them: choose them
+    on OpticStudio's Volume Physics tab; read-backs and the model description
+    list the current files.
+    With scatter:false, paths still attenuate by mean_path without changing
+    direction. Partial volume overlaps cause trace errors; a later object fully
+    inside an earlier object is valid nesting and takes precedence.
+  Model approval locks types, files, ref, inside_of and medium categories;
+    source and detector positions, tilts, parameters (except ray counts) and
+    face properties; all material, parameter, placement, volume scattering,
+    face and Scatter To settings of notes.environment objects; for designed
+    parts only the volume scattering model/DLL and each face's reflective/
+    absorbing state and scatter model (coatings, scatter fractions and
+    importance sampling may change between rounds). Wavelengths, coating_file
+    and simple_ray_splitting are also locked. Notes use objects rather than surfaces:
+    uv run saos lens describe --help.
+
+Results and files
+  Saves and loads lenses/<--as>.zmx. Extension mode first captures unsaved window
+  content in lenses/captures/; captured names that copy. --overwrite is required
+  for an existing destination; --discard drops the agent's own unsaved changes.
+
+Common errors
+  BAD_ARGS: invalid combination, unknown field/type/parameter; details.choices
+    lists type/operand/coating names, details.parameters lists parameter columns.
+  FILE_EXISTS, UNSAVED_CHANGES, JOB_MISMATCH, ZOS_SAVE_FAILED, ZOS_ERROR.
+"""
