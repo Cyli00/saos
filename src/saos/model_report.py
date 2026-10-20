@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from saos import i18n, jobs, materials_record, model_gate
+from saos.prescription import FACE_IS
 from saos.protocol import ErrorCode, SaosError
 from saos.report import CSS, e, fmt, header_row
 
@@ -157,6 +158,54 @@ TEXT: dict[str, tuple[str, str]] = {
         "These materials are missing from sources/materials.yaml: {list}.",
     ),
     "w.undescribed": ("这些面没有说明它代表什么实物：{list}（写在 --notes 的 surfaces 里）。", "These surfaces have no description of what they stand for: {list} (add them under surfaces in --notes)."),
+    # 非序列系统 / non-sequential systems
+    "h.nsc": ("非序列选项", "Non-sequential options"),
+    "h.objects": ("物体", "Objects"),
+    "h.object_params": ("物体参数与体散射", "Object parameters and volume physics"),
+    "th.objects": ("#|名称与说明|类型|参考物体|Inside Of|位置 (x, y, z)|倾斜 (x, y, z)|材料|体散射",
+                   "#|Name and description|Type|Ref object|Inside Of|Position (x, y, z)|Tilt (x, y, z)|Material|Volume physics"),
+    "th.obj_materials": ("材料|来源|参数|{waves}|所在物体", "Material|Source|Parameters|{waves}|Objects"),
+    "obj_n_note": ("折射率用 NCE.GetIndex 实测。", "Indices are measured with NCE.GetIndex."),
+    "h.faces": ("面属性与散射去向", "Face properties and scatter targets"),
+    "th.faces": ("#|面|反射/吸收|膜层|面散射", "#|Face|Reflective/absorbing|Coating|Surface scatter"),
+    "faces_default": ("所有物体的面都是默认设置（随物体材料，无膜层，不散射），也没有指定散射去向。",
+                      "Every face is at its default (follows the object's material, no coating, no scatter) and no scatter target is set."),
+    "face_is.default": ("随材料", "object default"), "face_is.reflective": ("反射", "reflective"), "face_is.absorbing": ("吸收", "absorbing"),
+    "scatter_to.objects": ("物体 {n} 的散射光只追向物体 {list}", "Object {n} scatters only towards objects {list}"),
+    "scatter_to.importance": ("物体 {n} 的散射用重要性采样：{rows}", "Object {n} uses importance sampling: {rows}"),
+    "file": ("文件", "file"),
+    "h.tabs": ("光源、Type、衍射、折射率设置", "Source, Type, Diffraction and Index settings"),
+    "tabs_default": ("没有物体改过光源页、Type 页、衍射页或折射率页的默认设置（光源只列出了它们的光源页）。",
+                     "No object changes the Source, Type, Diffraction or Index tab from its default."),
+    "tab.source": ("光源", "source"), "tab.type": ("Type", "type"), "tab.diffraction": ("衍射", "diffraction"), "tab.index_model": ("折射率", "index"),
+    "h.nsc_group": ("非序列组（面 {s}）", "Non-sequential group (surface {s})"),
+    "w.detector_spill": (
+        "探测器 {d}（{dc}）伸出了它所在的物体 {v}（{vc}）之外（如点 {p}），又不在吸收体里：从物体 {v} 别处漏出的光会被记成到达探测器。"
+        "把探测器缩到物体内，或在外面加 ABSORB 物体（杂散荧光任务实测：方形探测器四角伸出圆柱组织，多记 1.8 个百分点）",
+        "Detector {d} ({dc}) reaches outside object {v} ({vc}) that holds its centre (e.g. at {p}) and not into an absorber: light leaking "
+        "out of object {v} elsewhere is recorded as reaching the detector. Shrink the detector into the object or surround it with an ABSORB object"),
+    "w.detectors_unchecked": ("探测器 {list} 所在的体算不出包含关系，没有检查它们是否伸出所在的物体",
+                              "For detectors {list} the containing volume could not be worked out; whether they reach outside it was not checked"),
+    "src.absorb": ("吸收体（ABSORB）", "absorber (ABSORB)"),
+    "w.obj_model_material": (
+        "第 {s} 个物体用的是模型玻璃（nd {nd}，Vd {vd}），不对应任何真实材料。交付前应换成有来源的材料。",
+        "Object {s} uses a model glass (nd {nd}, Vd {vd}) that is no real material. Replace it with a sourced material before delivery.",
+    ),
+    "w.obj_env_model_material": (
+        "第 {s} 个物体是环境（不由本设计制造），用的是模型介质（nd {nd}，Vd {vd}）。它不阻止交付，但须在 sources/materials.yaml 写明数据来源，并说明各工作波长的色散。",
+        "Object {s} is environment (not made by this design) and uses a model medium (nd {nd}, Vd {vd}). It does not block delivery, "
+        "but record its data source in sources/materials.yaml, covering the dispersion at every working wavelength.",
+    ),
+    "w.obj_uncatalogued": ("第 {s} 个物体的材料 {name} 不在在用的材料目录里。", "Object {s}: material {name} is not in the catalogs in use."),
+    "w.nsc_overlap": (
+        "第 {a} 个物体（{ca}）和第 {b} 个物体（{cb}）部分重叠，深约 {depth}，又没有嵌套关系（编号大的整个在编号小的里面）：OpticStudio 追迹时会出错。检查按轮廓的包围盒做，倾斜或弯曲的物体可能多报。",
+        "Objects {a} ({ca}) and {b} ({cb}) overlap by about {depth} without nesting (the later one wholly inside the earlier one): OpticStudio's trace will report errors. "
+        "The check uses the outlines' bounding boxes and may over-report tilted or curved objects.",
+    ),
+    "w.nsc_unchecked": ("这些物体的类型画不出轮廓，交叠检查没有覆盖：{list}。", "These objects have no outline, so the interference check does not cover them: {list}."),
+    "w.no_source": ("系统里没有光源。", "The system has no source."),
+    "w.no_detector": ("系统里没有探测器，判定要读的量需要另外安排（探测器或光线数据库）。", "The system has no detector; the checks need another way to read results (a detector or the ray database)."),
+    "w.obj_undescribed": ("这些物体没有说明它代表什么实物：{list}（写在 --notes 的 objects 里）。", "These objects have no description of what they stand for: {list} (add them under objects in --notes)."),
 }
 
 
@@ -202,7 +251,17 @@ def checks(desc: dict[str, Any], notes: dict[str, Any] | None = None, recorded: 
     """确定性的建模检查，返回 (代码, 参数)。recorded：材料来源记录里的牌号；None 表示没有记录文件，False 表示不检查。
     Deterministic model checks, returning (code, arguments). recorded: names in the material source record;
     None means there is no record file, False skips the check."""
+    if desc.get("mode") == "non_sequential":
+        return checks_nsc(desc, notes, recorded)
     out: list[tuple[str, dict[str, Any]]] = []
+    for s in desc["surfaces"]:
+        # 混合模式里非序列组的物体：模型玻璃和目录外材料同样要说明 / objects of a mixed-mode group: model glasses and uncatalogued materials
+        for o in s.get("objects") or []:
+            src = o.get("material_source") or {}
+            if o["kind"] == "object" and src.get("kind") == "model":
+                out.append(("obj_model_material", {"s": f"{s['index']}:{o['index']}", "nd": fmt(src.get("nd")), "vd": fmt(src.get("vd"))}))
+            if o["kind"] == "object" and src.get("kind") == "catalog" and not src.get("catalogs"):
+                out.append(("obj_uncatalogued", {"s": f"{s['index']}:{o['index']}", "name": src.get("name")}))
     if recorded is not False:
         used = sorted({str((s.get("material_source") or {}).get("name", "")).upper() for s in desc["surfaces"]
                        if (s.get("material_source") or {}).get("kind") == "catalog"})
@@ -261,6 +320,219 @@ def checks(desc: dict[str, Any], notes: dict[str, Any] | None = None, recorded: 
     if not (notes or {}).get("first_order"):
         out.append(("no_first_order", {}))
     return out
+
+
+def checks_nsc(desc: dict[str, Any], notes: dict[str, Any] | None = None, recorded: set[str] | None | bool = False) -> list[tuple[str, dict[str, Any]]]:
+    """非序列系统的建模检查：材料来源记录、模型玻璃、目录外材料、物体交叠、有没有光源和探测器、物体说明、一阶分析。
+    Model checks for a non-sequential system: material records, model glasses, uncatalogued materials, object overlaps,
+    whether a source and a detector exist, object descriptions and the first-order analysis."""
+    out: list[tuple[str, dict[str, Any]]] = []
+    objects = desc["objects"]
+    parts = [o for o in objects if o["kind"] == "object"]
+    if recorded is not False:
+        used = sorted({str((o.get("material_source") or {}).get("name", "")).upper() for o in parts
+                       if (o.get("material_source") or {}).get("kind") == "catalog"})
+        if used and recorded is None:
+            out.append(("no_material_record", {}))
+        elif used:
+            missing = [n for n in used if n not in recorded]
+            if missing:
+                out.append(("unrecorded_material", {"list": ", ".join(missing)}))
+    environment = set(environment_surfaces(notes))
+    for o in parts:
+        src = o.get("material_source") or {}
+        if src.get("kind") == "model":
+            code = "obj_env_model_material" if o["index"] in environment else "obj_model_material"
+            out.append((code, {"s": o["index"], "nd": fmt(src.get("nd")), "vd": fmt(src.get("vd"))}))
+        if src.get("kind") == "catalog" and not src.get("catalogs"):
+            out.append(("obj_uncatalogued", {"s": o["index"], "name": src.get("name")}))
+        if src.get("kind") == "catalog" and src.get("status") == "Obsolete" and o["index"] not in environment:
+            out.append(("obsolete_material", {"s": o["index"], "name": src.get("name")}))
+    clash = desc.get("interference") or {}
+    for c in clash.get("overlaps") or []:
+        out.append(("nsc_overlap", {"a": c["objects"][0], "b": c["objects"][1], "ca": c["comments"][0] or "-", "cb": c["comments"][1] or "-",
+                                    "depth": fmt(c["depth"])}))
+    if clash.get("unchecked"):
+        out.append(("nsc_unchecked", {"list": ", ".join(map(str, clash["unchecked"]))}))
+    for s in clash.get("detector_spill") or []:
+        out.append(("detector_spill", {"d": s["detector"], "dc": s["comment"] or "-", "v": s["volume"], "vc": s["volume_comment"] or "-",
+                                       "p": ", ".join(fmt(c) for c in s["point"])}))
+    if clash.get("detectors_unchecked"):
+        out.append(("detectors_unchecked", {"list": ", ".join(map(str, clash["detectors_unchecked"]))}))
+    if not any(o["kind"] == "source" for o in objects):
+        out.append(("no_source", {}))
+    if not any(o["kind"] == "detector" for o in objects):
+        out.append(("no_detector", {}))
+    described = {str(k): v for k, v in ((notes or {}).get("objects") or {}).items()}
+    missing = [str(o["index"]) for o in objects if not str(described.get(str(o["index"]), "")).strip()]
+    if missing:
+        out.append(("obj_undescribed", {"list": ", ".join(missing)}))
+    if not (notes or {}).get("first_order"):
+        out.append(("no_first_order", {}))
+    return out
+
+
+def _vp_text(vp: dict[str, Any] | None) -> str:
+    if not vp or vp.get("model") in (None, "None"):
+        return "—"
+    if vp["model"] == "photoluminescence":
+        keys = ("absorption", "emission", "excitation", "quantum_yield", "efficiency", "pl_density", "extinction_coefficient",
+                "extinction_wavelength", "consider_mie", "particle_index", "particle_radius", "particle_density")
+        return "photoluminescence; " + "; ".join(f"{k} {fmt(vp[k]) if isinstance(vp[k], float) else vp[k]}" for k in keys if vp.get(k) not in (None, ""))
+    parts = [vp["model"]]
+    if vp.get("dll"):
+        parts.append(vp["dll"])
+    if "mean_path" in vp:
+        parts.append(f"mean path {fmt(vp['mean_path'])}")
+    if "angle" in vp:
+        parts.append(f"angle {fmt(vp['angle'])}")
+    parts += [f"{k} = {fmt(v)}" for k, v in (vp.get("params") or {}).items()]
+    return "; ".join(parts)
+
+
+def _face_set(f: dict[str, Any]) -> bool:
+    """面有没有改过默认设置。/ Whether a face differs from the default."""
+    return f.get("is") != "default" or bool(f.get("coating")) or bool(f.get("profile")) or (f.get("scatter") or {}).get("model") != "none"
+
+
+def _scatter_text(f: dict[str, Any]) -> str:
+    if f.get("profile"):
+        return f"profile {f['profile']}"
+    sc = f.get("scatter") or {}
+    if sc.get("model") in (None, "none"):
+        return "—"
+    parts = [sc["model"]]
+    parts += [f"{k} {sc[k]}" for k in ("reflect", "transmit", "dll", "file") if sc.get(k)]
+    parts += [f"{k} {fmt(sc[k])}" for k in ("fraction", "sigma") if k in sc]
+    parts += [f"{k} = {fmt(v)}" for k, v in (sc.get("params") or {}).items()]
+    if "rays" in sc:
+        parts.append(f"rays {sc['rays']}")
+    return "; ".join(parts)
+
+
+TYPE_DEFAULTS = {"rays_ignore": "never", "consider": [], "ignore": [], "is_detector": False, "global_xyz_rotation": False,
+                 "consider_ignore_when_splitting": False}
+
+
+def _plain_text(v: Any) -> str:
+    if isinstance(v, dict):
+        return ", ".join(f"{k} {_plain_text(x)}" for k, x in v.items())
+    if isinstance(v, list):
+        return " ".join(_plain_text(x) for x in v)
+    return fmt(v) if isinstance(v, float) else str(v)
+
+
+def _object_rows(objects: list[dict[str, Any]], descr: dict[str, str], t: Tr, key_prefix: str = "") -> dict[str, Any]:
+    """一组物体的表格行：物体表、参数、面属性、散射去向、其余各页（光源、Type、衍射、折射率），以及按材料归并的物体。
+    key_prefix 是混合模式里 notes.objects 的键前缀（"<面号>:"）。/ Table rows for one group of objects."""
+    out: dict[str, Any] = {"objects": [], "params": [], "faces": [], "targets": [], "tabs": [], "materials": {}}
+    for o in objects:
+        i = o["index"]
+        src = o.get("material_source") or {}
+        if o["kind"] == "object":
+            key = f"model nd={src.get('nd')} vd={src.get('vd')}" if src.get("kind") == "model" else str(o.get("material") or "") or "(air)"
+            out["materials"].setdefault(key, {"o": o, "objects": []})["objects"].append(i)
+        note = descr.get(f"{key_prefix}{i}", "")
+        name = e(o.get("comment") or "") + (f"<div class='muted'>{e(note)}</div>" if note else "")
+        material = "—" if o["kind"] != "object" else (o.get("material") or "—")
+        out["objects"].append(
+            f"<tr><td class='num'>{i}</td><td>{name}</td><td>{e(o['type'])}</td><td class='num'>{o['ref']}</td><td class='num'>{o['inside_of']}</td>"
+            f"<td class='num'>{e(', '.join(f'{v:.4g}' for v in o['position']))}</td><td class='num'>{e(', '.join(f'{v:.4g}' for v in o['tilt']))}</td>"
+            f"<td>{e(material)}</td><td>{e(_vp_text(o.get('volume_physics')))}</td></tr>")
+        vals = "; ".join([f"{t('file')} {o[k]}" for k in ("file", "file2") if o.get(k)]
+                         + [f"par{q['par']} {q['name']} = {fmt(q['value']) if isinstance(q['value'], float) else q['value']}" for q in o.get("params") or []])
+        for f in o.get("faces") or []:
+            if _face_set(f):
+                out["faces"].append(f"<tr><td class='num'>{i}</td><td>{e(f['name'])}</td><td>{e(t('face_is.' + f['is']) if f['is'] in FACE_IS else f['is'])}</td>"
+                                 f"<td>{e(f.get('coating') or '—')}</td><td>{e(_scatter_text(f))}</td></tr>")
+        st = o.get("scatter_to")
+        if st and st.get("objects"):
+            out["targets"].append(t("scatter_to.objects", n=i, list=", ".join(map(str, st["objects"]))))
+        elif st and st.get("importance"):
+            rows = "; ".join(f"→ {r['towards']} (size {fmt(r['size'])}, limit {fmt(r['limit'])})" for r in st["importance"])
+            out["targets"].append(t("scatter_to.importance", n=i, rows=rows))
+        if vals:
+            out["params"].append(f"<tr><td class='num'>{i}</td><td>{e(o['type'])}</td><td>{e(vals)}</td></tr>")
+        tabs = []
+        if o.get("source"):
+            tabs.append(f"{t('tab.source')}: {_plain_text(o['source'])}")
+        changed = {k: v for k, v in (o.get("type_options") or {}).items() if k in TYPE_DEFAULTS and v != TYPE_DEFAULTS[k]}
+        if changed:
+            tabs.append(f"{t('tab.type')}: {_plain_text(changed)}")
+        for key in ("diffraction", "index_model"):
+            if o.get(key):
+                tabs.append(f"{t('tab.' + key)}: {_plain_text(o[key])}")
+        if tabs:
+            out["tabs"].append(f"<tr><td class='num'>{i}</td><td>{e(o['type'])}</td><td>{e(' | '.join(tabs))}</td></tr>")
+    return out
+
+
+def _objects_html(rows: dict[str, Any], t: Tr, h: str) -> str:
+    faces = (f"<div class='wrap'><table><thead><tr>{header_row(t('th.faces'))}</tr></thead><tbody>{''.join(rows['faces'])}</tbody></table></div>"
+             if rows["faces"] else "")
+    faces += "".join(f"<p>{e(r)}</p>" for r in rows["targets"])
+    faces = faces or f"<p class='muted'>{t('faces_default')}</p>"
+    tabs = f"<div class='wrap'><table><tbody>{''.join(rows['tabs'])}</tbody></table></div>" if rows["tabs"] else f"<p class='muted'>{t('tabs_default')}</p>"
+    return (f"<{h}>{t('h.objects')}</{h}><div class='wrap'><table><thead><tr>{header_row(t('th.objects'))}</tr></thead><tbody>{''.join(rows['objects'])}</tbody></table></div>"
+            f"<{h}>{t('h.object_params')}</{h}><div class='wrap'><table><tbody>{''.join(rows['params'])}</tbody></table></div>"
+            f"<{h}>{t('h.faces')}</{h}>{faces}<{h}>{t('h.tabs')}</{h}>{tabs}")
+
+
+def render_nsc(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[str, Any], lang: str,
+               found: list[tuple[str, dict[str, Any]]] | None = None) -> str:
+    """非序列系统的建模说明页。/ The model page of a non-sequential system."""
+    t = Tr(lang)
+    notes = notes or {}
+    descr = {str(k): v for k, v in (notes.get("objects") or {}).items()}
+    waves = desc["wavelengths"]
+    wave_heads = "|".join(f"n({w['um'] * 1000:.0f} nm)" for w in waves)
+    found = checks(desc, notes) if found is None else found
+    warnings = "".join(f"<li>{e(t('w.' + code, **args))}</li>" for code, args in found)
+    system_rows = [(t("units"), desc.get("lens_units")), (t("catalogs"), ", ".join(desc.get("material_catalogs") or []) or t("none"))]
+    if desc.get("coating_file"):
+        system_rows.append((t("coating_file"), desc["coating_file"]))
+    system = "".join(f"<tr><th>{e(k)}</th><td>{e(v)}</td></tr>" for k, v in system_rows)
+    nsc_rows = "".join(f"<tr><th>{e(k)}</th><td>{e(fmt(v) if isinstance(v, float) else v)}</td></tr>" for k, v in (desc.get("nsc") or {}).items())
+    wave_rows = "".join(
+        f"<tr><td class='num'>{k}</td><td class='num'>{fmt(w['um'])}</td><td class='num'>{fmt(w['weight'])}</td><td>{'★' if w['primary'] else ''}</td></tr>"
+        for k, w in enumerate(waves, 1)
+    )
+    rows = _object_rows(desc["objects"], descr, t)
+    materials = rows["materials"]
+    mat_rows = []
+    for key, m in materials.items():
+        o = m["o"]
+        src = o.get("material_source") or {}
+        if src.get("kind") == "absorb":
+            source, params = t("src.absorb"), ""
+        else:
+            source, params = _source_text(src, t)
+        name = "—" if key == "(air)" else key if not key.startswith("model") else "MODEL"
+        ns = "".join(f"<td class='num'>{v:.6f}</td>" for v in o.get("n") or [])
+        mat_rows.append(f"<tr><td>{e(name)}</td><td>{e(source)}</td><td>{e(params)}</td>{ns}<td>{e(', '.join(map(str, m['objects'])))}</td></tr>")
+    layouts = []
+    for key, value in (desc.get("layout") or {}).items():
+        if isinstance(value, str):
+            layouts.append(f"<h3>{e(key)}</h3><p><img src='{e(value)}' alt='{e(key)}'></p>")
+        else:
+            layouts.append(f"<h3>{e(key)}</h3><p class='muted'>{e(t('layout_missing', err=value.get('error', '')))}</p>")
+    assumptions = "".join(f"<li>{e(a)}</li>" for a in notes.get("assumptions") or []) or f"<li>{t('none')}</li>"
+    first_order = "".join(f"<li>{e(a)}</li>" for a in notes.get("first_order") or []) or f"<li>{t('none')}</li>"
+    return f"""<!doctype html><html lang="{'zh-CN' if lang == 'zh' else 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{t('title')} · {e(meta['job'])}</title><style>{CSS}</style></head><body><main>
+<p class="muted">{t('byline', job=e(meta['job']), lens=e(meta['lens']), time=e(meta['time']))}</p>
+<h1>{t('title')}</h1><p>{t('intro')}</p>
+<h2>{t('h.warnings')}</h2><div class="card">{f'<ul>{warnings}</ul>' if warnings else t('no_warnings')}</div>
+<h2>{t('h.system')}</h2><div class="wrap"><table><tbody>{system}</tbody></table></div>
+<h3>{t('h.nsc')}</h3><div class="wrap"><table><tbody>{nsc_rows}</tbody></table></div>
+<h3>{t('h.waves')}</h3><div class="wrap"><table><thead><tr>{header_row(t('th.waves'))}</tr></thead><tbody>{wave_rows}</tbody></table></div>
+<h2>{t('h.materials')}</h2><div class="wrap"><table><thead><tr>{header_row(t('th.obj_materials', waves=wave_heads))}</tr></thead><tbody>{''.join(mat_rows)}</tbody></table></div>
+<p class="muted">{t('obj_n_note')}</p>
+{_objects_html(rows, t, 'h2')}
+<h2>{t('h.first_order')}</h2><ul>{first_order}</ul>
+<h2>{t('h.assumptions')}</h2><ul>{assumptions}</ul>
+<h2>{t('h.layout')}</h2>{''.join(layouts)}
+</main></body></html>"""
 
 
 def _source_text(src: dict[str, Any], t: Tr) -> tuple[str, str]:
@@ -339,6 +611,8 @@ def _configs_html(cfg: dict[str, Any], t: Tr) -> str:
 
 def render(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[str, Any], lang: str,
            found: list[tuple[str, dict[str, Any]]] | None = None) -> str:
+    if desc.get("mode") == "non_sequential":
+        return render_nsc(desc, notes, meta, lang, found)
     t = Tr(lang)
     notes = notes or {}
     descr = {str(k): v for k, v in (notes.get("surfaces") or {}).items()}
@@ -416,6 +690,11 @@ def render(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[str, A
     assumptions = "".join(f"<li>{e(a)}</li>" for a in notes.get("assumptions") or []) or f"<li>{t('none')}</li>"
     first_order = "".join(f"<li>{e(a)}</li>" for a in notes.get("first_order") or []) or f"<li>{t('none')}</li>"
     configs_html = _configs_html(desc.get("configurations") or {}, t)
+    # 混合模式：每个 NonSequential 面一组物体，notes.objects 的键写 "<面号>:<物体号>"
+    # mixed mode: one object group per NonSequential surface; notes.objects keys are "<surface>:<object>"
+    obj_descr = {str(k): v for k, v in (notes.get("objects") or {}).items()}
+    groups_html = "".join(f"<h2>{t('h.nsc_group', s=s['index'])}</h2>" + _objects_html(_object_rows(s["objects"], obj_descr, t, f"{s['index']}:"), t, "h3")
+                          for s in desc["surfaces"] if s.get("objects"))
     params_html = (
         f"<h2>{t('h.params')}</h2><div class='wrap'><table><tbody>{''.join(param_rows)}</tbody></table></div>" if param_rows else ""
     )
@@ -433,6 +712,7 @@ def render(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[str, A
 <h2>{t('h.surfaces')}</h2><div class="wrap"><table><thead><tr>{header_row(t('th.surfaces'))}</tr></thead><tbody>{''.join(surf_rows)}</tbody></table></div>
 <p class="muted">{t('thick_note')}</p>
 {params_html}
+{groups_html}
 {configs_html}
 <h2>{t('h.first_order')}</h2><ul>{first_order}</ul>
 <h2>{t('h.assumptions')}</h2><ul>{assumptions}</ul>
@@ -442,7 +722,12 @@ def render(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[str, A
 
 def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, Any] | None, lens: str, lang: str | None) -> dict[str, Any]:
     env = (notes or {}).get("environment")
-    if env is not None and not (isinstance(env, list) and all(isinstance(i, int) and not isinstance(i, bool) and 0 <= i < len(desc["surfaces"]) for i in env)):
+    if desc.get("mode") == "non_sequential":
+        # 非序列系统按物体号（从 1 起）/ a non-sequential system lists object numbers, from 1
+        n = len(desc["objects"])
+        if env is not None and not (isinstance(env, list) and all(isinstance(i, int) and not isinstance(i, bool) and 1 <= i <= n for i in env)):
+            raise SaosError(ErrorCode.BAD_ARGS, f"notes.environment must list object numbers 1–{n} (environment or bought-in parts)")
+    elif env is not None and not (isinstance(env, list) and all(isinstance(i, int) and not isinstance(i, bool) and 0 <= i < len(desc["surfaces"]) for i in env)):
         raise SaosError(ErrorCode.BAD_ARGS, f"notes.environment must list surface indices 0–{len(desc['surfaces']) - 1} (environment or bought-in parts)")
     from saos.protocol import write_json
 

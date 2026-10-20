@@ -330,13 +330,13 @@
         <mxCell id="t10" value="&lt;b&gt;saos stop --reason &quot;…&quot; --quote &quot;…&quot;&lt;/b&gt;&lt;br&gt;→ stops.jsonl；ledger 状态 stopped，此版本拒绝后续轮次" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
           <mxGeometry x="980" y="2580.0" width="400" height="56" as="geometry" />
         </mxCell>
-        <mxCell id="a17" value="&lt;b&gt;生成交付报告&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+        <mxCell id="a17" value="&lt;b&gt;生成交付报告&lt;/b&gt;&lt;br&gt;需求或用户关心加工装配时先做公差扫描" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="2675.0" width="320" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="t11" value="&lt;b&gt;saos report&lt;/b&gt; → report/index.html（HTML，用户语言）&lt;br&gt;交付：G 最小的 achieved 轮，否则差距最小的可交付轮&lt;br&gt;全无有效轮次时写明“没有有效设计”&lt;br&gt;返回值 deliver 只放可交付镜头，否则为空、诊断轮在 diagnostic&lt;br&gt;停止时写明理由与用户原话" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
-          <mxGeometry x="980" y="2660.0" width="400" height="96" as="geometry" />
+        <mxCell id="t11" value="&lt;b&gt;saos scan&lt;/b&gt;（tolerance 模式，按需）→ scans/NNN：灵敏度、蒙特卡洛、良率&lt;br&gt;&lt;b&gt;saos report&lt;/b&gt; → report/index.html（HTML，用户语言，含最近的公差扫描）&lt;br&gt;交付：G 最小的 achieved 轮，否则差距最小的可交付轮&lt;br&gt;全无有效轮次时写明“没有有效设计”&lt;br&gt;返回值 deliver 只放可交付镜头，否则为空、诊断轮在 diagnostic&lt;br&gt;停止时写明理由与用户原话" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="980" y="2660.0" width="400" height="124" as="geometry" />
         </mxCell>
-        <mxCell id="a18" value="把报告路径交给用户&lt;br&gt;说明可接着做公差分析" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+        <mxCell id="a18" value="把报告路径交给用户&lt;br&gt;没做公差时说明可接着做" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="2790.0" width="320" height="54" as="geometry" />
         </mxCell>
         <mxCell id="u7" value="阅读交付报告" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">

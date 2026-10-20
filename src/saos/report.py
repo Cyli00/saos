@@ -129,7 +129,18 @@ TEXT: dict[str, tuple[str, str]] = {
     "ev.analyses": ("分析导出（{n}）", "Analysis exports ({n})"),
     "ev.scripts": ("脚本执行（{n}）", "Script runs ({n})"),
     "ev.screens": ("窗口截图", "Window screenshots"),
+    "h.tolerance": ("公差", "Tolerances"),
+    "tol.match": ("公差扫描 {scan} 在交付的第 {n} 轮镜头上做（镜头文件内容相同）：{samples} 个蒙特卡洛样本，种子 {seed}。",
+                  "Tolerance scan {scan} ran on the lens of the delivered round {n} (identical file): {samples} Monte Carlo samples, seed {seed}."),
+    "tol.other": ("最近的公差扫描 {scan} 做在 {lens} 上，与交付的第 {n} 轮镜头文件不同，数值只供参考：{samples} 个样本，种子 {seed}。",
+                  "The latest tolerance scan {scan} ran on {lens}, which differs from the delivered round {n}'s lens file; for reference only: {samples} samples, seed {seed}."),
+    "tol.yield": ("良率：硬界限全部满足 {hard}，所测各项全部达标 {all}；无效样本 {invalid} 个。",
+                  "Yield: hard bounds met {hard}, every measured goal met {all}; invalid samples {invalid}."),
+    "th.tol_mc": ("判定项|标称|均值|标准差|5%|95%|达标率", "Check|Nominal|Mean|Std dev|5%|95%|Pass rate"),
+    "th.tol_sens": ("公差项|参数|影响最大的判定项|归一化影响", "Tolerance|Parameter|Most affected check|Normalised effect"),
+    "tol.none": ("没有做公差扫描（saos scan 的 tolerance 模式）。", "No tolerance scan was run (saos scan, tolerance mode)."),
     "h.next": ("后续", "Next steps"),
+    "next_tol": ("公差扫描的结果见上；公差表或补偿方式改变时重新扫描。", "The tolerance scan is above; scan again when the tolerance table or the compensation changes."),
     "next": (
         "如果需要评估加工和装配误差的影响，可以进一步做公差分析。",
         "A tolerance analysis can follow to estimate the effect of manufacturing and assembly errors.",
@@ -320,7 +331,53 @@ def build(job: jobs.Job) -> dict[str, Any]:
     # the wording (summary, open questions) comes from the current file; the sections from the judged version, which hashes the same
     shown = {**evaluation["demand"], "summary": d["summary"], "open_questions": d.get("open_questions") or [], "lang": d.get("lang")}
     return {"demand": shown, "confirmed": demand.confirmation_for(job.root, current[0]), "rounds": rounds, "decision": decision,
-            "deliver": deliver, "items": evaluation["items"], "blocked": not ledger.deliverable(deliver)}
+            "deliver": deliver, "items": evaluation["items"], "blocked": not ledger.deliverable(deliver),
+            "tolerance": latest_tolerance(job, deliver)}
+
+
+def latest_tolerance(job: jobs.Job, deliver: dict[str, Any]) -> dict[str, Any] | None:
+    """最近一次完成的公差扫描，并判断它做的镜头与交付轮次的镜头文件是否相同（按内容哈希）。
+    The latest finished tolerance scan, and whether its lens is the delivered round's lens file (by content hash)."""
+    import hashlib
+
+    root = job.root / "scans"
+    if not root.is_dir():
+        return None
+    for folder in sorted((p for p in root.iterdir() if p.is_dir()), key=lambda p: p.name, reverse=True):
+        result_file = folder / "result.json"
+        if not result_file.is_file():
+            continue
+        result = json.loads(result_file.read_text(encoding="utf-8"))
+        if result.get("mode") != "tolerance" or result.get("cancelled"):
+            continue
+        plan = json.loads((folder / "plan.json").read_text(encoding="utf-8"))
+        base = next(folder.glob("base.*"), None)
+        delivered = job.lenses_dir / deliver["file"]
+        digest = lambda p: hashlib.sha256(p.read_bytes()).hexdigest() if p is not None and p.is_file() else None  # noqa: E731
+        return {"scan": f"scans/{folder.name}", "lens": plan.get("lens"), "same_lens": digest(base) is not None and digest(base) == digest(delivered),
+                "seed": plan["tolerance"].get("seed", 1), "nominal": result.get("nominal"), "sensitivity": result.get("sensitivity") or [],
+                "monte_carlo": result.get("monte_carlo") or {}}
+    return None
+
+
+def tolerance_section(tol: dict[str, Any] | None, deliver: dict[str, Any], t: Tr) -> str:
+    if tol is None:
+        return f"<p>{t('tol.none')}</p>"
+    mc = tol["monte_carlo"]
+    pct = lambda v: "—" if v is None else f"{100 * v:.1f}%"  # noqa: E731
+    head = t("tol.match" if tol["same_lens"] else "tol.other", scan=e(tol["scan"]), lens=e(tol["lens"]), n=deliver["round"],
+             samples=mc.get("samples", 0), seed=tol["seed"])
+    out = f"<p>{head}</p>"
+    if mc.get("samples"):
+        out += f"<p>{t('tol.yield', hard=pct(mc.get('yield_hard')), all=pct(mc.get('yield_all')), invalid=mc.get('invalid', 0))}</p>"
+        rows = "".join(f'<tr><td>{e(k)}</td>' + "".join(f'<td class="num">{fmt(s.get(c))}</td>' for c in ("nominal", "mean", "std", "p5", "p95"))
+                       + f'<td class="num">{pct(s.get("pass_rate"))}</td></tr>' for k, s in (mc.get("stats") or {}).items())
+        out += f'<div class="wrap"><table><thead><tr>{header_row(t("th.tol_mc"))}</tr></thead><tbody>{rows}</tbody></table></div>'
+    if tol["sensitivity"]:
+        rows = "".join(f'<tr><td>{e(s["item"])}</td><td>{e(s["key"])}</td><td>{e(s.get("worst") or "—")}</td>'
+                       f'<td class="num">{fmt((s.get("normalised_effect") or {}).get(s.get("worst")))}</td></tr>' for s in tol["sensitivity"][:10])
+        out += f'<div class="wrap"><table><thead><tr>{header_row(t("th.tol_sens"))}</tr></thead><tbody>{rows}</tbody></table></div>'
+    return out
 
 
 def headline(status: str, deliver: dict[str, Any], blocked: bool | None) -> str:
@@ -442,9 +499,11 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
             if m.get("status"):
                 source += t("mat.obsolete") if m["status"] == "Obsolete" else t("mat.status", status=m["status"])
         n = " / ".join(f"{v:.6f}" for v in m.get("n") or [])
-        if m["surface"] in (deliver.get("environment") or []):
+        # 非序列系统的材料按物体号记 / a non-sequential system records materials by object number
+        place = m["surface"] if "surface" in m else m.get("object")
+        if place in (deliver.get("environment") or []):
             source += t("mat.env")
-        where = str(m["surface"]) + (t("mat.config", c=m["configuration"]) if "configuration" in m else "")
+        where = (str(place) if "surface" in m else f"#{place}") + (t("mat.config", c=m["configuration"]) if "configuration" in m else "")
         mat_rows.append(f'<tr><td class="num">{e(where)}</td><td>{e(name)}</td><td>{e(source)}</td><td class="num">{e(n)}</td></tr>')
     for c in deliver.get("coatings") or []:
         mat_rows.append(f'<tr><td class="num">{c["surface"]}</td><td>{e(c["coating"])}</td><td>{e(t("mat.coating"))}</td><td></td></tr>')
@@ -467,8 +526,9 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
 <h2>{t('h.process')}</h2><div class="card">{chart(rounds, t)}</div>
 <div class="wrap"><table><thead><tr>{header_row(t('th.rounds'))}</tr></thead><tbody>{round_rows}</tbody></table></div>
 <p class="muted">{t('note.merit')}</p>
+<h2>{t('h.tolerance')}</h2>{tolerance_section(data.get('tolerance'), deliver, t)}
 <h2>{t('h.evidence')}</h2>{''.join(evidence) or f"<p>{t('none')}</p>"}
-<h2>{t('h.next')}</h2><p>{t('next')}</p>
+<h2>{t('h.next')}</h2><p>{t('next_tol' if data.get('tolerance') else 'next')}</p>
 </main></body></html>"""
 
 

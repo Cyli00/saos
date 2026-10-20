@@ -82,6 +82,10 @@ class Backend(ABC):
     @abstractmethod
     def surfaces(self) -> list[dict[str, Any]]: ...
 
+    def objects(self) -> list[dict[str, Any]]:
+        """非序列物体表；不支持非序列的后端返回空。/ Non-sequential objects; empty on backends without them."""
+        return []
+
     @abstractmethod
     def set_surface(self, index: int, param: str, value: Any) -> dict[str, Any]:
         """修改一个面参数并回读核对；未生效时抛出 VALUE_NOT_APPLIED。返回修改后的该面数据。"""

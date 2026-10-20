@@ -29,6 +29,14 @@ polarization, the coating file and the afocal units; changing them changes the p
 values (zoom spacings, …) and the coatings of surfaces this design makes are design variables, coatings recorded per
 round; an environment surface's coating is fixed. An item missing from the approved description (approved before the
 item existed) is not compared.
+
+非序列系统（2026-10-20 加入）的指纹按物体：类型、参考物体、Inside Of 和介质类别。光源和探测器是判定的条件，
+位置、倾斜和参数都在指纹里（光线数除外，那是采样）；环境物体（notes.environment 里的物体号）再加材料、参数、位置、
+倾斜和体散射的全部设置；本设计要做的物体只记体散射的模型和 DLL。系统项另记波长、膜层文件和是否简单光线分裂。
+A non-sequential system (added 2026-10-20) is fingerprinted per object: type, reference object, Inside Of and medium
+class. Sources and detectors are conditions of the checks: position, tilt and parameters are included (ray counts are
+sampling, not structure). Environment objects (object numbers in notes.environment) add material, parameters, position,
+tilt and every volume-physics setting; objects this design makes keep only the volume-physics model and DLL.
 """
 
 from __future__ import annotations
@@ -81,7 +89,69 @@ def _configurations(cfg: dict[str, Any]) -> dict[str, Any]:
                          for o in cfg.get("operands") or []]}
 
 
+def _medium_class_nsc(item: dict[str, Any]) -> str:
+    kind = str((item.get("material_source") or {}).get("kind", "none"))
+    return "glass" if kind in ("model", "catalog") else kind
+
+
+def _fingerprint_objects(objects: list[dict[str, Any]], given: set[int], all_given: bool = False) -> list[dict[str, Any]]:
+    """一组非序列物体的指纹；given 是锁定全部设置的物体号，all_given 时整组都锁（混合模式里作为环境的 NonSequential 面）。
+    The fingerprint of one group of NSC objects; given are the fully locked objects, all_given locks the whole group."""
+    from saos.backend.nsc import SAMPLING_HEADERS
+
+    out = []
+    for o in objects:
+        locked = all_given or o["index"] in given
+        item: dict[str, Any] = {"type": o["type"], "ref": o["ref"], "inside_of": o["inside_of"]}
+        # 文件换了就是另一个零件或光源 / another file is another part or source
+        item.update({k: str(o[k]).upper() for k in ("file", "file2") if o.get(k)})
+        params = {p["name"]: _num(p["value"]) for p in o.get("params") or [] if str(p["name"]).strip().lower() not in SAMPLING_HEADERS}
+        placement = {"position": [_num(v) for v in o["position"]], "tilt": [_num(v) for v in o["tilt"]]}
+        vp = o.get("volume_physics")
+        faces = o.get("faces") or []
+        if o["kind"] != "object" or locked:
+            # 条件和环境：面属性、光源页、Type 页、衍射页、折射率页全记 / conditions and environment: every tab
+            item["faces"] = [{k: _deep(v) for k, v in f.items() if k != "name"} for f in faces]
+            for key in ("scatter_to", "source", "type_options", "diffraction", "index_model"):
+                if o.get(key):
+                    item[key] = _deep(o[key])
+        else:
+            # 要设计的物体只记各面是否反射、吸收和散射模型，以及衍射、折射率的类型 / design objects: kinds only
+            item["faces"] = [[f.get("is"), (f.get("scatter") or {}).get("model")] for f in faces]
+            item["diffraction"] = (o.get("diffraction") or {}).get("split")
+            item["index_model"] = (o.get("index_model") or {}).get("type")
+        if o["kind"] != "object":
+            item.update(params=params, **placement)
+        elif locked:
+            item.update(medium=str((o.get("material_source") or {}).get("kind", "none")), material=str(o.get("material", "")).upper(),
+                        params=params, volume_physics=_deep(vp or {}), **placement)
+        else:
+            item.update(medium=_medium_class_nsc(o), volume_physics={k: (vp or {}).get(k) for k in ("model", "dll")})
+        out.append(item)
+    return out
+
+
+def _deep(v: Any) -> Any:
+    """嵌套结构里的数统一舍入。/ Round every number in a nested value."""
+    if isinstance(v, dict):
+        return {k: _deep(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_deep(x) for x in v]
+    return _num(v)
+
+
+def _fingerprint_nsc(desc: dict[str, Any], environment: Any = ()) -> dict[str, Any]:
+    given = {int(i) for i in environment or ()}
+    return {"mode": "non_sequential", "lens_units": desc.get("lens_units"),
+            "wavelengths": [[_num(w["um"]), bool(w["primary"])] for w in desc["wavelengths"]],
+            "coating_file": str(desc.get("coating_file") or "").upper(),
+            "simple_ray_splitting": bool((desc.get("nsc") or {}).get("simple_ray_splitting")),
+            "objects": _fingerprint_objects(desc["objects"], given)}
+
+
 def fingerprint(desc: dict[str, Any], environment: Any = ()) -> dict[str, Any]:
+    if desc.get("mode") == "non_sequential":
+        return _fingerprint_nsc(desc, environment)
     ap = desc["aperture"]
     given = {int(i) for i in environment or ()}
     surfaces = []
@@ -104,6 +174,9 @@ def fingerprint(desc: dict[str, Any], environment: Any = ()) -> dict[str, Any]:
                 # 平基底和弯基底是两种零件（实测光纤任务中基底被优化弯后穿透了板厚）
                 # a flat and a curved substrate are different parts (in the fiber job an optimised substrate bent through the plate)
                 item["substrate_flat"] = math.isinf(float(s["radius"]))
+        if s.get("objects") is not None:
+            # 混合模式：NonSequential 面的物体；面在环境里时整组锁定 / mixed mode: a NonSequential surface's objects
+            item["objects"] = _fingerprint_objects(s["objects"], set(), all_given=s["index"] in given)
         surfaces.append(item)
     out = {
         "aperture": {k: _num(ap.get(k)) for k in ("type", "value", "telecentric_object", "afocal_image")},
@@ -142,10 +215,15 @@ def structure_changes(approved: dict[str, Any], current: dict[str, Any], environ
     """已确认模型与当前镜头在结构上的不同之处；视场和波长在末尾追加的采样点不算。
     Structural differences between an approved model and the current lens; sampling points appended to fields or wavelengths do not count."""
     a, b = fingerprint(approved, environment), fingerprint(current, environment)
+    if a.get("mode") != b.get("mode"):
+        return ["mode"]
     _align(a, b)
     for get, put in ((lambda f: f["fields"]["items"], lambda f, v: f["fields"].__setitem__("items", v)),
                      (lambda f: f["wavelengths"], lambda f, v: f.__setitem__("wavelengths", v))):
-        old, new = get(a), get(b)
+        try:
+            old, new = get(a), get(b)
+        except KeyError:  # 非序列系统没有视场 / a non-sequential system has no fields
+            continue
         if len(new) > len(old) and new[:len(old)] == old:
             put(b, new[:len(old)])
     return diff(a, b)
@@ -163,6 +241,13 @@ def materials(desc: dict[str, Any]) -> list[dict[str, Any]]:
     """逐面的介质及来源，记入每个调试轮次；多重结构用 GLSS 换进的玻璃逐个结构列出（带 configuration）。
     Medium and source per surface, stored with every round; glasses a GLSS row swaps in are listed per configuration."""
     out = []
+    for o in desc.get("objects") or []:
+        src = o.get("material_source") or {}
+        if o["kind"] == "object" and src.get("kind") in ("model", "catalog"):
+            item = {"object": o["index"], "kind": src["kind"], "n": o.get("n")}
+            item.update({"name": src.get("name"), "catalogs": src.get("catalogs"), "status": src.get("status")} if src["kind"] == "catalog"
+                        else {"nd": src.get("nd"), "vd": src.get("vd")})
+            out.append(item)
     for s in desc["surfaces"]:
         src = s.get("material_source") or {}
         if src.get("kind") in ("model", "catalog"):
@@ -182,6 +267,8 @@ def materials(desc: dict[str, Any]) -> list[dict[str, Any]]:
 def model_glass_surfaces(desc: dict[str, Any]) -> list[int]:
     """用模型玻璃的面，含多重结构里设模型玻璃数据的面。/ Surfaces with a model glass, the multi-configuration ones included."""
     out = [s["index"] for s in desc["surfaces"] if medium_kind(s) == "model"]
+    # 非序列系统按物体号 / a non-sequential system by object number
+    out += [o["index"] for o in desc.get("objects") or [] if str((o.get("material_source") or {}).get("kind")) == "model"]
     for op in (desc.get("configurations") or {}).get("operands") or []:
         if op["type"] in MODEL_GLASS_OPERANDS and op.get("params") and op["params"][0] not in out:
             out.append(op["params"][0])

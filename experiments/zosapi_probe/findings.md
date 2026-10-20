@@ -25,6 +25,8 @@
 ## 新发现
 
 - **StandardSpot 的 `GetRMSSpotSizeFor(f, w)`、`GetGeoSpotSizeFor(f, w)` 忽略波长参数**：w = 0..3 返回同一个值，值随分析设置里的 Wavelength 变化（全部波长 4.988 µm，只选 1/2/3 时 3.857/4.295/6.233 µm）。TODO 里 GEO 对不上的条目由此可以解释一部分：要按波长取值，必须每个波长单独跑一次分析。StandardSpot 不提供光线数据（RayData、ScatterPoints 都是 0 组），界面的点云不能从它取。
+- **选全部波长时，Standard Spot 每个波长追的光线数与波长权重成正比**（2026-10-20，Cooke 40 degree field，Hexapolar 密度 6，参考主光线）：权重 0.8/1/0.8 时 GEO 为 9.343/40.777/24.161 µm；权重全改成 1 后为 9.357/47.802/36.631 µm，与批量追迹同一 Hexapolar 网格、相对主波长主光线的最远点完全相等；权重 0.5/1/0.5 时为 9.251/40.969/26.285 µm。`IgnoreLateralColor` 开或关结果相同。所以 TODO 里界面点云与 GEO 的出入来自边波长少追的边缘光线，点云本身没错。
+- **全部视场一起算 FFT MTF 时，只要一个视场的主光线追不出，整个分析就不给数据**，文本导出只有一行 "Cannot compute when chief ray cannot be traced"（2026-10-20，fiber-printed 第 0 轮：第 3、5 视场失败，其余视场单独算都正常；Huygens MTF、FFT MTF vs Field 同样失败）。
 - **光线瞄准向导会卡死**：Cooke 上 `RunAndWaitForCompletion` 超过 10 分钟不返回；改用 `RunAndWaitWithTimeout(30)` 同样不返回。不运行就调 `GetRecommendedSettings` 报 "The wizard has not yet been run"。不要接入，除非查清原因。
 - **74 / 156 种分析没有完整的设置接口**（`HasAnalysisSpecificSettings` 为 false），包括 RelativeIllumination、Transmission、ImageSimulation、Draw2D/Draw3D、CardinalPoints、FootprintSettings、VignettingDiagramSettings、UniversalPlot1D/2D、YNIContributions、SystemData、PrescriptionDataSettings。saos 的 `apply_settings` 改不了这些分析，只能走 `ModifySettings`。另有 14 种非序列分析在序列系统下 `New_Analysis_SettingsFirst` 返回 None。
 

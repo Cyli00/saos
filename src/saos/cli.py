@@ -178,8 +178,15 @@ def cmd_opt(args: argparse.Namespace) -> Any:
             payload = {"job": args.job, "config_rows": _surface_list(args.config_rows, "--config-rows"),
                        "configs": _surface_list(args.configs, "--configs") if args.configs else None, "on": not args.off}
             return client.request("opt.vary", payload, timeout=args.timeout)
+        if args.objects:
+            # 非序列物体的参数 / parameters of non-sequential objects
+            if not args.param or args.surfaces:
+                raise SaosError(ErrorCode.BAD_ARGS, "opt vary --objects needs --param and no --surfaces")
+            payload = {"job": args.job, "param": args.param, "objects": _surface_list(args.objects, "--objects"), "group": args.group,
+                       "on": not args.off}
+            return client.request("opt.vary", payload, timeout=args.timeout)
         if not (args.param and args.surfaces):
-            raise SaosError(ErrorCode.BAD_ARGS, "opt vary needs --param and --surfaces, or --config-rows")
+            raise SaosError(ErrorCode.BAD_ARGS, "opt vary needs --param and --surfaces, --param and --objects, or --config-rows")
         payload = {"job": args.job, "param": args.param, "surfaces": _surface_list(args.surfaces), "on": not args.off,
                    "mode": args.mode, "catalog": args.catalog}
         return client.request("opt.vary", payload, timeout=args.timeout)
@@ -194,7 +201,7 @@ def cmd_opt(args: argparse.Namespace) -> Any:
         return client.request("opt.merit", payload, timeout=args.timeout)
     if args.action == "local":
         return _send("opt.local", args, {"job": args.job, "cycles": args.cycles, "cores": args.cores, "max_seconds": args.max_seconds,
-                                         "measure": args.measure}, args.timeout)
+                                         "measure": args.measure, "algorithm": args.algorithm}, args.timeout)
     if args.action in ("hammer", "global"):
         # 运行时长已知：客户端至少等到它结束后再留 2 分钟收尾 / the run length is known: wait for it plus 2 minutes to wrap up
         return _send(f"opt.{args.action}", args, {"job": args.job, "cores": args.cores, "max_seconds": args.max_seconds, "measure": args.measure},
@@ -426,12 +433,16 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--surfaces", help="e.g. 1-16 or 1,3,5-7")
     q.add_argument("--config-rows", help="multi-configuration rows instead of surfaces (zoom spacings, focus, …), e.g. 1,3")
     q.add_argument("--configs", help="with --config-rows: the configurations (default: all), e.g. 2-3")
+    q.add_argument("--objects", help="non-sequential objects instead of surfaces, e.g. 2-4; --param is x, y, z, tilt_x, tilt_y, tilt_z, par<N> or a column header")
+    q.add_argument("--group", type=int, help="with --objects in a sequential lens: the NonSequential surface holding them (default: the only one)")
     q.add_argument("--off", action="store_true", help="make them fixed")
     q = opt_cmd("merit", "merit function: clear / wizard / add / show")
     q.add_argument("merit_action", choices=("clear", "wizard", "add", "show"))
     q.add_argument("--file", help="wizard settings JSON, or the operand list JSON for add")
-    q = opt_cmd("local", "run local optimization (damped least squares)")
+    q = opt_cmd("local", "run local optimization (damped least squares, or orthogonal descent)")
     q.add_argument("--cycles", default="auto", choices=("auto", "1", "5", "10", "50"))
+    q.add_argument("--algorithm", choices=("dls", "od"), help="dls = damped least squares, od = orthogonal descent "
+                                                            "(default: od for a non-sequential system, whose detector merit is noisy; dls otherwise)")
     q.add_argument("--cores", type=int, help="CPU cores for OpticStudio (default: all logical cores but 2)")
     q.add_argument("--max-seconds", type=float, help="cancel the optimisation after this many seconds and keep what it reached")
     for name, help_text in (("hammer", "run Hammer optimisation (escapes local minima; with material --mode substitute it swaps real glasses); "

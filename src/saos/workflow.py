@@ -132,7 +132,8 @@ def parts_clash(ctx) -> dict[str, Any] | None:
     except SaosError:
         return None
     crossings = [{"surfaces": c["surfaces"], "depth": c["depth"]} for c in clash.get("crossings") or []]
-    overlaps = [{"lenses": o["lenses"], "points": o["points"]} for o in clash.get("overlaps") or []]
+    # 序列镜头记镜片和点数，非序列系统记物体和穿插深度 / lenses and points for a sequential lens, objects and depth for a non-sequential one
+    overlaps = [{k: o[k] for k in ("lenses", "points", "objects", "depth") if k in o} for o in clash.get("overlaps") or []]
     return {"crossings": crossings, "overlaps": overlaps} if crossings or overlaps else None
 
 

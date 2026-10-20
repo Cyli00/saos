@@ -4,7 +4,7 @@ solves one variable, compensates and measures with the demand's checks, on the d
 
     saos scan --job J --plan plan.json
 
-plan.json（vars、points、minimize、probes、candidates 五选一 / exactly one of vars, points, minimize, probes, candidates）：
+plan.json（vars、points、minimize、probes、candidates、tolerance 六选一 / exactly one of vars, points, minimize, probes, candidates, tolerance）：
     {"vars": {"lens1 back.curvature": [0, 1, 2, 3], "3.conic": {"from": -1, "to": 0, "steps": 5}},  # 网格 / grid
      "points": [{"5.radius": 2.1, "5.conic": -0.5}, …],                                              # 或逐点 / or a list
      "minimize": {"vars": {"5.radius": {"step": 0.01, "min": 1.5, "max": 3}, "12.par1": {"step": 0.03}},
@@ -29,6 +29,19 @@ effect on the target:
                 {"id": "l2_asph", "script": "explore/l2_a4.py", "delta": 1e-3, "control": true,   # run(w, delta)
                  "prediction": "只改像散分配，不改 Petzval 和", "expect": {"spot": "none"}}]}
 
+公差（tolerance）：按公差表扰动当前镜头，用需求单的判定逐点实测。先做灵敏度（每项单独取下限、上限），再做蒙特卡洛（各项同时随机），
+给出每个判定项的分布、达标率和全部达标的比例（良率）。序列、非序列同一套；补偿（如重新调焦）用 compensate：
+Tolerance: perturb the current lens by a tolerance table and measure each point with the demand's checks: sensitivity
+(each item alone at its lower and upper limit), then Monte Carlo (all items drawn at once), giving each check's
+distribution, pass rate and the share of samples meeting every goal (yield):
+    {"tolerance": {"items": [{"key": "3.thickness", "min": -0.05, "max": 0.05, "source": "厂家公差表 …"},
+                             {"key": "4.nd", "min": -0.001, "max": 0.001, "dist": "normal", "source": "…"},
+                             {"key": "object.lens.tilt_x", "min": -0.1, "max": 0.1, "source": "…"},
+                             {"key": "2.radius", "min": -0.002, "max": 0.002, "relative": true, "source": "…"}],
+                   "samples": 200, "seed": 1, "sensitivity": true},
+     "compensate": "quick_focus", "workers": 6}
+min、max 是相对标称值的偏差（relative 时为比例）；dist 为 uniform（默认）或 normal（σ = (max−min)/4，截在 [min, max]）。
+
 结构探索（candidates）：几个结构不同的起始镜头在同样的预算、同样的判定下各优化一段再比较，格式和规则见 saos.candidates。
 Structure exploration (candidates): structurally different start lenses, each optimised on the same budget and judged by
 the same checks, then compared; format and rules in saos.candidates.
@@ -46,6 +59,7 @@ import json
 import logging
 import math
 import os
+import random
 import shutil
 import threading
 from typing import Any
@@ -56,7 +70,9 @@ from saos.protocol import ErrorCode, SaosError, write_json
 log = logging.getLogger(__name__)
 
 SCANS_DIR = "scans"
-MODES = ("vars", "points", "minimize", "probes", "candidates")
+MODES = ("vars", "points", "minimize", "probes", "candidates", "tolerance")
+MAX_TOLERANCES = 200
+TOL_DISTS = ("uniform", "normal")
 MAX_POINTS = 5000
 # valley / peak：±delta 两侧都比基准差（或都好）超过 NONE_BELOW，基准正在这个变量的极值上，一阶斜率看不出
 # valley / peak: both sides above (or below) the base by more than NONE_BELOW; the base sits at an extremum the slope cannot show
@@ -108,6 +124,8 @@ def validate(plan: Any, d: dict[str, Any], root=None) -> dict[str, Any]:
             _keys("each point", p)
     elif mode == "probes":
         measure = _validate_probes(plan, items, measure)
+    elif mode == "tolerance":
+        _validate_tolerance(plan)
     elif mode == "candidates":
         return {**candidates.validate(root, plan, items, measure), "mode": mode, "keep": _keep(plan, 3),
                 "rel": float(d["stop"]["rel"]), "lang": d.get("lang")}
@@ -143,7 +161,178 @@ def validate(plan: Any, d: dict[str, Any], root=None) -> dict[str, Any]:
     operands = plan.get("operands") or {}
     if not isinstance(operands, dict) or any(not isinstance(v, list) or not v for v in operands.values()):
         raise _bad("operands map a name to [type, int1, int2, data…]")
-    return {**plan, "mode": mode, "measure": measure, "keep": _keep(plan, 0 if mode == "probes" else 3)}
+    return {**plan, "mode": mode, "measure": measure, "keep": _keep(plan, 0 if mode in ("probes", "tolerance") else 3)}
+
+
+def _validate_tolerance(plan: dict[str, Any]) -> None:
+    tol = plan["tolerance"]
+    if not isinstance(tol, dict):
+        raise _bad('tolerance must be {"items": [...], "samples": N, "seed": S, "sensitivity": true}')
+    extra = sorted(set(tol) - {"items", "samples", "seed", "sensitivity"})
+    if extra:
+        raise _bad(f"tolerance has unknown keys {extra}")
+    entries = tol.get("items")
+    if not isinstance(entries, list) or not 1 <= len(entries) <= MAX_TOLERANCES:
+        raise _bad(f"tolerance.items: 1 to {MAX_TOLERANCES} entries")
+    seen = set()
+    for k, it in enumerate(entries):
+        where = f"tolerance.items[{k}]"
+        if not isinstance(it, dict):
+            raise _bad(f"{where} must be a JSON object")
+        extra = sorted(set(it) - {"key", "min", "max", "dist", "relative", "source", "id"})
+        if extra:
+            raise _bad(f"{where} has unknown keys {extra}")
+        key = it.get("key")
+        if not isinstance(key, str):
+            raise _bad(f"{where}.key: a numeric lens parameter such as 3.thickness, 4.nd or object.lens.tilt_x")
+        if kit.parse_key(key)[2] in ("material", "comment"):
+            raise _bad(f"{where}.key must be a numeric parameter (perturb a glass with <surface>.nd and .vd)")
+        if key in seen:
+            raise _bad(f"{where}.key {key} appears twice")
+        seen.add(key)
+        lo, hi = it.get("min"), it.get("max")
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in (lo, hi)) or lo > hi or lo == hi:
+            raise _bad(f"{where}: min and max are finite deviations from the nominal value with min < max")
+        if it.get("dist", "uniform") not in TOL_DISTS:
+            raise _bad(f"{where}.dist must be one of {TOL_DISTS}")
+        if not isinstance(it.get("relative", False), bool):
+            raise _bad(f"{where}.relative must be true or false")
+        if not str(it.get("source", "")).strip():
+            raise _bad(f"{where}.source: say where the tolerance comes from (a maker's table, the user, a standard)")
+    samples = tol.get("samples", 0)
+    if isinstance(samples, bool) or not isinstance(samples, int) or not 0 <= samples <= MAX_POINTS:
+        raise _bad(f"tolerance.samples must be an integer 0–{MAX_POINTS}")
+    if not isinstance(tol.get("sensitivity", True), bool):
+        raise _bad("tolerance.sensitivity must be true or false")
+    if not samples and not tol.get("sensitivity", True):
+        raise _bad("tolerance: ask for sensitivity, samples or both")
+
+
+def _tolerance_items(ctx, plan: dict[str, Any]) -> list[dict[str, Any]]:
+    """标称点、灵敏度点（每项单独取 min、max）和蒙特卡洛样本（各项同时抽取，种子固定可复现）。
+    The nominal point, the sensitivity points (each item alone at min and max) and the Monte Carlo samples (one seed)."""
+    tol = plan["tolerance"]
+    entries = tol["items"]
+    nominal = kit.values(ctx, [it["key"] for it in entries])
+    bad = [k for k, v in nominal.items() if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v)]
+    if bad:
+        raise _bad(f"tolerance: {bad} have no finite current value (a flat surface's radius: tolerance its curvature)")
+
+    def value(it: dict[str, Any], dev: float) -> float:
+        base = float(nominal[it["key"]])
+        return base * (1.0 + dev) if it.get("relative") else base + dev
+
+    out: list[dict[str, Any]] = [{"i": 0, "set": {}, "probe": "nominal"}]
+    glass = [it["key"] for it in entries if _is_glass_key(it["key"])]
+    if glass:
+        # 写 nd、vd 会把目录玻璃换成模型玻璃，偏差为 0 时色散也略有不同（Cooke 样例实测 EFL 偏 +0.0005 mm）；
+        # 这些项的灵敏度相对“换成模型玻璃的标称点”算，换玻璃本身的偏移另报
+        # writing nd or vd turns a catalog glass into a model glass whose dispersion differs a little even at zero deviation
+        # (+0.0005 mm EFL on the Cooke sample); their sensitivity is read against the model-glass nominal and the offset reported
+        out.append({"i": 1, "set": {k: float(nominal[k]) for k in glass}, "probe": "nominal_model_glass"})
+    if tol.get("sensitivity", True):
+        for it in entries:
+            for side in ("min", "max"):
+                if it[side] != 0:
+                    out.append({"i": len(out), "set": {it["key"]: value(it, float(it[side]))}, "probe": it.get("id", it["key"]),
+                                "side": side, "deviation": float(it[side])})
+    rng = random.Random(tol.get("seed", 1))
+
+    def draw(it: dict[str, Any]) -> float:
+        lo, hi = float(it["min"]), float(it["max"])
+        if it.get("dist", "uniform") == "uniform":
+            return rng.uniform(lo, hi)
+        center, sigma = (lo + hi) / 2, (hi - lo) / 4
+        while True:
+            x = rng.gauss(center, sigma)
+            if lo <= x <= hi:
+                return x
+
+    for s in range(int(tol.get("samples", 0))):
+        devs = {it["key"]: draw(it) for it in entries}
+        out.append({"i": len(out), "set": {it["key"]: value(it, devs[it["key"]]) for it in entries}, "sample": s,
+                    "deviations": devs})
+    return out
+
+
+def _is_glass_key(key: str) -> bool:
+    return kit.parse_key(key)[2] in ("nd", "vd")
+
+
+def _percentile(values: list[float], q: float) -> float:
+    s = sorted(values)
+    k = (len(s) - 1) * q
+    lo, hi = math.floor(k), math.ceil(k)
+    return s[lo] + (s[hi] - s[lo]) * (k - lo)
+
+
+def _tolerance_result(plan: dict[str, Any], checked: dict[str, dict[str, Any]], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """灵敏度表（每项对每个判定值的改变，按对目标的归一化影响排序）和蒙特卡洛统计（分布、各项达标率、良率）。
+    The sensitivity table (each item's change of every checked value, ranked by normalised effect) and the Monte Carlo
+    statistics (distribution, pass rate per check, yield)."""
+    measure = plan["measure"]
+    nominal = next((r for r in rows if r.get("probe") == "nominal"), {})
+    base = nominal.get("values") or {}
+    model_row = next((r for r in rows if r.get("probe") == "nominal_model_glass"), None)
+    model_base = (model_row or {}).get("values") or {}
+
+    def scale(k: str) -> float:
+        item = checked[k]
+        if item.get("goal") is None:
+            return abs(_finite(base.get(k)) or 0.0) or 1.0
+        return float(item.get("scale", demand._default_scale(item["goal"]) or 1.0))
+
+    def passes(k: str, v: Any) -> bool | None:
+        goal = checked[k].get("goal")
+        if goal is None:
+            return None
+        v = _finite(v)
+        return v is not None and demand.excess(goal, v) <= demand.BOUND_TOLERANCE * scale(k)
+
+    sens: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        if "side" not in r:
+            continue
+        key = next(iter(r["set"]))
+        entry = sens.setdefault(r["probe"], {"item": r["probe"], "key": key, "sides": {}})
+        values = r.get("values") or {}
+        ref = model_base if _is_glass_key(key) and model_row is not None else base
+        if ref is model_base:
+            entry["baseline"] = "nominal_model_glass"
+        change = {k: (None if _finite(values.get(k)) is None or _finite(ref.get(k)) is None else values[k] - ref[k]) for k in measure}
+        entry["sides"][r["side"]] = {"deviation": r["deviation"], "values": values, "change": change,
+                                     "failing": [k for k in measure if passes(k, values.get(k)) is False]}
+    for entry in sens.values():
+        effects = {k: max((abs(s["change"][k]) / scale(k) for s in entry["sides"].values() if s["change"].get(k) is not None), default=None)
+                   for k in measure}
+        entry["normalised_effect"] = effects
+        entry["worst"] = max(((k, v) for k, v in effects.items() if v is not None), key=lambda kv: kv[1], default=(None, None))[0]
+    ranking = sorted(sens.values(), key=lambda e: -max((v for v in e["normalised_effect"].values() if v is not None), default=0.0))
+    samples = [r for r in rows if "sample" in r]
+    mc: dict[str, Any] = {"samples": len(samples)}
+    if samples:
+        valid = [r for r in samples if not r.get("invalid") and not r.get("error")]
+        stats = {}
+        for k in measure:
+            vals = [v for v in (_finite((r.get("values") or {}).get(k)) for r in valid) if v is not None]
+            flags = [passes(k, (r.get("values") or {}).get(k)) for r in samples]
+            stats[k] = {"n": len(vals), "nominal": _finite(base.get(k)),
+                        "mean": sum(vals) / len(vals) if vals else None,
+                        "std": math.sqrt(sum((v - sum(vals) / len(vals)) ** 2 for v in vals) / (len(vals) - 1)) if len(vals) > 1 else None,
+                        "min": min(vals) if vals else None, "max": max(vals) if vals else None,
+                        **({f"p{int(q * 100)}": _percentile(vals, q) for q in (0.05, 0.5, 0.95)} if vals else {}),
+                        "pass_rate": None if flags and flags[0] is None else sum(1 for f in flags if f) / len(samples)}
+        mc.update(stats=stats, invalid=len(samples) - len(valid),
+                  # 良率：硬界限全部满足的样本比例，以及所测各项全部达标的样本比例 / yield: hard bounds met, and every measured goal met
+                  yield_hard=sum(1 for r in samples if not r.get("invalid") and not r.get("error") and not r.get("hard_failing")) / len(samples),
+                  yield_all=sum(1 for r in samples if all(passes(k, (r.get("values") or {}).get(k)) is not False for k in measure)
+                                and not r.get("invalid") and not r.get("error")) / len(samples))
+    out = {"nominal": {"values": base, "failing": [k for k in measure if passes(k, base.get(k)) is False]},
+           "sensitivity": ranking, "monte_carlo": mc}
+    if model_row is not None:
+        out["model_glass_offset"] = {k: (None if _finite(model_base.get(k)) is None or _finite(base.get(k)) is None else model_base[k] - base[k])
+                                     for k in measure}
+    return out
 
 
 def _validate_probes(plan: dict[str, Any], items: dict[str, Any], measure: list[str]) -> list[str]:
@@ -363,7 +552,7 @@ def _save(w, item: dict[str, Any], row: dict[str, Any]) -> None:
 def point(w, item: dict[str, Any]) -> dict[str, Any]:
     """一个网格点或列表点。/ One grid or list point."""
     plan = w.args["plan"]
-    row: dict[str, Any] = {k: item[k] for k in ("i", "set", "probe", "side") if k in item}
+    row: dict[str, Any] = {k: item[k] for k in ("i", "set", "probe", "side", "deviation", "sample", "deviations") if k in item}
     row.update(_prepare(w, plan, item["set"], item.get("change")))
     if "invalid" in row:
         row["shortfall"] = math.inf
@@ -427,8 +616,12 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
         scales = {k: None if checked[k]["goal"] is None else float(checked[k].get("scale", demand._default_scale(checked[k]["goal"])))
                   for k in plan["measure"]}
         post = lambda rows: _probe_result(plan, scales, rows)  # noqa: E731
-    if plan["mode"] in ("minimize", "candidates"):
-        # 寻优和结构探索可能跑很久：与 opt local 同样先确认需求 / minimisation and exploration may run long: same gate as opt local
+    if plan["mode"] == "tolerance":
+        checked = {i["id"]: i for i in demand.checked(d)}
+        post = lambda rows: _tolerance_result(plan, checked, rows)  # noqa: E731
+    if plan["mode"] in ("minimize", "candidates", "tolerance"):
+        # 寻优、结构探索和公差可能跑很久，公差还要按确认过的判定算：与 opt local 同样先确认需求
+        # minimisation, exploration and tolerancing may run long, and tolerancing judges by the confirmed checks: same gate as opt local
         workflow.preflight(ctx.job.root)
     if plan["mode"] == "vars":
         items = [{"i": k, "set": p} for k, p in enumerate(search.grid(plan["vars"]))]
@@ -436,6 +629,8 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
         items = [{"i": k, "set": p} for k, p in enumerate(plan["points"])]
     elif plan["mode"] == "probes":
         items = _probe_items(ctx, plan)
+    elif plan["mode"] == "tolerance":
+        items = _tolerance_items(ctx, plan)
     elif exploring:
         items = [{"i": k} for k in range(len(plan["candidates"]))]
     else:

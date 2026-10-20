@@ -1,4 +1,4 @@
-"""镜头处方：从零搭建一个序列系统所需的数据（lens build 的输入格式，结构探索的候选也可以写成处方）。
+"""镜头处方：从零搭建一个序列系统（或 "mode": "non_sequential" 的非序列系统）所需的数据（lens build 的输入格式，结构探索的候选也可以写成处方）。
 
 处方只管怎么在 OpticStudio 里搭出镜头，不管怎么评价；评价在需求单的判定和配方里。
 saos 自己校验骨架（系统设置、每个面的通用项、多重结构），并拒绝不成立的组合（如物在无穷远时用物方 NA）。
@@ -62,14 +62,54 @@ ANGLE_FIELDS = ("angle", "theodolite_angle")
 IMAGE_HEIGHT_FIELDS = ("paraxial_image_height", "real_image_height")
 IMAGE_F_APERTURES = ("image_f_number", "working_f_number")
 
-TOP_KEYS = {"title", "units", "aperture", "telecentric_object", "fields", "wavelengths", "catalogs", "ray_aiming",
+TOP_KEYS = {"mode", "title", "units", "aperture", "telecentric_object", "fields", "wavelengths", "catalogs", "ray_aiming",
             "environment", "object", "surfaces", "image", "configurations", "afocal", "apodization", "polarization",
-            "coating_file", "ray_aiming_options"}
+            "coating_file", "ray_aiming_options", "nsc", "source_units", "analysis_units"}
 SURFACE_KEYS = {"type", "radius", "conic", "thickness", "material", "comment", "stop", "semi_diameter",
-                "mech_semi_diameter", "params", "decenter_tilt", "aperture", "solves", "focal_length", "opd_mode", "coating"}
-IMAGE_KEYS = SURFACE_KEYS - {"thickness", "material", "stop", "focal_length", "opd_mode"}
+                "mech_semi_diameter", "params", "decenter_tilt", "aperture", "solves", "focal_length", "opd_mode", "coating", "objects"}
+IMAGE_KEYS = SURFACE_KEYS - {"thickness", "material", "stop", "focal_length", "opd_mode", "objects"}
 TYPE_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
 PAR_KEY_RE = re.compile(r"^par([1-9]\d{0,2})$", re.IGNORECASE)
+# 非序列处方（"mode": "non_sequential"）
+NSC_TOP_KEYS = {"mode", "title", "units", "wavelengths", "catalogs", "coating_file", "nsc", "objects", "source_units", "analysis_units"}
+OBJECT_KEYS = {"type", "comment", "ref", "inside_of", "position", "tilt", "material", "params", "volume_physics",
+               "file", "file2", "faces", "scatter_to", "source", "type_options", "diffraction", "index_model"}
+VOLUME_MODELS = ("none", "angle", "dll", "photoluminescence")
+# 光致发光模型的字段：(类型, 可选项)；file 类按 OpticStudio 列出的文件名选 / photoluminescence fields: (kind, choices)
+PL_SPECTRA = ("absorption", "emission", "excitation", "quantum_yield")
+PL_FIELDS = {"efficiency": ("quantum_yield", "excitation"), "pl_density": "number", "extinction_coefficient": "number",
+             "extinction_wavelength": "number", "threshold": "number", "basic_algorithm": "flag", "consider_mie": "flag",
+             "particle_index": "number", "particle_density": "number", "particle_radius": "number", "use_mie_density": "flag",
+             "mie_mean_path": "number", "pl_mean_path": "number"}
+# 光源页 / the Sources tab
+SOURCE_KEYS = {"polarization", "initial_phase", "coherence_length", "reverse_rays", "pre_propagation", "sampling", "bulk_scatter", "array", "color"}
+SAMPLING = ("random", "sobol")
+BULK_SCATTER = ("many", "once", "never")
+ARRAY_TYPES = ("none", "rectangular", "circular", "hexapolar", "hexagonal")
+ARRAY_FIELDS = {"number_x": "int", "number_y": "int", "spacing_x": "number", "spacing_y": "number", "number": "int", "radius": "number",
+                "rings": "int", "spacing": "number"}
+COLOR_MODES = ("system_wavelengths", "uniform", "blackbody", "color_temperature", "d65", "spectrum_file", "cie1931_xyz", "cie1931_xy",
+               "cie1931_rgb", "cie1976")
+COLOR_FIELDS = {"temperature": "number", "from": "number", "to": "number", "count": "int", "file": "name", "x": "number", "y": "number",
+                "z": "number", "cx": "number", "cy": "number", "r": "number", "g": "number", "b": "number", "u": "number", "v": "number"}
+# Type 页 / the Type tab
+TYPE_OPTIONS = {"rays_ignore": ("never", "always", "on_launch"), "consider": "objects", "ignore": "objects", "is_detector": "flag",
+                "pixel_interpolation": "flag", "global_xyz_rotation": "flag", "consider_ignore_when_splitting": "flag"}
+DIFFRACTION_SPLIT = ("none", "table", "dll")
+INDEX_TYPES = ("isotropic", "birefringent", "grin")
+SOURCE_UNITS = ("watts", "lumens", "joules")
+ANALYSIS_UNITS = ("W/mm2", "W/cm2", "W/in2", "W/m2", "W/ft2")
+FACE_KEYS = {"is", "coating", "profile", "scatter"}
+FACE_IS = ("default", "reflective", "absorbing")
+# 各面散射模型收的字段（2024 R1 的 IOSS_* 接口实测）；rays 是该面的散射光线数，各模型都收
+# the fields each face scatter model takes (the IOSS_* interfaces in 2024 R1); rays is the face's scatter ray count
+SCATTER_FIELDS = {"none": {}, "lambertian": {"fraction": "number"}, "gaussian": {"fraction": "number", "sigma": "number"},
+                  "abg": {"reflect": "name", "transmit": "name"}, "abg_file": {"reflect": "name", "transmit": "name"},
+                  "bsdf": {"reflect": "name", "transmit": "name"}, "user": {"dll": "name", "fraction": "number", "file": "name", "params": "params"}}
+SCATTER_REQUIRED = {"lambertian": ("fraction",), "gaussian": ("fraction", "sigma"), "user": ("dll",)}
+IMPORTANCE_ROWS = 6
+NSC_SETTINGS = ("max_intersections", "max_segments", "max_nested", "min_relative_intensity", "min_absolute_intensity",
+                "glue_distance", "simple_ray_splitting")
 
 
 def _bad(message: str) -> SaosError:
@@ -313,6 +353,12 @@ def _surface(s: Any, name: str, image: bool = False) -> dict[str, Any]:
         if not isinstance(s["coating"], str) or not s["coating"].strip():
             raise _bad(f"{name}.coating must be a coating name from the coating file")
         item["coating"] = s["coating"].strip()
+    if "objects" in s:
+        # 混合模式：NonSequential 面（非序列组）里的物体，写法同纯非序列处方，物体号在组内从 1 起
+        # mixed mode: the objects of a NonSequential surface (an NSC group), written as in a pure NSC prescription, numbered within the group
+        if kind.lower() != "nonsequential":
+            raise _bad(f"{name}: objects belong to a NonSequential surface")
+        item["objects"] = _objects(s["objects"], f"{name}.objects")
     return item
 
 
@@ -453,9 +499,376 @@ def _conditions(rows: list[dict[str, Any]], environment: dict[str, Any], given: 
     return rows
 
 
+def _wavelengths(value: Any) -> dict[str, Any]:
+    waves = _dict(value, "wavelengths")
+    _known(waves, {"um", "weights", "primary"}, "wavelengths")
+    um = [_size(w, "wavelengths.um", positive=True) for w in _list(waves.get("um"), "wavelengths.um")]
+    if not um:
+        raise _bad("at least one wavelength is required")
+    weights = [_size(w, "wavelengths.weights") for w in _list(waves.get("weights"), "wavelengths.weights") or [1.0] * len(um)]
+    primary = waves.get("primary", 1)
+    if len(weights) != len(um) or not isinstance(primary, int) or isinstance(primary, bool) or not 1 <= primary <= len(um):
+        raise _bad("wavelengths: wrong number of weights or primary index")
+    return {"um": um, "weights": weights, "primary": primary}
+
+
+def _triple(value: Any, name: str) -> list[float]:
+    v = _list(value, name) or [0.0, 0.0, 0.0]
+    if len(v) != 3:
+        raise _bad(f"{name} needs 3 numbers [x, y, z]")
+    return [_finite(x, name) for x in v]
+
+
+def _volume_physics(value: Any, name: str) -> dict[str, Any]:
+    """体散射：{"model": "none"}、{"model": "dll", "dll", "mean_path", "params": {参数名: 值}} 或 {"model": "angle", "mean_path", "angle"}。"""
+    d = _dict(value, name)
+    model = _choice(d.get("model"), VOLUME_MODELS, f"{name}.model")
+    if model == "none":
+        _known(d, {"model"}, name)
+        return {"model": model}
+    if model == "photoluminescence":
+        # 光致发光：吸收、发射、量子产率等写法同 OpticStudio 的体物理页，字段逐项回读
+        # photoluminescence: absorption, emission, quantum yield … as on OpticStudio's volume physics tab, read back field by field
+        # 2024 R1 实测：吸收、发射、激发、量子产率文件经 ZOS-API 写入被静默忽略（仍是 _sample_*），只能在 OpticStudio 界面里选
+        # measured in 2024 R1: the absorption, emission, excitation and quantum-yield files ignore ZOS-API writes; pick them in the GUI
+        files = sorted(k for k in PL_SPECTRA if k in d)
+        if files:
+            raise _bad(f"{name}: {files} cannot be set through the ZOS-API (OpticStudio 2024 R1 ignores the write and keeps its sample files); "
+                       "choose the spectra in OpticStudio's Volume Physics tab, the other fields can be given here")
+        _known(d, {"model", *PL_FIELDS}, name)
+        out = {"model": model}
+        for key, kind in PL_FIELDS.items():
+            if key in d:
+                out[key] = _typed(d[key], kind, f"{name}.{key}")
+        return out
+    out: dict[str, Any] = {"model": model, "mean_path": _size(d.get("mean_path"), f"{name}.mean_path", positive=True)}
+    if model == "angle":
+        _known(d, {"model", "mean_path", "angle"}, name)
+        out["angle"] = _size(d.get("angle"), f"{name}.angle", positive=True)
+        if out["angle"] > 180:
+            raise _bad(f"{name}.angle is a scatter angle up to 180 degrees")
+        return out
+    _known(d, {"model", "dll", "mean_path", "params"}, name)
+    dll = d.get("dll")
+    if not isinstance(dll, str) or not dll.strip():
+        raise _bad(f"{name}.dll needs the DLL file name, e.g. Henyey-Greenstein-bulk.dll")
+    out["dll"] = dll.strip()
+    out["params"] = {str(k).strip(): _finite(v, f"{name}.params.{k}") for k, v in _dict(d.get("params"), f"{name}.params").items()}
+    return out
+
+
+def _scatter(value: Any, name: str) -> dict[str, Any]:
+    d = _dict(value, name)
+    model = _choice(d.get("model"), SCATTER_FIELDS, f"{name}.model")
+    fields = SCATTER_FIELDS[model]
+    _known(d, {"model", "rays", *fields}, name)
+    out: dict[str, Any] = {"model": model}
+    for key, kind in fields.items():
+        if key not in d:
+            continue
+        if kind == "number":
+            out[key] = _size(d[key], f"{name}.{key}")
+            if key == "fraction" and out[key] > 1:
+                raise _bad(f"{name}.fraction is the scattered fraction of the energy, 0 to 1")
+        elif kind == "params":
+            out[key] = {str(k).strip(): _finite(v, f"{name}.params.{k}") for k, v in _dict(d[key], f"{name}.params").items()}
+        else:
+            out[key] = _name(d[key], f"{name}.{key}")
+    missing = [k for k in SCATTER_REQUIRED.get(model, ()) if k not in out]
+    if missing:
+        raise _bad(f"{name}: the {model} model needs {', '.join(missing)}")
+    if model in ("abg", "abg_file", "bsdf") and not ({"reflect", "transmit"} & set(out)):
+        raise _bad(f"{name}: the {model} model needs reflect, transmit or both (the data names OpticStudio lists)")
+    if "rays" in d:
+        out["rays"] = _integer(d["rays"], f"{name}.rays", low=0)
+    return out
+
+
+def _face(value: Any, name: str) -> dict[str, Any]:
+    """一个面的属性：{"is": "default|reflective|absorbing", "coating", "scatter": {...}} 或 {"profile": 名字}。"""
+    d = _dict(value, name)
+    _known(d, FACE_KEYS, name)
+    if "profile" in d:
+        if len(d) > 1:
+            raise _bad(f"{name}: a profile sets the whole face; write either profile or is/coating/scatter")
+        return {"profile": _name(d["profile"], f"{name}.profile")}
+    out: dict[str, Any] = {}
+    if "is" in d:
+        out["is"] = _choice(d["is"], FACE_IS, f"{name}.is")
+    if "coating" in d:
+        out["coating"] = _name(d["coating"], f"{name}.coating")
+        # 2024 R1 实测：面设为反射或吸收时 OpticStudio 清掉膜层 / OpticStudio clears the coating of a reflective or absorbing face
+        if out.get("is", "default") != "default":
+            raise _bad(f"{name}: a face set to {out['is']} takes no coating (OpticStudio clears it)")
+    if "scatter" in d:
+        out["scatter"] = _scatter(d["scatter"], f"{name}.scatter")
+    if not out:
+        raise _bad(f"{name}: write is, coating, scatter or profile")
+    return out
+
+
+def _faces(value: Any, name: str) -> dict[str, dict[str, Any]]:
+    """各面属性：键是面号（从 0 起，见 lens surfaces 的 faces）或 "all"（先写，再由面号覆盖）。"""
+    out = {}
+    for key, face in _dict(value, name).items():
+        k = str(key).strip().lower()
+        if k != "all" and not re.fullmatch(r"\d{1,4}", k):
+            raise _bad(f"{name}: keys are face numbers from 0 or \"all\", got {key!r}")
+        out[k if k == "all" else str(int(k))] = _face(face, f"{name}.{key}")
+    if not out:
+        raise _bad(f"{name} is empty")
+    return dict(sorted(out.items(), key=lambda kv: -1 if kv[0] == "all" else int(kv[0])))
+
+
+def _scatter_to(value: Any, name: str) -> dict[str, Any]:
+    """散射光往哪去：{"objects": [物体号, …]}（Scatter To 列表）或 {"importance": [{"towards", "size", "limit"}, …]}（重要性采样，最多 6 行）。"""
+    d = _dict(value, name)
+    _known(d, {"objects", "importance"}, name)
+    if len(d) != 1:
+        raise _bad(f"{name}: write objects (a scatter-to list) or importance (importance sampling), one of them")
+    if "objects" in d:
+        objects = [_integer(v, f"{name}.objects", low=1) for v in _list(d["objects"], f"{name}.objects")]
+        if not objects:
+            raise _bad(f"{name}.objects is empty")
+        return {"objects": sorted(set(objects))}
+    rows = []
+    for i, r in enumerate(_list(d["importance"], f"{name}.importance")):
+        label = f"{name}.importance[{i}]"
+        r = _dict(r, label)
+        _known(r, {"towards", "size", "limit"}, label)
+        rows.append({"towards": _integer(r.get("towards"), f"{label}.towards", low=1), "size": _size(r.get("size"), f"{label}.size", positive=True),
+                     "limit": _size(r.get("limit", 1.0), f"{label}.limit")})
+    if not 1 <= len(rows) <= IMPORTANCE_ROWS:
+        raise _bad(f"{name}.importance takes 1 to {IMPORTANCE_ROWS} rows")
+    return {"importance": rows}
+
+
+def _typed(value: Any, kind: Any, name: str) -> Any:
+    """按字段类型解析：number、int、flag、name、file、objects（物体号列表）或可选项元组。"""
+    if isinstance(kind, tuple):
+        return _choice(value, kind, name)
+    if kind == "number":
+        return _finite(value, name)
+    if kind == "int":
+        return _integer(value, name)
+    if kind == "flag":
+        return _flag(value, name)
+    if kind == "objects":
+        out = [_integer(v, name, low=1) for v in _list(value, name)]
+        if not out:
+            raise _bad(f"{name} is empty")
+        return sorted(set(out))
+    return _name(value, name)
+
+
+def _typed_fields(value: Any, spec: dict[str, Any], name: str, extra: set[str] = frozenset()) -> dict[str, Any]:
+    d = _dict(value, name)
+    _known(d, set(spec) | set(extra), name)
+    return {k: _typed(v, spec[k], f"{name}.{k}") for k, v in d.items() if k in spec}
+
+
+def _source(value: Any, name: str) -> dict[str, Any]:
+    """光源页：偏振、初相位、相干长度、反向、预传播、采样、体散射次数、阵列、光源颜色（光谱）。"""
+    d = _dict(value, name)
+    _known(d, SOURCE_KEYS, name)
+    out: dict[str, Any] = {}
+    if "polarization" in d:
+        p = d["polarization"]
+        if p == "random":
+            out["polarization"] = "random"
+        else:
+            pol = _typed_fields(p, {"jx": "number", "jy": "number", "x_phase": "number", "y_phase": "number"}, f"{name}.polarization")
+            if "jx" not in pol and "jy" not in pol:
+                raise _bad(f'{name}.polarization: "random" or a Jones vector {{"jx", "jy", "x_phase", "y_phase"}}')
+            out["polarization"] = pol
+    for key, kind in (("initial_phase", "number"), ("coherence_length", "number"), ("reverse_rays", "flag"),
+                      ("pre_propagation", "number"), ("sampling", SAMPLING), ("bulk_scatter", BULK_SCATTER)):
+        if key in d:
+            out[key] = _typed(d[key], kind, f"{name}.{key}")
+    if "array" in d:
+        a = _dict(d["array"], f"{name}.array")
+        out["array"] = {"type": _choice(a.get("type"), ARRAY_TYPES, f"{name}.array.type"),
+                        **_typed_fields({k: v for k, v in a.items() if k != "type"}, ARRAY_FIELDS, f"{name}.array")}
+    if "color" in d:
+        c = _dict(d["color"], f"{name}.color")
+        out["color"] = {"mode": _choice(c.get("mode"), COLOR_MODES, f"{name}.color.mode"),
+                        **_typed_fields({k: v for k, v in c.items() if k != "mode"}, COLOR_FIELDS, f"{name}.color")}
+    if not out:
+        raise _bad(f"{name} is empty")
+    return out
+
+
+def _diffraction(value: Any, name: str) -> dict[str, Any]:
+    d = _dict(value, name)
+    _known(d, {"split", "dll", "start_order", "stop_order", "reflect", "transmit"}, name)
+    out: dict[str, Any] = {"split": _choice(d.get("split", "none"), DIFFRACTION_SPLIT, f"{name}.split")}
+    if "dll" in d:
+        out["dll"] = _name(d["dll"], f"{name}.dll")
+    for key in ("start_order", "stop_order"):
+        if key in d:
+            out[key] = _integer(d[key], f"{name}.{key}")
+    for key in ("reflect", "transmit"):
+        if key in d:
+            out[key] = {str(k).strip(): _finite(v, f"{name}.{key}.{k}") for k, v in _dict(d[key], f"{name}.{key}").items()}
+    if out["split"] == "dll" and "dll" not in out:
+        raise _bad(f"{name}: split by DLL needs dll")
+    return out
+
+
+def _index(value: Any, name: str) -> dict[str, Any]:
+    """折射率页：各向同性（默认）、双折射（光轴、追迹哪些光线）或 GRIN（DLL 及参数）。"""
+    d = _dict(value, name)
+    kind = _choice(d.get("type"), INDEX_TYPES, f"{name}.type")
+    if kind == "isotropic":
+        _known(d, {"type"}, name)
+        return {"type": kind}
+    if kind == "birefringent":
+        _known(d, {"type", "axis", "mode", "reflections"}, name)
+        out: dict[str, Any] = {"type": kind, "axis": _triple(d.get("axis"), f"{name}.axis")}
+        if not any(out["axis"]):
+            raise _bad(f"{name}.axis must not be zero")
+        for key in ("mode", "reflections"):
+            if key in d:
+                out[key] = str(d[key]).strip()
+        return out
+    _known(d, {"type", "dll", "file", "max_step", "params"}, name)
+    out = {"type": kind, "dll": _name(d.get("dll"), f"{name}.dll")}
+    if "file" in d:
+        out["file"] = _name(d["file"], f"{name}.file")
+    if "max_step" in d:
+        out["max_step"] = _size(d["max_step"], f"{name}.max_step", positive=True)
+    out["params"] = {str(k).strip(): _finite(v, f"{name}.params.{k}") for k, v in _dict(d.get("params"), f"{name}.params").items()}
+    return out
+
+
+def _object(o: Any, number: int) -> dict[str, Any]:
+    name = f"objects[{number}]"
+    if not isinstance(o, dict):
+        raise _bad(f"{name} must be a JSON object")
+    _known(o, OBJECT_KEYS, name)
+    kind = o.get("type")
+    if not isinstance(kind, str) or not TYPE_NAME_RE.match(kind):
+        raise _bad(f"{name}.type must be an OpticStudio object type name such as CylinderVolume, SourceVolumeCylindrical, DetectorRectangle")
+    item: dict[str, Any] = {"type": kind, "comment": str(o.get("comment", ""))}
+    for key in ("ref", "inside_of"):
+        # 只能引用排在前面的物体（OpticStudio 的规则）/ only objects listed before this one
+        item[key] = _integer(o.get(key, 0), f"{name}.{key}", low=0)
+        if item[key] >= number:
+            raise _bad(f"{name}.{key} must name an object listed before it (1-{number - 1}) or 0, got {item[key]}")
+    item["position"] = _triple(o.get("position"), f"{name}.position")
+    item["tilt"] = _triple(o.get("tilt"), f"{name}.tilt")
+    # 要文件的类型（CAD、多边形物体、光线文件光源、DLL 物体……）在 OpticStudio 的数据目录里按文件名选
+    # types that need a file (CAD, polygon objects, ray-file sources, DLL objects ...) pick it by name from OpticStudio's data folders
+    for key in ("file", "file2"):
+        if key in o:
+            item[key] = _name(o[key], f"{name}.{key}")
+    if "file2" in item and "file" not in item:
+        raise _bad(f"{name}: file2 needs file")
+    # 2024 R1 实测：这类物体的注释栏就是文件名，写注释会把文件改成 "<注释>.<扩展名>"，追迹时没有光线也不报错
+    # in 2024 R1 the comment column of these objects is the file name; writing a comment renames the file and the trace silently has no rays
+    if "file" in item and item["comment"]:
+        raise _bad(f"{name}: an object with a file keeps the file name in the comment column; leave comment out "
+                   "(describe the object in the model notes, refer to it by number or by the file name)")
+    is_source = kind.startswith("Source")
+    for key, parse in (("faces", _faces), ("scatter_to", _scatter_to)):
+        if o.get(key) is not None:
+            if is_source:
+                raise _bad(f"{name}: sources have no faces")
+            item[key] = parse(o[key], f"{name}.{key}")
+    if o.get("source") is not None:
+        if not is_source:
+            raise _bad(f"{name}: source settings belong to source objects, not {kind}")
+        item["source"] = _source(o["source"], f"{name}.source")
+    if o.get("type_options") is not None:
+        item["type_options"] = _typed_fields(o["type_options"], TYPE_OPTIONS, f"{name}.type_options")
+    if o.get("diffraction") is not None:
+        item["diffraction"] = _diffraction(o["diffraction"], f"{name}.diffraction")
+    # 折射率页叫 index_model：读回的物体里 index 是物体号 / the Index tab is index_model: index is the object number in read-backs
+    if o.get("index_model") is not None:
+        if is_source or kind.startswith("Detector"):
+            raise _bad(f"{name}: the index tab belongs to objects with a material")
+        item["index_model"] = _index(o["index_model"], f"{name}.index_model")
+    is_part = not kind.startswith(("Source", "Detector"))
+    if "material" in o:
+        if not is_part:
+            raise _bad(f"{name}: sources and detectors take no material")
+        item["material"] = normalize_material(o["material"], name)
+    if o.get("params"):
+        item["params"] = _params(o["params"], f"{name}.params")
+    if o.get("volume_physics") is not None:
+        if not is_part:
+            raise _bad(f"{name}: volume physics belongs to volume objects, not {kind}")
+        item["volume_physics"] = _volume_physics(o["volume_physics"], f"{name}.volume_physics")
+    return item
+
+
+def _nsc_settings(value: Any) -> dict[str, Any]:
+    d = _dict(value, "nsc")
+    _known(d, set(NSC_SETTINGS), "nsc")
+    out: dict[str, Any] = {}
+    for key, v in d.items():
+        if key == "simple_ray_splitting":
+            out[key] = _flag(v, f"nsc.{key}")
+        elif key.startswith("max_"):
+            out[key] = _integer(v, f"nsc.{key}", low=1)
+            # 2024 R1 实测：交点数上限最大 4000，写更大的值被悄悄改回 4000；段数上限可到 200 万
+            # measured in 2024 R1: the intersection limit tops out at 4000 (larger values silently become 4000)
+            if key == "max_intersections" and out[key] > 4000:
+                raise _bad("nsc.max_intersections: OpticStudio allows at most 4000 intersections per ray; raise max_segments instead")
+        else:
+            out[key] = _size(v, f"nsc.{key}")
+    return out
+
+
+def normalize_nsc(p: dict[str, Any]) -> dict[str, Any]:
+    """非序列处方：系统设置、非序列选项和物体表（类型、位置、材料、参数、体散射）。光源和探测器也是物体。
+    A non-sequential prescription: system settings, NSC options and the object list; sources and detectors are objects too."""
+    _known(p, NSC_TOP_KEYS, "the prescription")
+    title = p.get("title", "")
+    if not isinstance(title, str):
+        raise _bad(f"title must be a string, got {title!r}")
+    coating_file = p.get("coating_file")
+    if coating_file is not None and (not isinstance(coating_file, str) or not coating_file.strip()):
+        raise _bad("coating_file must be a coating file name such as COATING.DAT")
+    objects = _objects(p.get("objects"), "objects")
+    return {"mode": "non_sequential", "title": title, "units": _choice(p.get("units", "mm"), UNITS, "units"),
+            "wavelengths": _wavelengths(p.get("wavelengths")),
+            "catalogs": [_name(c, "catalogs") for c in _list(p.get("catalogs"), "catalogs") or ["SCHOTT"]],
+            "coating_file": coating_file.strip() if coating_file else None, "nsc": _nsc_settings(p.get("nsc")), "objects": objects,
+            **_power_units(p)}
+
+
+def _objects(value: Any, name: str) -> list[dict[str, Any]]:
+    """一组非序列物体（纯非序列系统，或序列系统里一个 NonSequential 面的物体）；物体号在组内从 1 起。
+    A group of non-sequential objects (a pure NSC system, or the objects of one NonSequential surface); numbered from 1 within the group."""
+    objects = [_object(o, k) for k, o in enumerate(_list(value, name), start=1)]
+    if not objects:
+        raise _bad(f"{name}: at least one object is required")
+    for k, item in enumerate(objects, start=1):
+        st = item.get("scatter_to") or {}
+        targets = st.get("objects", []) + [r["towards"] for r in st.get("importance", [])]
+        targets += (item.get("type_options") or {}).get("consider", []) + (item.get("type_options") or {}).get("ignore", [])
+        if any(t > len(objects) for t in targets):
+            raise _bad(f"{name}[{k}] names object {max(targets)}, but there are {len(objects)} objects")
+    return objects
+
+
+def _power_units(p: dict[str, Any]) -> dict[str, Any]:
+    """光源功率单位和分析（照度）单位；不写时用 OpticStudio 的设置（新系统为 W 和 W/cm²）。"""
+    out = {}
+    if "source_units" in p:
+        out["source_units"] = _choice(p["source_units"], SOURCE_UNITS, "source_units")
+    if "analysis_units" in p:
+        out["analysis_units"] = _choice(p["analysis_units"], ANALYSIS_UNITS, "analysis_units")
+    return out
+
+
 def normalize(p: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(p, dict):
         raise _bad("the prescription must be a JSON object")
+    mode = _choice(p.get("mode", "sequential"), ("sequential", "non_sequential"), "mode")
+    if mode == "non_sequential":
+        return normalize_nsc(p)
     _known(p, TOP_KEYS, "the prescription")
     units = _choice(p.get("units", "mm"), UNITS, "units")
     title = p.get("title", "")
@@ -471,15 +884,7 @@ def normalize(p: dict[str, Any]) -> dict[str, Any]:
     if a_kind == "object_cone_angle" and a_value is not None and a_value >= 90:
         raise _bad("aperture.value: an object cone angle is a half angle below 90 degrees")
     fields = _fields(p.get("fields"))
-    waves = _dict(p.get("wavelengths"), "wavelengths")
-    _known(waves, {"um", "weights", "primary"}, "wavelengths")
-    um = [_size(w, "wavelengths.um", positive=True) for w in _list(waves.get("um"), "wavelengths.um")]
-    if not um:
-        raise _bad("at least one wavelength is required")
-    weights = [_size(w, "wavelengths.weights") for w in _list(waves.get("weights"), "wavelengths.weights") or [1.0] * len(um)]
-    primary = waves.get("primary", 1)
-    if len(weights) != len(um) or not isinstance(primary, int) or isinstance(primary, bool) or not 1 <= primary <= len(um):
-        raise _bad("wavelengths: wrong number of weights or primary index")
+    wavelengths = _wavelengths(p.get("wavelengths"))
     aiming = _choice(p.get("ray_aiming", "real"), RAY_AIMING, "ray_aiming")
     afocal = _afocal(p.get("afocal"))
     if afocal is not None and fields["type"] in IMAGE_HEIGHT_FIELDS:
@@ -540,7 +945,7 @@ def normalize(p: dict[str, Any]) -> dict[str, Any]:
         "units": units,
         "aperture": {"type": a_kind, "value": a_value},
         "fields": fields,
-        "wavelengths": {"um": um, "weights": weights, "primary": primary},
+        "wavelengths": wavelengths,
         "catalogs": [_name(c, "catalogs") for c in _list(p.get("catalogs"), "catalogs") or ["SCHOTT"]],
         "ray_aiming": aiming,
         "telecentric_object": telecentric,
@@ -553,6 +958,8 @@ def normalize(p: dict[str, Any]) -> dict[str, Any]:
         "polarization": _polarization(p.get("polarization")),
         "coating_file": coating_file.strip() if coating_file else None,
         "ray_aiming_options": _ray_aiming_options(p.get("ray_aiming_options"), aiming),
+        "nsc": _nsc_settings(p.get("nsc")),
+        **_power_units(p),
     }
     if image is not None:
         out["image"] = image

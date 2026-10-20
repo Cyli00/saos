@@ -435,7 +435,7 @@ class Daemon:
         self.loaded = Loaded(job, path)
         rel = job.relative_lens(path)
         job.update_state(status="active", current_lens=rel)
-        return {"job": job.id, "file": rel, "num_surfaces": len(self.backend.surfaces()), "captured": captured}
+        return {"job": job.id, "file": rel, "num_surfaces": len(self.backend.surfaces()), **self._object_count(), "captured": captured}
 
     def op_unload(self, args: dict[str, Any]) -> dict[str, Any]:
         job = self._job(args)
@@ -453,7 +453,13 @@ class Daemon:
 
     def op_surfaces(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))
-        return {**loaded.describe(), "surfaces": self.backend.surfaces()}
+        objects = self.backend.objects()
+        return {**loaded.describe(), "surfaces": self.backend.surfaces(), **({"objects": objects} if objects else {})}
+
+    def _object_count(self) -> dict[str, Any]:
+        # 非序列系统没有面，报物体数 / a non-sequential system has objects instead of surfaces
+        info = self.backend.system_info()
+        return {"num_objects": len(info["objects"])} if info.get("mode") == "non_sequential" else {}
 
     def op_describe(self, args: dict[str, Any]) -> dict[str, Any]:
         """建模说明：models/NNN-<镜头>/ 下的 index.html、model.json 和布局图，给用户在优化前核对模型。"""
@@ -542,7 +548,7 @@ class Daemon:
         self.loaded = Loaded(job, target)
         rel = job.relative_lens(target)
         job.update_state(status="active", current_lens=rel, last_saved=rel)
-        return {"job": job.id, "file": rel, "num_surfaces": len(self.backend.surfaces()), "captured": captured}
+        return {"job": job.id, "file": rel, "num_surfaces": len(self.backend.surfaces()), **self._object_count(), "captured": captured}
 
     def op_capture(self, args: dict[str, Any]) -> dict[str, Any]:
         job = self._job(args)
@@ -608,6 +614,8 @@ class Daemon:
         loaded = self._require_loaded(self._job(args))
         if args.get("config_rows") is not None:
             return self._vary_config(loaded, args)
+        if args.get("objects") is not None:
+            return self._vary_objects(loaded, args)
         param = _arg(args, "param", str)
         surfaces = _arg(args, "surfaces", list)
         # 面号先校验成整数：否则 int() 的异常出在循环里，会被当成改动途中的错误而把镜头标为未保存
@@ -645,6 +653,22 @@ class Daemon:
             if solves:
                 loaded.dirty = True
         return {**loaded.describe(), "param": param, "solves": solves, **extra}
+
+    def _vary_objects(self, loaded, args: dict[str, Any]) -> dict[str, Any]:
+        """非序列物体的参数设为变量或固定。/ Parameters of non-sequential objects variable or fixed."""
+        objects = _arg(args, "objects", list)
+        param = _arg(args, "param", str)
+        group = _arg(args, "group", int, default=None)
+        if any(isinstance(x, bool) or not isinstance(x, int) for x in objects):
+            raise SaosError(ErrorCode.BAD_ARGS, f"objects must be integers, got {objects!r}")
+        solves: dict[int, str] = {}
+        try:
+            for n in objects:
+                solves[n] = self.backend.vary_object(group, n, param, bool(args.get("on", True)))
+        finally:
+            if solves:
+                loaded.dirty = True
+        return {**loaded.describe(), "param": param, "object_solves": solves}
 
     def _vary_config(self, loaded, args: dict[str, Any]) -> dict[str, Any]:
         """多重结构的格设为变量或固定（变焦间隔、调焦量等）。/ Multi-configuration cells variable or fixed (zoom spacings, focus, …)."""
@@ -789,6 +813,7 @@ class Daemon:
         try:
             result = self.backend.optimize(str(args.get("cycles", "auto")), args.get("cores") or config.compute_cores(),
                                            max_seconds=_arg(args, "max_seconds", (int, float), default=None),
+                                           algorithm=_arg(args, "algorithm", str, default=None),
                                            on_progress=self._optimizer_hooks(job, "opt.local"), should_cancel=job.cancel_requested)
         finally:
             # 出错时编辑器里也是优化器走到的系统，不能当作未改动 / after an error the editor still holds what the optimiser reached

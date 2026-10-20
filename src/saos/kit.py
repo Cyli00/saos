@@ -13,6 +13,13 @@ ctx.spot(...)); kit.<function>(ctx, ...) works as well.
     "aperture"      系统孔径值 / the system aperture value
     "field.<n>.x"、"field.<n>.y"、"wave.<n>"   第 n 个视场坐标、第 n 个波长（µm）/ field n coordinates, wavelength n (µm)
     "config.<c>.<r>" 多重结构第 r 行在结构 c 的值（变焦间隔、温度等）/ multi-configuration row r in configuration c
+    "object.<物体>.<参数>" 非序列物体：物体是序号或注释；参数为 x、y、z、tilt_x、tilt_y、tilt_z、material、comment、
+                    par<N> 或参数列标题（"Z Length"）、mean_path（体散射平均自由程）、vp.<DLL 参数名>（"vp.g"）
+                    / a non-sequential object by number or comment: position, tilt, material, comment, a parameter by
+                    par<N> or column header, mean_path, or vp.<DLL parameter name>
+
+非序列系统：ctx.nsc_trace(...) 追迹（默认分裂、散射、偏振都开，留 2 个逻辑核），ctx.detector(物体) 读探测器，
+ctx.objects() 列出物体。/ Non-sequential systems: ctx.nsc_trace(...), ctx.detector(object), ctx.objects().
 
 多重结构的判定按结构分别测量：with ctx.configuration(c): ...，块结束时回到原来的结构，判定结束时镜头不变。
 Checks of a multi-configuration lens measure each configuration inside with ctx.configuration(c): ...; the original
@@ -35,11 +42,13 @@ import numpy as np
 from saos.backend.base import PAR_RE
 from saos.protocol import ErrorCode, SaosError
 
-PARAMS = ("radius", "curvature", "thickness", "conic", "semi_diameter", "mech_semi_diameter", "material", "comment")
+PARAMS = ("radius", "curvature", "thickness", "conic", "semi_diameter", "mech_semi_diameter", "material", "comment", "nd", "vd")
 _ROW_ATTRS = {"radius": "Radius", "thickness": "Thickness", "conic": "Conic", "semi_diameter": "SemiDiameter",
               "mech_semi_diameter": "MechanicalSemiDiameter"}
 _INT_RE = re.compile(r"^-?\d+$")
 _SYSTEM_RE = re.compile(r"^(aperture|wave\.(\d+)|field\.(\d+)\.([xy])|config\.(\d+)\.(\d+))$")
+_OBJECT_ATTRS = {"x": "XPosition", "y": "YPosition", "z": "ZPosition", "tilt_x": "TiltAboutX", "tilt_y": "TiltAboutY", "tilt_z": "TiltAboutZ"}
+_FACE_KEY_RE = re.compile(r"^face(\d+)\.(is|coating|fraction|sigma|rays)$", re.IGNORECASE)
 # ReadNextResult 的返回：(成功, 光线号, 错误, 渐晕, X, Y, Z, L, M, N, l2, m2, n2, opd, 强度)
 # ReadNextResult returns (ok, ray number, error, vignette, X, Y, Z, L, M, N, l2, m2, n2, opd, intensity)
 _READ_ARGS = (0, 0, 0, *([0.0] * 11))
@@ -108,6 +117,11 @@ def surface(ctx, ref: int | str, _names: dict[str, int] | None = None) -> int:
 def parse_key(key: str) -> tuple[str, Any, str]:
     """("system", 名, 序号) 或 ("surface", 面, 参数)。/ ("system", name, n) or ("surface", ref, param)."""
     key = str(key).strip()
+    if key.startswith("object."):
+        ref, sep, param = key[len("object."):].partition(".")
+        if not sep or not ref or not param:
+            raise SaosError(ErrorCode.BAD_ARGS, f"parameter key {key!r}: use object.<number or comment>.<param>")
+        return "object", ref, param
     m = _SYSTEM_RE.match(key)
     if m:
         if m.group(1) == "aperture":
@@ -140,7 +154,208 @@ def _config_cell(sysm, param: str):
     return mce, c, mce.GetOperandAt(r).GetOperandCell(c)
 
 
+def object_index(ctx, ref: int | str) -> int:
+    """非序列物体的序号：整数原样，字符串按注释查找（重名时取第一个）。混合模式里写 <物体>@<NonSequential 面号> 选组，
+    只有一个组时可以省略；查找前把该组设为当前组（NCE.SetActiveSurface）。
+    An object number, or the first object with this comment. In mixed mode <object>@<NonSequential surface> picks the
+    group (optional when there is only one); the group is made current before the lookup."""
+    from saos.backend import nsc
+
+    sysm = _need_system(ctx, "object")
+    group = None
+    if isinstance(ref, str) and "@" in ref:
+        ref, _, g = ref.rpartition("@")
+        if not _INT_RE.match(g.strip()):
+            raise SaosError(ErrorCode.BAD_ARGS, f"object key: after @ comes the number of a NonSequential surface, got {g!r}")
+        group = int(g)
+    if not nsc.is_nsc(sysm):
+        found = nsc.groups(sysm)
+        if not found:
+            raise SaosError(ErrorCode.BAD_ARGS, "the lens has no non-sequential objects (no NonSequential surface)")
+        if group is None:
+            if len(found) > 1:
+                raise SaosError(ErrorCode.BAD_ARGS, f"the lens has several NonSequential surfaces {found}; write <object>@<surface>", {"groups": found})
+            group = found[0]
+        nsc.select_group(sysm, group)
+    elif group is not None:
+        raise SaosError(ErrorCode.BAD_ARGS, "a pure non-sequential system has one group; leave out @<surface>")
+    nce = sysm.NCE
+    count = int(nce.NumberOfObjects)
+    if isinstance(ref, str) and _INT_RE.match(ref.strip()):
+        ref = int(ref)
+    if isinstance(ref, int) and not isinstance(ref, bool):
+        if not 1 <= ref <= count:
+            raise SaosError(ErrorCode.BAD_ARGS, f"object {ref} out of range 1–{count}")
+        return ref
+    names = {}
+    for i in range(1, count + 1):
+        names.setdefault(str(nce.GetObjectAt(i).Comment), i)
+    if ref not in names:
+        raise SaosError(ErrorCode.BAD_ARGS, f"no object has the comment {ref!r}", {"comments": sorted(n for n in names if n)})
+    return names[ref]
+
+
+def _vp_settings(obj, param: str):
+    vp = obj.VolumePhysicsData
+    if str(vp.Model) == "None":
+        raise SaosError(ErrorCode.BAD_ARGS, f"object {obj.ObjectNumber} has no volume physics model for {param}")
+    return getattr(vp.ModelSettings, "__implementation__", vp.ModelSettings)
+
+
+def _vp_param(impl, name: str, number: int) -> int:
+    names = [str(impl.GetParameterName(i)) for i in range(int(impl.NumberOfParameters))]
+    for k, n in enumerate(names):
+        if n.strip().lower() == name.strip().lower():
+            return k
+    raise SaosError(ErrorCode.BAD_ARGS, f"object {number}: {impl.DLL} has no parameter {name!r}", {"parameters": names})
+
+
+def _glass(sysm, cell, material: str, label: str) -> dict[str, float]:
+    """一种材料的 nd、vd、ΔPgF：模型玻璃读求解数据，目录玻璃查在用目录（ΔPgF 记 0）。空气、MIRROR、ABSORB 没有。
+    nd, vd and ΔPgF of a material: a model glass from its solve, a catalog glass from the catalogs in use (ΔPgF 0)."""
+    from saos.backend.zos import catalog_constants
+
+    solve = cell.GetSolveData()
+    if str(solve.Type) == "MaterialModel":
+        d = solve._S_MaterialModel
+        return {"nd": float(d.IndexNd), "vd": float(d.AbbeVd), "dpgf": float(d.dPgF)}
+    name = material.strip().upper()
+    found = catalog_constants(sysm, name) if name and name not in ("MIRROR", "ABSORB") else None
+    if found is None:
+        raise SaosError(ErrorCode.BAD_ARGS, f"{label}: {name or 'air'} has no nd/vd to read or perturb")
+    return {"nd": float(found[0]), "vd": float(found[1]), "dpgf": 0.0}
+
+
+def _set_glass(ctx, sysm, cell, material: str, param: str, value: Any, label: str) -> None:
+    """改 nd 或 vd：把材料换成模型玻璃（另一项和 ΔPgF 取当前值），用于折射率、阿贝数公差。目录玻璃的部分色散因此近似为模型玻璃的。
+    Set nd or vd by turning the material into a model glass (keeping the other value and ΔPgF): for index and Abbe tolerances.
+    A catalog glass's partial dispersion becomes the model glass's approximation."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise SaosError(ErrorCode.BAD_ARGS, f"{label}.{param} needs a number, got {value!r}")
+    now = _glass(sysm, cell, material, label)
+    now[param] = float(value)
+    solve = cell.CreateSolveType(zosapi(ctx).Editors.SolveType.MaterialModel)
+    d = solve._S_MaterialModel
+    d.IndexNd, d.AbbeVd, d.dPgF = now["nd"], now["vd"], now["dpgf"]
+    cell.SetSolveData(solve)
+    got = cell.GetSolveData()._S_MaterialModel
+    if abs(float(getattr(got, "IndexNd" if param == "nd" else "AbbeVd")) - float(value)) > 1e-9 * max(1.0, abs(float(value))):
+        raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"{label}.{param} did not take {value}")
+
+
+def _face(o, number: int, n: int):
+    cs = o.CoatScatterData
+    if not bool(cs.IsCoatScatterAvailable) or not 0 <= n < int(cs.NumberOfFaces):
+        count = int(cs.NumberOfFaces) if bool(cs.IsCoatScatterAvailable) else 0
+        raise SaosError(ErrorCode.BAD_ARGS, f"object {number} ({o.TypeName}) has {count} face(s), no face {n}")
+    return cs.GetFaceData(n)
+
+
+def _get_face(o, number: int, n: int, what: str) -> Any:
+    from saos.backend import nsc
+
+    data = nsc.read_face(_face(o, number, n))
+    if what == "is":
+        return data["is"]
+    if what == "coating":
+        return data.get("coating", "")
+    if what not in data["scatter"]:
+        raise SaosError(ErrorCode.BAD_ARGS, f"object {number} face {n}: the {data['scatter']['model']} scatter model has no {what}")
+    return data["scatter"][what]
+
+
+def _set_face(ctx, o, number: int, n: int, what: str, value: Any) -> None:
+    """改一个面的一项：is、coating 直接写；fraction、sigma、rays 在当前散射模型上改这一项，其余字段照旧。"""
+    from saos.backend import nsc
+    from saos.prescription import FACE_IS
+
+    face = _face(o, number, n)
+    label = f"object {number} face {n}"
+    if what == "is":
+        if value not in FACE_IS:
+            raise SaosError(ErrorCode.BAD_ARGS, f"{label}.is must be one of {list(FACE_IS)}, got {value!r}")
+        spec: dict[str, Any] = {"is": value}
+    elif what == "coating":
+        spec = {"coating": str(value or "NONE").strip().upper()}
+    else:
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+            raise SaosError(ErrorCode.BAD_ARGS, f"{label}.{what} needs a number, got {value!r}")
+        scatter = dict(nsc.read_face(face)["scatter"])
+        if what not in scatter:
+            raise SaosError(ErrorCode.BAD_ARGS, f"{label}: the {scatter['model']} scatter model has no {what}")
+        scatter[what] = int(value) if what == "rays" else float(value)
+        spec = {"scatter": scatter}
+    nsc.set_face(zosapi(ctx), face, spec, label)
+
+
+def _get_object(ctx, sysm, ref: Any, param: str) -> Any:
+    from saos.backend import nsc
+    from saos.backend.zos import cell_value
+
+    number = object_index(ctx, ref)
+    o = sysm.NCE.GetObjectAt(number)
+    m = _FACE_KEY_RE.match(param)
+    if m:
+        return _get_face(o, number, int(m.group(1)), m.group(2).lower())
+    if param in _OBJECT_ATTRS:
+        return float(getattr(o, _OBJECT_ATTRS[param]))
+    if param in ("material", "comment"):
+        return str(getattr(o, param.capitalize()))
+    if param in ("nd", "vd"):
+        return _glass(sysm, o.MaterialCell, str(o.Material), f"object {number}")[param]
+    if param == "mean_path":
+        return float(_vp_settings(o, param).MeanPath)
+    if param.startswith("vp."):
+        impl = _vp_settings(o, param)
+        return float(impl.GetParameterValue(_vp_param(impl, param[3:], number)))
+    return cell_value(nsc.param_cell(zosapi(ctx), o, f"object {number}", param))
+
+
+def _set_object(ctx, sysm, ref: Any, param: str, value: Any) -> None:
+    from saos.backend import nsc
+    from saos.backend.zos import set_cell
+
+    number = object_index(ctx, ref)
+    o = sysm.NCE.GetObjectAt(number)
+    m = _FACE_KEY_RE.match(param)
+    if m:
+        _set_face(ctx, o, number, int(m.group(1)), m.group(2).lower(), value)
+        return
+    if param == "comment":
+        if nsc.type_files(o):
+            raise SaosError(ErrorCode.BAD_ARGS, f"object {number} ({o.TypeName}) keeps its file name in the comment column; writing it would change the file")
+        o.Comment = "" if value is None else str(value)
+        return
+    if param == "material":
+        name = str(value).strip().upper()
+        o.Material = name if name in ("", "ABSORB") else ctx.backend._check_material(name)
+        return
+    if param in ("nd", "vd"):
+        _set_glass(ctx, sysm, o.MaterialCell, str(o.Material), param, value, f"object {number}")
+        return
+    if param in _OBJECT_ATTRS or param == "mean_path" or param.startswith("vp."):
+        target = float(value)
+        if param in _OBJECT_ATTRS:
+            setattr(o, _OBJECT_ATTRS[param], target)
+            actual = float(getattr(o, _OBJECT_ATTRS[param]))
+        elif param == "mean_path":
+            impl = _vp_settings(o, param)
+            impl.MeanPath = target
+            actual = float(impl.MeanPath)
+        else:
+            impl = _vp_settings(o, param)
+            k = _vp_param(impl, param[3:], number)
+            impl.SetParameterValue(k, target)
+            actual = float(impl.GetParameterValue(k))
+        if not (actual == target or abs(actual - target) <= 1e-12 * max(1.0, abs(target))):
+            raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"object {number} {param} did not take {target}", {"requested": target, "actual": actual})
+        return
+    set_cell(nsc.param_cell(zosapi(ctx), o, f"object {number}", param), value, f"object {number} {param}")
+
+
 def _get_zos(ctx, sysm, kind: str, ref: Any, param: str, names: dict[str, int]) -> Any:
+    if kind == "object":
+        return _get_object(ctx, sysm, ref, param)
     if kind == "system":
         sd = sysm.SystemData
         if ref == "config":
@@ -162,10 +377,15 @@ def _get_zos(ctx, sysm, kind: str, ref: Any, param: str, names: dict[str, int]) 
         return float(_par_cell(ctx, row, param, index).DoubleValue)
     if param in ("material", "comment"):
         return str(getattr(row, param.capitalize()))
+    if param in ("nd", "vd"):
+        return _glass(sysm, row.MaterialCell, str(row.Material), f"surface {index}")[param]
     return float(getattr(row, _ROW_ATTRS[param]))
 
 
 def _set_zos(ctx, sysm, kind: str, ref: Any, param: str, value: Any, names: dict[str, int]) -> None:
+    if kind == "object":
+        _set_object(ctx, sysm, ref, param, value)
+        return
     if kind == "system":
         sd = sysm.SystemData
         if ref == "config":
@@ -195,6 +415,9 @@ def _set_zos(ctx, sysm, kind: str, ref: Any, param: str, value: Any, names: dict
         return
     if param == "comment":
         row.Comment = "" if value is None else str(value)
+        return
+    if param in ("nd", "vd"):
+        _set_glass(ctx, sysm, row.MaterialCell, str(row.Material), param, value, f"surface {index}")
         return
     target = float(value)
     if param == "curvature":
@@ -227,7 +450,7 @@ def values(ctx, keys: Iterable[str]) -> dict[str, Any]:
         kind, ref, param = parse_key(key)
         if sysm is not None:
             out[key] = _get_zos(ctx, sysm, kind, ref, param, names)
-        elif kind == "system":
+        elif kind in ("system", "object"):
             raise SaosError(ErrorCode.BAD_ARGS, f"{type(ctx.backend).__name__} has no system settings to read ({key})")
         else:
             index = surface(ctx, ref, names)
@@ -248,7 +471,7 @@ def set(ctx, changes: dict[str, Any] | None = None, **kw: Any) -> None:  # noqa:
         kind, ref, param = parse_key(key)
         if sysm is not None:
             _set_zos(ctx, sysm, kind, ref, param, value, names)
-        elif kind == "system":
+        elif kind in ("system", "object"):
             raise SaosError(ErrorCode.BAD_ARGS, f"{type(ctx.backend).__name__} has no system settings to write ({key})")
         else:
             index = surface(ctx, ref, names)
@@ -307,6 +530,73 @@ def restored(ctx) -> Iterator[None]:
         ctx.backend.load(path)
         for p in path.parent.glob(path.stem + ".*"):
             p.unlink(missing_ok=True)
+
+
+# ---------- 非序列 / non-sequential ----------
+
+def objects(ctx) -> list[dict[str, Any]]:
+    """非序列物体表：序号、类型、注释、参考物体、Inside Of、位置、倾斜、材料、参数、体散射、各波长折射率、全局变换。
+    The non-sequential objects with type, comment, references, placement, material, parameters, volume physics and indices."""
+    from saos.backend import nsc
+
+    sysm = _need_system(ctx, "objects")
+    if not nsc.is_nsc(sysm):
+        raise SaosError(ErrorCode.BAD_ARGS, "objects: the lens is sequential")
+    return nsc.objects(zosapi(ctx), sysm)
+
+
+def nsc_trace(ctx, *, split: bool = True, scatter: bool = True, polarization: bool = True, ignore_errors: bool = True,
+              seed: int | None = None, cores: int | None = None, clear: bool = True, save_rays: str | None = None,
+              zrd_format: str = "CompressedFullData", ray_filter: str = "", max_seconds: float | None = None) -> dict[str, Any]:
+    """非序列追迹，光线数取各光源的 # Analysis Rays。默认开光线分裂、散射和偏振（界面的菲涅耳反射和全反射靠它们），
+    默认留 2 个逻辑核给用户；seed 固定时结果可复现（2026-10-20 实测逐位相同），判定应固定种子。
+    进度写进 ctx.progress，saos job cancel 时调用 OpticStudio 的 Cancel 并返回 stopped_by。返回值见 backend.nsc.trace：
+    dead_ray_errors 是 OpticStudio 报的出错光线能量，段数上限截断光线时变大，判定应以它为前提条件。
+    A non-sequential trace; ray counts come from each source's # Analysis Rays. Splitting, scattering and polarization
+    are on by default (Fresnel reflection and TIR need them) and 2 logical cores are left to the user; a fixed seed makes
+    the result reproducible, so checks should fix it. dead_ray_errors is the energy of rays OpticStudio reports as errors;
+    it grows when rays hit the segment limit, so checks should treat it as a precondition."""
+    from saos.backend import nsc
+
+    sysm = _need_system(ctx, "nsc_trace")
+    if not nsc.is_nsc(sysm):
+        raise SaosError(ErrorCode.BAD_ARGS, "nsc_trace: the lens is sequential; use trace or spot")
+    if cores is None:
+        cores = max(1, (os.cpu_count() or 4) - 2)
+    report = getattr(ctx, "progress", None)
+    cancel = getattr(ctx, "cancel_requested", None)
+    return nsc.trace(sysm, split=split, scatter=scatter, polarization=polarization, ignore_errors=ignore_errors, seed=seed, cores=cores,
+                     clear=clear, save_rays=save_rays, zrd_format=zrd_format, ray_filter=ray_filter, max_seconds=max_seconds,
+                     on_progress=(lambda pct: report("nsc_trace", percent=pct)) if callable(report) else None,
+                     should_cancel=cancel if callable(cancel) else None)
+
+
+def detector(ctx, ref: int | str, grid: bool = False) -> dict[str, Any]:
+    """探测器读数（上一次追迹留下的）：power（W）、hits、peak_pixel_power、pixels；grid 时另有逐像素功率和照度。
+    Detector readings left by the last trace: power (W), hits, peak_pixel_power, pixels; with grid also per-pixel power and irradiance."""
+    from saos.backend import nsc
+
+    sysm = _need_system(ctx, "detector")
+    return nsc.detector(zosapi(ctx), sysm, object_index(ctx, ref), grid=grid)
+
+
+def ray_hits(ctx, zrd: str, objects: Iterable[int | str], ray_filter: str = "", max_rays: int | None = None) -> dict[str, Any]:
+    """读 nsc_trace(save_rays=...) 存下的光线数据库，取光线到达这些物体（序号或注释）的各段：x、y、z、l、m、n、intensity、
+    wave（波长序号）、object、ray，均为 numpy 数组；rays_read 是读过的光线数。zrd 是文件名（在镜头文件旁边）或完整路径。
+    Read a ray database saved by nsc_trace(save_rays=...) and return the segments where rays reach these objects as numpy arrays."""
+    from saos.backend import nsc
+
+    sysm = _need_system(ctx, "ray_hits")
+    path = Path(zrd)
+    if not path.is_absolute():
+        path = Path(str(sysm.SystemFile)).parent / path
+    if not path.is_file():
+        raise SaosError(ErrorCode.FILE_NOT_FOUND, f"no ray database {path}")
+    raw = nsc.ray_hits(zosapi(ctx), sysm, str(path), [object_index(ctx, o) for o in objects], ray_filter, max_rays)
+    rays_read = raw.pop("rays_read")[0]
+    out: dict[str, Any] = {k: np.asarray(v, dtype=int if k in ("wave", "object", "ray") else float) for k, v in raw.items()}
+    out["rays_read"] = rays_read
+    return out
 
 
 # ---------- 操作数与分析 / operands and analyses ----------
@@ -779,6 +1069,21 @@ class KitMethods:
 
     def wave_profile(self, fn, lo, hi, n=33, **kw):
         return wave_profile(self, fn, lo, hi, n, **kw)
+
+    def objects(self):
+        return objects(self)
+
+    def object_index(self, ref):
+        return object_index(self, ref)
+
+    def nsc_trace(self, **kw):
+        return nsc_trace(self, **kw)
+
+    def detector(self, ref, grid=False):
+        return detector(self, ref, grid)
+
+    def ray_hits(self, zrd, objects, ray_filter="", max_rays=None):
+        return ray_hits(self, zrd, objects, ray_filter, max_rays)
 
     def memo(self, key, compute):
         return memo(self, key, compute)

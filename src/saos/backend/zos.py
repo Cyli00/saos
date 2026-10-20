@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from saos import config, geometry, glasscat
+from saos.backend import nsc
 from saos.backend.base import (
     MATERIAL_MODES,
     NUMERIC_PARAMS,
@@ -587,6 +588,15 @@ class ZosBackend(Backend):
         fields = sd.Fields
         waves = sd.Wavelengths
         lde = system.LDE
+        if nsc.is_nsc(system):
+            # 非序列系统没有孔径、视场和面；物体按序号列出 / no aperture, fields or surfaces; objects listed instead
+            return {"mode": "non_sequential", "file": str(system.SystemFile), "title": str(sd.TitleNotes.Title),
+                    "lens_units": str(sd.Units.LensUnits),
+                    "wavelengths": [{"um": float(w.Wavelength), "weight": float(w.Weight), "primary": bool(w.IsPrimary)}
+                                    for w in (waves.GetWavelength(i) for i in range(1, waves.NumberOfWavelengths + 1))],
+                    "material_catalogs": self._catalogs_in_use(), "nsc": nsc.settings(system),
+                    "objects": [{"index": i, "type": str(o.Type), "comment": str(o.Comment)}
+                                for i, o in ((i, system.NCE.GetObjectAt(i)) for i in range(1, int(system.NCE.NumberOfObjects) + 1))]}
         return {
             "file": str(system.SystemFile),
             "title": str(sd.TitleNotes.Title),
@@ -610,9 +620,20 @@ class ZosBackend(Backend):
             "material_catalogs": [c for c in self._catalogs_in_use()],
             "num_surfaces": int(lde.NumberOfSurfaces),
             "stop_surface": int(lde.StopSurface),
+            **({"nsc_groups": nsc.groups(system), "nsc": nsc.settings(system)} if nsc.groups(system) else {}),
         }
 
+    def objects(self) -> list[dict[str, Any]]:
+        """非序列物体表；序列系统列出各 NonSequential 面的物体（带 group = 面号），没有时为空。
+        The non-sequential objects; for a sequential lens those of every NonSequential surface (with group = surface)."""
+        zosapi = _load_zosapi(self.root)
+        if nsc.is_nsc(self.system):
+            return nsc.objects(zosapi, self.system)
+        return [{**o, "group": g} for g in nsc.groups(self.system) for o in nsc.objects(zosapi, self.system, g)]
+
     def surfaces(self) -> list[dict[str, Any]]:
+        if nsc.is_nsc(self.system):
+            return []
         lde = self.system.LDE
         return [self._surface_dict(lde.GetSurfaceAt(i), i) for i in range(lde.NumberOfSurfaces)]
 
@@ -643,6 +664,8 @@ class ZosBackend(Backend):
         """建模说明：系统设置、逐面参数（含所有非空的 Par 列）、材料及各波长折射率（INDX 实测）、孔径、求解、顶点全局位置和布局图。"""
         zosapi = _load_zosapi(self.root)
         system = self.system
+        if nsc.is_nsc(system):
+            return self._describe_nsc(zosapi, folder, prefix)
         sd = system.SystemData
         lde = system.LDE
         fields = sd.Fields
@@ -720,10 +743,49 @@ class ZosBackend(Backend):
             item["coating"] = str(row.Coating)
             m = lde.GetGlobalMatrix(i, *([0.0] * 12))
             item["global_vertex"] = [float(v) for v in m[10:13]] if m[0] else None
+            if nsc.is_group(row):
+                item["objects"] = self._described_objects(zosapi, members, group=i)
             surfaces.append(item)
         info["surfaces"] = surfaces
+        if any("objects" in s for s in surfaces):
+            info["nsc"] = nsc.settings(system)
         info["layout"] = {} if folder is None else self._export_layouts(folder, prefix)
         return info
+
+    def _describe_nsc(self, zosapi, folder: Path | None, prefix: str) -> dict[str, Any]:
+        """非序列系统的建模说明：系统项、非序列选项和逐个物体（类型、参考与嵌套、位置、材料来源和各波长折射率、参数、体散射）。
+        The model description of a non-sequential system: system items, NSC options and every object."""
+        system = self.system
+        sd = system.SystemData
+        catalogs = self._catalogs_in_use()
+        members = {c: {str(m).upper() for m in sd.MaterialCatalogs.GetMaterialsInCatalog(c)} for c in catalogs}
+        # 交叠和探测器检查由 interference()（后台进程随后调用）给出 / overlaps and detector checks come from interference()
+        items = self._described_objects(zosapi, members)
+        return {
+            "mode": "non_sequential", "file": str(system.SystemFile), "title": str(sd.TitleNotes.Title),
+            "lens_units": str(sd.Units.LensUnits),
+            "wavelengths": [{"um": float(w.Wavelength), "weight": float(w.Weight), "primary": bool(w.IsPrimary)}
+                            for w in (sd.Wavelengths.GetWavelength(i) for i in range(1, sd.Wavelengths.NumberOfWavelengths + 1))],
+            "material_catalogs": catalogs, "coating_file": str(sd.Files.CoatingFile), "nsc": nsc.settings(system),
+            "objects": items, "surfaces": [],
+            "layout": {} if folder is None else self._export_layouts(folder, prefix),
+        }
+
+    def _described_objects(self, zosapi, members: dict[str, set[str]], group: int | None = None) -> list[dict[str, Any]]:
+        """一组物体的读数加材料来源；group 是混合模式里 NonSequential 面的面号。/ One group's objects with material sources."""
+        system = self.system
+        items = nsc.objects(zosapi, system, group)
+        for item in items:
+            if item["kind"] == "object":
+                row = system.NCE.GetObjectAt(item["index"])
+                model = nsc.model_material(item["material"])
+                if model is not None:
+                    item["material_source"] = {"kind": "model", **model}
+                elif item["material"].upper() == "ABSORB":
+                    item["material_source"] = {"kind": "absorb"}
+                else:
+                    item["material_source"] = self._material_source(row, members)
+        return items
 
     def _system_extras(self) -> dict[str, Any]:
         """处方第二期的系统设置和多重结构，供建模说明、结构指纹和交付报告用。
@@ -1050,24 +1112,20 @@ class ZosBackend(Backend):
         system = self.system
         system.New(False)
         self._material_cache.clear()
+        if p.get("mode") == "non_sequential":
+            self._build_nsc(zosapi, p)
+            return
+        # 2024 R1 实测：非序列系统上 New(False) 之后仍是非序列模式；MakeSequential 又会把原系统转成带一个 NonSequential 面的
+        # 序列镜头，所以切回序列后再新建一次，得到干净的序列系统
+        # measured in 2024 R1: New(False) on a non-sequential system stays non-sequential, and MakeSequential turns it into a
+        # sequential lens holding a NonSequential surface; so switch back and start a new system once more
+        if nsc.is_nsc(system):
+            system.MakeSequential()
+            system.New(False)
+            if nsc.is_nsc(system) or nsc.groups(system):
+                raise SaosError(ErrorCode.ZOS_ERROR, "OpticStudio did not give a clean sequential system after a non-sequential one")
         sd = system.SystemData
-        sd.TitleNotes.Title = p["title"]
-        sd.Units.LensUnits = getattr(zosapi.SystemData.ZemaxSystemUnits, UNITS[p["units"]])
-
-        mc = sd.MaterialCatalogs
-        wanted = [c.upper() for c in p["catalogs"]]
-        for cat in wanted:
-            if not mc.IsCatalogInUse(cat):
-                mc.AddCatalog(cat)
-        for cat in [str(c) for c in mc.GetCatalogsInUse() if str(c)]:
-            if cat.upper() not in wanted:
-                mc.RemoveCatalog(cat)
-        missing = [c for c in wanted if c not in [str(x).upper() for x in mc.GetCatalogsInUse()]]
-        if missing:
-            raise SaosError(ErrorCode.BAD_ARGS, f"cannot load glass catalogs {missing}")
-        if p["coating_file"]:
-            # 面的膜层名在这个文件里查，所以先于各面设定 / surface coatings are looked up in this file, so it goes first
-            sd.Files.CoatingFile = pick_name([str(c) for c in sd.Files.GetCoatingFiles()], p["coating_file"], "coating_file")
+        self._build_common(zosapi, p)
 
         env = p["environment"]
         sd.Environment.AdjustIndexToEnvironment = env["adjust_index"]
@@ -1106,16 +1164,6 @@ class ZosBackend(Backend):
         for x, y, w in zip(f["x"][1:], f["y"][1:], f["weights"][1:]):
             fields.AddField(x, y, w)
 
-        waves = sd.Wavelengths
-        while waves.NumberOfWavelengths > 1:
-            waves.RemoveWavelength(waves.NumberOfWavelengths)
-        um, weights = p["wavelengths"]["um"], p["wavelengths"]["weights"]
-        waves.GetWavelength(1).Wavelength = um[0]
-        waves.GetWavelength(1).Weight = weights[0]
-        for wl, wt in zip(um[1:], weights[1:]):
-            waves.AddWavelength(wl, wt)
-        waves.GetWavelength(p["wavelengths"]["primary"]).MakePrimary()
-
         aiming = zosapi.SystemData.RayAimingMethod
         sd.RayAiming.RayAiming = {"off": aiming.Off, "paraxial": aiming.Paraxial, "real": aiming.Real}[p["ray_aiming"]]
         options = p["ray_aiming_options"] or {}
@@ -1145,6 +1193,11 @@ class ZosBackend(Backend):
         for k, s in enumerate(surfaces, start=1):
             if s["stop"]:
                 lde.GetSurfaceAt(k).IsStop = True
+        # 混合模式：每个 NonSequential 面一组物体，NCE.SetActiveSurface 选组（2024 R1 实测：组内物体号从 1 起，保存后保留）
+        # mixed mode: one object group per NonSequential surface, selected with NCE.SetActiveSurface (numbered from 1 within the group)
+        for k, s in enumerate(surfaces, start=1):
+            if s.get("objects"):
+                self._build_nsc_group(zosapi, k, s["objects"], f"surface {k}")
         # 求解最后设：拾取可能读后面的面
         for k, s, label in rows:
             for column, solve in (s.get("solves") or {}).items():
@@ -1179,6 +1232,71 @@ class ZosBackend(Backend):
         changed = {k: {"requested": want, "actual": have} for k, (have, want) in got.items() if not _same(have, want)}
         if changed:
             raise SaosError(ErrorCode.BAD_ARGS, f"OpticStudio did not keep {', '.join(changed)}; the combination of settings is not valid", changed)
+
+    def _build_common(self, zosapi, p: dict[str, Any]) -> None:
+        """序列和非序列共用：标题、单位、玻璃目录、膜层文件、波长。/ Shared by both modes: title, units, catalogs, coating file, wavelengths."""
+        sd = self.system.SystemData
+        sd.TitleNotes.Title = p["title"]
+        sd.Units.LensUnits = getattr(zosapi.SystemData.ZemaxSystemUnits, UNITS[p["units"]])
+        mc = sd.MaterialCatalogs
+        wanted = [c.upper() for c in p["catalogs"]]
+        for cat in wanted:
+            if not mc.IsCatalogInUse(cat):
+                mc.AddCatalog(cat)
+        for cat in [str(c) for c in mc.GetCatalogsInUse() if str(c)]:
+            if cat.upper() not in wanted:
+                mc.RemoveCatalog(cat)
+        self._material_cache.clear()
+        missing = [c for c in wanted if c not in [str(x).upper() for x in mc.GetCatalogsInUse()]]
+        if missing:
+            raise SaosError(ErrorCode.BAD_ARGS, f"cannot load glass catalogs {missing}")
+        if p["coating_file"]:
+            # 面的膜层名在这个文件里查，所以先于各面设定 / surface coatings are looked up in this file, so it goes first
+            sd.Files.CoatingFile = pick_name([str(c) for c in sd.Files.GetCoatingFiles()], p["coating_file"], "coating_file")
+        waves = sd.Wavelengths
+        while waves.NumberOfWavelengths > 1:
+            waves.RemoveWavelength(waves.NumberOfWavelengths)
+        um, weights = p["wavelengths"]["um"], p["wavelengths"]["weights"]
+        waves.GetWavelength(1).Wavelength = um[0]
+        waves.GetWavelength(1).Weight = weights[0]
+        for wl, wt in zip(um[1:], weights[1:]):
+            waves.AddWavelength(wl, wt)
+        waves.GetWavelength(p["wavelengths"]["primary"]).MakePrimary()
+        with _named("nsc"):
+            nsc.apply_settings(self.system, p.get("nsc") or {})
+            nsc.apply_units(zosapi, self.system, p)
+
+    def _build_nsc(self, zosapi, p: dict[str, Any]) -> None:
+        """非序列处方：切到非序列模式，设系统项和非序列选项，逐个写物体（类型、位置、材料、参数、体散射），模型玻璃回读核对。
+        A non-sequential prescription: switch modes, set the system and NSC options, write each object, check model glasses."""
+        system = self.system
+        if not system.MakeNonSequential() or not nsc.is_nsc(system):
+            raise SaosError(ErrorCode.ZOS_ERROR, "OpticStudio did not switch to non-sequential mode")
+        self._build_common(zosapi, p)
+        self._build_objects(zosapi, p["objects"], "")
+
+    def _build_objects(self, zosapi, objects: list[dict[str, Any]], prefix: str) -> None:
+        """当前非序列组（纯非序列系统或 NCE.SetActiveSurface 选中的组）的物体。/ The objects of the current NSC group."""
+        system = self.system
+        nce = system.NCE
+        while int(nce.NumberOfObjects) < len(objects):
+            nce.AddObject()
+        primary = system.SystemData.Wavelengths.GetWavelength(1).Wavelength
+        for i in range(1, int(system.SystemData.Wavelengths.NumberOfWavelengths) + 1):
+            if system.SystemData.Wavelengths.GetWavelength(i).IsPrimary:
+                primary = system.SystemData.Wavelengths.GetWavelength(i).Wavelength
+        for k, spec in enumerate(objects, start=1):
+            with _named(f"{prefix}objects[{k}]"):
+                nsc.build_object(self, zosapi, system, k, spec, prefix)
+        for k, spec in enumerate(objects, start=1):
+            nsc.check_model_index(system, k, spec, float(primary), prefix)
+
+    def _build_nsc_group(self, zosapi, surface: int, objects: list[dict[str, Any]], label: str) -> None:
+        nce = self.system.NCE
+        nce.SetActiveSurface(surface)
+        if int(nce.ActiveSurface) != surface:
+            raise SaosError(ErrorCode.BAD_ARGS, f"{label}: OpticStudio did not select its non-sequential group (surface type must be NonSequential)")
+        self._build_objects(zosapi, objects, f"{label} ")
 
     def _build_surface(self, zosapi, row, s: dict[str, Any], label: str) -> None:
         """处方里的一个面（或像面）：面型、通用项、面型参数、倾斜偏心、半口径、孔径。求解另设。"""
@@ -1468,6 +1586,8 @@ class ZosBackend(Backend):
         return str(cell.GetSolveData().Type)
 
     def merit_wizard(self, settings: dict[str, Any]) -> int:
+        if nsc.is_nsc(self.system):
+            return self.merit_wizard_nsc(settings)
         wiz = self.system.MFE.SEQOptimizationWizard
 
         def pick(name: str, count_attr: str, getter: str, wanted: str) -> int:
@@ -1538,7 +1658,7 @@ class ZosBackend(Backend):
         return rows
 
     def optimize(self, cycles: str, cores: int | None = None, *, max_seconds: float | None = None,
-                 on_progress=None, should_cancel=None) -> dict[str, Any]:
+                 on_progress=None, should_cancel=None, algorithm: str | None = None) -> dict[str, Any]:
         """异步运行局部优化：边跑边报告进度，超时或收到取消请求时调用 Cancel，保留已经得到的结果。
         Run the local optimisation asynchronously: report progress while it runs, call Cancel on a timeout or a cancel
         request, and keep what it reached."""
@@ -1546,9 +1666,15 @@ class ZosBackend(Backend):
         names = {"auto": "Automatic", "1": "Fixed_1_Cycle", "5": "Fixed_5_Cycles", "10": "Fixed_10_Cycles", "50": "Fixed_50_Cycles"}
         if cycles not in names:
             raise SaosError(ErrorCode.BAD_ARGS, f"cycles must be one of {list(names)}")
+        # 非序列系统的探测器评价函数有统计噪声，阻尼最小二乘的差分导数不可靠，默认用正交下降（OpticStudio 对非序列的建议）
+        # a non-sequential detector merit is noisy and spoils DLS's finite differences: default to orthogonal descent there
+        algorithm = algorithm or ("od" if nsc.is_nsc(self.system) else "dls")
+        if algorithm not in ("dls", "od"):
+            raise SaosError(ErrorCode.BAD_ARGS, f"algorithm must be dls or od, got {algorithm!r}")
         tool = self.system.Tools.OpenLocalOptimization()
         try:
-            tool.Algorithm = zosapi.Tools.Optimization.OptimizationAlgorithm.DampedLeastSquares
+            tool.Algorithm = getattr(zosapi.Tools.Optimization.OptimizationAlgorithm,
+                                     "DampedLeastSquares" if algorithm == "dls" else "OrthogonalDescent")
             tool.Cycles = getattr(zosapi.Tools.Optimization.OptimizationCycles, names[cycles])
             if cores:
                 tool.NumberOfCores = int(cores)
@@ -1562,9 +1688,73 @@ class ZosBackend(Backend):
                 "succeeded": bool(tool.Succeeded),
                 "stopped_by": stopped_by,
                 "elapsed_s": elapsed,
+                "algorithm": algorithm,
             }
         finally:
             tool.Close()
+
+    def vary_object(self, group: int | None, number: int, param: str, on: bool) -> str:
+        """非序列物体的一个参数设为变量或固定：x、y、z、tilt_x、tilt_y、tilt_z、par<N> 或列标题。"""
+        system = self.system
+        if not nsc.is_nsc(system):
+            found = nsc.groups(system)
+            if group is None and len(found) == 1:
+                group = found[0]
+            if group is None:
+                raise SaosError(ErrorCode.BAD_ARGS, f"the lens has NonSequential surfaces {found}; give --group", {"groups": found})
+        nsc.select_group(system, group)
+        nce = system.NCE
+        if not 1 <= number <= int(nce.NumberOfObjects):
+            raise SaosError(ErrorCode.BAD_ARGS, f"object {number} out of range 1-{nce.NumberOfObjects}")
+        o = nce.GetObjectAt(number)
+        cells = {"x": "XPositionCell", "y": "YPositionCell", "z": "ZPositionCell", "tilt_x": "TiltAboutXCell", "tilt_y": "TiltAboutYCell",
+                 "tilt_z": "TiltAboutZCell"}
+        cell = getattr(o, cells[param]) if param in cells else nsc.param_cell(_load_zosapi(self.root), o, f"object {number}", param)
+        cell.MakeSolveVariable() if on else cell.MakeSolveFixed()
+        return str(cell.GetSolveData().Type)
+
+    def merit_wizard_nsc(self, settings: dict[str, Any]) -> int:
+        """非序列评价函数向导：按探测器上的判据（总通量、均匀度、质心、RMS 光斑或角度等）生成操作数。名字取向导自己列的可选项。
+        The non-sequential merit wizard: operands for a criterion on a detector; names come from the wizard's own lists."""
+        w = self.system.MFE.NSCOptimizationWizard
+        w.Initialize()
+
+        def pick(name: str, count_attr: str, getter: str, wanted: Any) -> int:
+            names = [str(getattr(w, getter)(i)) for i in range(int(getattr(w, count_attr)))]
+            text = str(wanted).replace(" ", "").lower()
+            for i, n in enumerate(names):
+                # 探测器、光源列成 "3: Rectangle"，可以只写编号 / detectors and sources read "3: Rectangle"; the number alone is enough
+                if n.replace(" ", "").lower() == text or n.split(":")[0].strip() == str(wanted).strip():
+                    return i
+            raise SaosError(ErrorCode.BAD_ARGS, f"NSC optimization wizard {name} must be one of {names}, got {wanted!r}")
+
+        known = {"criterion", "detector", "source", "ray_sampling", "edge_sampling", "boundary", "target", "weight", "configuration",
+                 "start_at", "overwrite", "minimum_flux", "split", "scatter", "polarization", "ignore_errors"}
+        extra = sorted(set(settings) - known)
+        if extra:
+            raise SaosError(ErrorCode.BAD_ARGS, f"NSC optimization wizard settings {extra} unknown; allowed {sorted(known)}")
+        w.Criterion = pick("criterion", "NumberOfCriterion", "GetCriterionAt", settings.get("criterion", "Total Flux"))
+        if "detector" in settings:
+            w.UseDetector = pick("detector", "NumberOfDetectors", "GetDetectorAt", settings["detector"])
+        w.UseSource = pick("source", "NumberOfSources", "GetSourceAt", settings.get("source", "All"))
+        w.RaySampling = pick("ray_sampling", "NumberOfRaySamplings", "GetRaySamplingAt", settings.get("ray_sampling", "Low (1X)"))
+        if "edge_sampling" in settings:
+            w.EdgeSampling = pick("edge_sampling", "NumberOfEdgeSamplings", "GetEdgeSamplingAt", settings["edge_sampling"])
+        w.Boundary = pick("boundary", "NumberOfBoundaries", "GetBoundaryAt", settings.get("boundary", "Equal To"))
+        if "configuration" in settings:
+            w.Configuration = pick("configuration", "NumberOfConfigurations", "GetConfigurationAt", settings["configuration"])
+        w.Target = float(settings.get("target", 0.0))
+        w.OverallWeight = float(settings.get("weight", 1.0))
+        w.StartAt = int(settings.get("start_at", 1))
+        w.IsOverwriteUsed = bool(settings.get("overwrite", True))
+        if "minimum_flux" in settings:
+            w.IsMinimumFluxUsed, w.MinimumFlux = True, float(settings["minimum_flux"])
+        for key, attr in (("split", "IsSplitRaysUsed"), ("scatter", "IsScatterRaysUsed"), ("polarization", "IsUsePolarizationUsed"),
+                          ("ignore_errors", "IsIgnoreErrorsUsed")):
+            if key in settings:
+                setattr(w, attr, bool(settings[key]))
+        w.Apply()
+        return int(self.system.MFE.NumberOfOperands)
 
     def optimize_search(self, kind: str, cores: int | None = None, *, max_seconds: float,
                         on_progress=None, should_cancel=None) -> dict[str, Any]:
@@ -1783,6 +1973,10 @@ class ZosBackend(Backend):
         结果按结构合并，结束时回到原来的结构。
         Interference check (saos.geometry): crossing surfaces, interpenetrating lenses. With several configurations each is
         checked (zoom or focus groups may collide in another one), the results are merged and the current configuration restored."""
+        if nsc.is_nsc(self.system):
+            items = nsc.objects(_load_zosapi(self.root), self.system)
+            nsc.attach_meshes(self.system, items)
+            return geometry.nsc_overlaps(items)
         lde, mce = self.system.LDE, self.system.MCE
         count = int(mce.NumberOfConfigurations)
         if count < 2:
@@ -1850,6 +2044,8 @@ class ZosBackend(Backend):
         rays=False 时不追迹布局光线：优化运行中工具被优化器占着，只能读几何（同一系统同时只能开一个工具）。
         rays=False skips the layout rays: while an optimisation runs its tool is open and only geometry can be read."""
         system = self.system
+        if nsc.is_nsc(system):
+            return self._viz_nsc(full)
         lde = system.LDE
         info = self.system_info()
         image = lde.NumberOfSurfaces - 1
@@ -1985,24 +2181,50 @@ class ZosBackend(Backend):
             spots.append({"field": f, "chief": [cx, cy] if not chief[f][0] else None, "points": per_wave})
         timings["spot_rays"] = round(time.monotonic() - started, 2)
 
-        def run(name: str, wanted: dict[str, Any], keep: tuple[str, ...]) -> dict[str, Any] | None:
+        def why_empty(out: dict[str, Any]) -> str:
+            # OpticStudio 把原因写在文本导出里（例如 "Cannot compute when chief ray cannot be traced"）
+            head = (out.get("text_head") or "").strip().splitlines()
+            return (head[0] if head else "") or "; ".join(p["message"] for p in out.get("problems") or []) or "no data"
+
+        def run(name: str, wanted: dict[str, Any], keep: tuple[str, ...], file: str | None = None) -> dict[str, Any] | None:
             started = time.monotonic()
             for settings in (wanted, {}):
                 try:
-                    out = self.analysis(name, settings, folder / f"{name}.txt")
-                    timings[name] = round(time.monotonic() - started, 2)
+                    out = self.analysis(name, settings, folder / f"{file or name}.txt")
+                    timings[file or name] = round(time.monotonic() - started, 2)
+                    if out["status"] == "empty":
+                        errors[file or name] = why_empty(out)
                     return {"series": out["series"], "spot": out.get("spot"), "settings": {s: out["settings"].get(s) for s in keep}}
                 except SaosError as exc:
                     if settings:
                         continue
-                    errors[name] = exc.message
+                    errors[file or name] = exc.message
                 except Exception as exc:  # noqa: BLE001 - 一个分析失败不影响其余数据
-                    errors[name] = f"{type(exc).__name__}: {exc}"
+                    errors[file or name] = f"{type(exc).__name__}: {exc}"
                     break
             return None
 
         spot_analysis = run("StandardSpot", {"ReferTo": "ChiefRay"}, ("ReferTo", "Pattern", "RayDensity"))
-        mtf = run("FftMtf", {"ShowDiffractionLimit": True}, ("MaximumFrequency", "SampleSize", "Type", "ShowDiffractionLimit"))
+        mtf_keep = ("MaximumFrequency", "SampleSize", "Type", "ShowDiffractionLimit")
+        mtf = run("FftMtf", {"ShowDiffractionLimit": True}, mtf_keep)
+        if mtf is not None and not mtf["series"] and len(fields) > 1:
+            # 全部视场一起算时，只要一个视场的主光线追不出，FFT MTF 整个不给数据（2026-10-20 在 fiber-printed 第 0 轮复现：
+            # 第 3、5 视场失败，其余单独算都正常）；逐个视场算，失败的视场写进 errors
+            # with all fields at once, one field whose chief ray fails empties the whole FFT MTF; compute field by field
+            whole = errors.pop("FftMtf", "no data")
+            series, missing = [], []
+            for f in range(1, len(fields) + 1):
+                one = run("FftMtf", {"ShowDiffractionLimit": True, "Field": f}, mtf_keep, file=f"FftMtf-field{f}")
+                reason = errors.pop(f"FftMtf-field{f}", None)
+                if one is None or not one["series"]:
+                    missing.append(f"field {f}: {reason or 'no data'}")
+                    continue
+                # 衍射极限每次都附带一条，只留第一条 / each run carries the diffraction limit; keep the first
+                series += [s for s in one["series"] if not (series and "diff" in s["description"].lower())]
+                mtf["settings"] = one["settings"]
+            mtf["series"] = series
+            mtf["per_field"] = True
+            errors["FftMtf"] = f"all fields at once: {whole}" + (f"; computed field by field, missing {'; '.join(missing)}" if missing else "; computed field by field")
         spot_stats = (spot_analysis or {}).get("spot") or {}
         return {
             **base,
@@ -2013,6 +2235,41 @@ class ZosBackend(Backend):
             "timings_s": timings,
             "errors": errors,
         }
+
+    def _viz_nsc(self, full: bool) -> dict[str, Any]:
+        """界面用的非序列数据：物体轮廓（全局坐标）和物体表；full（每轮的 viz.json）时另给各探测器在内存里的读数
+        （上一次追迹留下的，判定若追迹过就是判定最后一次追迹的结果）。没有布局光线。
+        Non-sequential data for the window: object outlines in global coordinates and the object table; with full also
+        each detector's readings currently in memory (left by the last trace). No layout rays."""
+        zosapi = _load_zosapi(self.root)
+        system = self.system
+        started = time.monotonic()
+        items = nsc.objects(zosapi, system)
+        nsc.attach_meshes(system, items)
+        info = self.system_info()
+        primary = next((k for k, w in enumerate(info["wavelengths"], start=1) if w["primary"]), 1)
+        out: dict[str, Any] = {
+            "system": {"mode": "non_sequential", "title": info["title"], "lens_units": info["lens_units"], "wavelengths": info["wavelengths"],
+                       "primary_wave": primary, "nsc": info["nsc"], "non_axial": True},
+            "objects": nsc.drawing(items),
+            "object_data": [{k: v for k, v in item.items() if k != "global" and not k.startswith("mesh_")} for item in items],
+            "surfaces": [], "layout": {"rays": [], "rays_paused": False}, "lens_data": [],
+            "interference": geometry.nsc_overlaps(items),
+        }
+        errors: dict[str, str] = {}
+        if full:
+            detectors = []
+            for item in items:
+                if item["kind"] != "detector":
+                    continue
+                try:
+                    detectors.append(nsc.detector(zosapi, system, item["index"], grid=True))
+                except Exception as exc:  # noqa: BLE001 - 一个探测器读不出不影响其余
+                    errors[f"detector {item['index']}"] = f"{type(exc).__name__}: {exc}"[:300]
+            out["detectors"] = detectors
+        out["timings_s"] = {"nsc": round(time.monotonic() - started, 2)}
+        out["errors"] = errors
+        return out
 
     # ---- 操作数 ----
 

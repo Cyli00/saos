@@ -343,6 +343,165 @@ def merge_configurations(results: list[dict[str, Any]]) -> dict[str, Any]:
     return out
 
 
+def nsc_overlaps(items: list[dict[str, Any]]) -> dict[str, Any]:
+    """非序列物体的交叠检查：两个体物体（不含光源、探测器）的轮廓包围盒在三个方向都重叠超过 TOL，彼此没有 Inside Of 关系，
+    且编号大的不是整个在编号小的里面（OpticStudio 的嵌套规则），就记为穿插。包围盒对倾斜或弯曲的物体偏保守（可能多报）；画不出轮廓的类型列在 unchecked。items 是 backend.nsc.objects 的结果。
+    Interference of non-sequential objects: two volume objects (not sources or detectors) whose outline bounding boxes
+    overlap by more than TOL on all three axes, and neither nested in the other via Inside Of. Boxes are conservative
+    for tilted or curved objects; types without an outline are listed as unchecked."""
+    from saos.backend import nsc
+
+    parents = {it["index"]: it.get("inside_of", 0) for it in items}
+
+    def ancestors(i: int) -> set[int]:
+        out: set[int] = set()
+        while parents.get(i):
+            i = parents[i]
+            if i in out:
+                break
+            out.add(i)
+        return out
+
+    boxes, unchecked = {}, []
+    for it in items:
+        if it["kind"] != "object":
+            continue
+        shape = nsc.outline(it)
+        if (shape is None or not shape.get("closed") or not it.get("global")) and it.get("mesh_box"):
+            # 没有解析轮廓的物体用导出网格的包围盒 / objects without an analytic outline use their exported mesh's box
+            lo, hi = it["mesh_box"]
+            boxes[it["index"]] = (list(lo), list(hi), it.get("comment", ""))
+            continue
+        if shape is None or not shape.get("closed") or not it.get("global"):
+            unchecked.append(it["index"])
+            continue
+        pts = [p for e in shape["edges"] for p in nsc.to_global(e, it["global"])]
+        boxes[it["index"]] = ([min(p[k] for p in pts) for k in range(3)], [max(p[k] for p in pts) for k in range(3)], it.get("comment", ""))
+    overlaps = []
+    keys = sorted(boxes)
+    for n, a in enumerate(keys):
+        for b in keys[n + 1:]:
+            if a in ancestors(b) or b in ancestors(a):
+                continue
+            (lo1, hi1, c1), (lo2, hi2, c2) = boxes[a], boxes[b]
+            # 编号大的物体整个在编号小的里面是 OpticStudio 的嵌套规则（后列的优先），不算穿插
+            # a later object wholly inside an earlier one is OpticStudio's nesting rule (the later one wins), not a clash
+            if all(lo1[k] - TOL <= lo2[k] and hi2[k] <= hi1[k] + TOL for k in range(3)):
+                continue
+            depth = min(min(hi1[k], hi2[k]) - max(lo1[k], lo2[k]) for k in range(3))
+            if depth > TOL:
+                overlaps.append({"objects": [a, b], "comments": [c1, c2], "depth": depth})
+    spill, unchecked_detectors = detector_spill(items)
+    return {"mode": "non_sequential", "crossings": [], "overlaps": overlaps, "clearances": [], "lenses": [], "edges_from_clear": False,
+            "tolerance": TOL, "method": "bounding boxes of the object outlines (exported meshes for types without one); conservative for tilted or curved objects",
+            "unchecked": unchecked, "detector_spill": spill, "detectors_unchecked": unchecked_detectors}
+
+
+def _local(point: list[float], tf: dict[str, Any]) -> list[float]:
+    """系统坐标的点到物体局部坐标（旋转矩阵正交，逆即转置）。/ A system point in the object's local frame."""
+    r, o = tf["rotation"], tf["offset"]
+    d = [point[k] - o[k] for k in range(3)]
+    return [r[0] * d[0] + r[3] * d[1] + r[6] * d[2], r[1] * d[0] + r[4] * d[1] + r[7] * d[2], r[2] * d[0] + r[5] * d[1] + r[8] * d[2]]
+
+
+def _in_mesh(tris: list, p: list[float]) -> bool:
+    """射线法判断点是否在闭合网格内：沿一个略斜的方向数交点（Möller–Trumbore）。/ Ray-casting point-in-mesh test."""
+    d = (0.5773, 0.5774, 0.5775)
+    count = 0
+    for a, b, c in tris:
+        e1 = [b[i] - a[i] for i in range(3)]
+        e2 = [c[i] - a[i] for i in range(3)]
+        h = [d[1] * e2[2] - d[2] * e2[1], d[2] * e2[0] - d[0] * e2[2], d[0] * e2[1] - d[1] * e2[0]]
+        det = sum(e1[i] * h[i] for i in range(3))
+        if abs(det) < 1e-14:
+            continue
+        s = [p[i] - a[i] for i in range(3)]
+        u = sum(s[i] * h[i] for i in range(3)) / det
+        if u < 0 or u > 1:
+            continue
+        q = [s[1] * e1[2] - s[2] * e1[1], s[2] * e1[0] - s[0] * e1[2], s[0] * e1[1] - s[1] * e1[0]]
+        v = sum(d[i] * q[i] for i in range(3)) / det
+        if v < 0 or u + v > 1:
+            continue
+        if sum(e2[i] * q[i] for i in range(3)) / det > 0:
+            count += 1
+    return count % 2 == 1
+
+
+def _contains(it: dict[str, Any], point: list[float]) -> bool | None:
+    """点是否在体物体内：圆柱体、矩形体、环形体按参数算，其他按导出网格；都没有时 None。
+    Whether a point lies inside a volume object: cylinders, boxes and annuli from their parameters, others from the mesh."""
+    p = {str(q["name"]).strip().lower(): q["value"] for q in it.get("params") or [] if isinstance(q["value"], (int, float))}
+    t = it["type"]
+    if t in ("CylinderVolume", "RectangularVolume", "AnnularVolume") and it.get("global"):
+        x, y, z = _local(point, it["global"])
+        length = p.get("z length", 0.0)
+        if not -TOL <= z <= length + TOL:
+            return False
+        f = z / length if length else 0.0
+        if t == "CylinderVolume":
+            rf, rb = p.get("front r", 0.0), p.get("back r", p.get("front r", 0.0))
+            return math.hypot(x, y) <= rf + (rb - rf) * f + TOL
+        if t == "RectangularVolume":
+            hx = p.get("x1 half width", 0.0) + (p.get("x2 half width", p.get("x1 half width", 0.0)) - p.get("x1 half width", 0.0)) * f
+            hy = p.get("y1 half width", 0.0) + (p.get("y2 half width", p.get("y1 half width", 0.0)) - p.get("y1 half width", 0.0)) * f
+            return abs(x) <= hx + TOL and abs(y) <= hy + TOL
+
+        def lerp(front: str, rear: str) -> float:
+            return p.get(front, 0.0) + (p.get(rear, p.get(front, 0.0)) - p.get(front, 0.0)) * f
+
+        ax_min, ay_min = lerp("front x min", "rear x min"), lerp("front y min", "rear y min")
+        ax_max, ay_max = lerp("front x max", "rear x max"), lerp("front y max", "rear y max")
+        outer = ax_max > 0 and ay_max > 0 and (x / ax_max) ** 2 + (y / ay_max) ** 2 <= 1 + 1e-9
+        inner = ax_min > 0 and ay_min > 0 and (x / ax_min) ** 2 + (y / ay_min) ** 2 < 1 - 1e-9
+        return outer and not inner
+    if it.get("mesh_tris"):
+        return _in_mesh(it["mesh_tris"], point)
+    return None
+
+
+def detector_spill(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[int]]:
+    """探测器超出它所在的体：探测器中心所在的体（编号最大的那个，OpticStudio 嵌套时后列的优先）之外、又不在吸收体里的探测器轮廓点，
+    说明从这个体别处漏出的光可能被记下（杂散荧光任务实测：方形探测器四角伸出圆柱组织，多记了 1.8 个百分点）。
+    中心不在任何体里的探测器不查；包含关系算不出时列在第二个返回值。
+    Detectors reaching outside the volume that holds their centre (the highest-numbered one) at a point not inside an
+    absorber: light leaking out of that volume elsewhere can land on them. Returns the findings and the detectors that
+    could not be checked."""
+    from saos.backend import nsc
+
+    volumes = [it for it in items if it["kind"] == "object"]
+    found, unchecked = [], []
+    for det in items:
+        if det["kind"] != "detector" or not det.get("global"):
+            continue
+        shape = nsc.outline(det)
+        if shape is None:
+            unchecked.append(det["index"])
+            continue
+        pts = [q for e in shape["edges"] for q in nsc.to_global(e, det["global"])]
+        center = nsc.to_global([[0.0, 0.0, 0.0]], det["global"])[0]
+        holders = []
+        unknown = False
+        for v in volumes:
+            inside = _contains(v, center)
+            if inside is None:
+                unknown = True
+            elif inside:
+                holders.append(v)
+        if not holders:
+            if unknown:
+                unchecked.append(det["index"])
+            continue
+        holder = max(holders, key=lambda v: v["index"])
+        absorbers = [v for v in volumes if str(v.get("material", "")).upper() == "ABSORB"]
+        for q in pts:
+            if _contains(holder, q) is False and not any(_contains(a, q) for a in absorbers):
+                found.append({"detector": det["index"], "comment": det.get("comment", ""), "volume": holder["index"],
+                              "volume_comment": holder.get("comment", ""), "point": [round(c, 6) for c in q]})
+                break
+    return found, unchecked
+
+
 def interference(surfaces: list[dict[str, Any]]) -> dict[str, Any]:
     """surfaces：按序号排列，每个带 index、type、comment、material（面后的材料）、sd（网格半径，即零件外缘）、rot（行优先 3×3）、off、
     sags（与 polar_points(sd) 对应），可选 ap（aperture() 的结果）和 clear（净口径半径，缺省同 sd）。两侧材料不同（或是反射镜）的面

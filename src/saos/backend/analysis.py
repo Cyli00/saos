@@ -166,7 +166,12 @@ def _spot(r, fields: int, waves: int) -> dict[str, Any] | None:
         return None
     if not any(v for row in rms for v in row):
         return None
-    return {"rms_radius": rms, "geo_radius": geo, "index": "[field-1][wave-1]"}
+    # OpticStudio 忽略 GetRMSSpotSizeFor/GetGeoSpotSizeFor 的波长参数，各列都是分析设置里所选波长的值；选全部波长时，
+    # 每个波长追的光线数与其权重成正比，权重小于 1 的波长常漏掉边缘光线，GEO 偏小（2026-10-20 Cooke 样例实测）
+    # the wave argument is ignored; with all wavelengths, rays per wavelength scale with its weight, so GEO can miss rim rays
+    return {"rms_radius": rms, "geo_radius": geo, "index": "[field-1][wave-1]",
+            "note": "every wave column holds the value for the analysis' Wavelength setting; with all wavelengths OpticStudio traces "
+                    "rays per wavelength in proportion to its weight, so GEO can miss the rim rays of wavelengths weighted below 1"}
 
 
 def _guarded(problems: list[dict[str, Any]], part: str, read, default):

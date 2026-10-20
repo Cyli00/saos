@@ -14,7 +14,7 @@ const TEXT = {
     rounds_n: (n) => `第 ${n} 轮`, no_rounds: "尚未记录轮次",
     explore_run: (n) => `结构探索：${n} 个候选运行中`, explore_done: (n, k) => `结构探索：${n} 个候选，保留 ${k} 个`,
     st_achieved: "已达成", st_exhausted: "无法再优化", st_limit: "达到轮次上限", st_stopped: "按用户决定停止",
-    report_ready: "报告已生成", report_todo: "待生成报告",
+    report_ready: "报告已生成", report_todo: "待生成报告", deliver_cmd: "saos scan（公差，按需）· saos report",
     back_demand: "需求变更", back_model: "修改模型", back_reach: "结构不可达", feasibility: "质疑结构 · 手算界限",
     explicit: "显式调试 · Interactive Extension", standalone: "后台运行 · standalone", no_daemon: "后台进程未运行",
     tab_control: "窗口控制", tab_layout: "布局", tab_spot: "点列图", tab_mtf: "MTF", tab_rounds: "轮次",
@@ -25,8 +25,8 @@ const TEXT = {
     system: "系统设置（只读）", refresh: "刷新", loading: "读取中…", queued: "已发送，后台进程忙时会排队…",
     opened: (n) => `已打开 ${n}`, failed: "失败", aperture: "孔径", units: "单位", stop: "光阑面", fields: "视场", waves: "波长", primary: "主",
     no_viz: "第 0 轮记录后，这里显示该轮的布局、点列图和 MTF。", viz_missing: "这一轮没有可视化数据（用 --no-viz 记录，或记录早于 saos ui）。",
-    viz_failed: "这一轮的可视化导出失败：", spot_foot: (ref) => `点：批量光线追迹，相对主波长主光线，未计被拦光线。RMS / GEO：OpticStudio Standard Spot（参考 ${ref}，全部波长），单位 µm。`,
-    mtf_foot: "曲线：OpticStudio FFT MTF 导出。", tangential: "子午 T", sagittal: "弧矢 S", diff: "衍射极限",
+    viz_failed: "这一轮的可视化导出失败：", spot_foot: (ref) => `点：批量光线追迹，相对主波长主光线，未计被拦光线。RMS / GEO：OpticStudio Standard Spot（参考 ${ref}，全部波长），单位 µm。Standard Spot 每个波长追的光线数与波长权重成正比，权重小于 1 的波长常漏掉边缘光线，所以 GEO 可能小于图中最远的点。`,
+    mtf_foot: "曲线：OpticStudio FFT MTF 导出。", mtf_partial: "全部视场一起算不出，改为逐个视场算：", tangential: "子午 T", sagittal: "弧矢 S", diff: "衍射极限",
     layout_foot: "几何与光线坐标：ZOS-API（GetGlobalMatrix、GetSag、批量光线追迹）。",
     layout_hint_3d: "拖动旋转 · Shift 或右键拖动平移 · 滚轮以光标为中心缩放 · 双击复位 · 指向某面看参数", layout_hint_2d: "拖动平移 · Shift 或右键拖动测距（吸附面上的点）· 滚轮以光标为中心缩放 · 双击复位 · Esc 清除测距 · 指向某面看参数",
     image_z: "像面 z", round: "轮", tiers: "层级", gap: "目标差距", state: "状态", note: "说明", achieved: "达成", deliverable: "可交付",
@@ -39,6 +39,11 @@ const TEXT = {
     live_optimising: "优化中，光线在结束后更新", opt_grid: "网格", opt_labels: "面号", png_title: "把当前画面存成 PNG", tip_air: "空气",
     ruler: (d, dz, dy, u) => `${d} ${u}（Δz ${dz} · Δy ${dy}）`,
     tip_lens: (k, m, ct, et, u) => `L${k} ${m} · 中心厚 ${ct} · 边缘厚 ${et} ${u}`,
+    tab_detectors: "探测器", nsc_title: "非序列系统", nsc_foot: "物体轮廓按非序列编辑器的参数画（ZOS-API GetMatrix 给出全局位置）；画不出轮廓的类型只列在表里。2D 为全局 YZ 截面。",
+    nsc_undrawn: "画不出轮廓的物体：", nsc_overlap: (a, b, d) => `第 ${a} 个物体与第 ${b} 个物体部分重叠（深约 ${d}），又没有嵌套关系`,
+    th_obj: ["#", "类型", "注释", "材料", "体散射", "面属性"], face_is: { reflective: "反射", absorbing: "吸收" }, face_word: "面", kind_source: "光源", kind_detector: "探测器",
+    det_none: "这一轮没有探测器读数。", det_note: "读数是这一轮判定最后一次追迹留在内存里的结果；判定没有追迹时为空。图为照度（W/cm²），每个像素一格。",
+    det_power: "功率", det_hits: "命中光线", det_pixels: "像素", det_peak: "最大照度",
   },
   en: {
     interview: "Interview & feasibility", demand_confirm: "Confirm demand", modeling: "Start designs & model", model_approve: "Approve model", design: "Autonomous design", deliver: "Delivery report",
@@ -47,7 +52,7 @@ const TEXT = {
     rounds_n: (n) => `round ${n}`, no_rounds: "no rounds yet",
     explore_run: (n) => `exploring ${n} candidates`, explore_done: (n, k) => `explored ${n} candidates, kept ${k}`,
     st_achieved: "achieved", st_exhausted: "exhausted", st_limit: "round limit", st_stopped: "stopped by user",
-    report_ready: "report written", report_todo: "report pending",
+    report_ready: "report written", report_todo: "report pending", deliver_cmd: "saos scan (tolerance, if needed) · saos report",
     back_demand: "demand change", back_model: "revise model", back_reach: "unreachable", feasibility: "question · hand bounds",
     explicit: "Explicit · Interactive Extension", standalone: "Background · standalone", no_daemon: "daemon not running",
     tab_control: "Window controls", tab_layout: "Layout", tab_spot: "Spot Diagram", tab_mtf: "MTF", tab_rounds: "Rounds",
@@ -58,8 +63,8 @@ const TEXT = {
     system: "System settings (read only)", refresh: "Refresh", loading: "loading…", queued: "sent; queued while the daemon is busy…",
     opened: (n) => `opened ${n}`, failed: "failed", aperture: "Aperture", units: "Units", stop: "Stop surface", fields: "Fields", waves: "Wavelengths", primary: "primary",
     no_viz: "After round 0 is recorded, its layout, spot diagram and MTF appear here.", viz_missing: "This round has no visual data (recorded with --no-viz or before saos ui).",
-    viz_failed: "The visual export of this round failed: ", spot_foot: (ref) => `Points: batch ray trace relative to the primary chief ray, vignetted rays left out. RMS / GEO: OpticStudio Standard Spot (reference ${ref}, all wavelengths), in µm.`,
-    mtf_foot: "Curves: OpticStudio FFT MTF export.", tangential: "Tangential", sagittal: "Sagittal", diff: "Diff. limit",
+    viz_failed: "The visual export of this round failed: ", spot_foot: (ref) => `Points: batch ray trace relative to the primary chief ray, vignetted rays left out. RMS / GEO: OpticStudio Standard Spot (reference ${ref}, all wavelengths), in µm. Standard Spot traces rays per wavelength in proportion to its weight, so wavelengths weighted below 1 often lose their rim rays and GEO can be smaller than the farthest point drawn.`,
+    mtf_foot: "Curves: OpticStudio FFT MTF export.", mtf_partial: "Not computable for all fields at once, so computed field by field: ", tangential: "Tangential", sagittal: "Sagittal", diff: "Diff. limit",
     layout_foot: "Geometry and rays: ZOS-API (GetGlobalMatrix, GetSag, batch ray trace).",
     layout_hint_3d: "drag to rotate · Shift or right-drag to pan · wheel zooms at the cursor · double-click to reset · hover a surface for its data", layout_hint_2d: "drag to pan · Shift or right-drag to measure (snaps to surface points) · wheel zooms at the cursor · double-click to reset · Esc clears the ruler · hover a surface for its data",
     image_z: "image z", round: "Round", tiers: "Tiers", gap: "Shortfall", state: "State", note: "Note", achieved: "achieved", deliverable: "deliverable",
@@ -72,6 +77,11 @@ const TEXT = {
     live_optimising: "optimising, rays update when it ends", opt_grid: "Grid", opt_labels: "Surface #", png_title: "Save the current view as PNG", tip_air: "air",
     ruler: (d, dz, dy, u) => `${d} ${u} (Δz ${dz} · Δy ${dy})`,
     tip_lens: (k, m, ct, et, u) => `L${k} ${m} · centre ${ct} · edge ${et} ${u}`,
+    tab_detectors: "Detectors", nsc_title: "Non-sequential system", nsc_foot: "Outlines follow the non-sequential editor's parameters (global placement from ZOS-API GetMatrix); types without an outline are only listed. 2D is the global YZ section.",
+    nsc_undrawn: "Objects without an outline: ", nsc_overlap: (a, b, d) => `objects ${a} and ${b} overlap (about ${d}) without nesting`,
+    th_obj: ["#", "Type", "Comment", "Material", "Volume physics", "Faces"], face_is: { reflective: "reflective", absorbing: "absorbing" }, face_word: "face", kind_source: "source", kind_detector: "detector",
+    det_none: "This round has no detector readings.", det_note: "Readings are what the last trace of this round's checks left in memory; empty when the checks traced nothing. The map is irradiance (W/cm²), one cell per pixel.",
+    det_power: "Power", det_hits: "Ray hits", det_pixels: "Pixels", det_peak: "Peak irradiance",
   },
 };
 const ANALYSIS_NAMES = {
@@ -155,7 +165,7 @@ function nodeSub(step) {
     if (!last) return t("no_rounds");
     return `${t("select_round", last.round)} · G ${fmtG(last.shortfall)} · ${last.tiers.join("+")}`;
   }
-  if (step.id === "deliver") return d ? `${t("st_" + d)} · ${step.status === "done" ? t("report_ready") : t("report_todo")}` : "saos report";
+  if (step.id === "deliver") return d ? `${t("st_" + d)} · ${step.status === "done" ? t("report_ready") : t("report_todo")}` : t("deliver_cmd");
   return "";
 }
 
@@ -256,19 +266,23 @@ const vizRounds = () => (state?.rounds || []).filter((r) => r.viz);
 function renderTabs() {
   const list = [];
   if (explicit()) list.push("control");
-  list.push("layout", "spot", "mtf", "rounds");
+  // 非序列系统没有点列图和 MTF，换成探测器读数 / a non-sequential system has detectors instead of spot and MTF
+  if (isNsc()) list.push("layout", "detectors", "rounds");
+  else list.push("layout", "spot", "mtf", "rounds");
   if (!tab || !list.includes(tab)) tab = list[0];
   $("tabs").innerHTML = list.map((k) => `<button class="tab ${k === tab ? "on" : ""}" data-tab="${k}" role="tab">${esc(t("tab_" + k))}</button>`).join("");
   const vr = vizRounds();
   const sel = $("round-select");
   const withLive = tab === "layout" && state?.live != null;
-  sel.hidden = !["layout", "spot", "mtf"].includes(tab) || (!vr.length && !withLive);
+  sel.hidden = !["layout", "spot", "mtf", "detectors"].includes(tab) || (!vr.length && !withLive);
   const opts = (withLive ? `<option value="live">${esc(t("live"))}</option>` : "") +
     vr.map((r) => `<option value="${r.round}">${t("select_round", r.round)} · G ${fmtG(r.shortfall)}</option>`).join("");
   if (sel.dataset.opts !== opts) { sel.innerHTML = opts; sel.dataset.opts = opts; }
   if (roundShown != null) sel.value = String(roundShown);
   $("dim-seg").hidden = tab !== "layout";
 }
+
+const isNsc = () => viz?.system?.mode === "non_sequential";
 
 // 布局默认看当前镜头（后台进程每次改动镜头后重写 view.json）；点列图和 MTF 只有轮次有 / the layout follows the current lens by default
 const wantsLive = () => tab === "layout" && state?.live != null && (pinnedRound === "live" || pinnedRound == null);
@@ -299,8 +313,10 @@ async function renderView() {
     const why = roundShown === "live" ? t("live_failed") + (viz.error || "") : viz.error?.includes?.("no viz.json") ? t("viz_missing") : t("viz_failed") + (viz.error || "");
     view.innerHTML = `<div class="empty">${esc(why)}</div>`; return;
   }
-  if (tab === "spot") renderSpot(view);
+  if (tab === "detectors") renderDetectors(view);
+  else if (tab === "spot") renderSpot(view);
   else if (tab === "mtf") renderMtf(view);
+  else if (isNsc()) renderNscLayout(view);
   else renderLayout(view);
 }
 
@@ -340,6 +356,13 @@ async function loadSystem() {
   try {
     const r = await api("system");
     const s = r.system;
+    if (s.mode === "non_sequential") {
+      el.className = "";
+      el.innerHTML = `<dl class="kv"><dt>${esc(t("units"))}</dt><dd>${esc(s.lens_units)}</dd></dl>
+        <table><tr><th>#</th><th>${esc(t("waves"))}</th><th class="num">µm</th><th class="num">w</th></tr>
+        ${s.wavelengths.map((w, i) => `<tr><td>${i + 1}</td><td>${w.primary ? `<span class="tag ok">${esc(t("primary"))}</span>` : ""}</td><td class="num">${sig(w.um, 6)}</td><td class="num">${sig(w.weight, 4)}</td></tr>`).join("")}</table>`;
+      return;
+    }
     const unit = s.fields.type === "Angle" ? "°" : "";
     el.className = "";
     el.innerHTML = `<dl class="kv"><dt>${esc(t("aperture"))}</dt><dd>${esc(s.aperture.type)} = ${sig(s.aperture.value, 6)}</dd>
@@ -452,7 +475,7 @@ function renderMtf(view) {
   const settings = Object.entries(mtf.settings || {}).filter(([, v]) => v != null).map(([k, v]) => `${k} ${v}`).join(" · ");
   view.innerHTML = `<div class="figure plot"><div class="fig-head"><div class="legend">${named.map((s, i) => `<span><i style="background:${FIELD_COLORS[i % FIELD_COLORS.length]}"></i>${esc(s.description)}</span>`).join("")}
     <span><i class="line"></i>${esc(t("tangential"))}</span><span><i class="line dash"></i>${esc(t("sagittal"))}</span></div></div><div id="mtf-plot"></div></div>
-    <div class="foot">${esc(t("mtf_foot"))} ${esc(settings)}</div>`;
+    <div class="foot">${esc(t("mtf_foot"))} ${esc(settings)}${mtf.per_field ? `<br>${esc(t("mtf_partial") + (viz.errors?.FftMtf || ""))}` : ""}</div>`;
   const host = $("mtf-plot");
   const head = view.querySelector(".fig-head").offsetHeight;
   const W = host.clientWidth, H = Math.max(300, Math.min(520, view.clientHeight - head - 90));
@@ -953,6 +976,124 @@ function renderLayout(view) {
 }
 
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && ruler) { ruler = null; if (tab === "layout" && renderLayout.redraw) renderLayout.redraw(); } });
+
+// ---------------- 非序列 ----------------
+
+function nscColor(o, mats) {
+  if (o.kind === "source") return "#e5a00d";
+  if (o.kind === "detector") return "#e0705f";
+  return MATERIAL_COLORS[Math.max(0, mats.indexOf((o.material || "").toLowerCase())) % MATERIAL_COLORS.length];
+}
+
+function renderNscLayout(view) {
+  const objs = viz.objects || [];
+  const sys = viz.system;
+  const unit = sys.lens_units === "Millimeters" ? "mm" : sys.lens_units;
+  const mats = [...new Set(objs.filter((o) => o.kind === "object").map((o) => (o.material || "").toLowerCase()))];
+  const clash = (viz.interference?.overlaps || []).map((o) => t("nsc_overlap", o.objects[0], o.objects[1], sig(o.depth, 2)));
+  const undrawn = objs.filter((o) => o.undrawn).map((o) => o.index);
+  const data = new Map((viz.object_data || []).map((o) => [o.index, o]));
+  const vpText = (vp) => (!vp || vp.model === "None" ? "—" : [vp.dll || vp.model, vp.mean_path != null ? `mfp ${sig(vp.mean_path, 4)}` : "", ...Object.entries(vp.params || {}).map(([k, v]) => `${k} ${sig(v, 4)}`)].filter(Boolean).join(" · "));
+  const title = roundShown === "live" ? `${t("live")} · ${viz.lens || ""}${viz.dirty ? ` · ${t("live_unsaved")}` : ""}` : t("select_round", roundShown);
+  // 只列改过默认设置的面：反射/吸收、膜层、面散射
+  const faceText = (d) => (d?.faces || []).filter((f) => f.is !== "default" || f.coating || f.profile || f.scatter?.model !== "none").map((f) => `${t("face_word")} ${f.face}: ${[
+    f.is !== "default" ? t("face_is")[f.is] || f.is : "", f.coating || "", f.profile ? `profile ${f.profile}` : "",
+    f.scatter && f.scatter.model !== "none" ? [f.scatter.model, f.scatter.fraction != null ? sig(f.scatter.fraction, 3) : "", f.scatter.reflect || f.scatter.transmit || f.scatter.dll || ""].filter(Boolean).join(" ") : ""].filter(Boolean).join(" · ")}`).join("; ") || "—";
+  const [h0, h1, h2, h3, h4, h5] = t("th_obj");
+  view.innerHTML = `<div class="layout-view"><div class="figure">
+    <div class="fig-head"><span class="info">${esc(t("nsc_title"))} · λ ${sys.wavelengths.map((w) => sig(w.um, 4)).join(", ")} µm</span><span class="fig-title">${esc(title)}</span></div>
+    ${clash.length ? `<div class="clash"><b>${esc(t("clash_title"))}</b>${clash.map((l) => `<div>${esc(l)}</div>`).join("")}</div>` : ""}
+    <div class="stage"><canvas></canvas><span class="zoom-chip"></span></div>
+    <div class="legend" style="margin:8px 0 0">${mats.map((m) => `<span><span class="swatch" style="background:${MATERIAL_COLORS[mats.indexOf(m) % MATERIAL_COLORS.length]}55;border-color:${MATERIAL_COLORS[mats.indexOf(m) % MATERIAL_COLORS.length]}"></span>${esc(m || "—")}</span>`).join("")}
+      <span><i class="line" style="border-color:#e5a00d"></i>${esc(t("kind_source"))}</span><span><i class="line" style="border-color:#e0705f"></i>${esc(t("kind_detector"))}</span></div></div>
+    <div class="foot">${esc(t("nsc_foot"))}${undrawn.length ? ` ${esc(t("nsc_undrawn"))}${undrawn.join(", ")}` : ""} <span>${esc(t(dim === "2d" ? "layout_hint_2d" : "layout_hint_3d"))}</span></div>
+    <details class="lens-data" open><summary>${esc(t("lens_data"))}</summary><div class="table-wrap"><table>
+      <tr><th>${h0}</th><th>${esc(h1)}</th><th>${esc(h2)}</th><th>${esc(h3)}</th><th>${esc(h4)}</th><th>${esc(h5)}</th></tr>
+      ${objs.map((o) => `<tr><td>${o.index}</td><td>${esc(o.type_label || o.type)}${data.get(o.index)?.file ? ` · ${esc(data.get(o.index).file)}` : ""}</td><td>${esc(o.comment)}</td><td>${esc(o.kind === "object" ? o.material || "—" : "—")}</td><td>${esc(vpText(data.get(o.index)?.volume_physics))}</td><td>${esc(faceText(data.get(o.index)))}</td></tr>`).join("")}
+    </table></div></details></div>`;
+  $("dim-seg").querySelectorAll("button").forEach((x) => { x.classList.toggle("on", x.dataset.dim === dim); x.disabled = false; x.title = ""; });
+  const stage = view.querySelector(".stage"), canvas = stage.querySelector("canvas"), zoomChip = stage.querySelector(".zoom-chip");
+  const lines = (o) => (dim === "2d" ? o.section || [] : o.edges || []);
+  const all = objs.flatMap((o) => [...(o.edges || []).flat(), ...(o.point ? [o.point] : [])]);
+  if (!all.length) { stage.innerHTML = `<div class="empty">${esc(t("nsc_undrawn"))}${undrawn.join(", ")}</div>`; return; }
+  const center = [0, 1, 2].map((k) => (Math.min(...all.map((p) => p[k])) + Math.max(...all.map((p) => p[k]))) / 2);
+  const project = (p, yaw, pitch) => {
+    const u = p[2] - center[2], v = p[1] - center[1], w = p[0] - center[0];
+    const u1 = u * Math.cos(yaw) + w * Math.sin(yaw), w1 = -u * Math.sin(yaw) + w * Math.cos(yaw);
+    return [u1, v * Math.cos(pitch) - w1 * Math.sin(pitch)];
+  };
+  function draw() {
+    const W = stage.clientWidth, H = stage.clientHeight, dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    const g = canvas.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.fillStyle = css("--plot-bg"); g.fillRect(0, 0, W, H);
+    const yaw = dim === "2d" ? 0 : camera.yaw, pitch = dim === "2d" ? 0 : camera.pitch;
+    const P = all.map((p) => project(p, yaw, pitch));
+    const lo = [0, 1].map((k) => Math.min(...P.map((q) => q[k]))), hi = [0, 1].map((k) => Math.max(...P.map((q) => q[k])));
+    const scale = Math.min((W - 80) / (hi[0] - lo[0] || 1), (H - 60) / (hi[1] - lo[1] || 1)) * camera.zoom;
+    const S = (p) => { const [u, v] = project(p, yaw, pitch); return [W / 2 + camera.panX + (u - (lo[0] + hi[0]) / 2) * scale, H / 2 + camera.panY - (v - (lo[1] + hi[1]) / 2) * scale]; };
+    zoomChip.textContent = camera.zoom === 1 ? "" : `${Math.round(camera.zoom * 100)} %`;
+    objs.forEach((o) => {
+      const col = nscColor(o, mats);
+      g.strokeStyle = col; g.fillStyle = col + "22"; g.lineWidth = o.kind === "object" ? 1.3 : 2;
+      lines(o).forEach((pts) => {
+        g.beginPath(); pts.forEach((p, i) => { const [x, y] = S(p); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+        if (dim === "2d" && o.closed) { g.closePath(); g.fill(); }
+        g.stroke();
+      });
+      if (o.point) { const [x, y] = S(o.point); g.fillStyle = col; g.beginPath(); g.arc(x, y, 4, 0, 2 * Math.PI); g.fill(); }
+    });
+    // 物体注释标在轮廓右上角 / comments at each outline's top right
+    g.font = `11px ${css("--mono")}`; g.fillStyle = css("--text-2"); g.textAlign = "left"; g.textBaseline = "bottom";
+    objs.forEach((o) => {
+      const pts = lines(o).flat().concat(o.point ? [o.point] : []);
+      if (!pts.length) return;
+      const q = pts.map(S), x = Math.max(...q.map((a) => a[0])), y = Math.min(...q.map((a) => a[1]));
+      g.fillText(`${o.index}${o.comment ? " " + o.comment : ""}`, Math.min(x + 4, W - 80), Math.max(y, 12));
+    });
+    const len = niceStep(110 / scale), x0 = 46, y0 = H - 18;
+    g.strokeStyle = css("--text-2"); g.lineWidth = 1.5; g.beginPath(); g.moveTo(x0, y0 - 5); g.lineTo(x0, y0); g.lineTo(x0 + len * scale, y0); g.lineTo(x0 + len * scale, y0 - 5); g.stroke();
+    g.textAlign = "center"; g.fillText(`${fmtLen(len, len)} ${unit}`, x0 + len * scale / 2, y0 - 3);
+  }
+  draw();
+  let drag = null;
+  canvas.onpointerdown = (e) => { drag = { x: e.clientX, y: e.clientY, pan: dim === "2d" || e.shiftKey || e.button === 2 }; canvas.setPointerCapture(e.pointerId); };
+  canvas.oncontextmenu = (e) => e.preventDefault();
+  canvas.onpointermove = (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (drag.pan) { camera.panX += dx; camera.panY += dy; } else { camera.yaw += dx * 0.008; camera.pitch = Math.max(-1.45, Math.min(1.45, camera.pitch + dy * 0.008)); }
+    drag.x = e.clientX; drag.y = e.clientY; draw();
+  };
+  canvas.onpointerup = () => { drag = null; };
+  canvas.onwheel = (e) => { e.preventDefault(); camera.zoom = Math.max(0.3, Math.min(200, camera.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12))); draw(); };
+  canvas.ondblclick = () => { Object.assign(camera, CAMERA0); draw(); };
+  renderLayout.redraw = draw;
+}
+
+function renderDetectors(view) {
+  const dets = viz.detectors || [];
+  if (!dets.length) { view.innerHTML = `<div class="empty">${esc(t("det_none"))}</div>`; return; }
+  view.innerHTML = `<div class="cards">${dets.map((d, k) => `<div class="card"><h3>${d.object} · ${esc(d.comment || d.type)}</h3>
+    <dl class="kv"><dt>${esc(t("det_power"))}</dt><dd>${sig(d.power, 4)} W</dd><dt>${esc(t("det_hits"))}</dt><dd>${d.hits}</dd>
+    <dt>${esc(t("det_pixels"))}</dt><dd>${(d.pixels || []).join(" × ")}</dd><dt>${esc(t("det_peak"))}</dt><dd id="det-peak-${k}"></dd></dl>
+    <div id="det-map-${k}"></div></div>`).join("")}</div><div class="foot">${esc(t("det_note"))}</div>`;
+  dets.forEach((d, k) => {
+    const grid = d.irradiance_grid;
+    if (!grid?.length) return;
+    const ny = grid.length, nx = grid[0].length, peak = Math.max(...grid.flat());
+    $(`det-peak-${k}`).textContent = `${sig(peak, 4)} W/cm²`;
+    const host = $(`det-map-${k}`), size = Math.min(320, host.clientWidth || 320);
+    const [, g] = canvasIn(host, size, size);
+    const cw = size / nx, ch = size / ny;
+    for (let i = 0; i < ny; i++) for (let j = 0; j < nx; j++) {
+      const v = peak > 0 ? grid[i][j] / peak : 0;
+      g.fillStyle = `hsl(${240 - 240 * v}, 80%, ${12 + 50 * Math.sqrt(v)}%)`;
+      g.fillRect(j * cw, (ny - 1 - i) * ch, Math.ceil(cw), Math.ceil(ch));
+    }
+  });
+}
 
 // ---------------- 轮次 ----------------
 
