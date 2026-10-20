@@ -56,7 +56,7 @@ uv run saos job create --name <名字>
 | `ref/repo/ai-zemax-optical-design` | 只借鉴经验，不复用代码（ADR-0001） |
 | `ref/repo/patent-lens-to-excel` | 只借鉴做法（JSON 中间格式、按 nd/νd 匹配玻璃），不调用其代码（ADR-0005） |
 
-两本教材出版较早，部分内容可能已经过时；拿不准时查最新的 OpticStudio 手册和几何光学资料。OCR 中的公式和表格质量不可靠，不能直接作为决策依据。光学胶与微透镜材料见 [library/materials/README.md](library/materials/README.md)，光纤项目的材料选择按 [材料建模基准](library/materials/FIBER_BASELINE.md)。
+两本教材出版较早，部分内容可能已经过时；拿不准时查最新的 OpticStudio 手册和几何光学资料。OCR 中的公式和表格质量不可靠，不能直接作为决策依据。光学胶与微透镜材料见 [library/materials/README.md](library/materials/README.md)，光纤项目的材料选择按 [材料建模基准](docs/recipes/fiber/FIBER_BASELINE.md)。
 
 ## 测试
 
