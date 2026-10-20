@@ -61,10 +61,11 @@ def test_docs_are_cross_job_or_per_recipe():
             continue
         rel = p.parts[1:]
         ok = rel in (("cli.md",), ("workflow.drawio",)) or (rel[0] == "adr" and len(rel) == 2 and re.match(r"\d{4}-[a-z0-9-]+\.md$", rel[1])) \
+            or (rel[0] == "plans" and len(rel) == 2 and rel[1].endswith(".md")) \
             or (rel[0] == "recipes" and len(rel) >= 3 and rel[1] in known)
         if not ok:
             bad.append(str(p))
-    assert bad == [], f"docs/ holds cli.md, workflow.drawio, adr/NNNN-*.md and recipes/<recipe>/ only: {bad}"
+    assert bad == [], f"docs/ holds cli.md, workflow.drawio, adr/NNNN-*.md, plans/*.md and recipes/<recipe>/ only: {bad}"
 
 
 @pytest.mark.parametrize("top", ["library", "experiments"])
