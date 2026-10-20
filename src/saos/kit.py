@@ -59,7 +59,7 @@ _READ_ARGS = (0, 0, 0, *([0.0] * 11))
 def system(ctx):
     """OpticStudio 的系统对象；假后端没有时返回 None。/ The OpticStudio system object; None on the fake backend."""
     backend = ctx.backend
-    return backend.system if hasattr(type(backend), "system") else None
+    return getattr(backend, "system", None)
 
 
 def zosapi(ctx):
@@ -442,21 +442,7 @@ def get(ctx, key: str) -> Any:
 
 def values(ctx, keys: Iterable[str]) -> dict[str, Any]:
     """几个参数的当前值。/ The current values of several parameters."""
-    keys = list(keys)
-    sysm = system(ctx)
-    names = surfaces_by_comment(ctx) if any(not _INT_RE.match(parse_key(k)[1]) for k in keys if parse_key(k)[0] == "surface") else {}
-    out: dict[str, Any] = {}
-    for key in keys:
-        kind, ref, param = parse_key(key)
-        if sysm is not None:
-            out[key] = _get_zos(ctx, sysm, kind, ref, param, names)
-        elif kind in ("system", "object"):
-            raise SaosError(ErrorCode.BAD_ARGS, f"{type(ctx.backend).__name__} has no system settings to read ({key})")
-        else:
-            index = surface(ctx, ref, names)
-            v = ctx.backend.surface_value(index, "radius" if param == "curvature" else param)
-            out[key] = (0.0 if v == 0 or math.isinf(v) else 1.0 / v) if param == "curvature" else v
-    return out
+    return {key: ctx.backend.get_param(key) for key in keys}
 
 
 def set(ctx, changes: dict[str, Any] | None = None, **kw: Any) -> None:  # noqa: A001 - 与 ctx.set 同名 / mirrors ctx.set
@@ -465,19 +451,8 @@ def set(ctx, changes: dict[str, Any] | None = None, **kw: Any) -> None:  # noqa:
     changes = {**(changes or {}), **kw}
     if not changes:
         return
-    sysm = system(ctx)
-    names = surfaces_by_comment(ctx) if any(parse_key(k)[0] == "surface" and not _INT_RE.match(parse_key(k)[1]) for k in changes) else {}
     for key, value in changes.items():
-        kind, ref, param = parse_key(key)
-        if sysm is not None:
-            _set_zos(ctx, sysm, kind, ref, param, value, names)
-        elif kind in ("system", "object"):
-            raise SaosError(ErrorCode.BAD_ARGS, f"{type(ctx.backend).__name__} has no system settings to write ({key})")
-        else:
-            index = surface(ctx, ref, names)
-            if param == "curvature":
-                param, value = "radius", (math.inf if float(value) == 0 else 1.0 / float(value))
-            ctx.backend.set_surface(index, param, value)
+        ctx.backend.set_param(key, value)
     if hasattr(ctx, "mark_dirty"):
         ctx.mark_dirty()
 
@@ -494,7 +469,7 @@ def kept(ctx, keys: Iterable[str]) -> Iterator[dict[str, Any]]:
 
 def configurations(ctx) -> int:
     """结构数（单结构为 1）。/ The number of configurations (1 for a single one)."""
-    return int(_need_system(ctx, "configurations").MCE.NumberOfConfigurations)
+    return ctx.backend.configuration_count()
 
 
 @contextmanager
@@ -503,16 +478,15 @@ def configuration(ctx, n: int) -> Iterator[None]:
     ctx.memo 的键要带上结构号。
     Switch to configuration n inside the block and back to the original one when it ends, errors included. Checks that
     measure each configuration use it, so the lens is unchanged after them; include the configuration in ctx.memo keys."""
-    mce = _need_system(ctx, "configuration").MCE
-    count = int(mce.NumberOfConfigurations)
+    count = ctx.backend.configuration_count()
     if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= count:
         raise SaosError(ErrorCode.BAD_ARGS, f"configuration must be 1–{count}, got {n!r}")
-    before = int(mce.CurrentConfiguration)
-    mce.SetCurrentConfiguration(n)
+    before = ctx.backend.current_configuration()
+    ctx.backend.select_configuration(n)
     try:
         yield
     finally:
-        mce.SetCurrentConfiguration(before)
+        ctx.backend.select_configuration(before)
 
 
 @contextmanager
@@ -624,46 +598,24 @@ def quick_focus(ctx) -> dict[str, Any]:
 
 
 def primary_wave(ctx) -> int:
-    sysm = _need_system(ctx, "primary_wave")
-    waves = sysm.SystemData.Wavelengths
-    for n in range(1, waves.NumberOfWavelengths + 1):
-        if waves.GetWavelength(n).IsPrimary:
-            return n
-    return 1
+    return ctx.backend.primary_wave()
 
 
 def material_nd(ctx, ref: int | str) -> float:
     """面材料的 nd：模型玻璃取求解里的 nd，目录材料从启用的目录里查（材料目录工具）。
     The nd of a surface's material: a model glass from its solve, a catalog material from the catalogs in use."""
-    sysm = _need_system(ctx, "material_nd")
-    row = sysm.LDE.GetSurfaceAt(surface(ctx, ref))
-    solve = row.MaterialCell.GetSolveData()
-    if str(solve.Type) == "MaterialModel":
-        return float(solve._S_MaterialModel.IndexNd)
-    from saos.backend.zos import catalog_constants
-
-    name = str(row.Material)
-    constants = catalog_constants(sysm, name)
-    if constants is not None:
-        return constants[0]
-    raise SaosError(ErrorCode.BAD_ARGS, f"material {name!r} of surface {ref} is not in the catalogs in use")
+    return float(ctx.backend.get_param(f"{surface(ctx, ref)}.nd"))
 
 
 def global_matrix(ctx, ref: int | str) -> tuple[np.ndarray, np.ndarray]:
     """面局部坐标 → 全局坐标：(3×3 旋转, 平移)，全局点 = R @ 局部点 + t。
     Local → global coordinates of a surface: (3×3 rotation, translation); global = R @ local + t."""
-    sysm = _need_system(ctx, "global_matrix")
-    m = sysm.LDE.GetGlobalMatrix(surface(ctx, ref), *([0.0] * 12))
-    if not m[0]:
-        raise SaosError(ErrorCode.ZOS_ERROR, f"GetGlobalMatrix failed for surface {ref}")
-    return np.array([float(v) for v in m[1:10]]).reshape(3, 3), np.array([float(v) for v in m[10:13]])
+    return ctx.backend.global_matrix(surface(ctx, ref))
 
 
 def sag(ctx, ref: int | str, x: float, y: float) -> float | None:
     """面在 (x, y) 处的矢高（LDE.GetSag）；该点没有定义时为 None。/ Surface sag at (x, y); None where undefined."""
-    sysm = _need_system(ctx, "sag")
-    r = sysm.LDE.GetSag(surface(ctx, ref), float(x), float(y), 0.0, 0.0)
-    return float(r[1]) if r[0] and math.isfinite(float(r[1])) else None
+    return ctx.backend.sag(surface(ctx, ref), float(x), float(y))
 
 
 # ---------- 光线 / rays ----------
@@ -690,6 +642,12 @@ class Rays:
     intensity: np.ndarray
     surface: int
 
+    @classmethod
+    def from_rows(cls, rays: np.ndarray, rows: np.ndarray, surface: int) -> Rays:
+        return cls(wave=rays[:, 0].astype(int), hx=rays[:, 1], hy=rays[:, 2], px=rays[:, 3], py=rays[:, 4],
+                   error=rows[:, 0].astype(int), vignette=rows[:, 1].astype(int), x=rows[:, 2], y=rows[:, 3], z=rows[:, 4],
+                   l=rows[:, 5], m=rows[:, 6], n=rows[:, 7], intensity=rows[:, 8], surface=surface)
+
     @property
     def ok(self) -> np.ndarray:
         finite = np.isfinite(self.x) & np.isfinite(self.y) & np.isfinite(self.z) & np.isfinite(self.l) & np.isfinite(self.m) & np.isfinite(self.n)
@@ -711,33 +669,9 @@ def pupil(n: int = 21) -> list[tuple[float, float]]:
 def trace(ctx, rays: Iterable[Iterable[float]], to: int | str | None = None) -> Rays:
     """归一化坐标的批量实际光线追迹。rays：(wave, hx, hy, px, py) 的序列；to：目标面，默认像面。
     Batch real-ray trace in normalised coordinates. rays: (wave, hx, hy, px, py) rows; to: target surface, default the image."""
-    sysm = _need_system(ctx, "trace")
     arr = np.asarray(list(rays), dtype=float).reshape(-1, 5)
-    count = len(arr)
-    target = int(sysm.LDE.NumberOfSurfaces) - 1 if to is None else surface(ctx, to)
-    out = np.zeros((count, 9))
-    if count:
-        rt = zosapi(ctx).Tools.RayTrace
-        tool = sysm.Tools.OpenBatchRayTrace()
-        if tool is None:
-            raise SaosError(ErrorCode.ZOS_ERROR, "cannot open the batch ray trace tool; another tool (an optimiser?) is still open")
-        try:
-            batch = tool.CreateNormUnpol(count, rt.RaysType.Real, target)
-            add, mode = batch.AddRay, getattr(rt.OPDMode, "None")
-            for wave, hx, hy, px, py in arr.tolist():
-                add(int(wave), hx, hy, px, py, mode)
-            tool.RunAndWaitForCompletion()
-            batch.StartReadingResults()
-            read = batch.ReadNextResult
-            for k in range(count):
-                r = read(*_READ_ARGS)
-                # 读取失败的行记为错误 -1 / a row that could not be read counts as error -1
-                out[k] = (r[2] if r[0] else -1, r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[14])
-        finally:
-            tool.Close()
-    return Rays(wave=arr[:, 0].astype(int), hx=arr[:, 1], hy=arr[:, 2], px=arr[:, 3], py=arr[:, 4],
-                error=out[:, 0].astype(int), vignette=out[:, 1].astype(int), x=out[:, 2], y=out[:, 3], z=out[:, 4],
-                l=out[:, 5], m=out[:, 6], n=out[:, 7], intensity=out[:, 8], surface=target)
+    target = _count(ctx) - 1 if to is None else surface(ctx, to)
+    return ctx.backend.trace_batch(arr, target)
 
 
 def spread(x: np.ndarray, y: np.ndarray) -> dict[str, Any]:
@@ -777,8 +711,11 @@ def spot(ctx, fields: Iterable[Iterable[float]] = ((0.0, 0.0),), wave: int | Ite
     pass_rate (%), chief (None when it does not arrive), centroid, rms_radius, geo_radius (about the centroid, lens
     units); with refocus=True also best_dz (see best_focus) and rms_radius_best there. Rows with fewer than min_rays
     arriving rays have valid False and None statistics."""
-    sysm = system(ctx)
-    if to is None and sysm is not None and bool(sysm.SystemData.Aperture.AFocalImageSpace):
+    try:
+        afocal = bool(ctx.backend.system_info().get("aperture", {}).get("afocal_image"))
+    except (SaosError, AttributeError, TypeError):
+        afocal = False
+    if to is None and afocal:
         # 无焦系统的像在无穷远：像面上的落点不反映像质，量会被当成镜头单位误读
         # an afocal system images to infinity: landing points on the image surface say nothing and would be read as lengths
         raise SaosError(ErrorCode.BAD_ARGS, "the system is afocal (image at infinity), so spot sizes on the image surface mean nothing; "
@@ -927,9 +864,8 @@ def cra(ctx, direction: Iterable[float] = (0.0, 1.0), wave: int | Iterable[int] 
     direction is the end point (hx, hy) in normalised field coordinates: (0, 1) is the +y full field with radial
     normalisation; the diagonal is (1, 1) with rectangular normalisation. wave defaults to every wavelength. A field point
     where any wavelength's chief ray fails counts as unreadable (coverage says so)."""
-    sysm = _need_system(ctx, "cra")
     dx, dy = (float(v) for v in direction)
-    waves = (list(range(1, int(sysm.SystemData.Wavelengths.NumberOfWavelengths) + 1)) if wave is None
+    waves = (list(range(1, ctx.backend.wavelength_count() + 1)) if wave is None
              else [int(wave)] if isinstance(wave, (int, np.integer)) else [int(w) for w in wave])
     per_wave: dict[float, list[float | None]] = {}
 
@@ -946,7 +882,7 @@ def cra(ctx, direction: Iterable[float] = (0.0, 1.0), wave: int | Iterable[int] 
     found = profile(evaluate, 0.0, 1.0, n, find="max", refine=refine)
     return {"quantity": "chief ray angle", "unit": "deg",
             "definition": "angle between the real chief ray (px=py=0) and the target surface's local z axis, largest over the wavelengths",
-            "direction": [dx, dy], "waves": waves, "surface": surface(ctx, to) if to is not None else int(sysm.LDE.NumberOfSurfaces) - 1,
+            "direction": [dx, dy], "waves": waves, "surface": surface(ctx, to) if to is not None else _count(ctx) - 1,
             "per_wave_at_extreme": dict(zip(waves, per_wave.get(found["at"], []))) if found["at"] is not None else None, **found}
 
 

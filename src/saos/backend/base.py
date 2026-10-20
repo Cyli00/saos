@@ -117,6 +117,54 @@ class Backend(ABC):
         """单个面参数的当前值（含 par<N> 面型参数）。/ The current value of one surface parameter (par<N> included)."""
         return self.surfaces()[index].get(param)
 
+    def get_param(self, key: str) -> Any:
+        from types import SimpleNamespace
+
+        from saos.kit import parse_key, surface
+
+        kind, ref, param = parse_key(key)
+        if kind != "surface":
+            raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} cannot read {key}")
+        value = self.surface_value(surface(SimpleNamespace(backend=self), ref), "radius" if param == "curvature" else param)
+        return (0.0 if value == 0 or math.isinf(value) else 1.0 / value) if param == "curvature" else value
+
+    def set_param(self, key: str, value: Any) -> None:
+        from types import SimpleNamespace
+
+        from saos.kit import parse_key, surface
+
+        kind, ref, param = parse_key(key)
+        if kind != "surface":
+            raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} cannot write {key}")
+        if param == "curvature":
+            param, value = "radius", math.inf if float(value) == 0 else 1.0 / float(value)
+        self.set_surface(surface(SimpleNamespace(backend=self), ref), param, value)
+
+    def trace_batch(self, rays, to: int):
+        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} has no real ray tracer")
+
+    def global_matrix(self, index: int):
+        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} has no surface transforms")
+
+    def sag(self, index: int, x: float, y: float) -> float | None:
+        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} has no surface geometry")
+
+    def primary_wave(self) -> int:
+        return next((i for i, w in enumerate(self.system_info()["wavelengths"], 1) if w["primary"]), 1)
+
+    def wavelength_count(self) -> int:
+        return len(self.system_info()["wavelengths"])
+
+    def configuration_count(self) -> int:
+        return 1
+
+    def current_configuration(self) -> int:
+        return 1
+
+    def select_configuration(self, n: int) -> None:
+        if isinstance(n, bool) or not isinstance(n, int) or n != 1:
+            raise SaosError(ErrorCode.BAD_ARGS, "this backend has only configuration 1")
+
     def substitute_catalog(self, catalog: str | None) -> str:
         """玻璃替换实际使用的目录名（不改镜头）；空串表示当前使用的全部目录。
         The catalog glass substitution will use, without touching the lens; empty means every catalog in use."""

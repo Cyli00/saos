@@ -14,7 +14,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from saos import config, geometry, glasscat
+from saos import config, geometry, glasscat, lens_files
 from saos.backend import nsc
 from saos.backend.base import (
     MATERIAL_MODES,
@@ -280,6 +280,73 @@ DEFAULT_SUBSTITUTE_CATALOG = "SAOS_CDGM_INPROD"
 
 
 class ZosBackend(Backend):
+    def get_param(self, key: str) -> Any:
+        from types import SimpleNamespace
+
+        from saos.kit import _get_zos, parse_key, surfaces_by_comment
+
+        ctx = SimpleNamespace(backend=self)
+        kind, ref, param = parse_key(key)
+        names = surfaces_by_comment(ctx) if kind == "surface" and not str(ref).lstrip("-").isdigit() else {}
+        return _get_zos(ctx, self.system, kind, ref, param, names)
+
+    def set_param(self, key: str, value: Any) -> None:
+        from types import SimpleNamespace
+
+        from saos.kit import _set_zos, parse_key, surfaces_by_comment
+
+        ctx = SimpleNamespace(backend=self)
+        kind, ref, param = parse_key(key)
+        names = surfaces_by_comment(ctx) if kind == "surface" and not str(ref).lstrip("-").isdigit() else {}
+        _set_zos(ctx, self.system, kind, ref, param, value, names)
+
+    def global_matrix(self, index: int):
+        import numpy as np
+
+        result = self._global(index)
+        if result is None:
+            raise SaosError(ErrorCode.ZOS_ERROR, f"GetGlobalMatrix failed for surface {index}")
+        return np.asarray(result[0], dtype=float).reshape(3, 3), np.asarray(result[1], dtype=float)
+
+    def sag(self, index: int, x: float, y: float) -> float | None:
+        return self._sag(index, float(x), float(y))
+
+    def configuration_count(self) -> int:
+        return int(self.system.MCE.NumberOfConfigurations)
+
+    def current_configuration(self) -> int:
+        return int(self.system.MCE.CurrentConfiguration)
+
+    def select_configuration(self, n: int) -> None:
+        if isinstance(n, bool) or not isinstance(n, int) or not 1 <= n <= self.configuration_count():
+            raise SaosError(ErrorCode.BAD_ARGS, f"configuration must be 1–{self.configuration_count()}, got {n!r}")
+        self.system.MCE.SetCurrentConfiguration(n)
+
+    def trace_batch(self, rays, to: int):
+        import numpy as np
+
+        from saos.kit import Rays
+
+        arr = np.asarray(list(rays), dtype=float).reshape(-1, 5)
+        out = np.zeros((len(arr), 9), dtype=float)
+        if len(arr):
+            rt = _load_zosapi(self.root).Tools.RayTrace
+            tool = self.system.Tools.OpenBatchRayTrace()
+            if tool is None:
+                raise SaosError(ErrorCode.ZOS_ERROR, "cannot open batch ray trace; another tool is open")
+            try:
+                batch = tool.CreateNormUnpol(len(arr), rt.RaysType.Real, to)
+                for wave, hx, hy, px, py in arr.tolist():
+                    batch.AddRay(int(wave), hx, hy, px, py, getattr(rt.OPDMode, "None"))
+                tool.RunAndWaitForCompletion()
+                batch.StartReadingResults()
+                for i in range(len(arr)):
+                    row = batch.ReadNextResult(0, 0, 0, *([0.0] * 11))
+                    out[i] = (row[2] if row[0] else -1, row[3], *row[4:10], row[14])
+            finally:
+                tool.Close()
+        return Rays.from_rows(arr, out, to)
+
     def __init__(self, mode: str = "standalone"):
         if mode not in ("standalone", "extension"):
             raise SaosError(ErrorCode.BAD_ARGS, f"unknown connection mode: {mode}")
@@ -575,6 +642,8 @@ class ZosBackend(Backend):
         self.system.SaveAs(str(path))
         if not path.is_file():
             raise SaosError(ErrorCode.ZOS_SAVE_FAILED, f"file not found after saving: {path}")
+        # OpticStudio 写出的 .zmx 已是完整镜头；留着旧伴随文件会让下次加载报不配对
+        lens_files.companion(path).unlink(missing_ok=True)
 
     def new_system(self) -> None:
         self.system.New(False)
@@ -605,9 +674,11 @@ class ZosBackend(Backend):
                 "type": str(sd.Aperture.ApertureType),
                 "value": float(sd.Aperture.ApertureValue),
                 "telecentric_object": bool(sd.Aperture.TelecentricObjectSpace),
+                "afocal_image": bool(sd.Aperture.AFocalImageSpace),
             },
             "fields": {
                 "type": str(fields.GetFieldType()),
+                "normalization": str(fields.Normalization),
                 "items": [
                     {"x": float(f.X), "y": float(f.Y), "weight": float(f.Weight)}
                     for f in (fields.GetField(i) for i in range(1, fields.NumberOfFields + 1))
