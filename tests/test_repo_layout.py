@@ -17,14 +17,14 @@ from saos import jobs as jobs_mod
 
 ROOT = Path(__file__).resolve().parents[1]
 
-ROOT_FILES = {"DESIGN.md", "GLOSSARY.md", "TODO.md", "AGENTS.md", "pyproject.toml", "uv.lock", ".gitignore"}
+ROOT_FILES = {"README.md", "DESIGN.md", "GLOSSARY.md", "TODO.md", "AGENTS.md", "pyproject.toml", "uv.lock", ".gitignore"}
 ROOT_DIRS = {"src", "skills", "docs", "library", "tests", "experiments", ".claude"}
 JUNK = re.compile(r"\.(log|tmp|bak|orig|zda|pyc)$|(^|/)(~\$|\.~)|\.zmx$", re.I)
 
 INSTANCE_ENTRIES = {"daemon", "jobs"}
 JOB_ENTRIES = {
     # 工具写入
-    "job.json", "log.jsonl", "ledger.jsonl", "seals.jsonl", "confirmations.jsonl", "stops.jsonl", "ruled_out.jsonl", "progress.json", "view.json", "cancel.request", "sources", "lenses", "models", "scripts", "analyses", "screens", "evaluations", "rounds", "report", "probes", "parallel", "scans",
+    "job.json", "log.jsonl", "ledger.jsonl", "seals.jsonl", "confirmations.jsonl", "stops.jsonl", "ruled_out.jsonl", "progress.json", "view.json", "cancel.request", "sources", "lenses", "models", "scripts", "analyses", "screens", "evaluations", "rounds", "report", "probes", "parallel", "scans", "runs",
     # agent 写入
     "notes", "checks", "explore",
     # 显微物镜配方（规格与验收评估）

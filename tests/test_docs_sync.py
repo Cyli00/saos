@@ -1,4 +1,4 @@
-"""工作流写在五处（AGENTS.md）：这里自动核对其中能机械核对的部分，减少靠人记得同步。
+"""工作流写在四处（AGENTS.md），DESIGN.md 也会提到命令：这里自动核对其中能机械核对的部分，减少靠人记得同步。
 
 - SKILL.md、demand.md、DESIGN.md、docs/cli.md 代码片段里和 workflow.drawio 命令框里出现的 `saos <命令> [<子命令>]` 都存在于命令行；
   已删除的命令只能以历史说明出现。

@@ -1,24 +1,23 @@
 # Working on the saos repository
 
-`DESIGN.md` is the design; `skills/saos/` is what the agent running a job reads. The rules below are about changing this repository.
+`skills/saos/` is what the agent running a job reads; the code and `docs/cli.md` say how each command works. `DESIGN.md` records only the design principles, the decisions the user made with their reasons, and the directory rules. The rules below are about changing this repository.
 
-## The workflow lives in five places; change them together
+## The workflow lives in four places; change them together
 
 A change to the workflow (a step, a gate, what the agent does before or after a step, the stop rule, a command or flag a step uses) is not done until each of these says the same thing:
 
 1. `skills/saos/SKILL.md`, and `skills/saos/demand.md` when the demand format or its confirmation changes.
-2. `DESIGN.md`, section 工作方式 (and 终止规则 for the stop rule).
-3. The user's workflow window: steps and their status in `src/saos/ui/stage.py` (`STEPS`, `snapshot`), node labels, sub-text and return edges in `src/saos/ui/static/app.js` (`NODES`, `TEXT` in both languages, `back(...)`). The window infers steps from job files only: a step that leaves no file behind belongs in the label or sub-text of the step it is part of, not in a new node. Return edges each need their own lane.
-4. The workflow diagram `docs/workflow.drawio`.
-5. `docs/cli.md` for every command or flag that was added or changed.
+2. The user's workflow window: steps and their status in `src/saos/ui/stage.py` (`STEPS`, `snapshot`), node labels, sub-text and return edges in `src/saos/ui/static/app.js` (`NODES`, `TEXT` in both languages, `back(...)`). The window infers steps from job files only: a step that leaves no file behind belongs in the label or sub-text of the step it is part of, not in a new node. Return edges each need their own lane.
+3. The workflow diagram `docs/workflow.drawio`.
+4. `docs/cli.md` for every command or flag that was added or changed.
 
 `tests/test_docs_sync.py` checks that every `saos` command named in SKILL.md, demand.md, DESIGN.md, docs/cli.md and the diagram exists, and that the diagram names the command of every step; the wording itself is still yours to keep in step.
 
 When one of them cannot follow yet, say which one and why in your report instead of leaving it silently behind.
 
-## Checks that run the program
+Change `DESIGN.md` only when a principle, a user decision or a directory rule changes, and then in a sentence or two with the reason. Commands, flags, thresholds, measured timings and incident stories stay out of it: they live in the four places above and in the code, where they cannot drift from what runs.
 
-The main agent does not run these after a workflow change. The verifier runs them when the user asks for verification; until then the main agent's report lists them as not yet checked.
+## Checks that run the program
 
 - The workflow window in a browser: `uv run saos ui open --job J --no-window` gives the URL. Check that the steps, labels and return edges match the change.
 - The workflow diagram: `SAOS_RENDER_DRAWIO=1 uv run pytest tests/test_docs_sync.py -s` renders `docs/workflow.drawio` with the draw.io viewer and prints the PNG path (needs Chrome and the network); look at the PNG.

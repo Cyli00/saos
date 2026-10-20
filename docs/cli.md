@@ -202,7 +202,7 @@ agent 只通过 `uv run saos ...` 操作 Zemax。每条命令向标准输出打�
 ```
 work/<实例名>/
   daemon/            state.json、authkey、daemon.log（后台进程运行时存在）；ui.json、ui.log、ui-chrome/（saos ui 的服务状态、日志和 Chrome 配置目录）
-  jobs/<job_id>/     每一步产生哪些文件、谁写、能否改动：见 DESIGN.md「任务目录」
+  jobs/<job_id>/     每一步产生哪些文件、谁写、能否改动：见 skills/saos/SKILL.md「Where files go」
     job.json         任务状态
     log.jsonl        执行记录：每条命令的参数、结果、错误码、耗时
     seals.jsonl      封存文件的哈希（saos job verify 据此检查）
