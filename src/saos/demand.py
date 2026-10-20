@@ -597,7 +597,11 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
               "demand": demand, "demand_sha": digest(demand), "method_sha": method_digest(scripts),
               "support_files": support, **({"saos_code_files": code} if code else {}),
               "environment": {"saos_code_sha256": getattr(daemon, "code_sha256", None),
-                              "opticstudio": (getattr(daemon, "zos_info", None) or {}).get("version")},
+                              "opticstudio": ((getattr(daemon, "zos_info", None) or {}).get("version")
+                                              if (getattr(daemon, "zos_info", None) or {}).get("backend") != "optiland" else None),
+                              "backend": (getattr(daemon, "zos_info", None) or {}).get("backend", "zos"),
+                              "backend_version": (getattr(daemon, "zos_info", None) or {}).get("version"),
+                              "precision": (getattr(daemon, "zos_info", None) or {}).get("precision")},
               "lens": lens or ctx.describe(), "evidence_dir": folder.relative_to(ctx.job.root).as_posix(),
               "evidence_file": (folder / "result.json").relative_to(ctx.job.root).as_posix()}
     write_json(folder / "result.json", result)

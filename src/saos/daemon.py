@@ -15,13 +15,14 @@ import secrets
 import shutil
 import sys
 import time
+import traceback
 from dataclasses import dataclass
 from datetime import datetime
 from multiprocessing.connection import Connection, Listener
 from pathlib import Path
 from typing import Any, Callable
 
-from saos import config, geometry, i18n, jobs, parallel, prescription, scripting, workflow
+from saos import config, geometry, i18n, jobs, lens_files, parallel, prescription, scripting, workflow
 from saos.backend import Backend, make_backend
 from saos.backend.base import same_number
 from saos.protocol import ErrorCode, SaosError, decode, encode, fail, ok, write_json
@@ -38,7 +39,7 @@ REQUEST_READ_TIMEOUT_S = 30
 # 显性调试：这些操作可能改变镜头，结束后刷新已打开的分析窗口
 # 可能跑很久的操作：开始和结束都写进 progress.json，开始前清掉旧的取消请求
 # operations that may run long: their start and end go to progress.json; a stale cancel request is cleared first
-LONG_OPS = frozenset({"opt.local", "opt.hammer", "opt.global", "script.exec", "round.record", "demand.check", "scan.run"})
+LONG_OPS = frozenset({"opt.local", "opt.hammer", "opt.global", "opt.glass", "script.exec", "round.record", "demand.check", "scan.run"})
 REFRESH_AFTER = frozenset({"lens.load", "lens.set", "lens.build", "opt.local", "opt.hammer", "opt.global", "script.exec", "round.record"})
 # 优化运行中多久给流程图窗口推一次当前镜头（只有几何，不带光线）/ how often a running optimisation updates the live view
 VIEW_DURING_OPT_S = 5.0
@@ -133,6 +134,7 @@ class Daemon:
             "opt.local": self.op_optimize,
             "opt.hammer": lambda args: self.op_search({**args, "kind": "hammer"}),
             "opt.global": lambda args: self.op_search({**args, "kind": "global"}),
+            "opt.glass": self.op_glass,
             "script.exec": self.op_exec,
             "demand.check": self.op_check,
             "scan.run": self.op_scan,
@@ -423,13 +425,19 @@ class Daemon:
         if dest.exists() and not args.get("overwrite", False):
             raise SaosError(ErrorCode.FILE_EXISTS, f"job {job.id} already has {name}; pass overwrite to replace it")
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dest)
+        from saos.lens_files import copy_lens
+
+        copy_lens(src, dest)
         return {"job": job.id, "file": job.relative_lens(dest), "source": str(src)}
 
     def op_load(self, args: dict[str, Any]) -> dict[str, Any]:
         job = self._job(args)
         path = job.resolve_lens(_arg(args, "file", str), must_exist=True)
         captured = self._before_replace(job, bool(args.get("discard", False)), "loading another lens")
+        from saos.lens_files import read_companion
+
+        # 镜头与伴随文件不配对时在动当前镜头之前报错，当前镜头保持加载 / refuse a mismatched pair before the current lens is touched
+        read_companion(path)
         self.loaded = None
         self.backend.load(path)
         self.loaded = Loaded(job, path)
@@ -638,10 +646,23 @@ class Daemon:
             if outside:
                 extra["note"] = (f"the current glass of surfaces {[o['surface'] for o in outside]} is not in {catalog}; substitution will "
                                  "replace it with glasses of that catalog. Pass --catalog per surface to stay with a maker")
+        minimum = _arg(args, "min", (int, float), default=None)
+        maximum = _arg(args, "max", (int, float), default=None)
+        bounded = minimum is not None or maximum is not None
+        if bounded:
+            # 边界只有 Optiland 的优化器用；OpticStudio 没有逐变量边界，要用评价函数里的边界操作数
+            # bounds are used by the Optiland optimiser only; OpticStudio has no per-variable bounds
+            if not on or param == "material":
+                raise SaosError(ErrorCode.BAD_ARGS, "--min / --max go with a numeric variable, not with --off or --param material")
+            if getattr(self.backend, "set_bounds", None) is None:
+                raise SaosError(ErrorCode.BAD_ARGS, "OpticStudio has no per-variable bounds; constrain the value with boundary operands "
+                                                    "in the merit function instead (saos opt merit add, e.g. CTGT / CTLT / ETGT)")
         solves: dict[int, str] = {}
         try:
             for s in surfaces:
                 solves[int(s)] = self.backend.vary(int(s), param, on, mode, catalog)
+            if bounded:
+                extra["bounds"] = {int(s): self.backend.set_bounds(int(s), param, minimum, maximum) for s in surfaces}
         except Exception as exc:
             # BAD_ARGS 是改动前的校验；其他错误可能出在加目录或设 solve 之后，保守地当作镜头已改
             # BAD_ARGS comes from checks before any change; any other error may follow an added catalog or a set solve
@@ -691,7 +712,8 @@ class Daemon:
         return {**loaded.describe(), "config_solves": solves}
 
     def op_merit(self, args: dict[str, Any]) -> dict[str, Any]:
-        loaded = self._require_loaded(self._job(args))
+        job = self._job(args)
+        loaded = self._require_loaded(job)
         action = _arg(args, "action", str)
         if action == "clear":
             self.backend.merit_clear()
@@ -699,11 +721,56 @@ class Daemon:
             self.backend.merit_wizard(_arg(args, "settings", dict, default={}))
         elif action == "add":
             self.backend.merit_add(_arg(args, "rows", list))
+        elif action == "script":
+            setter = getattr(self.backend, "set_merit_script", None)
+            if setter is None:
+                raise SaosError(ErrorCode.BAD_ARGS, "a merit loss script runs on the Optiland backend only; the lens is open in OpticStudio")
+            source = _arg(args, "source", str)
+            namespace: dict[str, Any] = {"__name__": "saos_merit_script_check"}
+            try:
+                exec(compile(source, "<merit script>", "exec"), namespace)
+            except Exception as exc:
+                raise SaosError(ErrorCode.SCRIPT_ERROR, f"the merit script does not load: {type(exc).__name__}: {exc}") from exc
+            if not callable(namespace.get("loss")):
+                raise SaosError(ErrorCode.BAD_ARGS, "the merit script must define loss(ctx)")
+            copy = scripting.next_copy(job, _arg(args, "name", str))
+            copy.write_text(source, encoding="utf-8")
+            setter(source, copy.relative_to(job.root).as_posix(), _arg(args, "weight", (int, float), default=1.0))
         elif action != "show":
             raise SaosError(ErrorCode.BAD_ARGS, f"unknown merit action {action}")
         if action != "show":
             loaded.dirty = True
-        return {**loaded.describe(), "merit": self.backend.merit_value(), "rows": self.backend.merit_rows()}
+        kw = self._merit_script_kw(job)
+        return {**loaded.describe(), "merit": self.backend.merit_value(**kw), "rows": self.backend.merit_rows(**kw)}
+
+    def _merit_script_kw(self, job: jobs.Job) -> dict[str, Any]:
+        """评价函数里有损失脚本时，编译出调用它的函数（每次用同一个 ctx），以 {"script": fn} 交给后端；没有时为空。
+        With a loss script in the merit function, compile it into a callable (one ctx for every call) passed as script."""
+        get = getattr(self.backend, "merit_script", None)
+        stored = get() if get is not None else None
+        if not stored:
+            return {}
+        path = job.root / stored["name"]
+        namespace: dict[str, Any] = {"__name__": "saos_merit_script", "__file__": str(path)}
+        try:
+            exec(compile(stored["source"], str(path), "exec"), namespace)
+        except Exception as exc:
+            raise SaosError(ErrorCode.SCRIPT_ERROR, f"merit script {stored['name']} does not compile: {type(exc).__name__}: {exc}") from exc
+        loss = namespace.get("loss")
+        if not callable(loss):
+            raise SaosError(ErrorCode.BAD_ARGS, f"merit script {stored['name']} must define loss(ctx)")
+        ctx = scripting.ScriptContext(self, job, {}, script=path)
+
+        def run() -> Any:
+            try:
+                return loss(ctx)
+            except SaosError:
+                raise
+            except Exception as exc:
+                raise SaosError(ErrorCode.SCRIPT_ERROR, f"merit script {stored['name']} raised {type(exc).__name__}: {exc}",
+                                {"traceback": traceback.format_exc()[-4000:]}) from exc
+
+        return {"script": run}
 
     def _optimizer_hooks(self, job: jobs.Job, stage: str) -> Callable[[dict[str, Any]], None]:
         last_view = [time.monotonic()]
@@ -810,11 +877,15 @@ class Daemon:
         workflow.preflight(job.root)
         ids = self._measure_ids(job, args)
         before = self._measure_before(job, ids)
+        kw = self._merit_script_kw(job)
+        device = _arg(args, "device", str, default=None)
+        if device is not None:
+            kw["device"] = device
         try:
             result = self.backend.optimize(str(args.get("cycles", "auto")), args.get("cores") or config.compute_cores(),
                                            max_seconds=_arg(args, "max_seconds", (int, float), default=None),
                                            algorithm=_arg(args, "algorithm", str, default=None),
-                                           on_progress=self._optimizer_hooks(job, "opt.local"), should_cancel=job.cancel_requested)
+                                           on_progress=self._optimizer_hooks(job, "opt.local"), should_cancel=job.cancel_requested, **kw)
         finally:
             # 出错时编辑器里也是优化器走到的系统，不能当作未改动 / after an error the editor still holds what the optimiser reached
             loaded.dirty = True
@@ -847,9 +918,13 @@ class Daemon:
                             "global search would overwrite them. Save the lens elsewhere first (saos lens save --as NAME)")
         ids = self._measure_ids(job, args)
         measured = self._measure_before(job, ids)
+        kw = self._merit_script_kw(job)
+        method = _arg(args, "method", str, default=None)
+        if method is not None:
+            kw["method"] = method
         try:
             result = self.backend.optimize_search(kind, args.get("cores") or config.compute_cores(), max_seconds=float(max_seconds),
-                                                  on_progress=self._optimizer_hooks(job, f"opt.{kind}"), should_cancel=job.cancel_requested)
+                                                  on_progress=self._optimizer_hooks(job, f"opt.{kind}"), should_cancel=job.cancel_requested, **kw)
         finally:
             loaded.dirty = True
             written = sorted(p for p in lens_dir.glob(pattern) if before.get(p.name) != p.stat().st_mtime_ns)
@@ -871,7 +946,37 @@ class Daemon:
             target = folder / p.name
             shutil.move(str(p), target)
             out.append(job.relative_lens(target))
+            # Optiland 写的系统带同名伴随文件，一起移走 / systems Optiland wrote carry a companion file that moves with them
+            side = lens_files.companion(p)
+            if side.exists():
+                shutil.move(str(side), lens_files.companion(target))
         return out
+
+    def op_glass(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Optiland 阶段的在产玻璃替换（贪心邻域搜索，每种候选都重新局部优化），结束后同 opt local 复核。"""
+        job = self._job(args)
+        loaded = self._require_loaded(job)
+        run = getattr(self.backend, "optimize_glass", None)
+        if run is None:
+            raise SaosError(ErrorCode.BAD_ARGS, "opt glass is the Optiland stage's glass substitution; in OpticStudio use opt hammer "
+                                                "or opt global with opt vary --param material --mode substitute")
+        workflow.preflight(job.root)
+        ids = self._measure_ids(job, args)
+        before = self._measure_before(job, ids)
+        surfaces = _arg(args, "surfaces", list, default=None)
+        if surfaces is not None and any(isinstance(s, bool) or not isinstance(s, int) for s in surfaces):
+            raise SaosError(ErrorCode.BAD_ARGS, f"surfaces must be integers, got {surfaces!r}")
+        catalog = _arg(args, "catalog", str, default=None) or self.backend.substitute_catalog(None) or "SAOS_CDGM_INPROD"
+        try:
+            result = run(surfaces=surfaces, catalog=catalog, neighbours=_arg(args, "neighbours", int, default=7),
+                         cycles=str(args.get("cycles") or "auto"), max_seconds=_arg(args, "max_seconds", (int, float), default=None),
+                         algorithm=_arg(args, "algorithm", str, default=None), on_progress=self._optimizer_hooks(job, "opt.glass"),
+                         should_cancel=job.cancel_requested, **self._merit_script_kw(job))
+        finally:
+            loaded.dirty = True
+        if result.get("stopped_by"):
+            job.write_progress(stopped_by=result["stopped_by"])
+        return {**loaded.describe(), **result, "review": self._review(job, ids, before)}
 
     def op_exec(self, args: dict[str, Any]) -> dict[str, Any]:
         """执行 agent 编写的脚本（ADR-0007）。当前加载的是其他任务的镜头时拒绝。"""
@@ -949,7 +1054,7 @@ def serve(mode: str, token: str = "") -> int:
     error_file.unlink(missing_ok=True)
 
     backend = make_backend(mode)
-    log.info(_t("后台进程 %s 启动，连接 OpticStudio（%s）", "daemon %s starting, connecting to OpticStudio (%s)"), os.getpid(), mode)
+    log.info(_t("后台进程 %s 启动，后端 %s（%s）", "daemon %s starting, backend %s (%s)"), os.getpid(), config.backend_name(), mode)
     try:
         zos_info = backend.start()
     except SaosError as exc:
@@ -988,7 +1093,7 @@ def serve(mode: str, token: str = "") -> int:
             "opticstudio": zos_info,
         },
     )
-    log.info(_t("就绪：%s，OpticStudio %s", "ready: %s, OpticStudio %s"), config.pipe_address(), zos_info.get("version"))
+    log.info(_t("就绪：%s，%s %s", "ready: %s, %s %s"), config.pipe_address(), zos_info.get("backend", "zos"), zos_info.get("version"))
     try:
         while not daemon.stopping:
             try:

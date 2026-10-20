@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0012（2026-10-20：Optiland 做默认计算后端，OpticStudio 在用户认可结果后验证并继续优化）
 ---
 
 # 光学计算只经 ZOS-API，并发靠多个 OpticStudio 实例

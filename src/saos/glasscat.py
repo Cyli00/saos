@@ -43,6 +43,31 @@ def load_catalog(path: Path) -> list[Glass]:
     return glasses
 
 
+def load_optical_catalog(path: Path) -> dict[str, dict]:
+    constants = {glass.name.upper(): glass for glass in load_catalog(path)}
+    records: dict[str, dict] = {}
+    current = None
+    for line in _decode(path.read_bytes()).splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        if parts[0] == "NM":
+            current = None
+            if len(parts) > 2 and parts[1].upper() in constants:
+                glass = constants[parts[1].upper()]
+                current = {"glass": glass, "formula": int(float(parts[2])), "coefficients": [], "thermal": [],
+                           "expansion": [], "range": None, "transmission": []}
+                records[glass.name.upper()] = current
+        elif current is not None and parts[0] in ("CD", "TD", "ED", "LD", "IT"):
+            values = [float(value.replace("D", "E").replace("d", "e")) for value in parts[1:]]
+            key = {"CD": "coefficients", "TD": "thermal", "ED": "expansion", "LD": "range", "IT": "transmission"}[parts[0]]
+            if key == "transmission":
+                current[key].append(values)
+            else:
+                current[key] = values
+    return records
+
+
 # 在产：厂家目录里标为 Standard 或 Preferred 的牌号（2026-10-19 用户决定）/ in production: Standard or Preferred in the maker's catalog
 IN_PRODUCTION = ("Standard", "Preferred")
 CRLF = chr(13) + chr(10)

@@ -28,6 +28,10 @@ const TEXT = {
     viz_failed: "这一轮的可视化导出失败：", spot_foot: (ref) => `点：批量光线追迹，相对主波长主光线，未计被拦光线。RMS / GEO：OpticStudio Standard Spot（参考 ${ref}，全部波长），单位 µm。Standard Spot 每个波长追的光线数与波长权重成正比，权重小于 1 的波长常漏掉边缘光线，所以 GEO 可能小于图中最远的点。`,
     mtf_foot: "曲线：OpticStudio FFT MTF 导出。", mtf_partial: "全部视场一起算不出，改为逐个视场算：", tangential: "子午 T", sagittal: "弧矢 S", diff: "衍射极限",
     layout_foot: "几何与光线坐标：ZOS-API（GetGlobalMatrix、GetSag、批量光线追迹）。",
+    layout_foot_opt: "几何与光线坐标：Optiland 0.6.3（面坐标系、矢高、批量光线追迹，float64）。",
+    spot_foot_opt: (ref) => `点：Optiland 批量光线追迹，相对主波长主光线，未计被拦光线。RMS / GEO：saos 的 Optiland 点列分析（参考 ${ref}，六角采样，每个波长光线数相同），单位 µm。`,
+    mtf_foot_opt: "曲线：Optiland FFT MTF，主波长（多波长 MTF 尚未接入）。",
+    modeling_sub: "scan candidates · lens describe（双端对齐）",
     layout_hint_3d: "拖动旋转 · Shift 或右键拖动平移 · 滚轮以光标为中心缩放 · 双击复位 · 指向某面看参数", layout_hint_2d: "拖动平移 · Shift 或右键拖动测距（吸附面上的点）· 滚轮以光标为中心缩放 · 双击复位 · Esc 清除测距 · 指向某面看参数",
     image_z: "像面 z", round: "轮", tiers: "层级", gap: "目标差距", state: "状态", note: "说明", achieved: "达成", deliverable: "可交付",
     pick_round: "点一行在其他视图中查看该轮", sag_flat: "部分面读不到面形，按平面画。", select_round: (n) => `r${String(n).padStart(3, "0")}`,
@@ -66,6 +70,10 @@ const TEXT = {
     viz_failed: "The visual export of this round failed: ", spot_foot: (ref) => `Points: batch ray trace relative to the primary chief ray, vignetted rays left out. RMS / GEO: OpticStudio Standard Spot (reference ${ref}, all wavelengths), in µm. Standard Spot traces rays per wavelength in proportion to its weight, so wavelengths weighted below 1 often lose their rim rays and GEO can be smaller than the farthest point drawn.`,
     mtf_foot: "Curves: OpticStudio FFT MTF export.", mtf_partial: "Not computable for all fields at once, so computed field by field: ", tangential: "Tangential", sagittal: "Sagittal", diff: "Diff. limit",
     layout_foot: "Geometry and rays: ZOS-API (GetGlobalMatrix, GetSag, batch ray trace).",
+    layout_foot_opt: "Geometry and rays: Optiland 0.6.3 (surface frames, sag, batch ray trace, float64).",
+    spot_foot_opt: (ref) => `Points: Optiland batch ray trace relative to the primary chief ray, vignetted rays left out. RMS / GEO: saos's Optiland spot analysis (reference ${ref}, hexapolar sampling, the same rays for every wavelength), in µm.`,
+    mtf_foot_opt: "Curves: Optiland FFT MTF at the primary wavelength (polychromatic MTF not connected yet).",
+    modeling_sub: "scan candidates · lens describe (dual-backend check)",
     layout_hint_3d: "drag to rotate · Shift or right-drag to pan · wheel zooms at the cursor · double-click to reset · hover a surface for its data", layout_hint_2d: "drag to pan · Shift or right-drag to measure (snaps to surface points) · wheel zooms at the cursor · double-click to reset · Esc clears the ruler · hover a surface for its data",
     image_z: "image z", round: "Round", tiers: "Tiers", gap: "Shortfall", state: "State", note: "Note", achieved: "achieved", deliverable: "deliverable",
     pick_round: "Click a row to view that round in the other tabs", sag_flat: "Some surface shapes could not be read; drawn flat.", select_round: (n) => `r${String(n).padStart(3, "0")}`,
@@ -148,6 +156,11 @@ const NODES = [
 ];
 const NX = 20, NW = 226;
 
+// 当前数据来自 Optiland 时换用对应的图注 / footers for data computed by Optiland
+function foot(key, ...args) {
+  return t(viz && viz.system && viz.system.backend === "optiland" ? key + "_opt" : key, ...args);
+}
+
 function nodeSub(step) {
   const d = step.detail;
   if (step.id === "interview") return d ? t(d) : t("feasibility");
@@ -156,7 +169,7 @@ function nodeSub(step) {
     if (step.status === "active" && state.progress) return `${state.progress.op}`;
     const x = d && d.exploration;
     if (x) return x.finished ? t("explore_done", x.candidates, x.kept) : t("explore_run", x.candidates);
-    return "scan candidates · lens describe";
+    return t("modeling_sub");
   }
   if (step.id === "model_approve") return typeof d === "string" ? d : "saos lens approve";
   if (step.id === "design") {
@@ -419,7 +432,7 @@ function renderSpot(view) {
   view.innerHTML = `<div class="figure" style="min-width:${cols * CELL + (cols - 1) * GAP + 30}px">
     <div class="fig-head"><div class="legend">${sys.wavelengths.map((w, i) => `<span><i style="background:${colors[i]}"></i>${Math.round(w.um * 1000)} nm</span>`).join("")}</div></div>
     <div class="spot-grid" style="grid-template-columns:repeat(${cols},minmax(${CELL}px,1fr))"></div></div>
-    <div class="foot">${esc(t("spot_foot", spot.analysis_settings?.ReferTo || "—"))}</div>`;
+    <div class="foot">${esc(foot("spot_foot", spot.analysis_settings?.ReferTo || "—"))}</div>`;
   const grid = view.querySelector(".spot-grid");
   const pw = sys.primary_wave - 1;
   const width = (grid.clientWidth - (cols - 1) * GAP) / cols - 14;
@@ -475,7 +488,7 @@ function renderMtf(view) {
   const settings = Object.entries(mtf.settings || {}).filter(([, v]) => v != null).map(([k, v]) => `${k} ${v}`).join(" · ");
   view.innerHTML = `<div class="figure plot"><div class="fig-head"><div class="legend">${named.map((s, i) => `<span><i style="background:${FIELD_COLORS[i % FIELD_COLORS.length]}"></i>${esc(s.description)}</span>`).join("")}
     <span><i class="line"></i>${esc(t("tangential"))}</span><span><i class="line dash"></i>${esc(t("sagittal"))}</span></div></div><div id="mtf-plot"></div></div>
-    <div class="foot">${esc(t("mtf_foot"))} ${esc(settings)}${mtf.per_field ? `<br>${esc(t("mtf_partial") + (viz.errors?.FftMtf || ""))}` : ""}</div>`;
+    <div class="foot">${esc(foot("mtf_foot"))} ${esc(settings)}${mtf.per_field ? `<br>${esc(t("mtf_partial") + (viz.errors?.FftMtf || ""))}` : ""}</div>`;
   const host = $("mtf-plot");
   const head = view.querySelector(".fig-head").offsetHeight;
   const W = host.clientWidth, H = Math.max(300, Math.min(520, view.clientHeight - head - 90));
@@ -639,7 +652,7 @@ function renderLayout(view) {
       <div class="stage-tools"><button data-opt="grid">${esc(t("opt_grid"))}</button><button data-opt="labels">${esc(t("opt_labels"))}</button><button data-act="png" title="${esc(t("png_title"))}">PNG</button></div>
       <span class="zoom-chip"></span><span class="readout"></span><div class="tip" hidden></div></div>
     <div class="legend" style="margin:8px 0 0">${mats.map((m) => `<span><span class="swatch" style="background:${matColor(m)}55;border-color:${matColor(m)}"></span>${esc(m)}</span>`).join("")}</div></div>
-    <div class="foot ${viz.errors?.sag ? "warn" : ""}">${esc(viz.errors?.sag ? t("sag_flat") + " " : "")}${esc(t("layout_foot"))} <span id="layout-hint"></span></div>
+    <div class="foot ${viz.errors?.sag ? "warn" : ""}">${esc(viz.errors?.sag ? t("sag_flat") + " " : "")}${esc(foot("layout_foot"))} <span id="layout-hint"></span></div>
     ${viz.lens_data ? lensDataTable(viz.lens_data) : ""}</div>`;
   const details = view.querySelector(".lens-data");
   if (details) details.addEventListener("toggle", () => { lensDataOpen = details.open; });

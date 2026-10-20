@@ -80,6 +80,9 @@ TEXT: dict[str, tuple[str, str]] = {
     "no_valid": ("<b>没有有效的设计</b>：所有轮次的目标差距都是 ∞，至少有一项测量的前提不成立（例如没有实焦点、零件交叠、光线到不了像面）。下面列出最后一轮 {lens}（第 {n} 轮）供诊断，它不是可用的设计。",
                  "<b>No valid design</b>: every round has an infinite shortfall; at least one measurement's precondition fails (no real focus, overlapping parts, rays missing the image). The last round {lens} (round {n}) is listed for diagnosis only; it is not a usable design."),
     "judgement": ("<b>终止判断</b>：{text}", "<b>Stop decision</b>: {text}"),
+    "backend.optiland": ("<b>计算后端</b>：本报告的数值由 Optiland {version} 计算，尚未经 OpticStudio 验证。用户认可这一结果后，再在 OpticStudio 中验证并继续优化，最终交付以 OpticStudio 的数值为准。",
+                         "<b>Backend</b>: the numbers in this report were computed by Optiland {version} and have not been verified in OpticStudio. Once the user accepts this result, it is verified and optimised further in OpticStudio, and the final delivery takes the OpticStudio numbers."),
+    "backend.zos": ("<b>计算后端</b>：OpticStudio {version}", "<b>Backend</b>: OpticStudio {version}"),
     "h.demand": ("需求", "Demand"),
     "h.summary": ("需求访谈总结", "Interview summary"),
     "h.constants": ("已知常量", "Constants"),
@@ -95,6 +98,7 @@ TEXT: dict[str, tuple[str, str]] = {
     "h.materials": ("交付镜头的材料（第 {n} 轮）", "Materials of the delivered lens (round {n})"),
     "th.materials": ("面|材料|来源|各波长折射率", "Surface|Material|Source|Index per wavelength"),
     "mat.model": ("模型玻璃 nd {nd}，Vd {vd}（不是真实材料）", "model glass nd {nd}, Vd {vd} (not a real material)"),
+    "mat.model_optiland": ("；模型玻璃为 Optiland 近似（Abbe 材料），色散与 OpticStudio 的模型玻璃不同", "; the model glass is an Optiland approximation (Abbe material) whose dispersion differs from OpticStudio's"),
     "mat.catalog": ("目录 {cats}", "catalog {cats}"),
     "mat.status": ("，{status}", ", {status}"),
     "mat.obsolete": ("，Obsolete（停产，通常买不到）", ", Obsolete (discontinued, usually unavailable)"),
@@ -327,12 +331,16 @@ def build(job: jobs.Job) -> dict[str, Any]:
     if not eval_file.is_file():
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"missing evaluation for round {deliver['round']}")
     evaluation = json.loads(eval_file.read_text(encoding="utf-8"))
+    # 交付这一轮是哪个后端算的；Optiland 之前的记录没有 backend，都是 OpticStudio 算的
+    # which backend measured the shown round; records from before Optiland have no backend and come from OpticStudio
+    env = evaluation.get("environment") or {}
+    backend = {"name": env.get("backend") or "zos", "version": env.get("backend_version") or env.get("opticstudio")}
     # 文字部分（总结、待确认问题）取当前文件；三类条目取这一轮实际判定时的版本，两者内容哈希相同
     # the wording (summary, open questions) comes from the current file; the sections from the judged version, which hashes the same
     shown = {**evaluation["demand"], "summary": d["summary"], "open_questions": d.get("open_questions") or [], "lang": d.get("lang")}
     return {"demand": shown, "confirmed": demand.confirmation_for(job.root, current[0]), "rounds": rounds, "decision": decision,
             "deliver": deliver, "items": evaluation["items"], "blocked": not ledger.deliverable(deliver),
-            "tolerance": latest_tolerance(job, deliver)}
+            "tolerance": latest_tolerance(job, deliver), "backend": backend}
 
 
 def latest_tolerance(job: jobs.Job, deliver: dict[str, Any]) -> dict[str, Any] | None:
@@ -494,6 +502,8 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
     for m in deliver.get("materials") or []:
         if m["kind"] == "model":
             name, source = "MODEL", t("mat.model", nd=fmt(m.get("nd")), vd=fmt(m.get("vd")))
+            if m.get("approximation"):
+                source += t("mat.model_optiland")
         else:
             name, source = m.get("name") or "", t("mat.catalog", cats=", ".join(m.get("catalogs") or []))
             if m.get("status"):
@@ -516,7 +526,8 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
 <h1>{e(job.read_state().get('name', job.id))} <span class="status {status}">{t('status.' + status)}</span></h1>
 <p>{t('summary.' + status)}</p>
 <div class="card">{t(headline(status, deliver, data.get('blocked')), lens=lens_link, n=deliver['round'], g=fmt(deliver['shortfall']))}
-<br>{t('judgement', text=e(judgement(decision, h['stop'], t)))}{progress}</div>
+<br>{t('judgement', text=e(judgement(decision, h['stop'], t)))}{progress}
+<br>{t('backend.' + ('optiland' if data['backend']['name'] == 'optiland' else 'zos'), version=e(data['backend']['version'] or ''))}</div>
 {blocked}
 <h2>{t('h.materials', n=deliver['round'])}</h2>{materials}
 <h2>{t('h.demand')}</h2>{demand_html}
@@ -568,4 +579,6 @@ def write(job: jobs.Job, lang: str | None = None) -> dict[str, Any]:
                                                 "model_glass": bool(shown.get("model_glass"))},
         "round": shown["round"],
         "shortfall": shown["shortfall"],
+        "backend": data["backend"]["name"],
+        "opticstudio_verified": data["backend"]["name"] == "zos",
     }

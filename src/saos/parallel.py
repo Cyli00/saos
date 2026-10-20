@@ -51,6 +51,12 @@ from saos.protocol import ErrorCode, SaosError, jsonable, write_json
 
 PARALLEL_DIR = "parallel"
 DEFAULT_WORKERS = 4
+
+
+def default_workers() -> int:
+    """默认 worker 数：Optiland worker 不占许可证，用满可用核（逻辑核数减 2，Plan 2）；OpticStudio worker 受许可证限制，仍为 4。
+    Default worker count: Optiland workers take no licence and use the available cores (logical cores minus 2); OpticStudio 4."""
+    return config.compute_cores() if config.backend_name() == "optiland" else DEFAULT_WORKERS
 # worker 的协议行带前缀，和 OpticStudio 自己打到标准输出的文字区分开（实测会打印 "*** FRU__delta_init() …"）
 # protocol lines carry a prefix, apart from what OpticStudio itself prints to stdout (e.g. "*** FRU__delta_init() …")
 PREFIX = "@@saos "
@@ -316,7 +322,7 @@ def run_map(ctx, fn: str, items: list[Any], workers: int | None = None, reset: b
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"cannot read {script}")
     if script is not None:
         resolve(fn, script)  # 先在本进程里确认函数存在，免得每个 worker 各报一次 / check once here instead of once per worker
-    count = min(len(items), int(workers or DEFAULT_WORKERS), config.compute_cores())
+    count = min(len(items), int(workers or default_workers()), config.compute_cores())
     if count < 1:
         raise SaosError(ErrorCode.BAD_ARGS, "workers must be at least 1")
     folder: Path | None = None
@@ -372,7 +378,9 @@ def dispatch(pool: Pool, job: jobs.Job, lens: Path | None, fn: str, script: Path
     def drive(worker: _Worker) -> None:
         base = None if lens is None else temp / f"lens-{worker.index}{lens.suffix}"
         if base is not None:
-            shutil.copy2(lens, base)
+            from saos.lens_files import copy_lens
+
+            copy_lens(lens, base)
         info: dict[str, Any] = {"worker": worker.index, "items": 0, "busy_s": 0.0}
         first = True
         try:

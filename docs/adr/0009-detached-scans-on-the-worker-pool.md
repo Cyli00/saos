@@ -17,3 +17,5 @@ status: accepted
 ## Consequences
 
 worker 池同一时间只给一个扫描或 `ctx.map` 用，忙时立即返回 `POOL_BUSY`；有分离扫描在跑时 `daemon stop` 返回 `BUSY`，先取消或等它结束。后台进程意外退出时扫描中断，`saos scan --show` 会说明没有结果、也没有后台进程在跑它。
+
+2026-10-20 起（ADR-0012）：worker 默认跑 Optiland，不占许可证，“独立的 standalone 实例”只在会话在 OpticStudio 中时成立；分离运行只用 worker 池和镜头快照、不碰主实例的决定不变。

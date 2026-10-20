@@ -254,6 +254,9 @@ def materials(desc: dict[str, Any]) -> list[dict[str, Any]]:
             item = {"surface": s["index"], "kind": src["kind"], "n": s.get("n")}
             item.update({"name": src.get("name"), "catalogs": src.get("catalogs"), "status": src.get("status")} if src["kind"] == "catalog"
                         else {"nd": src.get("nd"), "vd": src.get("vd"), "dpgf": src.get("dpgf")})
+            if src.get("approximation"):
+                # Optiland 阶段的模型玻璃是 Abbe 近似 / an Optiland-stage model glass is an Abbe approximation
+                item["approximation"] = src["approximation"]
             out.append(item)
     for op in (desc.get("configurations") or {}).get("operands") or []:
         if op["type"] == "GLSS" and op.get("params"):

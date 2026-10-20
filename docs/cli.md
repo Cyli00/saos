@@ -10,7 +10,7 @@
 
 | 分组 | 语法 | 作用 |
 |---|---|---|
-| 后台 | `saos daemon start [--mode standalone\|extension] [--start-timeout S]` | 启动独立实例或连接用户窗口。 |
+| 后台 | `saos daemon start [--mode standalone\|extension] [--start-timeout S]` | 默认后端 Optiland 在进程内启动、不占许可证；`--mode extension` 或 `SAOS_BACKEND=zos` 时启动独立 OpticStudio 实例或连接用户窗口。 |
 | 后台 | `saos daemon status [--no-env]` / `saos daemon stop [--discard] [--force]` | 查看连接与许可证余量；正常或强制退出。 |
 | 任务 | `saos job create --name N` / `saos job list` | 创建或列出任务。 |
 | 任务 | `saos job show J [--log K]` / `saos job cancel J` / `saos job verify J` | 查看进度、请求取消或检查封存证据。 |
@@ -22,7 +22,7 @@
 | 镜头 | `saos lens set --job J --surface N --param P --value V` | 修改一个面参数。 |
 | 镜头 | `saos lens operand --job J TYPE [--int1 N] [--int2 N] [--d1 V … --d6 V]` | 计算优化操作数。 |
 | 镜头 | `saos lens analysis --job J [TYPE] [--list] [--set K=V …] [--keep-open]` | 列出分析或导出数值与文本。 |
-| 模型 | `saos lens describe --job J [--notes JSON] [--lang zh\|en]` | 生成建模说明、布局及自动检查。 |
+| 模型 | `saos lens describe --job J [--notes JSON] [--lang zh\|en]` | 生成建模说明、布局及自动检查；Optiland 打开的镜头另做与 OpticStudio 的双端基准对齐（`parity_check`）。 |
 | 模型 | `saos lens approve --job J --model models/NNN-NAME --quote TEXT` | 记录用户对结构的确认。 |
 | 窗口 | `saos lens capture --job J --as NAME` / `saos lens screenshot --job J [--label L]` | 保留窗口镜头副本或截取 PNG。 |
 | 窗口 | `saos lens view --job J [--viewer cross-section\|3d\|shaded] [--analysis TYPE] [--set K=V …]` | 在 extension 模式下打开和刷新布局、分析。 |
@@ -32,13 +32,15 @@
 | 实测 | `saos check --job J [--only IDS] [--detach]` | 按需求单测量并留证据，不记录轮次。 |
 | 轮次 | `saos round --job J [--tier T[,T…]] [--note TEXT] [--merit V] [--no-viz] [--detach]` | 归档镜头、实测并更新终止判断。 |
 | 停止 | `saos rule-out --job J --tier T [--tier T…] --reason TEXT` / `saos stop --job J --reason TEXT --quote TEXT` | 带证据排除手段或记录用户停止决定。 |
-| 报告 | `saos report --job J [--lang zh\|en]` | 生成交付报告，区分可交付镜头与诊断结果。 |
-| 优化 | `saos opt vary --job J --param P --surfaces RANGE [--mode model\|substitute] [--catalog C] [--off]` | 设置面变量和玻璃替换目录。 |
+| 报告 | `saos report --job J [--lang zh\|en]` | 生成交付报告，区分可交付镜头与诊断结果；注明数值由哪个后端算出，Optiland 的数值标为尚未经 OpticStudio 验证。 |
+| 优化 | `saos opt vary --job J --param P --surfaces RANGE [--min X] [--max X] [--mode model\|substitute] [--catalog C] [--off]` | 设置面变量和玻璃替换目录；Optiland 会话里 `--min/--max` 给变量上下界（存在伴随文件里），`--mode model` 用 Abbe 材料近似模型玻璃，`--mode substitute` 切到 OpticStudio。 |
 | 优化 | `saos opt vary --job J --config-rows RANGE [--configs RANGE] [--off]` | 设置多重结构变量。 |
 | 优化 | `saos opt vary --job J --objects RANGE --param P [--group S] [--off]` | 设置非序列物体的位置、倾斜或参数变量。 |
-| 优化 | `saos opt merit --job J clear\|wizard\|add\|show [--file JSON]` | 编辑或查看评价函数。 |
-| 优化 | `saos opt local --job J [--cycles N] [--algorithm dls\|od] [--max-seconds S] [--cores N] [--measure IDS] [--detach]` | 运行有预算的局部优化（阻尼最小二乘或正交下降）。 |
-| 优化 | `saos opt hammer --job J --max-seconds S [--cores N] [--measure IDS] [--detach]` / `saos opt global --job J --max-seconds S [--cores N] [--measure IDS] [--detach]` | 运行限时 Hammer 或全局搜索。 |
+| 优化 | `saos opt merit --job J clear\|wizard\|add\|show [--file JSON]` | 编辑或查看评价函数（Zemax 操作数名；Optiland 未映射的操作数切到 OpticStudio）。 |
+| 优化 | `saos opt merit --job J script PATH.py [--weight W]` | Optiland 会话：把脚本的 `loss(ctx)` 作为评价函数的一行。 |
+| 优化 | `saos opt local --job J [--cycles N] [--algorithm trf\|lm\|lbfgsb\|nelder-mead\|powell\|torch-lbfgs\|torch-adam\|dls\|od] [--device auto\|cpu\|cuda] [--max-seconds S] [--cores N] [--measure IDS] [--detach]` | 运行有预算的局部优化：Optiland 会话默认 scipy trf，torch 算法对可微子集用自动微分，进程内、不占许可证；dls / od 在 OpticStudio。 |
+| 优化 | `saos opt hammer --job J --max-seconds S [--cores N] [--measure IDS] [--detach]` / `saos opt global --job J --max-seconds S [--method de\|basinhopping\|shgo] [--cores N] [--measure IDS] [--detach]` | 运行限时 Hammer（OpticStudio）或全局搜索；Optiland 会话里全局搜索用 scipy，de / shgo 要求每个变量都有上下界。 |
+| 优化 | `saos opt glass --job J [--surfaces RANGE] [--catalog C] [--neighbours N] [--cycles N] [--algorithm A] [--max-seconds S] [--measure IDS] [--detach]` | Optiland 阶段的在产玻璃替换：贪心邻域搜索，每种候选都重新局部优化。 |
 | 流程图 | `saos ui open --job J [--no-window]` / `saos ui notify --job J --message TEXT` | 打开工作流窗口或在询问用户前显示提示。 |
 | 配方 | `saos microscope adapt EXTRACT --out DIR [--embodiment ID] [--focal-length F] [--field-number N] [--tube-lens F] [--catalogs …] [--stop S]` | 将提取数据适配成处方和期望值。 |
 | 配方 | `saos microscope repro --job J EXPECT` / `saos microscope accept --job J --spec FILE` | 做复现校验或规格验收。 |
@@ -57,7 +59,7 @@
 | 变量 | 默认值与作用 |
 |---|---|
 | `SAOS_INSTANCE` / `SAOS_HOME` | 实例默认为 `main`，产物在 `work/<实例>/`；后者可指定运行目录并覆盖前者。 |
-| `SAOS_OPTICSTUDIO_DIR` / `SAOS_BACKEND` | 默认安装目录为 `C:\Program Files\Ansys Zemax OpticStudio 2024 R1.00`；后端默认 `zos`，工具测试可用 `fake`。 |
+| `SAOS_OPTICSTUDIO_DIR` / `SAOS_BACKEND` / `SAOS_DEVICE` | 默认安装目录为 `C:\Program Files\Ansys Zemax OpticStudio 2024 R1.00`；后端默认 `optiland`（Optiland 0.6.3，float64），表达不了的镜头自动改用 OpticStudio，`zos` 只用 OpticStudio，工具测试可用 `fake`；`SAOS_DEVICE` 为 `cpu`（默认）或 `cuda`。 |
 | `SAOS_LANG` | 报告语言依次取 `--lang`、需求单 `lang`、本变量、系统界面语言、英文；日志取本变量及系统语言。 |
 | `SAOS_UI` / `SAOS_UI_LIVE` | 前者设 0 禁止自动打开流程图窗口；后者设 1 在长操作期间保持 extension 实时刷新。 |
 | `SAOS_UI_PID` | 有多个 OpticStudio 窗口时选择要连接的进程。 |

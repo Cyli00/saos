@@ -73,7 +73,20 @@ def opticstudio_dir() -> str:
 
 
 def backend_name() -> str:
-    return os.environ.get("SAOS_BACKEND", "zos")
+    return os.environ.get("SAOS_BACKEND", "optiland").strip().lower()
+
+
+OPTILAND_VERSION = "0.6.3"
+COMPUTE_PRECISION = "float64"
+
+
+def compute_device() -> str:
+    device = os.environ.get("SAOS_DEVICE", "cpu").strip().lower()
+    if device not in ("cpu", "cuda"):
+        from saos.protocol import ErrorCode, SaosError
+
+        raise SaosError(ErrorCode.BAD_ARGS, "SAOS_DEVICE must be cpu or cuda; float64 is required")
+    return device
 
 
 def code_sha256() -> str:

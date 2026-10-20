@@ -78,7 +78,10 @@ own unsaved edits still require lens save or --discard; --discard drops only
 those edits. Archived rounds cannot be overwritten. Extension mode is optional;
 the local workflow window shows modelling in either mode.
 """,
-    "opt": """Configure and run OpticStudio optimization on the loaded job lens.
+    "opt": """Configure and run optimization on the loaded job lens. In an Optiland session
+vary, merit, local, global and glass run in-process with scipy (no licence);
+glass substitution variables, config rows, objects, hammer and dls/od move the
+session to OpticStudio. Model glass is approximated by an Optiland Abbe material.
 local/hammer/global require the current demand to be confirmed and free of
 blocking questions. Model approval is required to record rounds. Geometry and
 material changes require saving before worker scans; model glass is exploratory
@@ -243,8 +246,19 @@ COMMANDS.update({
         "  manufacturers. Local optimization does not substitute glasses. --off fixes\n"
         "  variables (model glasses keep their current nd/Vd). Partial failures can leave\n"
         "  earlier surfaces modified and the lens dirty. Design constraints:\n"
-        "  skills/saos/design-practice.md.", "BAD_ARGS, NO_LENS_LOADED, JOB_MISMATCH, ZOS_ERROR"),
-    "opt merit": ("Clear, build, add to or inspect the loaded lens's merit function.", "", "BAD_ARGS, FILE_NOT_FOUND, NO_LENS_LOADED, JOB_MISMATCH, ZOS_ERROR"),
+        "  skills/saos/design-practice.md.\n"
+        "  Optiland session: radius, curvature, thickness, conic and par<N> vary in\n"
+        "  Optiland (variables are variable solves in the companion's prescription);\n"
+        "  --param material --mode model turns the glass into a model glass whose nd/Vd\n"
+        "  vary (an Optiland Abbe approximation, labelled in rounds and the report;\n"
+        "  default range nd 1.40-2.00, Vd 18-95); --mode substitute, --config-rows\n"
+        "  and --objects move the session to OpticStudio (use opt glass in Optiland).\n"
+        "  --min/--max bound the variables for the scipy optimiser and return bounds;\n"
+        "  radius bounds need both of one sign (curvature bounds pass through flat).\n"
+        "  Bounds are kept in the .optiland.json companion; OpticStudio has none, so\n"
+        "  in an OpticStudio session --min/--max are refused (use CTGT/CTLT rows) and\n"
+        "  moving to OpticStudio lists them under untranslated in daemon status.", "BAD_ARGS, NO_LENS_LOADED, JOB_MISMATCH, ZOS_ERROR"),
+    "opt merit": ("Clear, build, add to, script or inspect the loaded lens's merit function.", "", "BAD_ARGS, FILE_NOT_FOUND, NO_LENS_LOADED, JOB_MISMATCH, ZOS_ERROR"),
     "demand show": (
         "Validate sources/demand.yaml and show its current version and confirmation.",
         "Returns version/hash, confirmation, open questions, summary and weak_basis\n"
@@ -307,7 +321,9 @@ COMMANDS.update({
         "Writes report/index.html and a sealed report/NNN-rMMM-<status>.html. Language:\n"
         "  --lang > demand.lang > SAOS_LANG > system UI language > English. Returns\n"
         "  headline (deliver/best_so_far/best_blocked/no_valid), deliverable, deliver,\n"
-        "  diagnostic and achieved. deliver is null for an undeliverable lens; diagnostic\n"
+        "  diagnostic, achieved, backend (optiland or zos: which backend measured the\n"
+        "  shown round) and opticstudio_verified (false for Optiland numbers, which the\n"
+        "  report states). deliver is null for an undeliverable lens; diagnostic\n"
         "  identifies its file/round and hard_failing, measurement_errors, model_glass.\n"
         "  An achieved deliverable round with minimum shortfall is preferred; otherwise\n"
         "  the best deliverable round is used. Terminal exhausted/limit/stopped can\n"
@@ -362,11 +378,31 @@ Common errors
 """
 
 for _name, _purpose, _details in (
-    ("local", "Run local optimization (damped least squares or orthogonal descent) on the loaded job lens.",
+    ("local", "Run local optimization (scipy on Optiland; DLS or orthogonal descent in OpticStudio) on the loaded job lens.",
      "--cycles is auto/1/5/10/50; use --max-seconds to budget long runs.\n"
-     "  --algorithm dls (damped least squares) or od (orthogonal descent); default od\n"
-     "  for a non-sequential system, whose detector merit has statistical noise that\n"
-     "  makes finite-difference derivatives unreliable, dls otherwise. Returns algorithm."),
+     "  Optiland session: --algorithm trf (default, bounded trust-region least\n"
+     "  squares), lm (no bounds, needs rows >= variables), lbfgsb, nelder-mead or\n"
+     "  powell, with finite differences over every mapped operand and the merit\n"
+     "  script. A cycle is one iteration (trf/lm: one Jacobian and step). The loop\n"
+     "  edits the live Optic (inner_loop live) or rebuilds per step when a variable\n"
+     "  or solve cannot be set in place (inner_loop rebuild); automatic semi-diameters\n"
+     "  are recomputed at each better point and in full at the end, when variables\n"
+     "  are written back. Failing rays count as a large residual. Extra results:\n"
+     "  evaluations, inner_loop, message, bounds, start_clipped_to_bounds,\n"
+     "  failed_rows. An unmapped operand or --algorithm dls/od moves the session to\n"
+     "  OpticStudio (its default algorithm); with a merit script it stays and fails.\n"
+     "  OpticStudio: --algorithm dls (damped least squares) or od (orthogonal descent);\n"
+     "  default od for a non-sequential system, whose detector merit has statistical\n"
+     "  noise that makes finite-difference derivatives unreliable, dls otherwise.\n"
+     "  torch-lbfgs (torch.optim.LBFGS, strong Wolfe line search) and torch-adam\n"
+     "  differentiate RSCE, RWCE, REAY, EFFL, TOTR, CTVA, ETVA, CTGT/CTLT/ETGT/ETLT\n"
+     "  and a merit script that returns a Tensor (ctx.backend.torch_operand(name,\n"
+     "  int1, int2, data) gives a Tensor during torch runs and a float otherwise);\n"
+     "  any other operand, a zone marginal-height solve or a variable that cannot be\n"
+     "  set in place is refused with the list (use trf). Rays that fail are found\n"
+     "  first without gradients and left out of the gradient trace; their share\n"
+     "  adds a constant penalty. --device auto/cpu (float64) or cuda. Returns\n"
+     "  device and inner_loop torch. Returns algorithm."),
     ("hammer", "Run Hammer search beyond local minima on the loaded job lens.",
      "--max-seconds is required; it does not stop on its own. Material substitution\n"
      "  uses opt vary --param material --mode substitute; inspect materials_changed\n"
@@ -378,7 +414,28 @@ for _name, _purpose, _details in (
      "  final_merit, systems, stopped_by, materials_changed and best_merits (top 10;\n"
      "  values can repeat). Moves GLOPT_*.zmx to lenses/global/NNN/; files lists lenses\n"
      "  ready to load. Refuses a current folder already containing GLOPT_*.zmx to\n"
-     "  prevent overwrite: first save the working lens elsewhere."),
+     "  prevent overwrite: first save the working lens elsewhere.\n"
+     "  Optiland session: scipy --method de (default), basinhopping or shgo over the\n"
+     "  scaled variables; de and shgo need --min/--max on every variable (model-glass\n"
+     "  nd/Vd have default ranges). Stops at --max-seconds or the method's own\n"
+     "  convergence (basinhopping: 50 hops without a better minimum). The 10 best\n"
+     "  distinct systems free of interference are written as GLOPT_NNNN.zmx with\n"
+     "  their .optiland.json and archived the same way; the best stays loaded.\n"
+     "  Returns method, systems (evaluations), best_merits, inner_loop, unsaved."),
+    ("glass", "Optiland stage: substitute in-production glasses, re-optimising each candidate.",
+     "Greedy neighbour search after Optiland's GlassExpert: pass 1 tries --neighbours\n"
+     "  k-means representatives of the whole catalog on each surface, pass 2 the\n"
+     "  --neighbours glasses nearest the current one in (nd, Vd) (normalised by the\n"
+     "  catalog's spread). Every candidate gets a local optimisation of the\n"
+     "  continuous variables (--cycles, --algorithm, default 5 cycles of trf); a\n"
+     "  substitution stays only when the merit improves. Candidates and dispersion\n"
+     "  come from the in-production AGF (--catalog, default SAOS_CDGM_INPROD, which\n"
+     "  lists only Standard and Preferred glasses); glasses whose AGF formula is not\n"
+     "  1 or 2 are listed under skipped. Surfaces with a varying model glass must be\n"
+     "  fixed first. --max-seconds keeps the best combination found. Returns\n"
+     "  initial_merit, final_merit, changes (surface, before, after), trials,\n"
+     "  candidates, catalog, reoptimized. In an OpticStudio session use hammer or\n"
+     "  global with opt vary --param material --mode substitute instead."),
 ):
     COMMANDS[f"opt {_name}"] = (
         _purpose,
@@ -396,7 +453,11 @@ MERIT_HELP_EPILOG = """Input: wizard --file JSON object (all fields optional)
   invalid names report available choices. Defaults shown above, except glass
   and air are disabled if omitted. Each is [minimum, maximum, edge] thickness
   in lens units. arms is 6, 8 or 10; rings and start_at are integers from 1;
-  other keys are rejected. Folded, cylindrical and other non-rotationally
+  other keys are rejected. In Optiland the wizard writes one polychromatic row
+  per field (RWCE/RWCH/RSCE/RSCH, rings 1-20, weight = field weight; arms has
+  no effect, these operands integrate 12 arms) and per glass/air surface
+  CTGT minimum, CTLT maximum and ETGT edge rows; type must be RMS and data
+  Wavefront or Spot Radius, otherwise the session moves to OpticStudio. Folded, cylindrical and other non-rotationally
   symmetric systems must use assume_axial_symmetry:false or the wizard samples
   only half the pupil. Omitting --file uses defaults.
 
@@ -423,14 +484,30 @@ Input: add --file JSON operand list (--file required)
   int1/int2). target defaults to 0, weight to 1. Rows insert at the top so default
   function rebuilding from DMFS does not overwrite them; list order is reversed.
   clear removes all rows; show reads rows and calculates the current merit.
+  In Optiland the same names are used; an operand Optiland has not mapped moves
+  the session to OpticStudio (existing rows are translated row by row). Negative
+  weights (Lagrangian constraints) are OpticStudio only. Rows that fail to trace
+  show value NaN and error; the merit is then infinite.
+
+Input: script <path.py> (Optiland only) [--weight W]
+  def loss(ctx):
+      return max(0.0, ctx.op("TOTR") - 80.0)
+  loss(ctx) returns a residual the optimiser drives toward 0 (non-negative
+  distance from the goal); it enters the merit as one more row of weight W
+  (default 1): merit = sqrt((sum w*(v-t)^2 + W*loss^2) / (sum w + W)). ctx is
+  the exec context (ctx.op, ctx.trace, ctx.measure, ...). The script is copied
+  to scripts/NNN-<name>.py and stored with the lens; clear removes it. It
+  never translates to OpticStudio.
 
 Results and files
-  Changes the in-memory merit function; use lens save to persist it. Returns
-  loaded lens state, merit and rows; no separate archive is written.
+  Changes the in-memory merit function; use lens save to persist it (Optiland:
+  rows, bounds and script live in the .optiland.json companion, outside the
+  structure fingerprint). Returns loaded lens state, merit and rows (a SCRIPT row
+  for the loss).
 
 Common errors
   BAD_ARGS (unknown operand/wizard choice), FILE_NOT_FOUND, NO_LENS_LOADED,
-  JOB_MISMATCH, ZOS_ERROR.
+  JOB_MISMATCH, SCRIPT_ERROR (loss script), ZOS_ERROR.
 """
 
 EXEC_HELP_EPILOG = """Input: a Python script defining run(ctx)
@@ -661,7 +738,7 @@ ARGUMENT_HELP = {
     "timeout": "seconds to wait for a response (default: %(default)s); timeout does not stop computation",
     "mode": "connection mode (default: %(default)s)",
     "start_timeout": "seconds to wait for daemon readiness (default: %(default)s)",
-    "cycles": "optimization cycle budget: auto lets OpticStudio choose; otherwise 1, 5, 10 or 50 (default: %(default)s)",
+    "cycles": "optimization cycle budget: auto lets the optimiser stop on convergence; otherwise 1, 5, 10 or 50 iterations (default: %(default)s)",
     "name": "human-readable job name",
     "as_name": "destination file name relative to the job's lenses/",
     "overwrite": "allow replacing an existing destination (archived rounds remain protected)",
@@ -715,7 +792,7 @@ def configure(parser, path: str = "", *, commands=None, groups=None) -> None:
                 current.description += "\n  " + details
             if key in formats:
                 current.epilog = formats[key]
-            elif key in ("opt local", "opt hammer", "opt global"):
+            elif key in ("opt local", "opt hammer", "opt global", "opt glass"):
                 current.epilog = "Prerequisites and operation\n  " + details
             else:
                 current.epilog = "Results and files\n  " + details + "\n\nCommon errors\n  " + errors + "."

@@ -317,6 +317,8 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
         "coatings": model_gate.coatings(desc),
         # 环境面和外购件（建模说明中声明）不受模型玻璃限制 / environment and bought-in surfaces (declared in the approved model) are exempt
         "model_glass": [i for i in model_gate.model_glass_surfaces(desc) if i not in approved["environment"]],
+        # 这一轮的模型玻璃由 Optiland 近似计算（Plan 2）/ this round's model glasses were approximated by Optiland
+        **({"model_glass_approximation": "optiland"} if any(m.get("approximation") for m in model_gate.materials(desc)) else {}),
         "environment": approved["environment"],
         "time": jobs.now_iso(),
     }

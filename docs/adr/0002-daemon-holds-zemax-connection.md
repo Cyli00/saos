@@ -7,3 +7,7 @@
 - 每条命令独立启动 OpticStudio：最简单，但启动开销按命令数累加。
 - 合并成粗粒度命令（一条命令完成一整轮）：只能减少启动次数，不能消除，而且命令的粒度会受这个限制。
 - MCP 服务：同样是常驻进程，但会把接口绑定到 MCP 协议，命令行更容易测试，也能同时给 Claude Code 和 Codex 使用。
+
+## Consequences
+
+2026-10-20 起后台进程默认在进程内持有 Optiland 镜头（ADR-0012），启动不再连接 OpticStudio；OpticStudio 只在 Optiland 表达不了的镜头、孪生实例代算和 OpticStudio 阶段才连接。常驻进程、命令行只转发的决定不变：Optiland 导入（连带 torch）也要约 5 s，同样不能每条命令重来。

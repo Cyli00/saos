@@ -10,3 +10,5 @@
 ## Consequences
 
 脚本和后台进程在同一个进程里运行。脚本可能改坏系统状态，或者长时间占住后台进程；OpticStudio 的状态本来就由 agent 负责，这个风险接受，不做沙箱。
+
+2026-10-20 起（ADR-0012）：镜头在 Optiland 中时 `ctx.system` 和 `ctx.zosapi` 为空，脚本经 `ctx` 的通用接口（`get`/`set`、`trace`、`op`、`analysis` 等）在两个后端上都能运行；直接调用 ZOS-API 的脚本只能在 OpticStudio 上运行，要用 `SAOS_BACKEND=zos` 启动后台进程。光纤配方的 `side_view.py` 就是这一类。

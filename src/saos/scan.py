@@ -197,7 +197,8 @@ HELP_EPILOG = """Input: --plan FILE, a JSON file (choose exactly one of the six 
     compensate is null, "quick_focus" or {"script": "job-relative.py"} (run(w)).
     measure defaults to bounded/directional demand items; probes add target.
     keep defaults to 3 (probes and tolerance: 0). --workers overrides plan
-    workers, default 4, limited by point count and available cores; count the
+    workers, default logical cores minus 2 with Optiland workers (no licence) or
+    4 with OpticStudio, limited by point count and available cores; count the
     8-instance licence, including user windows and daemon. Cold worker startup
     is about 6-8 s each.
 
@@ -784,7 +785,7 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
         if starts == "current":
             starts = [kit.values(ctx, list(plan["minimize"]["vars"]))]
         items = [{"i": k, "start": s} for k, s in enumerate(starts)]
-    count = min(len(items), int(workers or plan.get("workers") or parallel.DEFAULT_WORKERS), config.compute_cores())
+    count = min(len(items), int(workers or plan.get("workers") or parallel.default_workers()), config.compute_cores())
     pool = ctx._daemon.pool
     if not pool.lock.acquire(timeout=2):
         raise SaosError(ErrorCode.POOL_BUSY, "the worker pool is busy with a detached scan; wait for it (saos scan show) or cancel it (saos job cancel)",
@@ -807,7 +808,9 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
             write_json(folder / "plan.json", {**plan, "lens": ctx.job.relative_lens(ctx.lens), "workers": count})
             # 镜头快照：分离运行期间改动或保存工作镜头不影响扫描 / a snapshot, so later edits of the working lens do not reach the scan
             base = folder / f"base{ctx.lens.suffix}"
-            shutil.copy2(ctx.lens, base)
+            from saos.lens_files import copy_lens
+
+            copy_lens(ctx.lens, base)
     except BaseException:
         pool.lock.release()
         raise
