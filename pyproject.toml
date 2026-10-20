@@ -5,6 +5,9 @@ description = "由 agent 驱动 Zemax OpticStudio 的光学设计工作流"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "numpy>=2",
+    "optiland==0.6.3",
+    "torch>=2.2",
+    "numba>=0.60",
     "pythonnet==3.0.5",
     "pyyaml>=6.0.3",
     "scipy>=1.13",
