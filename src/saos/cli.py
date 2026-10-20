@@ -371,7 +371,8 @@ def build_parser() -> argparse.ArgumentParser:
     lens_cmd("info", "system data: aperture, fields, wavelengths, …")
     lens_cmd("surfaces", "surface rows of the Lens Data Editor")
     p = lens_cmd("describe", "model description page for the user (models/NNN-<lens>/index.html): every surface, material source and index per wavelength, apertures, fields, wavelengths, layout, plus automatic modelling checks")
-    p.add_argument("--notes", help='JSON file: {"surfaces": {"<index>": "what this surface is"}, "assumptions": ["…"]}')
+    p.add_argument("--notes", help='JSON file: {"surfaces": {"<index>": "what this surface is"}, "assumptions": ["…"], "first_order": ["…"], '
+                                   '"exploration": "scans/NNN, or why the user prescribed the structure"}')
     p.add_argument("--lang", choices=("zh", "en"), help="page language (default: the demand lang, then SAOS_LANG, then the system language)")
     p = lens_cmd("approve", "record the user's approval of a model description; rounds need a lens whose structure matches an approved description")
     p.add_argument("--model", required=True, help="the description folder, e.g. models/001-start")
@@ -459,7 +460,8 @@ def build_parser() -> argparse.ArgumentParser:
                                     "solve one variable, compensate, measure with the demand's checks; lens left unchanged; archived in scans/NNN/, "
                                     "the best lenses in lenses/scans/NNN/")
     p.add_argument("--job", required=True)
-    p.add_argument("--plan", help="JSON plan: one of vars (grid), points, minimize or probes, plus fixed, solve, compensate, measure, operands, keep; see docs/cli.md")
+    p.add_argument("--plan", help="JSON plan: one of vars (grid), points, minimize, probes or candidates (structure exploration), plus fixed, solve, "
+                                  "compensate, measure, operands, keep; see docs/cli.md")
     p.add_argument("--workers", type=int, default=None, help="OpticStudio instances to use (default the plan's workers, else 4; count the licence)")
     p.add_argument("--detach", action="store_true", help="return at once and run the scan in the background on the worker pool; the daemon keeps "
                                                          "serving other commands meanwhile; follow it with --show")

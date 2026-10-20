@@ -19,7 +19,7 @@
         <mxCell id="band2" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f7f9fc;strokeColor=#d0d7e2;dashed=1;" parent="1" vertex="1">
           <mxGeometry y="890.0" width="1410" height="645" as="geometry" />
         </mxCell>
-        <mxCell id="phase2" value="③ 建模与模型确认" style="text;html=1;horizontal=0;align=center;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#34495e;" parent="1" vertex="1">
+        <mxCell id="phase2" value="③ 起型、结构探索与模型确认" style="text;html=1;horizontal=0;align=center;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#34495e;" parent="1" vertex="1">
           <mxGeometry y="890.0" width="60" height="645" as="geometry" />
         </mxCell>
         <mxCell id="band3" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d0d7e2;dashed=1;" parent="1" vertex="1">
@@ -145,7 +145,7 @@
         <mxCell id="f4" value="sources/materials.yaml" style="shape=note;whiteSpace=wrap;html=1;size=12;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;fontFamily=Consolas;" parent="1" vertex="1">
           <mxGeometry x="1050" y="1095.0" width="260" height="46" as="geometry" />
         </mxCell>
-        <mxCell id="a8" value="&lt;b&gt;一阶分析&lt;/b&gt;&lt;br&gt;用 OpticStudio 数字&lt;br&gt;复核 ① 的判断：能达到？" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
+        <mxCell id="a8" value="&lt;b&gt;一阶分析&lt;/b&gt;&lt;br&gt;用 OpticStudio 数字&lt;br&gt;复核 ① 的判断：能达到？&lt;br&gt;&lt;b&gt;结构探索&lt;/b&gt;（结构非用户指定时必做）&lt;br&gt;≥ 3 个候选 · saos scan（candidates）&lt;br&gt;→ scans/NNN/index.html，保留胜者" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="510" y="1180.0" width="280" height="110" as="geometry" />
         </mxCell>
         <mxCell id="u3" value="带证据回到用户&lt;br&gt;（可能改需求单）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">

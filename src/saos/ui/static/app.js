@@ -8,10 +8,11 @@ const POLL_MS = 1500;
 
 const TEXT = {
   zh: {
-    interview: "访谈与可行性判断", demand_confirm: "确认需求单", modeling: "建模与选材", model_approve: "确认建模说明", design: "自主设计", deliver: "交付报告",
+    interview: "访谈与可行性判断", demand_confirm: "确认需求单", modeling: "起型、探索与建模", model_approve: "确认建模说明", design: "自主设计", deliver: "交付报告",
     no_demand: "访谈中，尚无需求单", invalid_demand: "需求单未通过校验", first: "等待用户确认", reconfirm: "需求已改动，待重新确认",
     waiting: "等你确认", blocked: "待回答", active: "进行中", running: "运行中",
     rounds_n: (n) => `第 ${n} 轮`, no_rounds: "尚未记录轮次",
+    explore_run: (n) => `结构探索：${n} 个候选运行中`, explore_done: (n, k) => `结构探索：${n} 个候选，保留 ${k} 个`,
     st_achieved: "已达成", st_exhausted: "无法再优化", st_limit: "达到轮次上限", st_stopped: "按用户决定停止",
     report_ready: "报告已生成", report_todo: "待生成报告",
     back_demand: "需求变更", back_model: "修改模型", back_reach: "结构不可达", feasibility: "质疑结构 · 手算界限",
@@ -40,10 +41,11 @@ const TEXT = {
     tip_lens: (k, m, ct, et, u) => `L${k} ${m} · 中心厚 ${ct} · 边缘厚 ${et} ${u}`,
   },
   en: {
-    interview: "Interview & feasibility", demand_confirm: "Confirm demand", modeling: "Model & materials", model_approve: "Approve model", design: "Autonomous design", deliver: "Delivery report",
+    interview: "Interview & feasibility", demand_confirm: "Confirm demand", modeling: "Start designs & model", model_approve: "Approve model", design: "Autonomous design", deliver: "Delivery report",
     no_demand: "interviewing, no demand yet", invalid_demand: "demand fails validation", first: "waiting for the user", reconfirm: "demand changed, confirm again",
     waiting: "your turn", blocked: "question", active: "in progress", running: "running",
     rounds_n: (n) => `round ${n}`, no_rounds: "no rounds yet",
+    explore_run: (n) => `exploring ${n} candidates`, explore_done: (n, k) => `explored ${n} candidates, kept ${k}`,
     st_achieved: "achieved", st_exhausted: "exhausted", st_limit: "round limit", st_stopped: "stopped by user",
     report_ready: "report written", report_todo: "report pending",
     back_demand: "demand change", back_model: "revise model", back_reach: "unreachable", feasibility: "question · hand bounds",
@@ -140,7 +142,12 @@ function nodeSub(step) {
   const d = step.detail;
   if (step.id === "interview") return d ? t(d) : t("feasibility");
   if (step.id === "demand_confirm") return d ? t(d) : "saos demand confirm";
-  if (step.id === "modeling") return step.status === "active" && state.progress ? `${state.progress.op}` : "lens describe";
+  if (step.id === "modeling") {
+    if (step.status === "active" && state.progress) return `${state.progress.op}`;
+    const x = d && d.exploration;
+    if (x) return x.finished ? t("explore_done", x.candidates, x.kept) : t("explore_run", x.candidates);
+    return "scan candidates · lens describe";
+  }
   if (step.id === "model_approve") return typeof d === "string" ? d : "saos lens approve";
   if (step.id === "design") {
     if (!d) return "saos round";

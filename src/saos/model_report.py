@@ -132,6 +132,13 @@ TEXT: dict[str, tuple[str, str]] = {
         "The glass between surfaces {a} and {b} is thinnest near its centre, {min} ({r} from the axis, outer diameter {d}), below the "
         "minimum negative-lens centre {need} of table 17-2 in design-practice.md.",
     ),
+    "w.no_exploration": (
+        "没有结构探索记录：结构不是用户指定的时候，建模确认前要先比较至少 3 个结构不同的候选（saos scan 的 candidates 计划），"
+        "起型、片数、组合选错了，后面的优化很难调回来。结构确实由用户指定时，在 --notes 的 exploration 里写明依据。",
+        "No structure exploration on record: unless the user prescribed the structure, compare at least 3 structurally different "
+        "candidates (a candidates plan of saos scan) before the model is approved, because a wrong starting form, element count or "
+        "grouping is hard to optimise away. When the user did prescribe it, say so under exploration in --notes.",
+    ),
     "w.uncatalogued": ("第 {s} 面的材料 {name} 不在在用的材料目录里。", "Surface {s}: material {name} is not in the catalogs in use."),
     "w.obsolete_material": ("第 {s} 面的玻璃 {name} 在目录里标为 Obsolete（停产），通常买不到；交付前换成在产牌号或向厂家确认。",
                             "Surface {s}: glass {name} is marked Obsolete in its catalog and is usually unavailable; replace it with a glass in production or confirm with the maker before delivery."),
@@ -442,6 +449,8 @@ def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, An
     chosen = i18n.resolve(lang, _demand_lang(job))
     meta = {"job": job.id, "lens": lens, "time": jobs.now_iso()}
     found = checks(desc, notes, materials_record.recorded_names(job))
+    if not explorations(job) and not str((notes or {}).get("exploration", "")).strip():
+        found.append(("no_exploration", {}))
     warnings = [i18n.text("en", *TEXT["w." + code]).format(**args) for code, args in found]
     fp = model_gate.fingerprint(desc, (notes or {}).get("environment") or ())
     write_json(folder / "model.json", {**meta, "notes": notes, "warnings": warnings, "fingerprint": fp,
@@ -456,6 +465,20 @@ def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, An
         "layout": desc.get("layout"),
         "next": "show the page to the user; after they approve, run lens approve --model <folder> --quote \"<their words>\"",
     }
+
+
+def explorations(job: jobs.Job) -> list[str]:
+    """任务里的结构探索（mode 为 candidates 的扫描）。/ The job's structure explorations (scans whose mode is candidates)."""
+    import json
+
+    out = []
+    for plan in sorted((job.root / "scans").glob("*/plan.json")) if (job.root / "scans").is_dir() else []:
+        try:
+            if json.loads(plan.read_text(encoding="utf-8")).get("mode") == "candidates":
+                out.append(plan.parent.relative_to(job.root).as_posix())
+        except (OSError, ValueError):
+            continue
+    return out
 
 
 def _demand_lang(job: jobs.Job) -> str | None:

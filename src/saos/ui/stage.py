@@ -2,12 +2,13 @@
 Work out where a job stands in the workflow from its files only; never talks to the daemon.
 
 步骤（DESIGN.md「工作方式」）/ steps:
-    interview → demand_confirm（停顿）→ modeling → model_approve（停顿）→ design → deliver
+    interview → demand_confirm（停顿）→ modeling（起型、结构探索、建模）→ model_approve（停顿）→ design → deliver
 每一步的状态 / status per step: done, active, waiting（等用户）, blocked（有 blocking 问题）, pending。
 """
 
 from __future__ import annotations
 
+import json
 import math
 from typing import Any
 
@@ -27,6 +28,29 @@ def _daemon() -> dict[str, Any]:
     if state is None or not client.pid_alive(int(state.get("pid", 0))):
         return {"running": False, "mode": None}
     return {"running": True, "mode": state.get("mode"), "pid": state.get("pid")}
+
+
+def exploration_of(job: jobs.Job) -> dict[str, Any] | None:
+    """最近一次结构探索（mode 为 candidates 的扫描）：候选数、是否跑完、保留了几个。
+    The latest structure exploration (a scan whose mode is candidates): candidates, finished, how many were kept."""
+    root = job.root / "scans"
+    plans = sorted(root.glob("*/plan.json")) if root.is_dir() else []
+    for plan_file in reversed(plans):
+        try:
+            plan = json.loads(plan_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if plan.get("mode") != "candidates":
+            continue
+        out: dict[str, Any] = {"folder": plan_file.parent.relative_to(job.root).as_posix(), "candidates": len(plan.get("candidates") or []),
+                               "finished": False, "kept": None}
+        try:
+            result = json.loads((plan_file.parent / "result.json").read_text(encoding="utf-8"))
+            out.update(finished=True, kept=len(result.get("kept") or []))
+        except (OSError, ValueError):
+            pass
+        return out
+    return None
 
 
 def rounds_of(job: jobs.Job) -> list[dict[str, Any]]:
@@ -78,6 +102,9 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
         status["demand_confirm"] = "done"
         models = sorted(p for p in (root / "models").glob("*/model.json")) if (root / "models").is_dir() else []
         approved = [m for m in models if (m.parent / model_gate.APPROVAL_FILE).is_file()]
+        explored = exploration_of(job)
+        if explored is not None:
+            detail["modeling"] = {"exploration": explored}
         if not approved and not models:
             status["modeling"] = "active"
             current = "modeling"

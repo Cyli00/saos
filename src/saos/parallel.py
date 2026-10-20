@@ -156,8 +156,10 @@ def worker_main(index: int) -> int:
                 if key not in functions:
                     functions[key] = resolve(msg["fn"], script)
                 base = msg["base"]
-                wctx = WorkerContext(backend, Path(msg["job"]), Path(base), index, msg.get("args") or {})
-                if msg.get("reset", True) or base != loaded_base:
+                wctx = WorkerContext(backend, Path(msg["job"]), Path(base) if base else None, index, msg.get("args") or {})
+                if not base:
+                    loaded_base = None  # fn 自己加载或搭建，之后不能当作已加载 / fn loads or builds its own
+                elif msg.get("reset", True) or base != loaded_base:
                     backend.load(Path(base))
                     loaded_base = base
                 result = functions[key](wctx, msg["item"])
@@ -347,12 +349,13 @@ def run_map(ctx, fn: str, items: list[Any], workers: int | None = None, reset: b
     return result
 
 
-def dispatch(pool: Pool, job: jobs.Job, lens: Path, fn: str, script: Path | None, items: list[Any], count: int, reset: bool,
+def dispatch(pool: Pool, job: jobs.Job, lens: Path | None, fn: str, script: Path | None, items: list[Any], count: int, reset: bool,
              args: dict[str, Any] | None, progress, cancelled) -> dict[str, Any]:
-    """在已拿到锁的池上执行：每个 worker 一份 lens 的副本。progress(stage) 报告进度，cancelled() 为真时在当前条目后停止。
-    不碰后台进程的主实例，所以分离运行的扫描可以放在后台线程里。
-    Run on a pool whose lock the caller holds, each worker on its own copy of lens. progress(stage) reports, cancelled()
-    stops after the current items. It never touches the daemon's main instance, so a detached scan can run it in a thread."""
+    """在已拿到锁的池上执行：每个 worker 一份 lens 的副本（lens 为 None 时不加载，由 fn 自己加载或搭建）。progress(stage)
+    报告进度，cancelled() 为真时在当前条目后停止。不碰后台进程的主实例，所以分离运行的扫描可以放在后台线程里。
+    Run on a pool whose lock the caller holds, each worker on its own copy of lens (none loaded when lens is None: fn loads
+    or builds its own). progress(stage) reports, cancelled() stops after the current items. It never touches the daemon's
+    main instance, so a detached scan can run it in a thread."""
     started = time.perf_counter()
     progress(f"parallel: starting {count} workers")
     startup = pool.ensure(count)
@@ -367,8 +370,9 @@ def dispatch(pool: Pool, job: jobs.Job, lens: Path, fn: str, script: Path | None
     stop = threading.Event()
 
     def drive(worker: _Worker) -> None:
-        base = temp / f"lens-{worker.index}{lens.suffix}"
-        shutil.copy2(lens, base)
+        base = None if lens is None else temp / f"lens-{worker.index}{lens.suffix}"
+        if base is not None:
+            shutil.copy2(lens, base)
         info: dict[str, Any] = {"worker": worker.index, "items": 0, "busy_s": 0.0}
         first = True
         try:
@@ -378,7 +382,8 @@ def dispatch(pool: Pool, job: jobs.Job, lens: Path, fn: str, script: Path | None
                         break
                     i = pending.pop(0)
                 reply = worker.ask({"i": i, "item": items[i], "fn": fn, "script": None if script is None else str(script),
-                                    "base": str(base), "job": str(job.root), "args": args or {}, "reset": reset or first})
+                                    "base": None if base is None else str(base), "job": str(job.root), "args": args or {},
+                                    "reset": reset or first})
                 first = False
                 if reply is None:
                     with lock:

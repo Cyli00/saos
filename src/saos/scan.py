@@ -4,7 +4,7 @@ solves one variable, compensates and measures with the demand's checks, on the d
 
     saos scan --job J --plan plan.json
 
-plan.json（vars、points、minimize、probes 四选一 / exactly one of vars, points, minimize, probes）：
+plan.json（vars、points、minimize、probes、candidates 五选一 / exactly one of vars, points, minimize, probes, candidates）：
     {"vars": {"lens1 back.curvature": [0, 1, 2, 3], "3.conic": {"from": -1, "to": 0, "steps": 5}},  # 网格 / grid
      "points": [{"5.radius": 2.1, "5.conic": -0.5}, …],                                              # 或逐点 / or a list
      "minimize": {"vars": {"5.radius": {"step": 0.01, "min": 1.5, "max": 3}, "12.par1": {"step": 0.03}},
@@ -29,6 +29,10 @@ effect on the target:
                 {"id": "l2_asph", "script": "explore/l2_a4.py", "delta": 1e-3, "control": true,   # run(w, delta)
                  "prediction": "只改像散分配，不改 Petzval 和", "expect": {"spot": "none"}}]}
 
+结构探索（candidates）：几个结构不同的起始镜头在同样的预算、同样的判定下各优化一段再比较，格式和规则见 saos.candidates。
+Structure exploration (candidates): structurally different start lenses, each optimised on the same budget and judged by
+the same checks, then compared; format and rules in saos.candidates.
+
 结果在 scans/NNN/（计划和 result.json，封存）；按目标差距（只含所测各项）排序，最好的 keep 个点的镜头存到
 lenses/scans/NNN/pPPP.zmx，可以直接 saos lens load。当前镜头不变。minimize 与 opt local 一样要求需求已确认、没有 blocking 问题。
 Results go to scans/NNN/ (the plan and result.json, sealed), ranked by shortfall over the measured items; the lenses of
@@ -46,13 +50,13 @@ import shutil
 import threading
 from typing import Any
 
-from saos import demand, jobs, kit, search
+from saos import candidates, demand, jobs, kit, search
 from saos.protocol import ErrorCode, SaosError, write_json
 
 log = logging.getLogger(__name__)
 
 SCANS_DIR = "scans"
-MODES = ("vars", "points", "minimize", "probes")
+MODES = ("vars", "points", "minimize", "probes", "candidates")
 MAX_POINTS = 5000
 # valley / peak：±delta 两侧都比基准差（或都好）超过 NONE_BELOW，基准正在这个变量的极值上，一阶斜率看不出
 # valley / peak: both sides above (or below) the base by more than NONE_BELOW; the base sits at an extremum the slope cannot show
@@ -73,7 +77,14 @@ def _keys(where: str, values: Any) -> None:
         kit.parse_key(key)
 
 
-def validate(plan: Any, d: dict[str, Any]) -> dict[str, Any]:
+def _keep(plan: dict[str, Any], default: int) -> int:
+    keep = plan.get("keep", default)
+    if isinstance(keep, bool) or not isinstance(keep, int) or keep < 0:
+        raise _bad(f"keep must be an integer >= 0, got {keep!r}")
+    return keep
+
+
+def validate(plan: Any, d: dict[str, Any], root=None) -> dict[str, Any]:
     if not isinstance(plan, dict):
         raise _bad("must be a JSON object")
     modes = [m for m in MODES if m in plan]
@@ -97,6 +108,9 @@ def validate(plan: Any, d: dict[str, Any]) -> dict[str, Any]:
             _keys("each point", p)
     elif mode == "probes":
         measure = _validate_probes(plan, items, measure)
+    elif mode == "candidates":
+        return {**candidates.validate(root, plan, items, measure), "mode": mode, "keep": _keep(plan, 3),
+                "rel": float(d["stop"]["rel"]), "lang": d.get("lang")}
     else:
         m = plan["minimize"]
         if not isinstance(m, dict) or not isinstance(m.get("vars"), dict) or not m["vars"]:
@@ -129,7 +143,7 @@ def validate(plan: Any, d: dict[str, Any]) -> dict[str, Any]:
     operands = plan.get("operands") or {}
     if not isinstance(operands, dict) or any(not isinstance(v, list) or not v for v in operands.values()):
         raise _bad("operands map a name to [type, int1, int2, data…]")
-    return {**plan, "mode": mode, "measure": measure, "keep": int(plan.get("keep", 0 if mode == "probes" else 3))}
+    return {**plan, "mode": mode, "measure": measure, "keep": _keep(plan, 0 if mode == "probes" else 3)}
 
 
 def _validate_probes(plan: dict[str, Any], items: dict[str, Any], measure: list[str]) -> list[str]:
@@ -399,20 +413,22 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
     thread and the call returns at once, so the daemon keeps serving other commands."""
     from saos import config, parallel, workflow
 
-    if ctx.lens is None:
-        raise SaosError(ErrorCode.NO_LENS_LOADED, f"job {ctx.job.id} has no lens loaded")
-    if ctx.dirty:
-        raise SaosError(ErrorCode.UNSAVED_CHANGES, "scan workers load the saved lens file; save your changes first (lens save)")
     d = demand.load_job(ctx.job.root)
-    plan = validate(plan, d)
+    plan = validate(plan, d, ctx.job.root)
+    exploring = plan["mode"] == "candidates"
+    # 结构探索的候选是各自的文件，不用当前镜头 / exploration candidates are files of their own; the current lens is not used
+    if not exploring and ctx.lens is None:
+        raise SaosError(ErrorCode.NO_LENS_LOADED, f"job {ctx.job.id} has no lens loaded")
+    if not exploring and ctx.dirty:
+        raise SaosError(ErrorCode.UNSAVED_CHANGES, "scan workers load the saved lens file; save your changes first (lens save)")
     post = None
     if plan["mode"] == "probes":
         checked = {i["id"]: i for i in demand.checked(d)}
         scales = {k: None if checked[k]["goal"] is None else float(checked[k].get("scale", demand._default_scale(checked[k]["goal"])))
                   for k in plan["measure"]}
         post = lambda rows: _probe_result(plan, scales, rows)  # noqa: E731
-    if plan["mode"] == "minimize":
-        # 寻优可能跑很久：与 opt local 同样先确认需求 / minimisation may run long: same gate as opt local
+    if plan["mode"] in ("minimize", "candidates"):
+        # 寻优和结构探索可能跑很久：与 opt local 同样先确认需求 / minimisation and exploration may run long: same gate as opt local
         workflow.preflight(ctx.job.root)
     if plan["mode"] == "vars":
         items = [{"i": k, "set": p} for k, p in enumerate(search.grid(plan["vars"]))]
@@ -420,6 +436,8 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
         items = [{"i": k, "set": p} for k, p in enumerate(plan["points"])]
     elif plan["mode"] == "probes":
         items = _probe_items(ctx, plan)
+    elif exploring:
+        items = [{"i": k} for k in range(len(plan["candidates"]))]
     else:
         starts = plan["minimize"].get("starts", "current")
         if starts == "current":
@@ -435,11 +453,20 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
         root.mkdir(exist_ok=True)
         folder = root / f"{jobs.next_archive_number(root):03d}"
         folder.mkdir()
-        write_json(folder / "plan.json", {**plan, "lens": ctx.job.relative_lens(ctx.lens), "workers": count})
-        # 镜头快照：分离运行期间改动或保存工作镜头不影响扫描 / a snapshot, so later edits of the working lens do not reach the scan
-        base = folder / f"base{ctx.lens.suffix}"
-        shutil.copy2(ctx.lens, base)
         args = {"plan": plan, "lens_dir": f"scans/{folder.name}", "cancel_file": str(folder / jobs.CANCEL_FILE)}
+        if exploring:
+            items = candidates.snapshot(ctx.job.root, plan, folder)
+            # 每个候选自己加载或搭建，worker 不先加载公共镜头 / each candidate loads or builds its own; no shared lens first
+            base = None
+            # 几个优化器同时跑时分掉可用核，不互相抢 / concurrent optimisers share the usable cores instead of fighting over them
+            args["cores"] = max(1, config.compute_cores() // count)
+            write_json(folder / "plan.json", {**plan, "workers": count, "cores_per_worker": args["cores"],
+                                              "budget_s": candidates.budget_s(plan, count)})
+        else:
+            write_json(folder / "plan.json", {**plan, "lens": ctx.job.relative_lens(ctx.lens), "workers": count})
+            # 镜头快照：分离运行期间改动或保存工作镜头不影响扫描 / a snapshot, so later edits of the working lens do not reach the scan
+            base = folder / f"base{ctx.lens.suffix}"
+            shutil.copy2(ctx.lens, base)
     except BaseException:
         pool.lock.release()
         raise
@@ -475,15 +502,18 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
     thread = threading.Thread(target=body, name=f"scan-{folder.name}", daemon=True)
     ctx._daemon.background[folder.relative_to(job.root).as_posix()] = thread
     thread.start()
-    return {"folder": folder.relative_to(job.root).as_posix(), "detached": True, "points": len(items), "workers": count,
-            "follow": f"saos scan --job {job.id} --show {folder.name}", "cancel": f"saos job cancel {job.id}"}
+    out = {"folder": folder.relative_to(job.root).as_posix(), "detached": True, "points": len(items), "workers": count,
+           "follow": f"saos scan --job {job.id} --show {folder.name}", "cancel": f"saos job cancel {job.id}"}
+    if exploring:
+        out["budget_s"] = candidates.budget_s(plan, count)
+    return out
 
 
 def _execute(job: jobs.Job, folder, plan: dict[str, Any], items: list[dict[str, Any]], pool, base, count: int, args: dict[str, Any],
              progress, cancelled, on_done=None, post=None) -> dict[str, Any]:
     from saos import parallel
 
-    fn = "saos.scan:descend" if plan["mode"] == "minimize" else "saos.scan:point"
+    fn = {"minimize": "saos.scan:descend", "candidates": "saos.candidates:candidate"}.get(plan["mode"], "saos.scan:point")
     out = parallel.dispatch(pool, job, base, fn, None, items, count, True, args, progress, cancelled)
     if not out["workers_available"]:
         raise SaosError(ErrorCode.ZOS_ERROR, f"no parallel worker could start: {out['startup']['unavailable']}", {"pool": pool.status()})
@@ -492,8 +522,12 @@ def _execute(job: jobs.Job, folder, plan: dict[str, Any], items: list[dict[str, 
         if res is None:
             res = {**item, "shortfall": math.inf, "error": out["errors"].get(str(item["i"]), "not run")}
         rows.append(res)
-    ranked = search.ranked(rows)
-    keep = {r.get("lens") for r in ranked[:max(0, plan["keep"])] if r.get("lens")}
+    if plan["mode"] == "candidates":
+        ranked, kept_ids = candidates.rank(rows, plan["keep"])
+        keep = {r.get("lens") for r in ranked if r["id"] in kept_ids and r.get("lens")}
+    else:
+        ranked = search.ranked(rows)
+        keep = {r.get("lens") for r in ranked[:max(0, plan["keep"])] if r.get("lens")}
     lens_root = job.lenses_dir / args["lens_dir"]
     for r in ranked:
         if r.get("lens") and r["lens"] not in keep:
@@ -508,6 +542,11 @@ def _execute(job: jobs.Job, folder, plan: dict[str, Any], items: list[dict[str, 
               "best": ranked[0] if valid else None, "kept_lenses": sorted(k for k in keep if k), "rows": ranked}
     if post is not None and not out["cancelled"]:
         result.update(post(rows))
+    if plan["mode"] == "candidates":
+        result["best"] = next((r for r in ranked if r.get("valid")), None)
+        result["kept"] = [r["id"] for r in ranked if r.get("kept")]
+        result["budget_limited"] = [r["id"] for r in ranked if r.get("still_improving")]
+        result["page"] = candidates.page(job, folder, plan, ranked, plan.get("lang")).relative_to(job.root).as_posix()
     write_json(folder / "result.json", result)
     (folder / jobs.CANCEL_FILE).unlink(missing_ok=True)
     if on_done is not None:
@@ -519,10 +558,14 @@ def _execute(job: jobs.Job, folder, plan: dict[str, Any], items: list[dict[str, 
 def summarize(result: dict[str, Any]) -> dict[str, Any]:
     """返回给 agent 的摘要：前 10 行，不含寻优历史。/ The summary for the agent: the top 10 rows, no search history."""
     summary = {k: v for k, v in result.items() if k != "rows"}
-    summary["top"] = [{k: r.get(k) for k in ("i", "set", "shortfall", "hard_failing", "invalid", "values", "solve", "lens", "operands", "error")}
-                      for r in result["rows"][:10]]
-    if summary["best"] is not None and "history" in summary["best"]:
-        summary["best"] = {k: v for k, v in summary["best"].items() if k != "history"}
+    if result.get("mode") == "candidates":
+        keys = ("id", "valid", "kept", "still_improving", "start_shortfall", "shortfall", "problems", "hard_failing", "values", "lens", "error")
+    else:
+        keys = ("i", "set", "shortfall", "hard_failing", "invalid", "values", "solve", "lens", "operands", "error")
+    summary["top"] = [{k: r.get(k) for k in keys} for r in result["rows"][:10]]
+    if summary["best"] is not None:
+        # 寻优历史和逐段记录只在 result.json 里 / search history and per-stage records stay in result.json
+        summary["best"] = {k: v for k, v in summary["best"].items() if k not in ("history", "stages", "start")}
     summary["rows_in"] = f"{result['folder']}/result.json"
     return summary
 
