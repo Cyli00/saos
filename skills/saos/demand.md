@@ -76,6 +76,7 @@ Do not restate the rules of `skills/saos/SKILL.md` (sourced materials, no model 
 | `variables` | no | `id`, `description`, optional `range` + `check`, optional `options`, `unit`, `source` (where a limit comes from, e.g. `李晓彤 表17-2`). |
 | `objectives` | yes, non-empty | `id`, `description`, `check`, `origin`, optional `must`, `minimize` or `maximize` (`true`), `ideal`, `wish`, `weight`, `scale`, `unit`, `source`. |
 | `open_questions` | no | `{question, blocking}`. |
+| `structure` | no | `{mode: free \| prescribed, reason}`. Absent means free. Generate and screen sourced starts; comparisons have no quota and do not gate optimisation. Prescribed structures show the user’s reason. Deep optimisation requires demand and model approval. |
 | `summary` | yes | See above. |
 | `notes` | no | A list of short strings: context that changes neither the design nor the judgement (where source files are, decisions already taken). Not versioned; anything that affects the design belongs in the three sections. |
 | `lang` | no | `zh` or `en`: the user's language; sets the report language. |
@@ -103,7 +104,7 @@ One structure often cannot meet every objective, so the shortfall must say which
 
 ## Confirmation and versions
 
-The demand version is a hash of `constants`, `variables`, `objectives` and `stop`. `summary`, `open_questions` and `lang` are not part of it, so rewording them needs no new confirmation and keeps rounds comparable. Every limit (a constant's value or goal, a variable `range`, a `must`) needs a `source`; `demand confirm` refuses one without. `demand show` lists under `weak_basis` the limits without an outside basis (`agent assumption: …`): go through each with the user before they confirm; the list is kept with the confirmation. Show the user the demand in plain language, with your feasibility verdict for each `must` (SKILL.md, "Question the structure before you write it down"), then record their own words with `uv run saos demand confirm --job J --quote "<their words>"`; the confirmation is bound to the version. Never record an instruction to write the demand as an approval of its content. `uv run saos demand show --job J` validates the file and prints its version, confirmation and open questions.
+The demand has two versions. The confirmation version (what `demand confirm` records; `demand_sha` in `demand show`) covers every field of the three sections except `description`, plus `stop` and `structure` when declared: changing a value, range, check, weight, unit, origin or `source` needs a new confirmation, rewording a `description` does not. The compute version (rounds, structure comparisons, stops and rule-outs use it) is the same without `source`: changing only a source asks for a new confirmation, but the measured numbers keep their comparisons. `summary`, `open_questions` and `lang` are in neither version, so rewording them needs no confirmation and keeps rounds comparable. Every limit (a constant's value or goal, a variable `range`, a `must`) needs a `source`; `demand confirm` refuses one without. `demand show` lists under `weak_basis` the limits without an outside basis (`agent assumption: …`): go through each with the user before they confirm; the list is kept with the confirmation. Show the user the demand in plain language, with your feasibility verdict for each `must` (SKILL.md, "Question the structure before you write it down"), then record their own words with `uv run saos demand confirm --job J --quote "<their words>"`; the confirmation is bound to the version. Never record an instruction to write the demand as an approval of its content. `uv run saos demand show --job J` validates the file and prints its version, confirmation and open questions.
 
 ## Shortfall and delivery
 
@@ -136,3 +137,15 @@ Check scripts live under `checks/` with every helper module and data file they u
 3. `saos lens describe` and `saos lens approve --model models/NNN-<lens> --quote "..."` for the model.
 4. `saos round --job J [--tier T] --note "..."` records round 0 (no tier), then one round per adjustment. It refuses without a confirmation of the current version (`DEMAND_NOT_CONFIRMED`), with a blocking question (`DEMAND_BLOCKED`), after the job stopped, when the lens matches no approved model (`MODEL_NOT_APPROVED`), when a check changed the lens (`LENS_MODIFIED_BY_CHECK`), or for the same lens under the same versions (`DUPLICATE_ROUND`). `saos opt local`, `opt hammer` and `opt global` apply the same demand checks before they start.
 5. `saos report --job J [--lang zh|en]` writes `report/index.html`.
+
+## OpticStudio stage budget
+
+After the user accepts the Optiland report, `saos zos begin --job J --quote "<their words>" [--max-rounds K]` seals a separate stage budget. The first `verify` round is its baseline and does not consume an optimisation round. The default cap is the confirmed demand's `max_rounds`; the entry does not rewrite or reconfirm the demand. Earlier Optiland rounds, stop decisions and ruled-out tiers do not consume or terminate this stage. Changed checks still require a rebase within the current stage. Changing the demand still requires its normal confirmation; it does not switch the job back to Optiland.
+
+`structure.reason` belongs to the confirmation layer only: rewording it requires demand confirmation but leaves computed evidence valid. Archived full demands in confirmations or evaluation results let earlier hashes follow these layers after description-only changes, including existing stop decisions. If no full demand survives, compatibility can only recognise the unchanged legacy demand.
+
+`notes.next_budget` is model-description input, not a demand field. A requirement with no bound differs from unknown computation.
+
+Starting-form generation reads numeric demand items through explicit ID bindings (`saos.starts.generate`); it never infers units or half-field meaning from prose. Model rebuild reasons belong to `lens approve --rebuild-reason`, not to the demand version.
+
+An environment-surface declaration is part of the model fingerprint: changing it requires model approval with a rebuild reason. Starting-library example limits are preserved; explicit exploratory extrapolation is labelled and does not relax demand bounds. Generated short optimisation requires a prepare script that sets variables and merit.

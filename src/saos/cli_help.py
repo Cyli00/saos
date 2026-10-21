@@ -80,20 +80,21 @@ the local workflow window shows modelling in either mode.
 """,
     "opt": """Configure and run optimization on the loaded job lens. In an Optiland session
 vary, merit, local, global and glass run in-process with scipy (no licence);
-glass substitution variables, config rows, objects, hammer and dls/od move the
-session to OpticStudio. Model glass is approximated by an Optiland Abbe material.
+glass substitution variables, config rows, objects, hammer and dls/od require
+the accepted-report OpticStudio stage. Model glass is approximated by an Optiland Abbe material.
 local/hammer/global/glass and scan minimize share one rule: the current demand
-is confirmed and free of blocking questions, the structure is fixed by the user
-or compared under this demand and check version, and the current model is
-approved. Model approval is required to record rounds. Geometry and
+is confirmed and free of blocking questions, and the current model is approved.
+Missing comparisons are notes, not gates. Model approval is required to record rounds. Geometry and
 material changes require saving before worker scans; model glass is exploratory
 and cannot be delivered. Optimization keeps the best reached system in memory.
 """,
     "demand": """Validate and confirm sources/demand.yaml locally, without OpticStudio.
 Format, check definitions, shortfall and stop rules: skills/saos/demand.md.
 Each bound needs a source; confirmation records the user's actual approval and
-content hash. Constants, variables, objectives and stop define the version;
-editing summary, questions or language does not require reconfirmation.
+content hash. Constants, variables, objectives (except their descriptions) and stop define
+the version; rewording a description, the summary, questions or language does not
+require reconfirmation, and changing a source needs confirming again while the
+measured numbers stay comparable.
 """,
     "ui": """Show the user's workflow, current lens and archived round visualizations.
 The local service listens only on 127.0.0.1 and reads job files. Optical controls
@@ -180,10 +181,17 @@ COMMANDS = {
     "lens approve": (
         "Record the user's approval after showing models/NNN-<lens>/index.html.",
         "--model is the job-relative description folder; --quote is the user's actual\n"
-        "  approval. Seals approval.json with fingerprint and outstanding warnings.\n"
+        "  approval. Seals approval.json with fingerprint, outstanding warnings,\n"
+        "  shown_sha (digest of the four sections the page showed) and the unknowns\n"
+        "  still open then (unknowns_acknowledged). Descriptions made before these\n"
+        "  fields existed lack the last two.\n"
         "  Rounds require a matching approved structure; structural changes need approval\n"
-        "  again, while design variables may change. What the NSC fingerprint locks:\n"
-        "  uv run saos lens build --help.", "FILE_NOT_FOUND, BAD_ARGS, MODEL_NOT_APPROVED"),
+        "  again; --rebuild-reason covers structure or environment-declaration changes.\n"
+        "  Appended field/wavelength samples are allowed, using the round gate comparison.\n"
+        "  An intact earlier matching approval remains usable. Damaged history is reported\n"
+        "  by path and skipped; modern missing seals cannot be treated as legacy.\n"
+        "  Design variables may change. What the NSC fingerprint locks:\n"
+        "  uv run saos lens build --help.", "FILE_NOT_FOUND, BAD_ARGS, MODEL_NOT_APPROVED, EVIDENCE_TAMPERED"),
     "lens set": (
         "Set one surface parameter on the loaded job lens.",
         "--value is numeric (including inf), material name or comment text; --param\n"
@@ -231,7 +239,11 @@ COMMANDS = {
     "scan": (
         "Scan, compare structures, minimize, probe or tolerance with the daemon's worker pool.",
         "Use --plan to execute, or --show [NNN] to read progress/results locally.\n"
-        "  Most modes need a saved current lens; candidates use their own files.", "BAD_ARGS, UNSAVED_CHANGES, POOL_BUSY"),
+        "  Most modes need a saved current lens; candidates use their own files.\n"
+        "  Candidates have optional hypothesis; stages: [] screens without optimisation.\n"
+        "  Then run every candidate with the same short budget. Prescriptions with optimisation\n"
+        "  require prepare to set variables and merit; script errors or empty merit are BAD_ARGS. Invalid means invalid within budget.", "BAD_ARGS, UNSAVED_CHANGES, POOL_BUSY"),
+
 }
 
 COMMANDS.update({
@@ -709,8 +721,12 @@ DESCRIBE_HELP_EPILOG = """Input: --notes JSON object (optional)
     "environment": [3],
     "assumptions": ["The sample medium is fixed by the user's experiment"],
     "first_order": ["Measured EFFL and working distance, with evidence paths"],
-    "exploration": "scans/001, or evidence that the user prescribed the structure"
+    "exploration": "scans/001, or evidence that the user prescribed the structure",
+    "next_budget": {"max_seconds": 900, "plan": "Hammer on the chosen structure, then a 3-point scan of the spacing"}
   }
+  next_budget is the computation the next stage may spend, with the optimisations and
+  scans it covers. The page's budget section shows it; a warning asks for it when it is
+  missing. Both keys are required: max_seconds a positive number, plan non-empty text.
   surfaces maps string surface indices to the physical part each face represents.
   Non-sequential notes use objects instead: {"objects": {"1": "Sample volume",
     "2": "Source", "3": "Detector"}, "environment": [1], ...}. In a mixed-mode
@@ -722,15 +738,28 @@ DESCRIBE_HELP_EPILOG = """Input: --notes JSON object (optional)
   their declared settings are locked into the approval fingerprint.
   assumptions/first_order are lists of explanatory text. exploration records a
   candidates scan or the reason structural comparison was unnecessary. Without
-  either it or an existing candidates scan, a warning asks for at least 3
-  structurally different candidates before committing to a model.
+  either it or an existing candidates scan, the page warns that screening evidence is absent.
 
 Results and files
   Seals models/NNN-<lens>/index.html, model.json and layout PNGs (3D views and,
   when available, a symmetry-plane section); with --notes, also archives
   notes/model-NNN.json.
-  Returns page, lang, warnings, layout, next. Show the page to the user before
+  Returns page, lang, warnings, layout, shown_sha, unknowns, next. Show the page to the user before
   uv run saos lens approve --job J --model models/NNN-<lens> --quote "their words".
+  Four sections follow the warnings. Structure choice: saved predictions, screening results, sources and the matching candidate,
+  the other candidates of its comparison with their
+  verdicts, and a link to the comparison page (a prescribed structure shows the user's reason).
+  Requirements: each demand item with its current value (measured with the demand's own checks,
+  no evidence kept), bound, status met / not met / unknown / no bound, and source; agent assumptions are
+  marked. Computation validity, checked by the system: the chosen candidate's numeric warnings,
+  items with no valid value or a failed check, and each glass at four levels (source found, data
+  complete, backend supports, actually loaded); a level the code cannot establish reads unknown.
+  Budget: notes.next_budget; malformed budgets are refused, missing budgets warn.
+  model.json and approval.json are checked against their seals; shown_sha records what
+  the user saw. Normal variable/value changes do not require fresh model approval.
+  Changed checks and stale comparisons are shown as notes only. A missing materials record means unknown.
+  Scripts can suppress numeric warnings through Python filters; zero proves no validity.
+  The validity section says that approval does not vouch for it.
   Language: --lang > demand.lang > SAOS_LANG > system UI language > English.
   Lists all surfaces/nonzero parameters, material sources/per-wave indices,
   aperture/afocal units, environment, apodization, polarization, coating settings,

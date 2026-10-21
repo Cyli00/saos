@@ -1,9 +1,15 @@
-<mxfile host="Electron" modified="2026-10-16T03:32:23.205Z" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/21.3.7 Chrome/112.0.5615.204 Electron/24.5.0 Safari/537.36" version="21.3.7" etag="U4BbtoHhBsKHdY89aGgM" type="device">
+<mxfile host="Electron" modified="2026-10-21T03:09:56+00:00" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/21.3.7 Chrome/112.0.5615.204 Electron/24.5.0 Safari/537.36" version="21.3.7" type="device">
   <diagram id="saos-workflow" name="saos workflow">
-    <mxGraphModel dx="4476" dy="4760" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="2960" math="0" shadow="0">
+    <mxGraphModel dx="4476" dy="4050" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="4050" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
+        <mxCell id="band6" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f7f9fc;strokeColor=#d0d7e2;dashed=1;" parent="1" vertex="1">
+          <mxGeometry x="0" y="3740" width="1410" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="band5" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d0d7e2;dashed=1;" parent="1" vertex="1">
+          <mxGeometry x="0" y="3140" width="1410" height="600" as="geometry" />
+        </mxCell>
         <mxCell id="band0" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f7f9fc;strokeColor=#d0d7e2;dashed=1;" parent="1" vertex="1">
           <mxGeometry y="40" width="1410" height="740.0" as="geometry" />
         </mxCell>
@@ -23,34 +29,34 @@
           <mxGeometry y="890.0" width="60" height="645" as="geometry" />
         </mxCell>
         <mxCell id="band3" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d0d7e2;dashed=1;" parent="1" vertex="1">
-          <mxGeometry y="1535.0" width="1410" height="1020" as="geometry" />
+          <mxGeometry y="1535.0" width="1410" height="1180" as="geometry" />
         </mxCell>
-        <mxCell id="phase3" value="④ 轮次设计" style="text;html=1;horizontal=0;align=center;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#34495e;" parent="1" vertex="1">
-          <mxGeometry y="1535.0" width="60" height="1020" as="geometry" />
+        <mxCell id="phase3" value="④ 当前阶段的自主设计与轮次" style="text;html=1;horizontal=0;align=center;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#34495e;" parent="1" vertex="1">
+          <mxGeometry y="1535.0" width="60" height="1180" as="geometry" />
         </mxCell>
         <mxCell id="band4" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f7f9fc;strokeColor=#d0d7e2;dashed=1;" parent="1" vertex="1">
-          <mxGeometry y="2555.0" width="1410" height="325" as="geometry" />
+          <mxGeometry y="2715" width="1410" height="425" as="geometry" />
         </mxCell>
-        <mxCell id="phase4" value="⑤ 交付 / 停止" style="text;html=1;horizontal=0;align=center;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#34495e;" parent="1" vertex="1">
-          <mxGeometry y="2555.0" width="60" height="325" as="geometry" />
+        <mxCell id="phase4" value="⑤ 阶段报告 / 用户停止" style="text;html=1;horizontal=0;align=center;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#34495e;" parent="1" vertex="1">
+          <mxGeometry y="2715" width="60" height="425" as="geometry" />
         </mxCell>
         <mxCell id="laneU" value="用户" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#666666;fontSize=15;fontStyle=1;" parent="1" vertex="1">
           <mxGeometry x="60" width="290" height="40" as="geometry" />
         </mxCell>
         <mxCell id="laneU_body" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;" parent="1" vertex="1">
-          <mxGeometry x="60" y="40" width="290" height="2840.0" as="geometry" />
+          <mxGeometry x="60" y="40" width="290" height="3930" as="geometry" />
         </mxCell>
         <mxCell id="laneA" value="Agent（设计者）" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#666666;fontSize=15;fontStyle=1;" parent="1" vertex="1">
           <mxGeometry x="350" width="600" height="40" as="geometry" />
         </mxCell>
         <mxCell id="laneA_body" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;" parent="1" vertex="1">
-          <mxGeometry x="350" y="40" width="600" height="2840.0" as="geometry" />
+          <mxGeometry x="350" y="40" width="600" height="3930" as="geometry" />
         </mxCell>
-        <mxCell id="laneT" value="saos 工具 / OpticStudio / 任务文件" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#666666;fontSize=15;fontStyle=1;" parent="1" vertex="1">
+        <mxCell id="laneT" value="saos 工具 / Optiland · OpticStudio / 任务文件" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#666666;fontSize=13;fontStyle=1;" parent="1" vertex="1">
           <mxGeometry x="950" width="460" height="40" as="geometry" />
         </mxCell>
         <mxCell id="laneT_body" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;" parent="1" vertex="1">
-          <mxGeometry x="950" y="40" width="460" height="2840.0" as="geometry" />
+          <mxGeometry x="950" y="40" width="460" height="3930" as="geometry" />
         </mxCell>
         <mxCell id="a1" value="创建任务" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="140" width="320" height="44" as="geometry" />
@@ -127,8 +133,8 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="a5" value="&lt;b&gt;建模前补查&lt;/b&gt;&lt;br&gt;会话预检看不到的：材料目录 · 许可证&lt;br&gt;缺失时问用户一次，不绕过" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="490" y="910.0" width="320" height="66" as="geometry" />
+        <mxCell id="a5" value="&lt;b&gt;建模前确认计算环境&lt;/b&gt;&lt;br&gt;默认 Optiland 进程内计算；确认材料目录&lt;br&gt;不支持的系统由 OpticStudio 接手，缺项明确说明" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="910.0" width="320" height="70" as="geometry" />
         </mxCell>
         <mxCell id="t3" value="&lt;b&gt;saos ui 当前镜头视图（任何模式）&lt;/b&gt;&lt;br&gt;每条改镜头的命令后写 view.json：布局 2D/3D · Lens Data · 交叠检查&lt;br&gt;没在轮询就重开；用户关掉的等需求待确认 / 建模说明 / round 再开&lt;br&gt;extension 模式可选（SAOS_UI_PID）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
           <mxGeometry x="980" y="906.0" width="400" height="86" as="geometry" />
@@ -136,7 +142,7 @@
         <mxCell id="a6" value="&lt;b&gt;建模&lt;/b&gt;&lt;br&gt;lens import / lens build / exec 脚本 + ctx.save_as" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="1000.0" width="320" height="56" as="geometry" />
         </mxCell>
-        <mxCell id="f3" value="lenses/&amp;lt;name&amp;gt;.zmx" style="shape=note;whiteSpace=wrap;html=1;size=12;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;fontFamily=Consolas;" parent="1" vertex="1">
+        <mxCell id="f3" value="lenses/&amp;lt;name&amp;gt;.optiland.json（导出 .zmx 时另有）" style="shape=note;whiteSpace=wrap;html=1;size=12;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;fontFamily=Consolas;" parent="1" vertex="1">
           <mxGeometry x="1050" y="1005.0" width="260" height="46" as="geometry" />
         </mxCell>
         <mxCell id="a7" value="&lt;b&gt;材料取有来源的真实材料&lt;/b&gt;&lt;br&gt;OpticStudio 目录 → library/ → 厂商数据表/文献&lt;br&gt;外购件选型交给 optic-material-explorer（先按硬条件筛）&lt;br&gt;样品、介质、外购件声明为 environment" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
@@ -145,22 +151,22 @@
         <mxCell id="f4" value="sources/materials.yaml" style="shape=note;whiteSpace=wrap;html=1;size=12;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;fontFamily=Consolas;" parent="1" vertex="1">
           <mxGeometry x="1050" y="1095.0" width="260" height="46" as="geometry" />
         </mxCell>
-        <mxCell id="a8" value="&lt;b&gt;一阶分析&lt;/b&gt;&lt;br&gt;用 OpticStudio 数字&lt;br&gt;复核 ① 的判断：能达到？&lt;br&gt;&lt;b&gt;结构探索&lt;/b&gt;（结构非用户指定时必做）&lt;br&gt;≥ 3 个候选 · saos scan（candidates）&lt;br&gt;→ scans/NNN/index.html，保留胜者" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="510" y="1180.0" width="280" height="110" as="geometry" />
+        <mxCell id="a8" value="&lt;b&gt;起点生成与预判&lt;/b&gt;&lt;br&gt;有来源处方 · 显式标记外推&lt;br&gt;检查 prepare 变量与评价函数&lt;br&gt;零优化 → 同预算短优化&lt;br&gt;&lt;b&gt;saos scan&lt;/b&gt; → 初筛表&lt;br&gt;缺比较只提示，不设配额" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="1170" width="320" height="130" as="geometry" />
         </mxCell>
         <mxCell id="u3" value="带证据回到用户&lt;br&gt;（可能改需求单）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="85" y="1207.0" width="240" height="56" as="geometry" />
         </mxCell>
-        <mxCell id="a9" value="&lt;b&gt;写 notes.json&lt;/b&gt;&lt;br&gt;每个面的物理含义 · environment · 假设 · 一阶分析" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+        <mxCell id="a9" value="&lt;b&gt;写 notes.json&lt;/b&gt;&lt;br&gt;各面含义 · environment · 假设 · 一阶分析&lt;br&gt;next_budget: {max_seconds, plan}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="1315.0" width="320" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="t4" value="&lt;b&gt;saos lens describe --notes&lt;/b&gt;&lt;br&gt;→ models/NNN-&amp;lt;lens&amp;gt;/index.html&lt;br&gt;model.json（结构指纹）· 自动警告&lt;br&gt;交叠检查按零件外缘（lens set --param mech_semi_diameter）· clearances&lt;br&gt;Optiland 镜头：与 OpticStudio 双端基准对齐（parity_check）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
-          <mxGeometry x="980" y="1305.0" width="400" height="80" as="geometry" />
+        <mxCell id="t4" value="&lt;b&gt;saos lens describe --notes&lt;/b&gt;&lt;br&gt;→ models/NNN-&amp;lt;lens&amp;gt;/index.html&lt;br&gt;选型依据 · 需求逐项 · 计算有效性 · 下一阶段预算&lt;br&gt;notes.next_budget: max_seconds + plan&lt;br&gt;缺预算警告，格式错拒绝 · 未知与无界限分开&lt;br&gt;只用 Optiland · 交叠按零件外缘（mech_semi_diameter）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="980" y="1305.0" width="400" height="110" as="geometry" />
         </mxCell>
         <mxCell id="u4" value="停顿 ②&lt;br&gt;用户认可建模说明&lt;br&gt;&lt;span style=&quot;font-weight:normal;font-size:11px&quot;&gt;不认可 → 回到建模&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;strokeWidth=3;fontSize=13;fontStyle=1;" parent="1" vertex="1">
           <mxGeometry x="85" y="1430.0" width="240" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="t5" value="&lt;b&gt;saos lens approve --quote &quot;…&quot;&lt;/b&gt;&lt;br&gt;→ approval.json（原话 + 指纹）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+        <mxCell id="t5" value="&lt;b&gt;saos lens approve --quote &quot;…&quot;&lt;/b&gt;&lt;br&gt;核对可用确认 · 记录 shown_sha 与未知项&lt;br&gt;结构/环境声明改变：--rebuild-reason&lt;br&gt;与轮次共用比较 · 允许末尾追加采样" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
           <mxGeometry x="980" y="1445.0" width="400" height="50" as="geometry" />
         </mxCell>
         <mxCell id="e12" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a4" target="a5" edge="1">
@@ -195,7 +201,7 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e21" value="能" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a8" target="a9" edge="1">
+        <mxCell id="e21" value="形成起点依据" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a8" target="a9" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e22" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#82b366;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a9" target="t4" edge="1">
@@ -212,8 +218,8 @@
         <mxCell id="e24" value="认可（原话）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.6;entryX=0;entryY=0.5;" parent="1" source="u4" target="t5" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="a10" value="记录第 0 轮：&lt;b&gt;saos round&lt;/b&gt;（tier = baseline）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="490" y="1560.0" width="320" height="46" as="geometry" />
+        <mxCell id="a10" value="&lt;b&gt;saos round&lt;/b&gt;：记录探索阶段基线&lt;br&gt;OpticStudio 阶段由 zos begin 自动写 verify 基线" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="1560.0" width="320" height="52" as="geometry" />
         </mxCell>
         <mxCell id="a11" value="&lt;b&gt;诊断：可达性阶梯&lt;/b&gt;&lt;br&gt;守恒量 / 不变量（光展量、Lagrange、Petzval）&lt;br&gt;→ 轴上一点 → 全视场；低一级不成立 = 结构问题" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="1635.0" width="320" height="76" as="geometry" />
@@ -230,23 +236,23 @@
         <mxCell id="u5" value="&lt;b&gt;停下来问用户&lt;/b&gt;&lt;br&gt;证据 · 影响 · 建议选项&lt;br&gt;用户选：改需求 / 停止 / 继续" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="85" y="1850.0" width="240" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="a14" value="&lt;b&gt;优化（策略自定）&lt;/b&gt;&lt;br&gt;Optiland：opt local（scipy trf 等 / torch-lbfgs）、opt global（de）、opt glass 在产玻璃替换&lt;br&gt;Hammer、--mode substitute、dls / od 切到 OpticStudio；平滑代理量作目标&lt;br&gt;物理不可能状态判无效；9e9 先查原因&lt;br&gt;分段检查点：一段收益 &amp;lt; rel 就停，每段报数" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="490" y="2170.0" width="320" height="90" as="geometry" />
+        <mxCell id="a14" value="&lt;b&gt;按机理选择优化手段&lt;/b&gt;&lt;br&gt;Optiland：local（SciPy / Torch）、global、glass&lt;br&gt;OpticStudio：DLS、Hammer、全局搜索&lt;br&gt;未翻译的边界与脚本损失逐项重设&lt;br&gt;&lt;br&gt;SciPy / Torch：交叠或任一视场/波长有效率 &amp;lt;95%&lt;br&gt;拒绝候选步，最多减半 12 次；只保留已接受步&lt;br&gt;Torch：连续失效光线惩罚，保护路径不作为实测&lt;br&gt;分段报告收益；物理不成立的状态不得交付" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="2170.0" width="320" height="180" as="geometry" />
         </mxCell>
-        <mxCell id="t8" value="&lt;b&gt;saos opt vary / merit / local / glass / hammer / global&lt;/b&gt;&lt;br&gt;lens analysis · exec 脚本（kit · ctx.measure · ctx.map）&lt;br&gt;saos scan --plan：网格 / 逐点求解 / 多起点 → scans/NNN/&lt;br&gt;--detach 后台跑、主实例照常用；--show 看进度&lt;br&gt;opt / exec / check / round --detach → runs/NNN-&amp;lt;op&amp;gt;.json；忙时其他请求报 BUSY&lt;br&gt;opt 结果带 review：交叠检查 · --measure 前后对比 · valid&lt;br&gt;→ progress.json（job show / job cancel）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
-          <mxGeometry x="980" y="2138" width="400" height="120" as="geometry" />
+        <mxCell id="t8" value="&lt;b&gt;saos opt vary / merit / local / glass / hammer / global&lt;/b&gt;&lt;br&gt;saos lens analysis · saos exec（kit / ctx.measure）&lt;br&gt;saos scan / ctx.map：常驻 worker 池按任务阶段选后端&lt;br&gt;scan --detach：后台线程，主实例仍可用；--show 看进度&lt;br&gt;opt / exec / check / round --detach：runs/ 下保存结果&lt;br&gt;review：交叠检查、--measure 前后对比与 valid&lt;br&gt;progress.json：saos job show / saos job cancel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="980" y="2170" width="400" height="180" as="geometry" />
         </mxCell>
         <mxCell id="a15" value="&lt;b&gt;值得评判时记录轮次&lt;/b&gt;&lt;br&gt;saos round --tier T[,T] --note [--merit]&lt;br&gt;小改动：saos check [--only id,…] 只测受影响项&lt;br&gt;距上次记轮次 ≥ 2 次优化或 ≥ 15 个脚本：结果带 since_round 提醒" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="490" y="2275.0" width="320" height="70" as="geometry" />
+          <mxGeometry x="490" y="2435.0" width="320" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="t9" value="核对模型确认 → 取值判定（每项 duration_s）→ 确认未改镜头&lt;br&gt;→ 归档 lenses/rounds/rNNN.zmx → 写 ledger.jsonl&lt;br&gt;零件交叠 → parts_clash：不算达成、不可交付&lt;br&gt;evaluations/NNN/ 封存 · viz.json 供工作流小窗&lt;br&gt;blocking 待确认问题未答时拒绝" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
-          <mxGeometry x="980" y="2260.0" width="400" height="96" as="geometry" />
+        <mxCell id="t9" value="&lt;b&gt;saos round&lt;/b&gt;：模型确认 → 同一套 checks → 判定只读&lt;br&gt;lenses/rounds/rNNN.optiland.json · ledger.jsonl · evaluations/NNN/&lt;br&gt;每轮记录 backend、stage、材料与交叠结果&lt;br&gt;阻断问题未答不记轮；viz.json 供工作流窗口显示" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="980" y="2420.0" width="400" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="a16" value="&lt;b&gt;终止判断（brief）&lt;/b&gt;&lt;br&gt;achieved · limit&lt;br&gt;exhausted · continue" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="500" y="2385.0" width="300" height="130" as="geometry" />
+        <mxCell id="a16" value="&lt;b&gt;按当前阶段判断终止&lt;/b&gt;&lt;br&gt;achieved / limit / exhausted / stopped&lt;br&gt;continue：返回诊断，选择下一种手段" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="500" y="2545.0" width="300" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="n1" value="next_tier = structure 且超出已确认的结构&lt;br&gt;→ 回到 ③ 重新 describe，经停顿 ② 认可" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#ffffff;strokeColor=#9673a6;fontColor=#4d3466;fontSize=11;align=left;spacingLeft=6;" parent="1" vertex="1">
-          <mxGeometry x="980" y="2415.0" width="400" height="60" as="geometry" />
+        <mxCell id="n1" value="structure 无完整匹配确认 → 回到 ③ 重新描述并确认&lt;br&gt;进入 OpticStudio 后，重建与加载仍留在该后端" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#ffffff;strokeColor=#9673a6;fontColor=#4d3466;fontSize=11;align=left;spacingLeft=6;" parent="1" vertex="1">
+          <mxGeometry x="980" y="2575.0" width="400" height="65" as="geometry" />
         </mxCell>
         <mxCell id="e25" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=1;entryY=0.5;" parent="1" source="t5" target="a10" edge="1">
           <mxGeometry relative="1" as="geometry">
@@ -297,27 +303,31 @@
         <mxCell id="e36" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a15" target="a16" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e37" value="continue&lt;br&gt;按 next_tier 升级手段" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#d79b00;strokeWidth=2;fontSize=11;fontColor=#b46504;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;exitX=0.25;exitY=0.25;exitPerimeter=1;entryX=0;entryY=0.5;" parent="1" source="a16" target="a11" edge="1">
-          <mxGeometry relative="1" as="geometry">
+        <mxCell id="e37" value="continue&lt;br&gt;按 next_tier 升级手段" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#d79b00;strokeWidth=2;fontSize=11;fontColor=#b46504;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;exitX=1;exitY=0.8;exitPerimeter=1;entryX=1;entryY=0.5;" parent="1" source="a16" target="a11" edge="1">
+          <mxGeometry relative="1" x="-0.85" y="-12" as="geometry">
             <Array as="points">
-              <mxPoint x="395" y="2417.0" />
-              <mxPoint x="395" y="1673.0" />
+              <mxPoint x="845" y="2649" />
+              <mxPoint x="845" y="2690" />
+              <mxPoint x="1400" y="2690" />
+              <mxPoint x="1400" y="1626" />
+              <mxPoint x="850" y="1626" />
+              <mxPoint x="850" y="1673" />
             </Array>
           </mxGeometry>
         </mxCell>
         <mxCell id="e38" value="brief.review&lt;br&gt;（两轮无明显进步 / 将升 global、structure）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#b85450;dashed=1;strokeWidth=1.5;fontSize=11;fontColor=#b85450;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;exitX=0;exitY=0.5;entryX=1;entryY=0.85;" parent="1" source="a16" target="u5" edge="1">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="340" y="2450.0" />
+              <mxPoint x="340" y="2610.0" />
               <mxPoint x="340" y="1925.0" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e39" value="改需求 → 新版本须重新确认&lt;br&gt;轮次重新计数" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#b85450;dashed=1;strokeWidth=1.5;fontSize=11;fontColor=#b85450;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;exitX=0;exitY=0.5;entryX=0;entryY=0.7;" parent="1" source="u5" target="u2" edge="1">
+        <mxCell id="e39" value="改需求 → 新版本须重新确认&lt;br&gt;轮次重新计数" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#b85450;dashed=1;strokeWidth=1.5;fontSize=11;fontColor=#b85450;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;exitX=0;exitY=0.5;entryX=0;entryY=0.1;" parent="1" source="u5" target="u2" edge="1">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="68" y="1895.0" />
-              <mxPoint x="68" y="710.0" />
+              <mxPoint x="68" y="1895" />
+              <mxPoint x="68" y="667" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -325,22 +335,22 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="u6" value="用户依据证据&lt;br&gt;决定停止" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="85" y="2580.0" width="240" height="56" as="geometry" />
+          <mxGeometry x="85" y="2740.0" width="240" height="56" as="geometry" />
         </mxCell>
         <mxCell id="t10" value="&lt;b&gt;saos stop --reason &quot;…&quot; --quote &quot;…&quot;&lt;/b&gt;&lt;br&gt;→ stops.jsonl；ledger 状态 stopped，此版本拒绝后续轮次" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
-          <mxGeometry x="980" y="2580.0" width="400" height="56" as="geometry" />
+          <mxGeometry x="980" y="2740.0" width="400" height="56" as="geometry" />
         </mxCell>
-        <mxCell id="a17" value="&lt;b&gt;生成交付报告&lt;/b&gt;&lt;br&gt;需求或用户关心加工装配时先做公差扫描" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="490" y="2675.0" width="320" height="50" as="geometry" />
+        <mxCell id="a17" value="&lt;b&gt;生成当前阶段报告&lt;/b&gt;&lt;br&gt;需求涉及制造装配时，先做相应公差扫描" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="2835" width="320" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="t11" value="&lt;b&gt;saos scan&lt;/b&gt;（tolerance 模式，按需）→ scans/NNN：灵敏度、蒙特卡洛、良率&lt;br&gt;&lt;b&gt;saos report&lt;/b&gt; → report/index.html（HTML，用户语言，含最近的公差扫描）&lt;br&gt;交付：G 最小的 achieved 轮，否则差距最小的可交付轮&lt;br&gt;全无有效轮次时写明“没有有效设计”&lt;br&gt;返回值 deliver 只放可交付镜头，否则为空、诊断轮在 diagnostic&lt;br&gt;停止时写明理由与用户原话" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
-          <mxGeometry x="980" y="2660.0" width="400" height="124" as="geometry" />
+        <mxCell id="t11" value="&lt;b&gt;saos scan&lt;/b&gt;（tolerance，按需）→ scans/NNN/&lt;br&gt;&lt;b&gt;saos report&lt;/b&gt; → report/index.html + latest.json&lt;br&gt;编号 HTML 与 JSON 副本封存；引用当前需求和判定&lt;br&gt;从合资格轮次选交付镜头；不可交付则 diagnostic&lt;br&gt;没有有效设计时明确说明；停止时保留理由与原话&lt;br&gt;Optiland 报告注明尚未经 OpticStudio 复测&lt;br&gt;记录需求确认至模型确认、报告认可耗时" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="980" y="2820" width="400" height="150" as="geometry" />
         </mxCell>
-        <mxCell id="a18" value="把报告路径交给用户&lt;br&gt;没做公差时说明可接着做" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="490" y="2790.0" width="320" height="54" as="geometry" />
+        <mxCell id="a18" value="&lt;b&gt;报告属于哪个阶段？&lt;/b&gt;&lt;br&gt;探索阶段 → 交给用户判断&lt;br&gt;OpticStudio 阶段 → 最终交付" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="500" y="3000" width="300" height="100" as="geometry" />
         </mxCell>
-        <mxCell id="u7" value="阅读交付报告" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="85" y="2795.0" width="240" height="44" as="geometry" />
+        <mxCell id="u7" value="&lt;b&gt;阅读 Optiland 阶段报告&lt;/b&gt;&lt;br&gt;数值尚未经 OpticStudio 复测&lt;br&gt;有可交付轮次时再决定是否认可" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="85" y="3000" width="240" height="80" as="geometry" />
         </mxCell>
         <mxCell id="e41" value="决定停止" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="u5" target="u6" edge="1">
           <mxGeometry relative="1" as="geometry" />
@@ -360,22 +370,22 @@
         <mxCell id="e46" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a17" target="a18" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e47" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a18" target="u7" edge="1">
+        <mxCell id="e47" value="Optiland 探索报告" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" parent="1" source="a18" target="u7" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="p1" value="&lt;b style=&quot;font-size:14px&quot;&gt;底线（不可违反）&lt;/b&gt;&lt;br&gt;&lt;br&gt;1. &lt;b&gt;记录需求&lt;/b&gt;：用户原话 → interview.md；当前需求 → demand.yaml&lt;br&gt;2. &lt;b&gt;实测依据&lt;/b&gt;：交付的每个数值来自 OpticStudio 实算并归档；手算估计只用于推理&lt;br&gt;3. &lt;b&gt;不偷偷放宽&lt;/b&gt;：达不到就说差多少；改常量 / 范围 / 目标须用户重新确认&lt;br&gt;4. &lt;b&gt;交付用真实材料&lt;/b&gt;：模型玻璃只用于探索，含模型玻璃的轮次不可交付&lt;br&gt;5. &lt;b&gt;报告统一 HTML&lt;/b&gt;：面向用户的报告一律 .html" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#fdf2f2;strokeColor=#b85450;" parent="1" vertex="1">
+        <mxCell id="p1" value="&lt;b style=&quot;font-size:14px&quot;&gt;底线（不可违反）&lt;/b&gt;&lt;br&gt;&lt;br&gt;1. 记录需求：用户原话与 agent 假设均可追溯&lt;br&gt;2. 每轮数值来自实际后端计算，并记录 backend&lt;br&gt;3. 最终交付以用户认可后的 OpticStudio 阶段为准&lt;br&gt;4. 改常量、范围、目标须重新确认，不偷偷放宽&lt;br&gt;5. 本设计要制造的零件用真实材料，模型玻璃只供探索&lt;br&gt;6. 面向用户的报告统一 HTML" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#fdf2f2;strokeColor=#b85450;" parent="1" vertex="1">
           <mxGeometry x="1450" y="40" width="400" height="250" as="geometry" />
         </mxCell>
-        <mxCell id="p2" value="&lt;b style=&quot;font-size:14px&quot;&gt;手段层级（低 → 高）与终止规则&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;local&lt;/b&gt;　现有变量下局部优化&lt;br&gt;&lt;b&gt;variables&lt;/b&gt;　放开更多变量 / 调整评价函数&lt;br&gt;&lt;b&gt;materials&lt;/b&gt;　换有来源的材料（Optiland：opt glass；OpticStudio：Hammer / 全局搜索替换）&lt;br&gt;&lt;b&gt;global&lt;/b&gt;　全局搜索或 Hammer&lt;br&gt;&lt;b&gt;structure&lt;/b&gt;　增减镜片、拆分、非球面化&lt;br&gt;&lt;br&gt;判断顺序：&lt;br&gt;① achieved：所有带界限项达标且无模型玻璃；有 minimize / maximize 目标时还要到理想值或各层级不再明显进步&lt;br&gt;② limit：达到轮次上限（默认 30，按需求版本计，rebase 不计）&lt;br&gt;③ exhausted：最后一次明显进步（≥ rel = 1%）后，允许的每个层级都试过或带证据排除（saos rule-out）仍无进步&lt;br&gt;④ stopped：用户 saos stop&lt;br&gt;⑤ 否则 continue，给出既没试过也没排除的最低层级 next_tier&lt;br&gt;一轮可声明多个层级；层级是记录，不是必走顺序&lt;br&gt;&lt;br&gt;比较轮次看目标差距（shortfall），不看 merit 值" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#fffaf0;strokeColor=#d79b00;" parent="1" vertex="1">
+        <mxCell id="p2" value="&lt;b style=&quot;font-size:14px&quot;&gt;手段层级与阶段内终止判断&lt;/b&gt;&lt;br&gt;&lt;br&gt;local：现有变量局部优化&lt;br&gt;variables：更多变量 / 调整评价函数&lt;br&gt;materials：Optiland 用 opt glass；ZOS 用替换玻璃搜索&lt;br&gt;global：Optiland 全局搜索；ZOS 全局搜索 / Hammer&lt;br&gt;structure：增减镜片、拆分、非球面化&lt;br&gt;&lt;br&gt;achieved：满足硬条件与目标，并按需求完成继续改进&lt;br&gt;limit：用完本阶段、当前需求版本的轮次预算&lt;br&gt;exhausted：明显进步后各允许手段已试过或有证据排除&lt;br&gt;stopped：用户决定，saos stop 记录理由和原话&lt;br&gt;continue：诊断并选择尚未尝试的手段&lt;br&gt;&lt;br&gt;verify 是 OpticStudio 阶段基线，不消耗优化轮次&lt;br&gt;rebase 不计预算；改判定不能绕过轮次上限&lt;br&gt;旧阶段的轮次、停止及层级排除不消耗新阶段预算&lt;br&gt;比较 shortfall，不混用两阶段数值，也不以 merit 代替" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#fffaf0;strokeColor=#d79b00;" parent="1" vertex="1">
           <mxGeometry x="1450" y="310" width="400" height="390" as="geometry" />
         </mxCell>
         <mxCell id="p3" value="&lt;b style=&quot;font-size:14px&quot;&gt;何时停下来问用户&lt;/b&gt;&lt;br&gt;&lt;br&gt;• 需求自相矛盾，或常量 / 范围 / 达标线依据不足&lt;br&gt;• 测量口径有多种读法且影响结果&lt;br&gt;• 可行性判断或一阶分析表明结构达不到目标，或某项 must 差通过线好几倍&lt;br&gt;• 已有结果不支持继续当前策略（brief.review）&lt;br&gt;• 结构要改成用户没见过的样子&lt;br&gt;&lt;br&gt;会改变需求的问题写成 open_questions（blocking: true），未答时 round / opt local / hammer / global 拒绝运行&lt;br&gt;停下来之前先 saos ui notify，窗口顶部写明要用户看什么" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#fffdf0;strokeColor=#d6b656;" parent="1" vertex="1">
           <mxGeometry x="1450" y="720" width="400" height="250" as="geometry" />
         </mxCell>
-        <mxCell id="p4" value="&lt;b style=&quot;font-size:14px&quot;&gt;长任务与算力&lt;/b&gt;&lt;br&gt;&lt;br&gt;• 光学数值一律经 ZOS-API 计算，不自写追迹 / 近轴计算（ADR-0008）&lt;br&gt;• 先用现成工具，不现写封装：saos.kit（按注释读写参数、追迹、点列、操作数）、ctx.measure（按需求单实测）、saos.search（求根、寻优）&lt;br&gt;• 扫描 / 逐点求解 / 多起点用 saos scan；脚本里用 ctx.map，都跑在后台进程常驻的 worker 池（空闲 10 分钟关闭）；许可上限 8，含用户窗口&lt;br&gt;• 长操作默认暂停窗口刷新，结束后刷新一次（exec --live 全程刷新）&lt;br&gt;• 判定代码改了：下一次 round 先用新判定重测最好的一轮（rebase），数值不变则比较窗口延续&lt;br&gt;• 同一段代码第二个任务又抄时，上收为配方草稿（如 saos.recipes.fiber）&lt;br&gt;• opt local / hammer / global、round、check、scan、exec 写 progress.json；job show 看进度，job cancel 停止；写进度失败不中断计算&lt;br&gt;• 可能超过自己命令时限的 exec / opt / check / round 加 --detach，结果在 runs/；客户端超时不等于失败，别重复提交&lt;br&gt;• 沿视场 / 光谱取极值用 ctx.cra / field_profile / wave_profile，coverage 不够就是没测完&lt;br&gt;• opt local 设 --max-seconds，hammer / global 必须设（不会自己结束）；脚本里 ctx.progress 分段，一段收益 &amp;lt; rel 就停&lt;br&gt;• 精度服从可达性：差好几倍时不做收敛审计&lt;br&gt;• 给用户留 2 个逻辑核，自起长进程用低于正常优先级" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f3faf1;strokeColor=#82b366;" parent="1" vertex="1">
+        <mxCell id="p4" value="&lt;b style=&quot;font-size:14px&quot;&gt;计算后端与长任务&lt;/b&gt;&lt;br&gt;&lt;br&gt;• 认可前只用 Optiland 进程内计算；表达不了的功能报告为能力缺口&lt;br&gt;• 认可前不启动 OpticStudio，建模说明不做双端对齐&lt;br&gt;• 不在每一轮自动由 ZOS 复算；报告认可（zos begin）后才启动 OpticStudio&lt;br&gt;• saos scan / ctx.map 共用常驻 worker 池，空闲后关闭&lt;br&gt;• 探索阶段 Optiland worker 默认使用逻辑核数减 2&lt;br&gt;• OpticStudio 阶段 worker 默认 4；许可上限含用户窗口&lt;br&gt;• 用 saos.kit、ctx.measure、saos.search；不自写光学追迹&lt;br&gt;• 优化 / round / check / scan / exec / zos begin 记录进度&lt;br&gt;• saos job show 查看；saos job cancel 请求安全中断&lt;br&gt;• 长任务按需 --detach；客户端超时不代表后台失败&lt;br&gt;• 进入阶段后 load / build / 重启加载都保持 ZOS&lt;br&gt;• 取消和恢复不得覆盖封存镜头或重复追加已提交轮次" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f3faf1;strokeColor=#82b366;" parent="1" vertex="1">
           <mxGeometry x="1450" y="990" width="400" height="450" as="geometry" />
         </mxCell>
-        <mxCell id="p5" value="&lt;b style=&quot;font-size:14px&quot;&gt;封存与校验&lt;/b&gt;&lt;br&gt;&lt;br&gt;evaluations/、rounds/、models/、parallel/、scans/、report/NNN-* 等写入 seals.jsonl&lt;br&gt;saos job verify 报告事后改动；有改动时 saos report 拒绝运行" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f5f5f5;strokeColor=#666666;" parent="1" vertex="1">
+        <mxCell id="p5" value="&lt;b style=&quot;font-size:14px&quot;&gt;封存与恢复&lt;/b&gt;&lt;br&gt;&lt;br&gt;evaluations/、rounds/、models/、scans/、报告编号副本和 stages/ 写入 seals.jsonl&lt;br&gt;入口与对比都封存后，才开放后续设计&lt;br&gt;重试复用 verify 的同轮证据，不重算冒充原记录&lt;br&gt;历史坏确认按路径提示；完整匹配确认可用&lt;br&gt;saos job verify 显示改动；有改动时报告拒绝生成" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f5f5f5;strokeColor=#666666;" parent="1" vertex="1">
           <mxGeometry x="1450" y="1460" width="400" height="140" as="geometry" />
         </mxCell>
         <mxCell id="lg" value="&lt;b style=&quot;font-size:14px&quot;&gt;图例&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#ffffff;strokeColor=#999999;" parent="1" vertex="1">
@@ -453,8 +463,8 @@
         <mxCell id="lget3" value="轮次循环" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="1712" y="2050" width="130" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="title" value="&lt;b style=&quot;font-size:20px&quot;&gt;saos workflow&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:12px&quot;&gt;依据 skills/saos/SKILL.md、DESIGN.md、src/saos/workflow.py、daemon.py（分支 saos，2026-10-17 更新）&lt;/span&gt;" style="text;html=1;align=left;verticalAlign=middle;" parent="1" vertex="1">
-          <mxGeometry x="1450" y="-70" width="500" height="60" as="geometry" />
+        <mxCell id="title" value="&lt;b style=&quot;font-size:18px&quot;&gt;saos 工作流&lt;/b&gt;&lt;br&gt;Optiland 探索 → 用户认可 → OpticStudio 复测与交付" style="text;html=1;align=left;verticalAlign=middle;" parent="1" vertex="1">
+          <mxGeometry x="1450" y="0" width="400" height="40" as="geometry" />
         </mxCell>
         <mxCell id="a0" value="&lt;b&gt;会话开始：环境预检&lt;/b&gt;&lt;br&gt;缺什么在第一条回复里就说" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="490" y="60" width="320" height="50" as="geometry" />
@@ -480,11 +490,131 @@
         <mxCell id="e32b" value="差距在几成以内、无上限&lt;br&gt;先告诉用户：差多少 · 机理 · 变量 · 预期收益" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="a13b" target="a14">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e32c" value="差通过线好几倍&lt;br&gt;或诊断已证明有上限" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#b85450;dashed=1;strokeWidth=1.5;fontSize=11;fontColor=#b85450;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;exitX=0;exitY=0.5;entryX=0.5;entryY=1;" edge="1" parent="1" source="a13b" target="u5">
-          <mxGeometry relative="1" as="geometry" />
+        <mxCell id="e32c" value="差通过线好几倍&lt;br&gt;或诊断已证明有上限" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#b85450;dashed=1;strokeWidth=1.5;fontSize=11;fontColor=#b85450;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;exitX=0;exitY=0.5;entryX=1;entryY=0.6;" edge="1" parent="1" source="a13b" target="u5">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="450" y="2065" />
+              <mxPoint x="450" y="1904" />
+            </Array>
+          </mxGeometry>
         </mxCell>
         <mxCell id="p6" value="&lt;b style=&quot;font-size:14px&quot;&gt;上下文经济&lt;/b&gt;&lt;br&gt;&lt;br&gt;• 大文件按章节读，辅助库用到时再读&lt;br&gt;• 选型表交给 optic-material-explorer（haiku · effort high），只拿回带出处的表&lt;br&gt;• 待答问题可能推翻的工作，先等答复" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
           <mxGeometry x="1450" y="1620" width="400" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="zos_gate" value="&lt;b&gt;停顿 ③：用户认可报告&lt;/b&gt;&lt;br&gt;记录用户原话与所选轮次&lt;br&gt;认可 / 不认可 / 用户决定停止" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;strokeWidth=3;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="85" y="3180" width="240" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="zos_begin" value="&lt;b&gt;saos zos begin --job J --quote TEXT&lt;/b&gt;&lt;br&gt;[--round N] [--max-rounds K] [--detach]&lt;br&gt;认可报告须与封存副本一致；从伴随文件处方重建&lt;br&gt;不读取 Optiland 展示用 .zmx 作为重建依据&lt;br&gt;同一套 checks 自动记 verify 轮，verify_of 指向原轮&lt;br&gt;基准量与材料差别随该轮账本保存&lt;br&gt;两端差别不设通过线；以 OpticStudio 为准&lt;br&gt;无许可证不进入；中断以原参数恢复" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="980" y="3170" width="400" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="zos_report" value="&lt;b&gt;saos report 的最终交付产物&lt;/b&gt;&lt;br&gt;只选 OpticStudio 阶段的合资格轮次&lt;br&gt;Optiland 结论、认可原话、逐项与基准差别&lt;br&gt;材料变化、未翻译设置、镜头及测量证据链接&lt;br&gt;→ report/index.html；编号副本封存" style="shape=note;whiteSpace=wrap;html=1;size=12;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;fontFamily=Consolas;" vertex="1" parent="1">
+          <mxGeometry x="980" y="3790" width="400" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="zos_accept_edge" value="可交付结果，等待用户决定" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="u7" target="zos_gate">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="zos_begin_edge" value="认可：用户原话" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="zos_gate" target="zos_request">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="zos_design_edge" value="是：回到自主设计（OpticStudio）&lt;br&gt;以 verify 为新基线；本阶段预算重新计数" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#d79b00;strokeWidth=2;fontSize=11;fontColor=#b46504;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;exitX=1;exitY=0.75;exitPerimeter=1;entryX=1;entryY=0.08;" edge="1" parent="1" source="zos_ready" target="a11">
+          <mxGeometry relative="1" x="-0.85" y="-12" as="geometry">
+            <Array as="points">
+              <mxPoint x="855" y="3580" />
+              <mxPoint x="1440" y="3580" />
+              <mxPoint x="1440" y="1618" />
+              <mxPoint x="820" y="1618" />
+              <mxPoint x="820" y="1641.08" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="zos_reject_edge" value="不认可：返回诊断&lt;br&gt;仍遵守当前需求与终止规则" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#b85450;dashed=1;strokeWidth=1.5;fontSize=11;fontColor=#b85450;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;exitX=1;exitY=0.22;exitPerimeter=1;entryX=1;entryY=0.25;" edge="1" parent="1" source="zos_gate" target="a11">
+          <mxGeometry relative="1" x="-0.85" y="-12" as="geometry">
+            <Array as="points">
+              <mxPoint x="420" y="3199.8" />
+              <mxPoint x="420" y="3130" />
+              <mxPoint x="1420" y="3130" />
+              <mxPoint x="1420" y="1622" />
+              <mxPoint x="835" y="1622" />
+              <mxPoint x="835" y="1654" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="zos_final_edge" value="已进入 OpticStudio 阶段" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="a18" target="zos_deliver">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="850" y="3050" />
+              <mxPoint x="850" y="3845" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="phase5" value="⑥ 报告认可与 OpticStudio 复测" style="text;html=1;horizontal=0;align=center;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#34495e;" parent="1" vertex="1">
+          <mxGeometry x="0" y="3140" width="60" height="600" as="geometry" />
+        </mxCell>
+        <mxCell id="phase6" value="⑦ OpticStudio 最终交付" style="text;html=1;horizontal=0;align=center;verticalAlign=middle;fontSize=15;fontStyle=1;fontColor=#34495e;" parent="1" vertex="1">
+          <mxGeometry x="0" y="3740" width="60" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="zos_request" value="&lt;b&gt;记录认可，准备进入 OpticStudio&lt;/b&gt;&lt;br&gt;当前需求、模型与报告有效；所选轮次可交付&lt;br&gt;无 Optiland 模型玻璃近似；准备本阶段预算" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="3180" width="320" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="zos_files" value="stages/zos.json：用户原话、来源轮次、报告与预算&lt;br&gt;ledger.jsonl：verify + verification_evidence&lt;br&gt;evaluations/NNN/result.json：backend = zos&lt;br&gt;stages/zos-result.json：需求项 / 基准 / 材料对比&lt;br&gt;untranslated：进入后须重设的优化设置" style="shape=note;whiteSpace=wrap;html=1;size=12;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="980" y="3400" width="400" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="zos_ready" value="&lt;b&gt;入口与对比均已封存？&lt;/b&gt;&lt;br&gt;只有文件存在还不算完成" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="510" y="3490" width="280" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="zos_pending" value="&lt;b&gt;入口未完成：处理错误后以原参数续跑&lt;/b&gt;&lt;br&gt;复用已提交的 verify 及同轮证据，不重复复测&lt;br&gt;完整封存前不开放后续轮次、优化、扫描与报告" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="3650" width="320" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="zos_call" parent="1" edge="1" source="zos_request" target="zos_begin" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#82b366;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.275;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="zos_outputs" parent="1" edge="1" source="zos_begin" target="zos_files" value="写入与封存" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;dashed=1;strokeColor=#888888;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="zos_outcome" parent="1" edge="1" source="zos_begin" target="zos_ready" value="入口结果" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0;exitY=0.7;entryX=1;entryY=0.5;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="925" y="3310" />
+              <mxPoint x="925" y="3550" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="zos_incomplete" parent="1" edge="1" source="zos_ready" target="zos_pending" value="否 / 入口报错" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="zos_retry" parent="1" edge="1" source="zos_pending" target="zos_request" value="修复条件后，同参数重试" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#b85450;dashed=1;strokeWidth=1.5;fontSize=11;fontColor=#b85450;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;exitX=0;exitY=0.5;exitPerimeter=1;entryX=0;entryY=0.5;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="460" y="3685" />
+              <mxPoint x="460" y="3230" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="zos_stop_edge" parent="1" edge="1" source="zos_gate" target="u6" value="用户决定停止" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#b85450;dashed=1;strokeWidth=1.5;fontSize=11;fontColor=#b85450;labelBackgroundColor=#ffffff;jumpStyle=arc;jumpSize=10;exitX=0;exitY=0.5;exitPerimeter=1;entryX=0;entryY=0.5;">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="82" y="3225" />
+              <mxPoint x="82" y="2768" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="zos_deliver" value="&lt;b&gt;交付 OpticStudio 阶段结果&lt;/b&gt;&lt;br&gt;给出镜头与报告路径、未达标项及两端差别&lt;br&gt;未做公差时说明；停止也保留完整结论" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="3800" width="320" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="zos_user" value="&lt;b&gt;阅读最终报告&lt;/b&gt;&lt;br&gt;交付指标采用 OpticStudio 实测值" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="85" y="3810" width="240" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="zos_delivery_artifact" parent="1" edge="1" source="zos_deliver" target="zos_report" value="引用本阶段报告" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=open;dashed=1;strokeColor=#888888;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="zos_delivery_user" parent="1" edge="1" source="zos_deliver" target="zos_user" value="报告与镜头路径" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=1;entryY=0.5;">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="p7" value="&lt;b style=&quot;font-size:14px&quot;&gt;Optiland 候选步接受规则&lt;/b&gt;&lt;br&gt;&lt;br&gt;• 原始追迹决定光线有效性，受保护路径只算惩罚&lt;br&gt;• 连续惩罚覆盖 TIR、求交定义域、非球面残差与孔径越界&lt;br&gt;• 任一视场/波长有效率低于 95% 或零件交叠即拒绝&lt;br&gt;• 候选步最多减半 12 次；接受后更新自动半口径&lt;br&gt;• Torch 回退后清空优化历史；只保留已接受最优点&lt;br&gt;• 最终数值仍由同一需求单的 checks 记录" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f3faf1;strokeColor=#82b366;" parent="1" vertex="1">
+          <mxGeometry x="1450" y="2150" width="400" height="235" as="geometry" />
+        </mxCell>
+        <mxCell id="p8" value="&lt;b style=&quot;font-size:14px&quot;&gt;第三个必经停顿&lt;/b&gt;&lt;br&gt;&lt;br&gt;确认需求与确认模型，不等于认可最终设计结果&lt;br&gt;先展示当前 Optiland 报告，再记录用户认可原话&lt;br&gt;无可交付轮次、近似模型玻璃或无许可证时不能进入&lt;br&gt;用户不认可时返回诊断；只有用户能决定停止&lt;br&gt;&lt;br&gt;进入后不以双端偏差设额外通过线&lt;br&gt;以 OpticStudio 实测继续设计和最终交付" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#fffdf0;strokeColor=#d6b656;" parent="1" vertex="1">
+          <mxGeometry x="1450" y="2410" width="400" height="235" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

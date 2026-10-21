@@ -125,7 +125,7 @@ def cmd_lens(args: argparse.Namespace) -> Any:
             raise SaosError(ErrorCode.BAD_ARGS, "--notes must contain a JSON object")
         return _lens_request("lens.describe", args, {"notes": notes, "lang": args.lang})
     if action == "approve":
-        return _lens_request("lens.approve", args, {"model": args.model, "quote": args.quote})
+        return _lens_request("lens.approve", args, {"model": args.model, "quote": args.quote, "rebuild_reason": args.rebuild_reason})
     if action == "set":
         return _lens_request("lens.set", args, {"surface": args.surface, "param": args.param, "value": args.value})
     if action == "save":
@@ -255,6 +255,8 @@ def cmd_check(args: argparse.Namespace) -> Any:
 
 
 def cmd_scan(args: argparse.Namespace) -> Any:
+    if not args.job:
+        raise SaosError(ErrorCode.BAD_ARGS, "give --job J")
     if args.show is not None:
         from saos import scan
 
@@ -272,14 +274,16 @@ def cmd_rule_out(args: argparse.Namespace) -> Any:
 
     root = jobs.get_job(args.job).root
     tiers = [t.strip() for item in args.tier for t in item.split(",") if t.strip()]
-    return ledger.record_rule_out(root, demand.digest(demand.load_job(root)), tiers, args.reason)
+    d = demand.load_job(root)
+    return ledger.record_rule_out(root, demand.compute_digest(d), tiers, args.reason, d)
 
 
 def cmd_stop(args: argparse.Namespace) -> Any:
     from saos import demand, ledger
 
     root = jobs.get_job(args.job).root
-    return ledger.record_stop(root, demand.digest(demand.load_job(root)), args.reason, args.quote)
+    d = demand.load_job(root)
+    return ledger.record_stop(root, demand.compute_digest(d), args.reason, args.quote, d)
 
 
 def cmd_demand(args: argparse.Namespace) -> Any:
@@ -420,6 +424,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = lens_cmd("approve", "record the user's approval of a model description; rounds need a lens whose structure matches an approved description")
     p.add_argument("--model", required=True, help="the description folder, e.g. models/001-start")
     p.add_argument("--quote", required=True, help="the user's own words of approval")
+    p.add_argument("--rebuild-reason", default="", help="required for structural or environment-declaration changes under the round gate comparison; appended samples are allowed")
     p = lens_cmd("set", "change one surface parameter")
     p.add_argument("--surface", type=int, required=True)
     p.add_argument("--param", required=True, help="radius / thickness / conic / semi_diameter / mech_semi_diameter (the part's outer edge, "
@@ -485,8 +490,7 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--file", help="wizard settings JSON, or the operand list JSON for add")
     q.add_argument("--weight", type=float, default=1.0, help="for script: the weight of the loss row (default 1)")
     q = opt_cmd("local", "run local optimization (scipy on Optiland; damped least squares or orthogonal descent in OpticStudio). "
-                "Unless the demand's structure is prescribed, refused until a sealed candidates comparison under this demand version and "
-                "check version has at least 3 candidates with a sound verdict; the current model must be approved (lens approve)")
+                "The demand and current model must be approved; missing comparisons only produce notes")
     q.add_argument("--cycles", default="auto", choices=("auto", "1", "5", "10", "50"))
     q.add_argument("--algorithm", choices=("trf", "lm", "lbfgsb", "nelder-mead", "powell", "torch-lbfgs", "torch-adam", "dls", "od"),
                    help="Optiland: trf (default; bounded trust-region least squares), lm, lbfgsb, nelder-mead, powell (finite "
@@ -499,10 +503,10 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--cores", type=int, help="CPU cores for OpticStudio (default: all logical cores but 2)")
     q.add_argument("--max-seconds", type=float, help="cancel the optimisation after this many seconds and keep what it reached")
     for name, help_text in (("hammer", "run Hammer optimisation (escapes local minima; with material --mode substitute it swaps real glasses); "
-                                       "keeps the best system found. Unless the demand's structure is prescribed, refused until a sealed "
-                                       "candidates comparison under this demand version has at least 3 valid candidates"),
+                                       "keeps the best system found. Requires that the "
+                                       "demand and current model have been approved"),
                             ("global", "run global search; keeps the best system found and moves the ten best to lenses/global/NNN/. "
-                                       "Same structure gate as hammer")):
+                                       "Same demand/model approval gate as hammer")):
         q = opt_cmd(name, help_text)
         q.add_argument("--max-seconds", type=float, required=True, help="required: it never ends on its own; cancel after this many seconds")
         q.add_argument("--cores", type=int, help="CPU cores for OpticStudio (default: all logical cores but 2)")
@@ -535,7 +539,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("scan", help="concurrent scan, multi-start minimisation or perturbation probes on the daemon's worker pool: per point set parameters, optionally "
                                     "solve one variable, compensate, measure with the demand's checks; lens left unchanged; archived in scans/NNN/, "
                                     "the best lenses in lenses/scans/NNN/")
-    p.add_argument("--job", required=True)
+    p.add_argument("--job", default=None, help="job id (required for running and --show)")
     p.add_argument("--plan", help="JSON plan file: one of vars (grid), points, minimize, probes, candidates (structure exploration) or tolerance, "
                                   "plus fixed, solve, compensate, measure, operands, keep; formats and examples below")
     p.add_argument("--workers", type=int, default=None, help="worker processes to use (default the plan's workers, else logical cores minus 2 with Optiland, 4 OpticStudio instances otherwise; count the licence then)")
@@ -545,7 +549,6 @@ def build_parser() -> argparse.ArgumentParser:
                    help="read a scan's progress or result from its files (default the latest); works while the daemon is busy")
     p.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     p.set_defaults(func=cmd_scan)
-
     p = sub.add_parser("check", help="measure and judge every check of the demand (sources/demand.yaml) on the current lens without recording")
     p.add_argument("--job", required=True)
     p.add_argument("--only", help="comma-separated check ids to measure (exploration): the result is partial and never achieved; "
@@ -627,7 +630,8 @@ def _gate(args: argparse.Namespace, job: jobs.Job) -> bool:
         from saos import demand
 
         try:
-            return demand.confirmation_for(job.root, demand.digest(demand.load_job(job.root))) is None
+            d = demand.load_job(job.root)
+            return demand.confirmation_for(job.root, demand.digest(d), d) is None
         except SaosError:
             return True
     return False
