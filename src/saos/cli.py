@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from saos import client, jobs
+from saos import client, jobs, lens_files
 from saos.protocol import ErrorCode, SaosError, fail, jsonable, ok
 from saos.protocol import read_json as _read_json
 
@@ -73,7 +73,7 @@ def cmd_job(args: argparse.Namespace) -> Any:
             "job": job.id,
             "path": str(job.root),
             "state": job.read_state(),
-            "lenses": sorted(p.relative_to(job.lenses_dir).as_posix() for p in job.lenses_dir.rglob("*.zmx")),
+            "lenses": sorted(p.relative_to(job.lenses_dir).as_posix() for p in lens_files.all_lenses(job.lenses_dir)),
             "log_tail": [json.loads(line) for line in lines[-args.log:]] if args.log > 0 else [],
             # 直接读文件，后台进程正忙时也能看 / read from the file, so it works while the daemon is busy
             "progress": job.read_progress(),
@@ -133,6 +133,8 @@ def cmd_lens(args: argparse.Namespace) -> Any:
         if args.as_name:
             payload["file"] = args.as_name
         return _lens_request("lens.save", args, payload)
+    if action == "export":
+        return _lens_request("lens.export", args, {"file": args.as_name, "overwrite": args.overwrite})
     if action == "operand":
         data = [getattr(args, f"d{i}") for i in range(1, 7)]
         while data and data[-1] == 0.0:
@@ -321,6 +323,11 @@ def cmd_report(args: argparse.Namespace) -> Any:
     return report.write(jobs.get_job(args.job), lang=args.lang)
 
 
+def cmd_zos(args: argparse.Namespace) -> Any:
+    return _send("zos.begin", args, {"job": args.job, "quote": args.quote, "round": args.round,
+                                     "max_rounds": args.max_rounds}, args.timeout)
+
+
 class _Parser(argparse.ArgumentParser):
     """参数错误也按统一 JSON 格式输出，方便 agent 解析。"""
 
@@ -339,11 +346,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     daemon = sub.add_parser("daemon", help="daemon holding the lens: Optiland in process by default, OpticStudio when needed")
     dsub = daemon.add_subparsers(dest="action", required=True, parser_class=_Parser)
-    start = dsub.add_parser("start", help="start the daemon. SAOS_BACKEND=optiland (default) runs lenses in Optiland 0.6.3 (float64, "
-                            "no licence) and opens a lens in OpticStudio when Optiland cannot express it (system info lists "
-                            "fallback_reasons for the current lens and fallback_history for the session); unmapped operands, analyses and .zmx writing use an OpticStudio twin of the same "
-                            "prescription; opt commands switch the session to OpticStudio. SAOS_BACKEND=zos uses OpticStudio only. "
-                            "--mode extension always connects to the user's OpticStudio window")
+    start = dsub.add_parser("start", help="start the daemon. Lenses run in Optiland 0.6.3 (float64, no licence) and no OpticStudio "
+                            "session is started until the user accepts an Optiland report (zos begin). Operations Optiland cannot "
+                            "perform are refused with a capability gap instead of being handed to OpticStudio. SAOS_BACKEND accepts "
+                            "only optiland (default) and fake. --mode extension makes the OpticStudio session of the approved stage "
+                            "connect to the user's OpticStudio window")
     start.add_argument("--mode", choices=("standalone", "extension"), default="standalone")
     start.add_argument("--start-timeout", type=float, default=client.DEFAULT_START_TIMEOUT_S)
     stop = dsub.add_parser("stop", help="stop the daemon")
@@ -368,7 +375,7 @@ def build_parser() -> argparse.ArgumentParser:
     show.add_argument("--log", type=int, default=10, help="number of recent log records to show")
     verify = jsub.add_parser("verify", help="check that no evidence file written by the tools was changed or deleted (seals.jsonl)")
     verify.add_argument("job")
-    cancel = jsub.add_parser("cancel", help="ask the running computation of a job to stop at its next safe point (opt local/hammer/global, scan, scripts that call ctx.progress); works while the daemon is busy")
+    cancel = jsub.add_parser("cancel", help="ask the running computation of a job to stop at its next safe point (opt local/hammer/global/glass, zos begin, scan, scripts that call ctx.progress); works while the daemon is busy")
     cancel.add_argument("job")
     job.set_defaults(func=cmd_job)
 
@@ -406,10 +413,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--discard", action="store_true")
     lens_cmd("info", "system data: aperture, fields, wavelengths, …")
     lens_cmd("surfaces", "surface rows of the Lens Data Editor")
-    p = lens_cmd("describe", "model description page for the user (models/NNN-<lens>/index.html): every surface, material source and index per wavelength, apertures, fields, wavelengths, layout, plus automatic modelling checks. "
-                 "A lens open in Optiland is also built in OpticStudio and compared (parity_check in model.json and on the page): EFL, pupils and total track within 1e-4 relative, "
-                 "chief-ray landing and RMS spot radius within 0.5%, transmission within 0.5 points; Optiland aims rays with its robust aimer and retries with the iterative one on a mismatch. "
-                 "A mismatch adds a warning; status skipped means OpticStudio was unavailable")
+    p = lens_cmd("describe", "model description page for the user (models/NNN-<lens>/index.html): every surface, material source and index per wavelength, apertures, fields, wavelengths, plus automatic modelling checks. "
+                 "Computed by Optiland only; OpticStudio is not started. Layout pictures are not generated before the OpticStudio stage")
     p.add_argument("--notes", help="path to the model notes JSON file: surfaces or objects, environment, assumptions, first_order and exploration; format below")
     p.add_argument("--lang", choices=("zh", "en"), help="page language (default: the demand lang, then SAOS_LANG, then the system language)")
     p = lens_cmd("approve", "record the user's approval of a model description; rounds need a lens whose structure matches an approved description")
@@ -424,6 +429,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--as", dest="as_name", help="save as this file name inside lenses/")
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--no-verify", action="store_true", help="skip the reload comparison")
+    p = lens_cmd("export", "export the loaded Optiland lens to a .zmx paired with its snapshot (lens save never exports)")
+    p.add_argument("--as", dest="as_name", required=True, help="file name inside lenses/")
+    p.add_argument("--overwrite", action="store_true")
     p = lens_cmd("operand", "evaluate one optimization operand")
     p.add_argument("type", help="operand name, e.g. EFFL")
     p.add_argument("--int1", type=int, default=0)
@@ -476,20 +484,25 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("script_file", nargs="?", help="for script: a Python file that defines loss(ctx) (Optiland only)")
     q.add_argument("--file", help="wizard settings JSON, or the operand list JSON for add")
     q.add_argument("--weight", type=float, default=1.0, help="for script: the weight of the loss row (default 1)")
-    q = opt_cmd("local", "run local optimization (scipy on Optiland; damped least squares or orthogonal descent in OpticStudio)")
+    q = opt_cmd("local", "run local optimization (scipy on Optiland; damped least squares or orthogonal descent in OpticStudio). "
+                "Unless the demand's structure is prescribed, refused until a sealed candidates comparison under this demand version and "
+                "check version has at least 3 candidates with a sound verdict; the current model must be approved (lens approve)")
     q.add_argument("--cycles", default="auto", choices=("auto", "1", "5", "10", "50"))
     q.add_argument("--algorithm", choices=("trf", "lm", "lbfgsb", "nelder-mead", "powell", "torch-lbfgs", "torch-adam", "dls", "od"),
                    help="Optiland: trf (default; bounded trust-region least squares), lm, lbfgsb, nelder-mead, powell (finite "
                         "differences), torch-lbfgs, torch-adam (autograd over RSCE, RWCE, REAY, EFFL, TOTR, CTVA, ETVA and their boundary rows). "
                         "OpticStudio: dls = damped least squares, od = orthogonal descent (default od for a non-sequential system, "
-                        "dls otherwise); naming dls or od in an Optiland session moves the session to OpticStudio")
+                        "dls otherwise); in an Optiland session dls and od are refused (they run only in the approved OpticStudio stage), "
+                        "and in that stage the Optiland names are refused")
     q.add_argument("--device", choices=("auto", "cpu", "cuda"), help="for the torch algorithms: auto / cpu (float64 on the CPU, default) or cuda; "
                                                                      "the scipy ones run on the CPU")
     q.add_argument("--cores", type=int, help="CPU cores for OpticStudio (default: all logical cores but 2)")
     q.add_argument("--max-seconds", type=float, help="cancel the optimisation after this many seconds and keep what it reached")
     for name, help_text in (("hammer", "run Hammer optimisation (escapes local minima; with material --mode substitute it swaps real glasses); "
-                                       "keeps the best system found"),
-                            ("global", "run global search; keeps the best system found and moves the ten best to lenses/global/NNN/")):
+                                       "keeps the best system found. Unless the demand's structure is prescribed, refused until a sealed "
+                                       "candidates comparison under this demand version has at least 3 valid candidates"),
+                            ("global", "run global search; keeps the best system found and moves the ten best to lenses/global/NNN/. "
+                                       "Same structure gate as hammer")):
         q = opt_cmd(name, help_text)
         q.add_argument("--max-seconds", type=float, required=True, help="required: it never ends on its own; cancel after this many seconds")
         q.add_argument("--cores", type=int, help="CPU cores for OpticStudio (default: all logical cores but 2)")
@@ -542,7 +555,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_check)
     p = sub.add_parser("round", help="record a round: save lenses/rounds/rNNN.zmx, measure the demand, append ledger.jsonl and return the stop decision with a demand brief")
     p.add_argument("--job", required=True)
-    p.add_argument("--tier", help="strategy tier(s) used in this round, comma-separated when several: local, variables, materials, global, structure; omit for round 0")
+    p.add_argument("--tier", help="strategy tier(s): local, variables, materials, global, structure; omit for round 0. zos begin creates its verify baseline; subsequent rounds use its separate budget")
     p.add_argument("--note", default="", help="what this round changed")
     p.add_argument("--merit", type=float, default=None,
                    help="value of the objective you actually optimised, when you optimised outside the OpticStudio merit function; recorded instead of the lens's merit function value")
@@ -560,7 +573,23 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reason", required=True, help="why the rounds stop, with the evidence (e.g. scans/NNN, notes/findings.md F20)")
     p.add_argument("--quote", required=True, help="the user's own words deciding to stop, including the full text of any option they chose")
     p.set_defaults(func=cmd_stop)
-    p = sub.add_parser("report", help="write the delivery report report/index.html from the demand and the ledger (no OpticStudio needed)")
+    z = sub.add_parser("zos", help="enter the user-approved OpticStudio stage")
+    zs = z.add_subparsers(dest="action", required=True)
+    p = zs.add_parser("begin", help="accept the current Optiland report, rebuild its deliverable round in OpticStudio, record a verify round and compare",
+                      description="Requires a current report, confirmed demand and model, a deliverable round without model glasses and an available OpticStudio licence. "
+                                  "Seals stages/zos.json with the user's words. Records a verify round and stages/zos-result.json without a discrepancy gate. "
+                                  "Further rounds and scans stay in OpticStudio; the round budget and comparison window restart. "
+                                  "Retry the same arguments to finish an interrupted entry without duplicating the verify round. "
+                                  "Baseline and material evidence are archived with that round; recovery reuses them. "
+                                  "The displayed report must match its sealed archive, and both stage files must be sealed before further rounds.")
+    p.add_argument("--job", required=True)
+    p.add_argument("--quote", required=True, help="the user's own words accepting the report")
+    p.add_argument("--round", type=int, help="deliverable round of the current report version (default: reported delivery)")
+    p.add_argument("--max-rounds", type=int, help="new optimisation round budget; the initial verify round is the baseline (default: demand max_rounds)")
+    p.add_argument("--timeout", type=float, default=600)
+    p.add_argument("--detach", action="store_true")
+    p.set_defaults(func=cmd_zos)
+    p = sub.add_parser("report", help="write report/index.html; after zos begin select only OpticStudio-stage rounds and include the Optiland comparison (no computation)")
     p.add_argument("--job", required=True)
     p.add_argument("--lang", choices=["en", "zh"], help="report language (default: demand lang, then SAOS_LANG, then the system UI language)")
     p.set_defaults(func=cmd_report)
@@ -592,7 +621,7 @@ def _emit(message: dict[str, Any]) -> None:
 def _gate(args: argparse.Namespace, job: jobs.Job) -> bool:
     """需要用户看的节点：记一轮、建模说明、待确认的需求单。用户关掉的窗口在这些地方重新打开。
     Points where the user has to look: a round, a model description, a demand awaiting confirmation."""
-    if args.func is cmd_round or (args.func is cmd_lens and args.action == "describe"):
+    if args.func in (cmd_round, cmd_zos) or (args.func is cmd_lens and args.action == "describe"):
         return True
     if args.func is cmd_demand and args.action == "show":
         from saos import demand
@@ -611,7 +640,7 @@ def _ensure_window(args: argparse.Namespace) -> dict[str, Any] | None:
     if not getattr(args, "job", None):
         return None
     showing_demand = args.func is cmd_demand and args.action == "show"
-    if args.func not in (cmd_lens, cmd_exec, cmd_opt, cmd_scan, cmd_check, cmd_round) and not showing_demand:
+    if args.func not in (cmd_lens, cmd_exec, cmd_opt, cmd_scan, cmd_check, cmd_round, cmd_zos) and not showing_demand:
         return None
     if args.func is cmd_scan and args.show is not None:
         return None

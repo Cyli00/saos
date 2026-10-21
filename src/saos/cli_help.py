@@ -16,12 +16,12 @@ Output protocol (help itself is plain text):
 Process model:
   Local: daemon control, job, demand, rule-out, stop, report, scan --show,
     microscope adapt and library check/add/list/query. ui runs a local service.
-  Daemon: lens, opt, exec, check, round, scan execution and microscope
+  Daemon: lens, opt, exec, check, round, zos begin, scan execution and microscope
     repro/accept/perturb/library verify. It owns the OpticStudio connection.
 """
 
 CONVENTIONS = """Long operations
-  Use --detach for exec, check, round, opt local/hammer/global when computation
+  Use --detach for exec, check, round, zos begin, opt local/hammer/global/glass when computation
   may outlast your caller's time limit. A detached client writes the request to
   runs/NNN-<op>.request.json and the response to runs/NNN-<op>.json in the job.
   The immediate result has detached, run, launcher_pid and follow. The response
@@ -82,8 +82,10 @@ the local workflow window shows modelling in either mode.
 vary, merit, local, global and glass run in-process with scipy (no licence);
 glass substitution variables, config rows, objects, hammer and dls/od move the
 session to OpticStudio. Model glass is approximated by an Optiland Abbe material.
-local/hammer/global require the current demand to be confirmed and free of
-blocking questions. Model approval is required to record rounds. Geometry and
+local/hammer/global/glass and scan minimize share one rule: the current demand
+is confirmed and free of blocking questions, the structure is fixed by the user
+or compared under this demand and check version, and the current model is
+approved. Model approval is required to record rounds. Geometry and
 material changes require saving before worker scans; model glass is exploratory
 and cannot be delivered. Optimization keeps the best reached system in memory.
 """,
@@ -193,6 +195,12 @@ COMMANDS = {
         "Default destination is the current file; --as names another lenses/ file,\n"
         "  requiring --overwrite if it exists. --no-verify skips reload comparison.\n"
         "  Archived lenses/rounds/ files cannot be overwritten; use a working copy.", "FILE_EXISTS, PATH_OUTSIDE_JOB, ZOS_SAVE_FAILED, VERIFY_FAILED"),
+    "lens export": (
+        "Export the loaded Optiland lens to a .zmx file paired with its native snapshot.",
+        "--as NAME is a new file inside lenses/ (--overwrite replaces an existing one). Lens save never exports:\n"
+        "  the snapshot is the authority, and the .zmx is written only here. Where Optiland's writer cannot express the\n"
+        "  model (multiple configurations, decentred or tilted surfaces, apertures, unmapped surface types), the result is\n"
+        "  BACKEND_UNSUPPORTED with the gap, and no file changes.", "BAD_ARGS, FILE_EXISTS, NO_LENS_LOADED, JOB_MISMATCH, BACKEND_UNSUPPORTED"),
     "lens operand": (
         "Evaluate an optimization operand on the loaded job lens.",
         "TYPE is the operand name; --int1/--int2 and --d1 through --d6 supply its\n"
@@ -326,7 +334,12 @@ COMMANDS.update({
         "  report states). deliver is null for an undeliverable lens; diagnostic\n"
         "  identifies its file/round and hard_failing, measurement_errors, model_glass.\n"
         "  An achieved deliverable round with minimum shortfall is preferred; otherwise\n"
-        "  the best deliverable round is used. Terminal exhausted/limit/stopped can\n"
+        "  the best deliverable round is used. After zos begin only OpticStudio-stage\n"
+        "  rounds are eligible; include the accepted Optiland conclusion, per-item\n"
+        "  and baseline differences, material changes and untranslated settings.\n"
+        "  Writes sealed report/NNN-rMMM-<status>.json and report/latest.json metadata\n"
+        "  for zos begin; resume an incomplete stage entry before reporting.\n"
+        "  Terminal exhausted/limit/stopped can\n"
         "  headline deliver with achieved:false. No valid lens means no delivery.\n"
         "  Changed demand/checks require a new measured round before reporting; sealed\n"
         "  evidence must be intact (uv run saos job verify J lists problems).\n"
@@ -399,10 +412,23 @@ for _name, _purpose, _details in (
      "  and a merit script that returns a Tensor (ctx.backend.torch_operand(name,\n"
      "  int1, int2, data) gives a Tensor during torch runs and a float otherwise);\n"
      "  any other operand, a zone marginal-height solve or a variable that cannot be\n"
-     "  set in place is refused with the list (use trf). Rays that fail are found\n"
-     "  first without gradients and left out of the gradient trace; their share\n"
-     "  adds a constant penalty. --device auto/cpu (float64) or cuda. Returns\n"
-     "  device and inner_loop torch. Returns algorithm."),
+     "  set in place is refused with the list (use trf). An unmodified trace decides\n"
+     "  which rays are valid. A separate guarded Optiland trace supplies squared\n"
+     "  hinge penalties for TIR, conic intersection domain, aspheric intersection\n"
+     "  residuals and aperture violations. Guarded intersections are never physical\n"
+     "  measurements. Square-root inputs are floored at 1e-12 on that path.\n"
+     "  scipy and torch reject interfering steps or steps with less than 95% valid\n"
+     "  rays in any configured field/wavelength (3 Gaussian rings plus the chief\n"
+     "  ray), halving up to 12 times. Torch merit-ray bundles must also be valid.\n"
+     "  A separate in-process Optic rebuilds trial geometry; the main gradient\n"
+     "  graph stays intact. Only accepted points can become the retained best.\n"
+     "  Accepted steps refresh automatic semi-diameters; rejected torch steps\n"
+     "  reset optimiser history. scipy gets the rejected point's penalty, never\n"
+     "  a backtracked point's residual at the wrong coordinates.\n"
+     "  Every trial uses variable bounds. Script losses must be scalar Tensors.\n"
+     "  --device auto/cpu (float64) or cuda. Returns algorithm, device, inner_loop,\n"
+     "  backtracks, min_valid_fraction, max_backtracks and step_guard_reason; torch\n"
+     "  also returns accepted_steps, rejected_steps and ray_penalty."),
     ("hammer", "Run Hammer search beyond local minima on the loaded job lens.",
      "--max-seconds is required; it does not stop on its own. Material substitution\n"
      "  uses opt vary --param material --mode substitute; inspect materials_changed\n"
