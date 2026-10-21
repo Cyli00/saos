@@ -9,6 +9,8 @@ const POLL_MS = 1500;
 const TEXT = {
   zh: {
     interview: "访谈与可行性判断", demand_confirm: "确认需求单", modeling: "起型、探索与建模", model_approve: "确认建模说明", design: "自主设计", deliver: "交付报告",
+    zos: "OpticStudio 复测与优化", final_report: "OpticStudio 最终报告",
+    zos_accept: "用户认可报告后进入 · saos zos begin", zos_pending: "阶段记录未完成，可续跑", zos_complete: "复测与对比已封存，继续自主设计", back_zos: "继续优化", back_reject: "调整设计",
     no_demand: "访谈中，尚无需求单", invalid_demand: "需求单未通过校验", first: "等待用户确认", reconfirm: "需求已改动，待重新确认",
     waiting: "等你确认", blocked: "待回答", active: "进行中", running: "运行中",
     rounds_n: (n) => `第 ${n} 轮`, no_rounds: "尚未记录轮次",
@@ -31,7 +33,7 @@ const TEXT = {
     layout_foot_opt: "几何与光线坐标：Optiland 0.6.3（面坐标系、矢高、批量光线追迹，float64）。",
     spot_foot_opt: (ref) => `点：Optiland 批量光线追迹，相对主波长主光线，未计被拦光线。RMS / GEO：saos 的 Optiland 点列分析（参考 ${ref}，六角采样，每个波长光线数相同），单位 µm。`,
     mtf_foot_opt: "曲线：Optiland FFT MTF，主波长（多波长 MTF 尚未接入）。",
-    modeling_sub: "scan candidates · lens describe（双端对齐）",
+    modeling_sub: "scan candidates · lens describe", design_sub: "Optiland 优化 · 步长回退 · round · 结构未指定时先比较 ≥3 个候选",
     layout_hint_3d: "拖动旋转 · Shift 或右键拖动平移 · 滚轮以光标为中心缩放 · 双击复位 · 指向某面看参数", layout_hint_2d: "拖动平移 · Shift 或右键拖动测距（吸附面上的点）· 滚轮以光标为中心缩放 · 双击复位 · Esc 清除测距 · 指向某面看参数",
     image_z: "像面 z", round: "轮", tiers: "层级", gap: "目标差距", state: "状态", note: "说明", achieved: "达成", deliverable: "可交付",
     pick_round: "点一行在其他视图中查看该轮", sag_flat: "部分面读不到面形，按平面画。", select_round: (n) => `r${String(n).padStart(3, "0")}`,
@@ -51,6 +53,8 @@ const TEXT = {
   },
   en: {
     interview: "Interview & feasibility", demand_confirm: "Confirm demand", modeling: "Start designs & model", model_approve: "Approve model", design: "Autonomous design", deliver: "Delivery report",
+    zos: "OpticStudio measure & optimise", final_report: "Final OpticStudio report",
+    zos_accept: "Accept report · saos zos begin", zos_pending: "Stage records incomplete; resume", zos_complete: "Measurement and comparison sealed", back_zos: "optimise further", back_reject: "revise design",
     no_demand: "interviewing, no demand yet", invalid_demand: "demand fails validation", first: "waiting for the user", reconfirm: "demand changed, confirm again",
     waiting: "your turn", blocked: "question", active: "in progress", running: "running",
     rounds_n: (n) => `round ${n}`, no_rounds: "no rounds yet",
@@ -73,7 +77,7 @@ const TEXT = {
     layout_foot_opt: "Geometry and rays: Optiland 0.6.3 (surface frames, sag, batch ray trace, float64).",
     spot_foot_opt: (ref) => `Points: Optiland batch ray trace relative to the primary chief ray, vignetted rays left out. RMS / GEO: saos's Optiland spot analysis (reference ${ref}, hexapolar sampling, the same rays for every wavelength), in µm.`,
     mtf_foot_opt: "Curves: Optiland FFT MTF at the primary wavelength (polychromatic MTF not connected yet).",
-    modeling_sub: "scan candidates · lens describe (dual-backend check)",
+    modeling_sub: "scan candidates · lens describe", design_sub: "Optiland optimise / backtrack / round · compare ≥3 structures first if the structure is not fixed",
     layout_hint_3d: "drag to rotate · Shift or right-drag to pan · wheel zooms at the cursor · double-click to reset · hover a surface for its data", layout_hint_2d: "drag to pan · Shift or right-drag to measure (snaps to surface points) · wheel zooms at the cursor · double-click to reset · Esc clears the ruler · hover a surface for its data",
     image_z: "image z", round: "Round", tiers: "Tiers", gap: "Shortfall", state: "State", note: "Note", achieved: "achieved", deliverable: "deliverable",
     pick_round: "Click a row to view that round in the other tabs", sag_flat: "Some surface shapes could not be read; drawn flat.", select_round: (n) => `r${String(n).padStart(3, "0")}`,
@@ -153,6 +157,8 @@ const NODES = [
   { id: "model_approve", y: 280, h: 46, gate: true },
   { id: "design", y: 362, h: 64 },
   { id: "deliver", y: 462, h: 56 },
+  { id: "zos", y: 554, h: 64 },
+  { id: "final_report", y: 654, h: 56 },
 ];
 const NX = 20, NW = 226;
 
@@ -173,12 +179,13 @@ function nodeSub(step) {
   }
   if (step.id === "model_approve") return typeof d === "string" ? d : "saos lens approve";
   if (step.id === "design") {
-    if (!d) return "saos round";
+    if (!d) return t("design_sub");
     const last = d.last;
     if (!last) return t("no_rounds");
     return `${t("select_round", last.round)} · G ${fmtG(last.shortfall)} · ${last.tiers.join("+")}`;
   }
-  if (step.id === "deliver") return d ? `${t("st_" + d)} · ${step.status === "done" ? t("report_ready") : t("report_todo")}` : t("deliver_cmd");
+  if (step.id === "zos") return d ? t(d.state) : "saos zos begin";
+  if (["deliver", "final_report"].includes(step.id)) return d ? `${t("st_" + d)} · ${step.status === "done" ? t("report_ready") : t("report_todo")}` : t("deliver_cmd");
   return "";
 }
 
@@ -219,6 +226,8 @@ function renderFlow() {
   back("design", "demand_confirm", t("back_demand"), 40);
   back("modeling", "demand_confirm", t("back_reach"), 26, -12);
   back("model_approve", "modeling", t("back_model"), 12);
+  back("zos", "design", t("back_zos"), 54);
+  back("deliver", "design", t("back_reject"), 68, -12);
   // 节点
   NODES.forEach((n, i) => {
     const s = steps[n.id];
@@ -246,7 +255,7 @@ function renderFlow() {
     parts.push(`</g>`);
   });
   svg.innerHTML = parts.join("");
-  svg.setAttribute("viewBox", `0 0 300 ${NODES[NODES.length - 1].y + 70}`);
+  svg.setAttribute("viewBox", `0 0 330 ${NODES[NODES.length - 1].y + 70}`);
   const note = $("flow-note");
   note.innerHTML = state.blocking.length ? `<div class="q"><b>${esc(t("blocking"))}</b><br>${state.blocking.map(esc).join("<br>")}</div>` : "";
 }

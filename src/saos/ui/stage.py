@@ -12,10 +12,10 @@ import json
 import math
 from typing import Any
 
-from saos import client, demand, i18n, jobs, ledger, model_gate
+from saos import client, demand, i18n, jobs, ledger, model_gate, stages
 from saos.protocol import ErrorCode, SaosError
 
-STEPS = ("interview", "demand_confirm", "modeling", "model_approve", "design", "deliver")
+STEPS = ("interview", "demand_confirm", "modeling", "model_approve", "design", "deliver", "zos", "final_report")
 FINAL = ("achieved", "exhausted", "limit", "stopped")
 
 
@@ -116,11 +116,11 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
             current = "model_approve"
         else:
             status["modeling"] = status["model_approve"] = "done"
-            rows = ledger.load(root / ledger.LEDGER_FILE)
+            rows = stages.rounds(root, ledger.load(root / ledger.LEDGER_FILE))
             in_version = [r for r in ledger.current_window(rows) if ledger.version(r)[0] == sha] if rows else []
             decision = None
             if in_version:
-                decision = ledger.decide(rows, d["stop"], ledger.stop_for(root, sha), ledger.ruled_out_for(root, sha))
+                decision = ledger.decide(rows, stages.stop(root, d["stop"]), ledger.stop_for(root, sha), ledger.ruled_out_for(root, sha))
                 out["decision"] = {k: _num(v) if isinstance(v, float) else v for k, v in decision.items() if k != "stopped"}
             detail["design"] = {"rounds": len(in_version), "last": out["rounds"][-1] if in_version else None}
             if decision is not None and decision["status"] in FINAL:
@@ -137,6 +137,33 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
             else:
                 status["design"] = "active"
                 current = "design"
+            entry = stages.read(root)
+            if entry:
+                status["deliver"] = "done"
+                detail["deliver"] = entry["optiland_conclusion"]
+                completed = stages.completed(root)
+                status["zos"] = "done" if completed else "active"
+                detail["zos"] = {"state": "zos_complete" if completed else "zos_pending", "round": entry["source_round"]}
+                if not completed:
+                    status["design"] = "pending"
+                    current = "zos"
+                elif decision is not None and decision["status"] in FINAL:
+                    meta_file = root / stages.REPORT
+                    meta = json.loads(meta_file.read_text(encoding="utf-8")) if meta_file.is_file() else {}
+                    ready = (meta.get("stage") == "zos" and meta.get("last_round") == rows[-1]["round"]
+                             and (meta.get("demand_sha"), meta.get("method_sha")) == ledger.version(rows[-1]))
+                    status["final_report"] = "done" if ready else "active"
+                    detail["final_report"] = decision["status"]
+                    current = "final_report"
+            elif (root / stages.REPORT).is_file():
+                meta = json.loads((root / stages.REPORT).read_text(encoding="utf-8"))
+                current_method = demand.method_digest(demand.prepare_scripts(root, d))
+                if (rows and meta.get("last_round") == rows[-1]["round"] and meta.get("deliverable")
+                        and (meta.get("demand_sha"), meta.get("method_sha")) == (sha, current_method)):
+                    status["deliver"] = "done"
+                    status["zos"] = "waiting"
+                    detail["zos"] = {"state": "zos_accept"}
+                    current = "zos"
         blocking = demand.blocking_questions(d)
         if blocking and status[current] in ("active", "waiting"):
             status[current] = "blocked"
