@@ -96,34 +96,24 @@ HELP_EPILOG = """Input: --plan FILE, a JSON file (choose exactly one of the six 
   Explicit points (1 to 5000 nonempty parameter dictionaries):
     {"points": [{"3.radius": 20}, {"3.radius": 25}], "measure": ["spot"]}
 
-  Structure candidates (2 to 12; workflow requires at least 3 different structures
-  unless the user prescribed the structure):
-    {"candidates": [
-       {"id": "triplet", "lens": "explore/start/triplet.zmx",
-        "hypothesis": "Fewer elements may meet the target"},
-       {"id": "petzval", "prescription": "explore/start/petzval.json",
-        "hypothesis": "Separate field flattening may improve the edge"},
-       {"id": "double_gauss", "lens": "explore/start/double_gauss.zmx",
-        "hypothesis": "Symmetry may reduce off-axis aberrations"}],
-     "prepare": "explore/start/prepare.py",
-     "stages": [{"local": {"max_seconds": 60, "cycles": "auto"}},
-                {"hammer": {"max_seconds": 120}},
-                {"global": {"max_seconds": 120}}],
-     "measure": ["spot"], "workers": 3, "keep": 3}
-    Each candidate needs unique id, hypothesis and exactly one job-relative lens
-    (.zmx) or prescription (.json). Format: uv run saos lens build --help.
-    Every stage requires a positive max_seconds; local cycles are auto, 1, 5,
-    10 or 50. "stages": [] screens only (build, bounded trace, first-order values,
-    geometry) and runs no optimiser. Optional prepare defines run(w), setting variables/merit for each
-    candidate. fixed/solve/compensate do not apply; use prepare instead.
-    No current lens is needed. Each worker builds/loads a private candidate copy,
-    runs prepare, records the start and every stage, then checks interference
-    and glass status. All hard conditions are always measured. Valid candidates
-    rank first, then by shortfall. A last-stage relative gain > demand.stop.rel
-    means still_improving (budget-limited), so keep it regardless of rank.
-    Default keep: 3 valid candidates plus all budget-limited candidates.
-    plan.json records budget_s: sum of stage budgets times ceil(candidates/workers),
-    excluding loading/measurement; detached response also reports it.
+  Structure candidates (1 to 12; no workflow quota):
+    {"candidates": [{"id": "triplet", "prescription": "explore/start/triplet.json",
+                     "hypothesis": "Optional explanation", "form": "Cooke triplet", "provenance": {"source": "..."}}],
+     "prepare": "explore/start/prepare.py", "stages": [], "workers": 1, "keep": 3}
+    Each candidate has a unique id and exactly one job-relative lens or prescription.
+    First screen every candidate with stages: []; then run all on the same short stage budget,
+    e.g. [{"local": {"max_seconds": 60}}]. Each stage needs positive max_seconds.
+    prepare defines run(w) and sets variables/merit consistently. It is required for
+    prescriptions with optimisation stages. It is optional for stages: [] and saved
+    lenses that already have a merit function. Empty merit before a required stage
+    is a configuration error (BAD_ARGS), not a failed optical candidate.
+    Plan, candidate inputs and the prepare copy are sealed before running. Every completed
+    structure.json is sealed immediately. Original prepare edits do not invalidate the copy.
+    Verdicts: valid, invalid (within budget), material or computation (not evaluated).
+    Structures are deduplicated by fingerprint. Only RuntimeWarning is counted;
+    Python warning filters can suppress warnings, so zero does not establish validity.
+    Valid candidates rank first, then by shortfall. Still-improving candidates are kept.
+    Missing comparisons do not block approval or deep optimisation; demand and model approval do.
 
   Multi-start minimization (one search per start):
     {"minimize": {"vars": {"3.radius": {"step": 0.1, "min": 15, "max": 40},
@@ -803,15 +793,26 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
         args = {"plan": plan, "lens_dir": f"scans/{folder.name}", "cancel_file": str(folder / jobs.CANCEL_FILE)}
         if exploring:
             items = candidates.snapshot(ctx.job.root, plan, folder)
+            input_files = [p.relative_to(ctx.job.root).as_posix() for p in sorted((folder / "candidates").rglob("*")) if p.is_file()]
+            prepare_sha = None
+            if plan.get("prepare"):
+                source = jobs.inside(ctx.job.root, plan["prepare"])
+                prepared = folder / "prepare.py"
+                shutil.copy2(source, prepared)
+                prepare_sha = jobs.sha256_file(prepared)
+                input_files.append(prepared.relative_to(ctx.job.root).as_posix())
+                args["plan"] = {**plan, "prepare": prepared.relative_to(ctx.job.root).as_posix()}
             # 每个候选自己加载或搭建，worker 不先加载公共镜头 / each candidate loads or builds its own; no shared lens first
             base = None
             # 几个优化器同时跑时分掉可用核，不互相抢 / concurrent optimisers share the usable cores instead of fighting over them
             args["cores"] = max(1, config.compute_cores() // count)
-            # 比较绑定记录它时的需求版本；需求改了以后，旧比较不能支持新的深度优化（见 candidates.structure_compared）
-            # 判定版本也绑定：改了 checks 后，这份比较不能再支持深度优化 / the check version is bound too: changed checks void it
+            # 版本用于页面显示已有证据的适用范围，不作为深度优化资格。
             write_json(folder / "plan.json", {**plan, "workers": count, "cores_per_worker": args["cores"],
+                                              "input_files": input_files, "prepare_sha": prepare_sha,
                                               "budget_s": candidates.budget_s(plan, count), "demand_sha": demand_sha,
                                               "method_sha": demand.method_digest(demand.prepare_scripts(ctx.job.root, d))})
+            # 计划和候选副本在初筛开始前封存；结束时用 candidates.unchanged_since_start 核对 / sealed before screening, checked at the end
+            ctx.job.seal(folder / "plan.json", *(ctx.job.root / p for p in input_files))
         else:
             write_json(folder / "plan.json", {**plan, "lens": ctx.job.relative_lens(ctx.lens), "workers": count})
             # 镜头快照：分离运行期间改动或保存工作镜头不影响扫描 / a snapshot, so later edits of the working lens do not reach the scan
@@ -875,6 +876,9 @@ def _execute(job: jobs.Job, folder, plan: dict[str, Any], items: list[dict[str, 
             res = {**item, "shortfall": math.inf, "error": out["errors"].get(str(item["i"]), "not run")}
         rows.append(res)
     if plan["mode"] == "candidates":
+        setup_errors = [{"candidate": r.get("id"), "message": r["setup_error"], **({"details": r["setup_details"]} if r.get("setup_details") else {})} for r in rows if r.get("setup_error")]
+        if setup_errors:
+            raise SaosError(ErrorCode.BAD_ARGS, "候选配置不完整，初筛未完成；请修正 prepare", {"configuration_errors": setup_errors})
         ranked, kept_ids = candidates.rank(rows, plan["keep"])
         keep = {r.get("lens") for r in ranked if r["id"] in kept_ids and r.get("lens")}
     else:
@@ -899,15 +903,23 @@ def _execute(job: jobs.Job, folder, plan: dict[str, Any], items: list[dict[str, 
     if post is not None and not out["cancelled"]:
         result.update(post(rows))
     if plan["mode"] == "candidates":
+        # 计划或候选副本在运行期间被改过，这次结果不是比较 / a changed plan or candidate copy during the run: not a comparison
+        if not candidates.unchanged_since_start(job, folder):
+            raise SaosError(ErrorCode.EVIDENCE_TAMPERED, f"{folder.relative_to(job.root).as_posix()}: plan.json or a candidate copy changed during the scan; "
+                            "the scan is not a comparison, run it again")
         result["best"] = next((r for r in ranked if r.get("valid")), None)
         result["kept"] = [r["id"] for r in ranked if r.get("kept")]
         result["budget_limited"] = [r["id"] for r in ranked if r.get("still_improving")]
+        result["counted"] = [r["id"] for r in candidates.counted(ranked)]
         result["page"] = candidates.page(job, folder, plan, ranked, plan.get("lang")).relative_to(job.root).as_posix()
     write_json(folder / "result.json", result)
     (folder / jobs.CANCEL_FILE).unlink(missing_ok=True)
     if on_done is not None:
         on_done(status="cancelled" if out["cancelled"] else "done", valid=len(valid), elapsed_s=out["elapsed_s"])
-    job.seal(folder)
+    if plan["mode"] == "candidates":
+        job.seal(folder / "result.json", folder / "index.html")
+    else:
+        job.seal(folder)
     return summarize(result)
 
 
@@ -915,7 +927,8 @@ def summarize(result: dict[str, Any]) -> dict[str, Any]:
     """返回给 agent 的摘要：前 10 行，不含寻优历史。/ The summary for the agent: the top 10 rows, no search history."""
     summary = {k: v for k, v in result.items() if k != "rows"}
     if result.get("mode") == "candidates":
-        keys = ("id", "valid", "kept", "still_improving", "start_shortfall", "shortfall", "problems", "hard_failing", "values", "lens", "error")
+        keys = ("id", "verdict", "valid", "kept", "still_improving", "start_shortfall", "shortfall", "problems", "hard_failing", "values", "lens", "error",
+                "numeric_warnings")
     else:
         keys = ("i", "set", "shortfall", "hard_failing", "invalid", "values", "solve", "lens", "operands", "error")
     summary["top"] = [{k: r.get(k) for k in keys} for r in result["rows"][:10]]

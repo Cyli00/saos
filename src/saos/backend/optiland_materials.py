@@ -13,8 +13,14 @@ from saos import config, glasscat
 from saos.protocol import ErrorCode, SaosError
 
 
+class MaterialError(SaosError):
+    """材料数据无法使用：牌号不在目录、缺色散或热数据、超出适用范围、目录读不出。候选比较按这个类型把失败归为“材料”，不靠消息文字。
+    A material whose data cannot be used: not in a catalog, no dispersion or thermal data, outside its range, a catalog that cannot be
+    read. Candidate comparison files a failure under material by this type, never by its text."""
+
+
 def unsupported(message):
-    return SaosError(ErrorCode.BACKEND_UNSUPPORTED, message, {"backend": "optiland"})
+    return MaterialError(ErrorCode.BACKEND_UNSUPPORTED, message, {"backend": "optiland"})
 
 
 @lru_cache(maxsize=32)
@@ -199,7 +205,10 @@ class MaterialStore:
             paths = self._paths().get(key, [])
             if len(paths) > 1 and len({hashlib.sha256(p.read_bytes()).digest() for p in paths}) > 1:
                 raise unsupported(f"catalog {key} has conflicting local AGF files")
-            self.catalogs[key] = glasscat.load_optical_catalog(paths[0]) if paths else {}
+            try:
+                self.catalogs[key] = glasscat.load_optical_catalog(paths[0]) if paths else {}
+            except (OSError, ValueError) as exc:
+                raise MaterialError(ErrorCode.BACKEND_UNSUPPORTED, f"catalog {key} cannot be read: {exc}", {"backend": "optiland"}) from exc
         return self.catalogs[key]
 
     def get(self, value, catalogs):
@@ -254,7 +263,7 @@ class MaterialStore:
                 if entry is None and catalogs and all(self.catalog(c) for c in catalogs):
                     # 所用目录本机都有 AGF 而牌号不在其中：是处方写错了，不必再交给 OpticStudio 查
                     # every catalog in use has a local AGF and none lists the name: a prescription error, not a missing capability
-                    raise SaosError(ErrorCode.BAD_ARGS, f"material {value!r} is not in the catalogs {list(catalogs)} or library/materials")
+                    raise MaterialError(ErrorCode.BAD_ARGS, f"material {value!r} is not in the catalogs {list(catalogs)} or library/materials")
                 if entry is None or entry.get("dispersion") is None:
                     raise unsupported(f"material {value!r} has no exact sourced dispersion definition")
                 model = entry["dispersion"]
