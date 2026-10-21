@@ -56,7 +56,9 @@ HARD_KINDS = ("constant", "variable")
 QUESTION_LINE = {"zh": "发现任何这个demand可能存在的问题，要大胆质疑和询问。",
                  "en": "If you find any possible problem with this demand, question it boldly and ask."}
 # notes：不影响设计和判定的背景（来源文件的位置、做过的决定），不进版本 / notes: context that changes neither design nor judgement, not versioned
-TOP_KEYS = {"schema", *SECTIONS, "open_questions", "summary", "notes", "lang", "stop"}
+TOP_KEYS = {"schema", *SECTIONS, "open_questions", "summary", "notes", "lang", "stop", "structure"}
+# structure: {mode: free|prescribed, reason}；prescribed 时 reason 必须写明用户为什么指定这个结构
+STRUCTURE_MODES = ("free", "prescribed")
 ITEM_KEYS = {
     "constants": {"id", "description", "value", "unit", "source", "check", "goal", "scale"},
     "variables": {"id", "description", "range", "options", "unit", "check", "scale", "source"},
@@ -113,7 +115,17 @@ def digest(demand: dict[str, Any]) -> str:
     Hash of what the demand means: the three sections and the stop rule. The summary, open questions and language
     are left out, so rewording them keeps G comparable."""
     body = {k: demand.get(k) for k in ("schema", *SECTIONS, "stop")}
+    # 结构要求只在声明时参与哈希，旧需求单的哈希保持不变 / the structure rule is hashed only when declared, so old hashes stay
+    if "structure" in demand:
+        body["structure"] = demand["structure"]
     return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
+
+
+def structure_mode(demand: dict[str, Any]) -> str:
+    """结构要求：free（未指定，默认）或 prescribed（用户明确指定了结构，理由写在 structure.reason）。
+    Structure rule: free (default when unspecified) or prescribed (the user fixed the structure; reason in structure.reason)."""
+    rule = demand.get("structure") or {}
+    return "prescribed" if isinstance(rule, dict) and rule.get("mode") == "prescribed" and str(rule.get("reason", "")).strip() else "free"
 
 
 def checked(demand: dict[str, Any]) -> list[dict[str, Any]]:
@@ -271,6 +283,12 @@ def validate(data: Any) -> dict[str, Any]:
     if unknown:
         # 只收需求本身；文献细节、过程指令放在 sources/ 的其他文件里引用 / the demand only; literature and process notes live elsewhere in sources/
         raise _bad(f"unknown fields {sorted(unknown)}; allowed: {sorted(TOP_KEYS)}")
+    if "structure" in data:
+        rule = data["structure"]
+        if not isinstance(rule, dict) or set(rule) - {"mode", "reason"} or rule.get("mode") not in STRUCTURE_MODES:
+            raise _bad(f"structure must be {{mode: free|prescribed, reason}}, got {rule!r}")
+        if rule["mode"] == "prescribed" and not str(rule.get("reason", "")).strip():
+            raise _bad("structure: mode prescribed needs the reason the user gave for fixing the structure")
     notes = data.get("notes")
     if notes is not None and not (isinstance(notes, list) and all(isinstance(n, str) and n.strip() for n in notes)):
         raise _bad("notes must be a list of non-empty strings")
@@ -584,6 +602,10 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
         items.append(item)
     judged = [i for i in items if i["goal"] is not None]
     daemon = getattr(ctx, "_daemon", None)
+    # 版本只取实际执行本次测量的后端实例，不回退到 daemon 启动时的后端（那可能是另一个版本）
+    # the version comes from the backend that measured this round only, never the daemon's start backend (another version)
+    identity = ctx.backend.identity()
+    backend_name = identity["backend"]
     result = {"shortfall": total,
               # 没有任何带界限的条目时不能宣布达成 / nothing with a pass line means nothing can be declared achieved
               "achieved": only is None and bool(judged) and all(i["passed"] for i in judged), "items": items,
@@ -597,11 +619,10 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
               "demand": demand, "demand_sha": digest(demand), "method_sha": method_digest(scripts),
               "support_files": support, **({"saos_code_files": code} if code else {}),
               "environment": {"saos_code_sha256": getattr(daemon, "code_sha256", None),
-                              "opticstudio": ((getattr(daemon, "zos_info", None) or {}).get("version")
-                                              if (getattr(daemon, "zos_info", None) or {}).get("backend") != "optiland" else None),
-                              "backend": (getattr(daemon, "zos_info", None) or {}).get("backend", "zos"),
-                              "backend_version": (getattr(daemon, "zos_info", None) or {}).get("version"),
-                              "precision": (getattr(daemon, "zos_info", None) or {}).get("precision")},
+                              "opticstudio": identity["version"] if backend_name == "zos" else None,
+                              "backend": backend_name,
+                              "backend_version": identity["version"],
+                              "precision": identity["precision"]},
               "lens": lens or ctx.describe(), "evidence_dir": folder.relative_to(ctx.job.root).as_posix(),
               "evidence_file": (folder / "result.json").relative_to(ctx.job.root).as_posix()}
     write_json(folder / "result.json", result)

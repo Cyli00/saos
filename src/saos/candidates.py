@@ -32,17 +32,64 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from saos import demand, geometry, i18n, jobs, prescription
+from saos import demand, geometry, i18n, jobs, lens_files, prescription
 from saos.protocol import ErrorCode, SaosError, jsonable
 
 MIN_CANDIDATES = 2
 MAX_CANDIDATES = 12
+# 结构未指定的任务，进入深度优化前至少要有这么多有效候选的比较；两个入围方案的再比较仍允许（计划 §4.3）
+MIN_STRUCTURE_CANDIDATES = 3
 STAGE_KINDS = ("local", "hammer", "global")
 CYCLES = ("auto", "1", "5", "10", "50")
 
 
 def _bad(message: str) -> SaosError:
     return SaosError(ErrorCode.BAD_ARGS, f"scan plan: {message}")
+
+
+# 只有这些原因算“物理上不成立”，可作为淘汰证据；计算失败、解析错误和未运行都不算已评估
+# only these reasons count as physically impossible, i.e. as evidence to eliminate; failed, unparsed or unrun is not an evaluation
+PHYSICAL_PROBLEMS = frozenset({"parts cross or interpenetrate"})
+
+
+def _accounted(row: dict[str, Any]) -> bool:
+    """候选是否已有依据的结论：有效，或被物理矛盾淘汰。 / Whether a candidate has a sound verdict: valid, or eliminated physically."""
+    problems = row.get("problems") or []
+    return bool(row.get("valid")) or (bool(problems) and set(problems) <= PHYSICAL_PROBLEMS)
+
+
+def structure_compared(job: jobs.Job, demand_sha: str, method_sha: str) -> bool:
+    """本需求版本、本判定版本下是否有一份已封存的结构比较：计划和结果都封存，至少 MIN_STRUCTURE_CANDIDATES 个候选各有
+    依据的结论（有效，或物理矛盾淘汰），且其中至少一个有效。计算失败的候选不计入。两个入围方案的复比不需要再凑第三个。
+    改了判定脚本（checks）后比较失效：比较的数值是用旧判定算的。
+    Whether a sealed comparison exists under this demand and check version: at least MIN_STRUCTURE_CANDIDATES candidates
+    with a sound verdict (valid, or eliminated by a physical contradiction), at least one of them valid. Failed candidates
+    do not count. Re-comparing two finalists needs no third. Changed checks void it."""
+    from saos import stages
+
+    scans = job.root / "scans"
+    for plan_path in sorted(scans.glob("*/plan.json")) if scans.is_dir() else []:
+        folder = plan_path.parent
+        result_path = folder / "result.json"
+        if not result_path.is_file():
+            continue
+        rel_plan, rel_result = plan_path.relative_to(job.root).as_posix(), result_path.relative_to(job.root).as_posix()
+        if not (stages.sealed(job.root, rel_plan) and stages.sealed(job.root, rel_result)):
+            continue
+        try:
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if plan.get("mode") != "candidates" or result.get("mode") != "candidates":
+            continue
+        if plan.get("demand_sha") != demand_sha or plan.get("method_sha") != method_sha:
+            continue
+        rows = result.get("rows") or []
+        accounted = [r for r in rows if _accounted(r)]
+        if len(accounted) >= MIN_STRUCTURE_CANDIDATES and any(r.get("valid") for r in accounted):
+            return True
+    return False
 
 
 def validate(root: Path, plan: dict[str, Any], items: dict[str, dict[str, Any]], measure: list[str]) -> dict[str, Any]:
@@ -52,6 +99,7 @@ def validate(root: Path, plan: dict[str, Any], items: dict[str, dict[str, Any]],
     if not isinstance(cands, list) or not MIN_CANDIDATES <= len(cands) <= MAX_CANDIDATES:
         raise _bad(f"candidates: {MIN_CANDIDATES}–{MAX_CANDIDATES} entries, each {{id, lens or prescription, hypothesis}}")
     seen = set()
+    contents: dict[str, str] = {}
     for c in cands:
         if not isinstance(c, dict) or not demand.ID_RE.match(str(c.get("id", ""))) or c["id"] in seen:
             raise _bad("each candidate needs a unique id (letters, digits, _)")
@@ -63,13 +111,25 @@ def validate(root: Path, plan: dict[str, Any], items: dict[str, dict[str, Any]],
         if c.get("lens") is not None:
             rel = str(c["lens"])
             path = jobs.inside(root, rel)
-            if path.suffix.lower() != jobs.LENS_SUFFIX or not path.is_file():
-                raise _bad(f"{c['id']}: lens must be a .zmx file in the job, as a job-relative path (got {rel!r})")
+            if path.suffix.lower() != jobs.LENS_SUFFIX or not lens_files.exists(path):
+                raise _bad(f"{c['id']}: lens must be a .zmx or Optiland snapshot in the job, as a job-relative path (got {rel!r})")
+            # 比较的是结构：有快照时用快照的处方，否则用文件字节；名称、注释这些文件内容不影响比较
+            # compare structures: the snapshot's prescription when there is one, else the file bytes; names and comments do not count
+            payload = lens_files.read_companion(path)
+            content = (json.dumps(payload["prescription"], sort_keys=True, ensure_ascii=False, default=str) if payload is not None
+                       else path.read_bytes().hex())
         else:
-            _read_prescription(jobs.inside(root, str(c["prescription"])), c["id"])
-    stages = plan.get("stages")
-    if not isinstance(stages, list) or not stages:
-        raise _bad(f'stages: a list such as [{{"local": {{"max_seconds": 60}}}}, {{"hammer": {{"max_seconds": 120}}}}]; kinds {STAGE_KINDS}')
+            content = json.dumps(_read_prescription(jobs.inside(root, str(c["prescription"])), c["id"]), sort_keys=True, ensure_ascii=False,
+                                 default=str)
+        # 内容完全相同的候选只是同一个结构换了名字；它们不能凑够“三个结构”（更细的结构差异仍由假设和比较证据说明）
+        twin = next((other for other, text in contents.items() if text == content), None)
+        if twin is not None:
+            raise _bad(f"{c['id']}: identical to {twin}; a candidate must differ in structure, not only in its name")
+        contents[c["id"]] = content
+    # stages 为空表示只做初筛：构建、有限追迹、一阶量和几何检查，不做任何优化 / empty stages: screening only, no optimisation
+    stages = plan.get("stages", [])
+    if not isinstance(stages, list):
+        raise _bad(f'stages: a list such as [{{"local": {{"max_seconds": 60}}}}, {{"hammer": {{"max_seconds": 120}}}}], or [] to screen without optimising; kinds {STAGE_KINDS}')
     for s in stages:
         if not isinstance(s, dict) or len(s) != 1 or next(iter(s)) not in STAGE_KINDS:
             raise _bad(f"each stage is one of {STAGE_KINDS} with its settings")
@@ -106,7 +166,7 @@ def _read_prescription(path: Path, cid: str) -> dict[str, Any]:
 def budget_s(plan: dict[str, Any], workers: int) -> float:
     """各段预算之和乘以轮数（候选数 ÷ worker 数，向上取整），不含加载和测量。
     The stage budgets times the number of waves (candidates ÷ workers, rounded up), loading and measuring excluded."""
-    per = sum(float(next(iter(s.values()))["max_seconds"]) for s in plan["stages"])
+    per = sum(float(next(iter(s.values()))["max_seconds"]) for s in plan.get("stages", []))
     return per * math.ceil(len(plan["candidates"]) / max(1, workers))
 
 

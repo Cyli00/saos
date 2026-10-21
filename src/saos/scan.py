@@ -113,7 +113,8 @@ HELP_EPILOG = """Input: --plan FILE, a JSON file (choose exactly one of the six 
     Each candidate needs unique id, hypothesis and exactly one job-relative lens
     (.zmx) or prescription (.json). Format: uv run saos lens build --help.
     Every stage requires a positive max_seconds; local cycles are auto, 1, 5,
-    10 or 50. Optional prepare defines run(w), setting variables/merit for each
+    10 or 50. "stages": [] screens only (build, bounded trace, first-order values,
+    geometry) and runs no optimiser. Optional prepare defines run(w), setting variables/merit for each
     candidate. fixed/solve/compensate do not apply; use prepare instead.
     No current lens is needed. Each worker builds/loads a private candidate copy,
     runs prepare, records the start and every stage, then checks interference
@@ -747,8 +748,9 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
     """准备（校验、目录、镜头快照）在本请求里完成；detach 时其余放进后台线程，立即返回，后台进程继续处理其他命令。
     Preparation (validation, folder, lens snapshot) happens in this request; with detach the rest runs in a background
     thread and the call returns at once, so the daemon keeps serving other commands."""
-    from saos import config, parallel, workflow
+    from saos import config, parallel, stages, workflow
 
+    stages.require_ready(ctx.job.root)
     d = demand.load_job(ctx.job.root)
     plan = validate(plan, d, ctx.job.root)
     exploring = plan["mode"] == "candidates"
@@ -766,10 +768,12 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
     if plan["mode"] == "tolerance":
         checked = {i["id"]: i for i in demand.checked(d)}
         post = lambda rows: _tolerance_result(plan, checked, rows)  # noqa: E731
-    if plan["mode"] in ("minimize", "candidates", "tolerance"):
-        # 寻优、结构探索和公差可能跑很久，公差还要按确认过的判定算：与 opt local 同样先确认需求
-        # minimisation, exploration and tolerancing may run long, and tolerancing judges by the confirmed checks: same gate as opt local
-        workflow.preflight(ctx.job.root)
+    if plan["mode"] == "minimize":
+        # 与 opt local 同一判定：需求已确认、结构有资格、当前模型已认可 / the same rule as opt local
+        _, demand_sha = workflow.require_optimise(ctx.job, ctx.backend)
+    elif plan["mode"] in ("candidates", "tolerance"):
+        # 结构探索和公差：公差按确认过的判定算，所以只要求需求已确认 / tolerancing judges by the confirmed checks, so the demand is enough
+        _, demand_sha, _ = workflow.preflight(ctx.job.root)
     if plan["mode"] == "vars":
         items = [{"i": k, "set": p} for k, p in enumerate(search.grid(plan["vars"]))]
     elif plan["mode"] == "points":
@@ -785,7 +789,8 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
         if starts == "current":
             starts = [kit.values(ctx, list(plan["minimize"]["vars"]))]
         items = [{"i": k, "start": s} for k, s in enumerate(starts)]
-    count = min(len(items), int(workers or plan.get("workers") or parallel.default_workers()), config.compute_cores())
+    backend = parallel.backend_for(ctx.job)
+    count = min(len(items), int(workers or plan.get("workers") or parallel.default_workers(backend)), config.compute_cores())
     pool = ctx._daemon.pool
     if not pool.lock.acquire(timeout=2):
         raise SaosError(ErrorCode.POOL_BUSY, "the worker pool is busy with a detached scan; wait for it (saos scan show) or cancel it (saos job cancel)",
@@ -802,8 +807,11 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
             base = None
             # 几个优化器同时跑时分掉可用核，不互相抢 / concurrent optimisers share the usable cores instead of fighting over them
             args["cores"] = max(1, config.compute_cores() // count)
+            # 比较绑定记录它时的需求版本；需求改了以后，旧比较不能支持新的深度优化（见 candidates.structure_compared）
+            # 判定版本也绑定：改了 checks 后，这份比较不能再支持深度优化 / the check version is bound too: changed checks void it
             write_json(folder / "plan.json", {**plan, "workers": count, "cores_per_worker": args["cores"],
-                                              "budget_s": candidates.budget_s(plan, count)})
+                                              "budget_s": candidates.budget_s(plan, count), "demand_sha": demand_sha,
+                                              "method_sha": demand.method_digest(demand.prepare_scripts(ctx.job.root, d))})
         else:
             write_json(folder / "plan.json", {**plan, "lens": ctx.job.relative_lens(ctx.lens), "workers": count})
             # 镜头快照：分离运行期间改动或保存工作镜头不影响扫描 / a snapshot, so later edits of the working lens do not reach the scan
@@ -875,7 +883,11 @@ def _execute(job: jobs.Job, folder, plan: dict[str, Any], items: list[dict[str, 
     lens_root = job.lenses_dir / args["lens_dir"]
     for r in ranked:
         if r.get("lens") and r["lens"] not in keep:
-            (job.lenses_dir / r["lens"]).unlink(missing_ok=True)
+            from saos.lens_files import companion
+
+            dropped = job.lenses_dir / r["lens"]
+            dropped.unlink(missing_ok=True)
+            companion(dropped).unlink(missing_ok=True)
             r["lens"] = None
     if lens_root.is_dir() and not any(lens_root.iterdir()):
         shutil.rmtree(lens_root, ignore_errors=True)

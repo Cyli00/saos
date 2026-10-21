@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from saos import jobs
 from saos.kit import KitMethods
+from saos.lens_files import companion
 from saos.protocol import ErrorCode, SaosError, jsonable, write_json
 
 if TYPE_CHECKING:
@@ -65,9 +66,12 @@ class ScriptContext(KitMethods):
     @property
     def zosapi(self):
         """ZOSAPI 命名空间，例如 ctx.zosapi.Editors.LDE.SurfaceType。"""
+        root = getattr(self.backend, "root", None)
+        if root is None:
+            raise SaosError(ErrorCode.BAD_ARGS, f"{type(self.backend).__name__} has no ZOS-API; ctx.zosapi exists only in the approved OpticStudio stage")
         from saos.backend.zos import _load_zosapi
 
-        return _load_zosapi(self.backend.root)
+        return _load_zosapi(root)
 
     @property
     def lens(self) -> Path | None:
@@ -106,6 +110,8 @@ class ScriptContext(KitMethods):
 
         path = self.job.resolve_lens(name, must_exist=True)
         self.capture_window()
+        self._daemon._select_backend(self.job)
+        self.backend = self._daemon.backend
         self._daemon.loaded = None
         self.backend.load(path)
         self._daemon.loaded = Loaded(self.job, path)
@@ -120,7 +126,7 @@ class ScriptContext(KitMethods):
         target = self.job.resolve_lens(name, must_exist=False)
         if self.job.is_archive_lens(target) and not archive:
             raise SaosError(ErrorCode.BAD_ARGS, "lenses/rounds/ and lenses/captures/ hold evidence written by the tools; save under another name")
-        if target.exists() and not overwrite and target != self.lens:
+        if (target.exists() or companion(target).exists()) and not overwrite and target != self.lens:
             raise SaosError(ErrorCode.FILE_EXISTS, f"job {self.job.id} already has {name}; pass overwrite=True")
         target.parent.mkdir(parents=True, exist_ok=True)
         self.backend.save_as(target)

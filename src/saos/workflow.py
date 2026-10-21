@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from saos import demand, jobs, ledger, model_gate
+from saos import demand, jobs, ledger, lens_files, model_gate, stages
 from saos.demand import TIERS
 from saos.protocol import ErrorCode, SaosError, jsonable, write_json
 
@@ -59,6 +59,24 @@ def preflight(root: Path) -> tuple[dict[str, Any], str, str]:
     if blocking:
         raise SaosError(ErrorCode.DEMAND_BLOCKED, "the demand has blocking open questions; ask the user before spending compute", {"blocking_questions": blocking})
     return d, sha, hashlib.sha256(confirmed["quote"].encode("utf-8")).hexdigest()[:16]
+
+
+def require_optimise(job, backend) -> tuple[dict[str, Any], str]:
+    """深度优化的唯一判定：需求已确认、结构有资格（用户指定，或本需求版本下有已封存的结构比较）、
+    当前镜头的模型已被用户认可。opt local/hammer/global/glass、scan minimize 与脚本里的优化都只调用这里。
+    The single rule for deep optimisation: the demand is confirmed, the structure is qualified (fixed by the user, or
+    compared under this demand version), and the current lens's model is approved. Every optimiser calls only this."""
+    from saos import candidates
+
+    h, sha, _ = preflight(job.root)
+    method_sha = demand.method_digest(demand.prepare_scripts(job.root, h))
+    if demand.structure_mode(h) == "free" and not candidates.structure_compared(job, sha, method_sha):
+        raise SaosError(ErrorCode.BAD_ARGS,
+                        f"the structure is not fixed by the user: compare at least {candidates.MIN_STRUCTURE_CANDIDATES} structures "
+                        "first (saos scan with a candidates plan, measured under this demand), or have the user fix the structure "
+                        "in the demand (structure: {mode: prescribed, reason: ...})", {"demand_sha": sha})
+    model_gate.require_approved(job, backend.describe_model(None))
+    return h, sha
 
 
 def doubts(d: dict[str, Any], window: list[dict[str, Any]]) -> list[str]:
@@ -172,7 +190,9 @@ def _changes(a: Any, b: Any, path: str) -> list[str]:
 def _set_aside(ctx, target) -> None:
     """上一次失败的尝试留下、ledger 里没有的归档镜头挪到 rounds/orphaned/，不覆盖。
     An archive left by a failed attempt (not in the ledger) is moved to rounds/orphaned/ instead of being overwritten."""
-    if not target.exists():
+    from saos.lens_files import companion
+
+    if not target.exists() and not companion(target).exists():
         return
     folder = target.parent / "orphaned"
     folder.mkdir(exist_ok=True)
@@ -203,21 +223,36 @@ def export_viz(ctx, evidence_dir: str) -> dict[str, Any]:
             "errors": data.get("errors") or ({"viz": data["error"]} if not data["ok"] else {})}
 
 
-def record_round(ctx, tier: str | None = None, note: str = "", merit: float | None = None, viz: bool = True) -> dict[str, Any]:
+def record_round(ctx, tier: str | None = None, note: str = "", merit: float | None = None, viz: bool = True,
+                 *, verify_of: int | None = None) -> dict[str, Any]:
     if ctx.lens is None:
         raise SaosError(ErrorCode.NO_LENS_LOADED, f"job {ctx.job.id} has no lens loaded")
     h, sha, confirmation = preflight(ctx.job.root)
+    entry = stages.read(ctx.job.root)
+    stop_policy = stages.stop(ctx.job.root, h["stop"])
+    if entry:
+        if ctx.backend.system_info().get("backend", "zos") != "zos":
+            raise SaosError(ErrorCode.BAD_ARGS, "this job must remain in OpticStudio after zos begin")
+    if verify_of is None:
+        stages.require_ready(ctx.job.root)
+    elif not entry or verify_of != entry["source_round"]:
+        raise SaosError(ErrorCode.BAD_ARGS, "a verification round must refer to the sealed OpticStudio entry")
     # 结构核对只读数据、不画布局图 / the structure check reads data only, no layout pictures
     desc, lens_sha = lens_state(ctx)
     approved = model_gate.require_approved(ctx.job, desc)
     scripts = demand.prepare_scripts(ctx.job.root, h)
     method_sha = demand.method_digest(scripts)
     path = ctx.path(ledger.LEDGER_FILE)
-    history = ledger.load(path)
-    number = len(history)
+    all_history = ledger.load(path)
+    number = len(all_history)
+    history = stages.rounds(ctx.job.root, all_history)
     ruled = ledger.ruled_out_for(ctx.job.root, sha)
     best = None
-    if number == 0:
+    if verify_of is not None:
+        if history:
+            raise SaosError(ErrorCode.DUPLICATE_ROUND, "the OpticStudio entry round has already been recorded")
+        tiers = ["verify"]
+    elif not history:
         tiers = ["baseline"]
     else:
         # 一轮可以同时用几个层级，例如 "variables,materials" / a round may use several tiers, e.g. "variables,materials"
@@ -225,7 +260,7 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
         if not tiers or any(t not in h["stop"]["tiers"] for t in tiers):
             raise SaosError(ErrorCode.BAD_ARGS, f"tier must be one or more (comma-separated) of {h['stop']['tiers']} (ladder: {', '.join(TIERS)})")
         last = history[-1]
-        status = ledger.decide(history, h["stop"], ledger.stop_for(ctx.job.root, sha), ruled)["status"]
+        status = ledger.decide(history, stop_policy, ledger.stop_for(ctx.job.root, sha), ruled)["status"]
         if ledger.version(last) == (sha, method_sha):
             if status != "continue":
                 raise SaosError(ErrorCode.BAD_ARGS, f"rounds already stopped ({status}); review the demand with the user to continue", {"status": status})
@@ -264,6 +299,7 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
         raise SaosError(ErrorCode.LENS_MODIFIED_BY_CHECK, "a check changed the lens while measuring; make the checks read-only (work on a copy or restore the lens), then record again",
                         {"changed": changed[:30], "evaluation": evaluation["evidence_dir"]})
     clash = parts_clash(ctx)
+    verification_evidence = stages.measurement_evidence(ctx.backend, entry) if verify_of is not None else None
     # 存一份本轮的归档镜头，然后回到原来的工作文件，避免之后的 lens save 改写归档
     # archive this round's lens, then switch back to the working file so a later lens save cannot rewrite the archive
     working = ctx.lens
@@ -282,6 +318,9 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
                             {"status": status, "evaluation": rebase["evaluation"]})
     record = {
         "round": number,
+        "stage": "zos" if entry else "exploration",
+        **({"verify_of": verify_of} if verify_of is not None else {}),
+        **({"verification_evidence": verification_evidence} if verification_evidence is not None else {}),
         # tier 留第一个层级，兼容旧记录；tiers 是本轮用到的全部层级 / tier keeps the first for older readers; tiers lists them all
         "tier": tiers[0],
         "tiers": tiers,
@@ -322,13 +361,17 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
         "environment": approved["environment"],
         "time": jobs.now_iso(),
     }
-    ctx.job.seal(archived)
+    # 封存这一轮实际写出的全部镜头文件（快照，以及有的话 .zmx）；一个都没有就不能记录这一轮
+    # seal every lens file this round actually wrote (the snapshot, and the .zmx when there is one); none means no round
+    if not lens_files.files(archived):
+        raise SaosError(ErrorCode.FILE_NOT_FOUND, f"the archived lens of round {number} was not written; nothing is recorded")
+    ctx.job.seal(*lens_files.files(archived))
     # 写进 ledger 是本轮完成的标志；之前任何一步失败都不留下轮次
     # appending to the ledger is what completes a round; a failure before this leaves no round behind
     added = [rebase, record] if rebase is not None else [record]
     for row in added:
         ledger.append(path, row)
-    decision = ledger.decide(history + added, h["stop"], ledger.stop_for(ctx.job.root, sha), ruled)
+    decision = ledger.decide(history + added, stop_policy, ledger.stop_for(ctx.job.root, sha), ruled)
     ctx.job.update_state(round=number, round_status=decision["status"])
     out = {"record": record, "decision": decision, "brief": brief(h, evaluation, decision, ledger.current_window(history + added)),
            "evaluation": evaluation}
@@ -382,5 +425,5 @@ def _rebase(ctx, h: dict[str, Any], scripts: dict[str, Any], best: dict[str, Any
         "measurement_errors": ev["measurement_errors"], "hard_failing": ev["hard_failing"], "values": values,
         "failing": {i["id"]: i["shortfall"] for i in ev["items"] if i.get("shortfall", 0) > 0},
         "merit": best.get("merit"), "demand_sha": sha, "method_sha": method_sha, "confirmation": confirmation,
-        **{k: best.get(k) for k in ("model", "materials", "coatings", "model_glass", "environment")}, "time": jobs.now_iso(),
+        **{k: best.get(k) for k in ("model", "materials", "coatings", "model_glass", "environment", "stage")}, "time": jobs.now_iso(),
     }

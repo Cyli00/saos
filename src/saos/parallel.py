@@ -45,7 +45,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-from saos import config, jobs
+from saos import config, jobs, stages
 from saos.kit import KitMethods
 from saos.protocol import ErrorCode, SaosError, jsonable, write_json
 
@@ -53,10 +53,17 @@ PARALLEL_DIR = "parallel"
 DEFAULT_WORKERS = 4
 
 
-def default_workers() -> int:
+def default_workers(backend: str | None = None) -> int:
     """默认 worker 数：Optiland worker 不占许可证，用满可用核（逻辑核数减 2，Plan 2）；OpticStudio worker 受许可证限制，仍为 4。
     Default worker count: Optiland workers take no licence and use the available cores (logical cores minus 2); OpticStudio 4."""
-    return config.compute_cores() if config.backend_name() == "optiland" else DEFAULT_WORKERS
+    return config.compute_cores() if (backend or config.backend_name()) == "optiland" else DEFAULT_WORKERS
+
+
+def backend_for(job: jobs.Job) -> str:
+    """认可之后的任务用 OpticStudio worker，其余用 Optiland；不按文件后缀或伴随文件判断。"""
+    return "zos" if stages.backend(job.root) == "zos" else config.backend_name()
+
+
 # worker 的协议行带前缀，和 OpticStudio 自己打到标准输出的文字区分开（实测会打印 "*** FRU__delta_init() …"）
 # protocol lines carry a prefix, apart from what OpticStudio itself prints to stdout (e.g. "*** FRU__delta_init() …")
 PREFIX = "@@saos "
@@ -142,7 +149,7 @@ def worker_main(index: int) -> int:
         stream.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
     started = time.perf_counter()
     try:
-        backend = make_backend("standalone")
+        backend = make_backend("standalone", os.environ.get("SAOS_WORKER_BACKEND"))
         backend.start()
     except Exception as exc:  # noqa: BLE001 - 启动失败（如许可证）只让这个 worker 不可用 / a failed start makes only this worker unavailable
         _emit({"ready": False, "error": f"{type(exc).__name__}: {exc}"[:500]})
@@ -187,14 +194,15 @@ def _read(proc: subprocess.Popen) -> dict[str, Any] | None:
 
 
 class _Worker:
-    def __init__(self, index: int):
+    def __init__(self, index: int, backend: str):
         self.index = index
         self.error: str | None = None
         self.start_s: float | None = None
         self.items = 0
         flags = BELOW_NORMAL if os.name == "nt" else 0
         self.proc = subprocess.Popen([sys.executable, "-m", "saos.parallel", str(index)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                     stderr=subprocess.DEVNULL, text=True, encoding="utf-8", creationflags=flags)
+                                     stderr=subprocess.DEVNULL, text=True, encoding="utf-8", creationflags=flags,
+                                     env={**os.environ, "SAOS_WORKER_BACKEND": backend})
 
     def wait_ready(self) -> bool:
         hello = _read(self.proc)
@@ -236,9 +244,16 @@ class Pool:
         self.lock = threading.Lock()
         self.timer: threading.Timer | None = None
         self.next_index = 0
+        self.backend = config.backend_name()
 
     def status(self) -> dict[str, Any]:
-        return {"workers": sum(1 for w in self.workers if w.alive), "cap": self.cap, "refused": self.refused[-3:]}
+        return {"workers": sum(1 for w in self.workers if w.alive), "cap": self.cap, "refused": self.refused[-3:], "backend": self.backend}
+
+    def select_backend(self, backend: str) -> None:
+        if backend != self.backend:
+            self.close()
+            self.refused.clear()
+            self.backend = backend
 
     def ensure(self, count: int) -> dict[str, Any]:
         """保证至少 count 个可用 worker（许可证允许的范围内），并发启动缺的那些。
@@ -246,7 +261,7 @@ class Pool:
         self._cancel_timer()
         self.workers = [w for w in self.workers if w.alive]
         wanted = count if self.cap is None else min(count, self.cap)
-        new = [_Worker(self._take_index()) for _ in range(max(0, wanted - len(self.workers)))]
+        new = [_Worker(self._take_index(), self.backend) for _ in range(max(0, wanted - len(self.workers)))]
         started = time.perf_counter()
         ready: dict[int, bool] = {}
         threads = [threading.Thread(target=lambda w=w: ready.__setitem__(w.index, w.wait_ready()), daemon=True) for w in new]
@@ -322,7 +337,9 @@ def run_map(ctx, fn: str, items: list[Any], workers: int | None = None, reset: b
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"cannot read {script}")
     if script is not None:
         resolve(fn, script)  # 先在本进程里确认函数存在，免得每个 worker 各报一次 / check once here instead of once per worker
-    count = min(len(items), int(workers or default_workers()), config.compute_cores())
+    stages.require_ready(ctx.job.root)
+    backend = backend_for(ctx.job)
+    count = min(len(items), int(workers or default_workers(backend)), config.compute_cores())
     if count < 1:
         raise SaosError(ErrorCode.BAD_ARGS, "workers must be at least 1")
     folder: Path | None = None
@@ -364,6 +381,7 @@ def dispatch(pool: Pool, job: jobs.Job, lens: Path | None, fn: str, script: Path
     main instance, so a detached scan can run it in a thread."""
     started = time.perf_counter()
     progress(f"parallel: starting {count} workers")
+    pool.select_backend(backend_for(job))
     startup = pool.ensure(count)
     active = [w for w in pool.workers if w.alive][:count]
     temp = Path(tempfile.mkdtemp(prefix="saos-parallel-"))
