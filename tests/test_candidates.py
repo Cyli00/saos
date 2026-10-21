@@ -93,7 +93,7 @@ def plan(stages, **extra):
             "stages": stages, "measure": ["length"], **extra}
 
 
-def judge(job, cands, stages=(), folder_name="001"):
+def judge(job, cands, stages=(), folder_name="001", **extra):
     """在本进程里按真实的候选流程逐个判定（无 worker 子进程），返回各候选的行；用来测结论，不测比较。
     Judge candidates in-process along the real candidate path (no worker subprocess); returns the rows, for verdicts."""
     d = demand.load_job(job.root)
@@ -101,7 +101,7 @@ def judge(job, cands, stages=(), folder_name="001"):
     padded = list(cands)
     # 所测项与 scan 的默认一致：所有带界限的条目 / the measured items as scan defaults them: every bounded check
     measure = [i for i, item in items.items() if item["goal"] is not None]
-    spec = candidates.validate(job.root, {"candidates": padded, "stages": list(stages)}, items, measure)
+    spec = candidates.validate(job.root, {"candidates": padded, "stages": list(stages), **extra}, items, measure)
     folder = job.root / "scans" / folder_name
     folder.mkdir(parents=True, exist_ok=True)
     snapshot = candidates.snapshot(job.root, spec, folder)
@@ -366,3 +366,57 @@ def test_candidate_configuration_error_reaches_scan_entry(explore, monkeypatch):
         scan._execute(job,job.root,{"mode":"candidates"},[{"i":0}],None,None,1,{},None,lambda:False)
     assert error.value.code == ErrorCode.BAD_ARGS
     assert error.value.details["configuration_errors"] == [{"candidate":"a","message":"empty merit"}]
+
+
+
+@pytest.mark.parametrize("name,body", [
+    ("syntax", "def run(w):\n    return (\n"),
+    ("name", "def run(w):\n    return missing_name\n"),
+    ("surface", "def run(w):\n    w.set({'99.radius': 1})\n"),
+    ("no_run", "x = 1\n"),
+])
+def test_prepare_compile_and_runtime_errors_are_configuration(explore, name, body):
+    _, job = explore
+    write_demand(job)
+    (job.root / "prepare.py").write_text(body, encoding="utf-8")
+    rows = judge(job, [cand("a", "explore/a.zmx")], stages=[{"local": {"max_seconds": 1}}],
+                 folder_name=f"prep-{name}", prepare="prepare.py")
+    assert rows[0]["error_kind"] == "configuration"
+    assert rows[0]["setup_details"]["candidate_setup"] is True
+    assert rows[0]["setup_details"]["phase"] == "prepare"
+    assert "start" not in rows[0] and "verdict" not in rows[0]
+
+
+def test_prepare_without_merit_is_configuration(explore, monkeypatch):
+    _, job = explore
+    write_demand(job)
+    (job.root / "prepare.py").write_text("def run(w):\n    return None\n", encoding="utf-8")
+    monkeypatch.setattr(FakeBackend, "merit_rows", lambda self: [], raising=False)
+    rows = judge(job, [cand("a", "explore/a.zmx")], stages=[{"local": {"max_seconds": 1}}],
+                 folder_name="prep-merit", prepare="prepare.py")
+    assert rows[0]["error_kind"] == "configuration"
+    assert rows[0]["setup_details"]["candidate_setup"] is True
+
+
+def test_prepare_material_error_stays_material(explore):
+    _, job = explore
+    write_demand(job)
+    (job.root / "prepare.py").write_text(
+        "from saos.backend.optiland_materials import MaterialError\n"
+        "from saos.protocol import ErrorCode\n"
+        "def run(w):\n    raise MaterialError(ErrorCode.BAD_ARGS, 'missing glass')\n", encoding="utf-8")
+    rows = judge(job, [cand("a", "explore/a.zmx")], stages=[{"local": {"max_seconds": 1}}],
+                 folder_name="prep-material", prepare="prepare.py")
+    assert rows[0]["verdict"] == "material"
+
+
+def test_prepare_connection_error_propagates(explore):
+    _, job = explore
+    write_demand(job)
+    (job.root / "prepare.py").write_text(
+        "from saos.protocol import ErrorCode, SaosError\n"
+        "def run(w):\n    raise SaosError(ErrorCode.ZOS_CONNECTION_LOST, 'lost')\n", encoding="utf-8")
+    with pytest.raises(SaosError) as raised:
+        judge(job, [cand("a", "explore/a.zmx")], stages=[{"local": {"max_seconds": 1}}],
+              folder_name="prep-connection", prepare="prepare.py")
+    assert raised.value.code == ErrorCode.ZOS_CONNECTION_LOST

@@ -174,3 +174,45 @@ def test_a_changed_comparison_is_refused_and_no_second_verify_is_added(ready):
     assert any(p["problem"] == "changed" for p in job.verify_seals())
     assert begin(daemon, job)["error"]["code"] == ErrorCode.EVIDENCE_TAMPERED
     assert len(verify_rows(job, source)) == 1
+
+
+def test_r2_corrupt_earliest_approval_blocks_report_and_zos_begin(ready):
+    """最早确认损坏但最新确认完整时，round 可继续；报告与 ZOS 入口的全任务封存检查仍拒绝并指出坏路径。"""
+    daemon, job = ready
+    second = call(daemon, "lens.describe", job=job.id, notes=NOTES)["result"]["folder"]
+    assert call(daemon, "lens.approve", job=job.id, model=second, quote="再次确认模型")["ok"]
+    first = sorted((job.root / "models").glob("*/approval.json"))[0]
+    first.write_text("{not json", encoding="utf-8")
+    with pytest.raises(SaosError) as refused:
+        report.write(job)
+    assert refused.value.code == ErrorCode.EVIDENCE_TAMPERED
+    assert any(p["path"] == first.relative_to(job.root).as_posix() for p in refused.value.details["problems"])
+    reply = begin(daemon, job)
+    assert reply["error"]["code"] == ErrorCode.EVIDENCE_TAMPERED
+    assert stages.read(job.root) is None
+
+
+def test_r8_zos_begin_reports_snapshot_alias_conflict(ready):
+    """存档处方同时写 parN 和同阶表头且值不同：zos begin 在加载快照时返回 BAD_ARGS，并指出面与阶段。"""
+    daemon, job = ready
+    rows = ledger.load(job.root / ledger.LEDGER_FILE)
+    source = job.resolve_lens(rows[-1]["file"], must_exist=True)
+    side = lens_files.companion(source)
+    data = json.loads(side.read_text(encoding="utf-8"))
+    payload = data["payload"]
+    surface = payload["prescription"]["surfaces"][0]
+    surface["type"] = "EvenAspheric"
+    surface["params"] = {"par2": 1e-5, "4th Order Term": 2e-5}
+    primary = source.read_bytes() if source.is_file() else None
+    side_bytes = lens_files.companion_bytes(primary, payload)
+    if primary is None:
+        lens_files.write_snapshot(source, side_bytes)
+    else:
+        lens_files.write_pair(source, primary, side_bytes)
+    job.seal(source, lens_files.companion(source))
+
+    reply = begin(daemon, job)
+    assert reply["error"]["code"] == ErrorCode.BAD_ARGS
+    assert reply["error"]["details"] == {"surface": "surfaces[0]", "phase": "snapshot_parameters"}
+    assert "重复指定" in reply["error"]["message"]
+    assert stages.read(job.root) is None

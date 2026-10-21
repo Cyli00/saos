@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import copy
+import json
 import math
 
 import pytest
 
-from saos import prescription
-from saos.protocol import SaosError
+from saos import jobs, prescription
+from saos.protocol import ErrorCode, SaosError
 
 
 def minimal(**overrides):
@@ -68,3 +70,45 @@ def test_asphere_headers_reach_optiland_without_changing_orders():
         canonical_surface_params("EvenAspheric",{"par3":1,"6th Order Term":2})
     with pytest.raises(SaosError):
         canonical_surface_params("EvenAspheric",{"5th Order Term":1})
+
+
+
+def test_odd_asphere_headers_map_to_odd_orders_and_unknown_headers_stay_visible():
+    from saos.backend.optiland_surfaces import geometry_kwargs
+    from saos.prescription import canonical_surface_params
+
+    assert canonical_surface_params("OddAsphere", {"1st Order Term": 1.0, "8th Order Term": 2.0}) == {
+        "par1": 1.0, "par8": 2.0}
+    with pytest.raises(SaosError):
+        canonical_surface_params("OddAsphere", {"par1": 1.0, "1st Order Term": 1.0})
+    assert canonical_surface_params("OddAsphere", {"Odd Term": 1.0}) == {"Odd Term": 1.0}
+    with pytest.raises(SaosError) as refused:
+        geometry_kwargs({"type": "OddAsphere", "params": {"Odd Term": 1.0}})
+    assert refused.value.code == ErrorCode.BACKEND_UNSUPPORTED
+
+
+def test_snapshot_prescription_merges_equal_aliases_without_mutating_input():
+    from saos.prescription import snapshot_prescription
+
+    data = {"surfaces": [{"type": "EvenAspheric", "params": {"par2": 1e-5, "4th Order Term": 1e-5}}]}
+    original = copy.deepcopy(data)
+    out = snapshot_prescription(data)
+    assert out["surfaces"][0]["params"] == {"par2": 1e-5}
+    assert data == original
+
+    conflict = {"surfaces": [{"type": "EvenAspheric", "params": {"par2": 1e-5, "4th Order Term": 2e-5}}]}
+    with pytest.raises(SaosError) as refused:
+        snapshot_prescription(conflict)
+    assert refused.value.code == ErrorCode.BAD_ARGS
+    assert refused.value.details == {"surface": "surfaces[0]", "phase": "snapshot_parameters"}
+
+
+def test_snapshot_prescription_does_not_change_file_bytes(tmp_path):
+    from saos.prescription import snapshot_prescription
+
+    path = tmp_path / "prescription.json"
+    path.write_text(json.dumps({"surfaces": [{"type": "EvenAspheric", "params": {"par2": 1e-5, "4th Order Term": 1e-5}}]}),
+                    encoding="utf-8")
+    before = jobs.sha256_file(path)
+    snapshot_prescription(json.loads(path.read_text(encoding="utf-8")))
+    assert jobs.sha256_file(path) == before
