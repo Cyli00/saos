@@ -33,6 +33,9 @@ def setup(saos_home, fake_lens_file):
     daemon.pool.close()
 
 
+MODEL_NOTES = {"surfaces": {"0": "object", "1": "lens front", "2": "lens back", "3": "image"}, "assumptions": ["test"], "first_order": ["f = 50 mm"]}
+
+
 def write_demand(job, data=DEMAND, confirm=None):
     (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
     if confirm:
@@ -203,10 +206,14 @@ def test_scan_solves_one_variable_per_point(setup):
 
 def test_scan_minimize_needs_a_confirmed_demand_and_descends(setup):
     daemon, job = setup
-    write_demand(job)
+    # 与 opt local 同一判定：需求确认、结构有资格、当前模型已认可 / the same rule as opt local
+    write_demand(job, {**DEMAND, "structure": {"mode": "prescribed", "reason": "测试样品的结构由用户指定"}})
     plan = {"minimize": {"vars": {"1.thickness": {"step": 1.0, "min": -3.0, "max": 10.0}}, "max_evals": 40}, "measure": ["length"]}
     assert call(daemon, "scan.run", job=job.id, plan=plan)["error"]["code"] == ErrorCode.DEMAND_NOT_CONFIRMED
     demand.confirm(job.root, "确认")
+    assert call(daemon, "scan.run", job=job.id, plan=plan)["error"]["code"] == ErrorCode.MODEL_NOT_APPROVED
+    folder = call(daemon, "lens.describe", job=job.id, notes=MODEL_NOTES)["result"]["folder"]
+    assert call(daemon, "lens.approve", job=job.id, model=folder, quote="模型可以")["ok"]
     res = call(daemon, "scan.run", job=job.id, plan=plan)["result"]
     best = res["best"]
     assert best["shortfall"] == 0.0 and best["set"]["1.thickness"] <= 0.0 and best["start_f"] == pytest.approx(1.0)

@@ -90,12 +90,13 @@ def test_every_saos_command_in_the_docs_exists():
 
 
 def test_the_diagram_names_every_workflow_step_command():
-    """流程图窗口的六个步骤各自靠一条命令推进，图上都要有这条命令。/ Each of the window's six steps advances by a command the diagram shows."""
+    """流程图窗口的每个步骤都靠一条命令推进，图上都要有这条命令。/ Each step of the window advances by a command the diagram shows."""
     from saos.ui import stage
 
     boxes = " ".join(_diagram_boxes())
     step_commands = {"interview": "saos job create", "demand_confirm": "saos demand confirm", "modeling": "saos lens describe",
-                     "model_approve": "saos lens approve", "design": "saos round", "deliver": "saos report"}
+                     "model_approve": "saos lens approve", "design": "saos round", "deliver": "saos report",
+                     "zos": "saos zos begin", "final_report": "saos report"}
     assert set(step_commands) == set(stage.STEPS)
     assert [c for c in step_commands.values() if c not in boxes] == []
 

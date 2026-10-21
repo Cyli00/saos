@@ -19,6 +19,7 @@ def test_acceptance_measures_the_saved_file_after_capturing_the_window(saos_home
 
     backend = FakeBackend()
     daemon = Daemon(backend, backend.start(), "extension")
+    daemon.zos = backend  # 窗口即已连接的 OpticStudio 会话 / the window is the connected OpticStudio session
     job = jobs.create_job("capture")
     daemon.op_import({"job": job.id, "src": str(fake_lens_file), "name": "a.zmx"})
     daemon.op_load({"job": job.id, "file": "a.zmx"})

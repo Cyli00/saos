@@ -7,6 +7,7 @@ The repository part covers tracked and new non-ignored files; work/ is not versi
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path, PurePosixPath
@@ -98,25 +99,26 @@ def test_recipe_parts_match_a_recipe_skill():
 
 
 def test_local_work_tree_follows_the_job_layout():
-    work = ROOT / "work"
-    if not work.is_dir():
-        pytest.skip("no local work/ directory")
-    bad = []
-    for instance in work.iterdir():
-        if not instance.is_dir():
-            bad.append(f"{instance.name} (file in work/)")
-            continue
-        bad += [f"{instance.name}/{p.name}" for p in instance.iterdir() if p.name not in INSTANCE_ENTRIES]
-        jobs = instance / "jobs"
-        for job in jobs.iterdir() if jobs.is_dir() else []:
-            bad += [f"{instance.name}/jobs/{job.name}/{p.name}" for p in job.iterdir() if p.name not in JOB_ENTRIES]
-            for p in jobs_mod.Job(job.name, job).verify_seals():
-                bad.append(f"{instance.name}/jobs/{job.name}/{p['path']} ({p['problem']} after sealing)")
-            explore = job / "explore"
-            for topic in explore.iterdir() if explore.is_dir() else []:
-                # __pycache__ 是导入 explore 里的脚本时 Python 自动生成的，不是探索主题 / Python's import cache, not a topic
-                if topic.is_dir() and topic.name != "__pycache__" and not (topic / "README.md").is_file():
-                    bad.append(f"{instance.name}/jobs/{job.name}/explore/{topic.name} (no README.md)")
+    """只检查 SAOS_INSTANCE 指定的实例（如 verify）。不读取 work/main 等其他实例的用户任务，也不替它们做封存校验。
+    Checks only the instance named by SAOS_INSTANCE (e.g. verify). Other instances, including the user's work/main, are
+    never read: their task data is not this test's to judge (plans §12.1)."""
+    name = os.environ.get("SAOS_INSTANCE")
+    if not name:
+        pytest.skip("SAOS_INSTANCE is not set; the default instance holds the user's tasks and is not read by tests")
+    instance = ROOT / "work" / name
+    if not instance.is_dir():
+        pytest.skip(f"no local work/{name} directory")
+    bad = [f"{instance.name}/{p.name}" for p in instance.iterdir() if p.name not in INSTANCE_ENTRIES]
+    jobs = instance / "jobs"
+    for job in jobs.iterdir() if jobs.is_dir() else []:
+        bad += [f"{instance.name}/jobs/{job.name}/{p.name}" for p in job.iterdir() if p.name not in JOB_ENTRIES]
+        for p in jobs_mod.Job(job.name, job).verify_seals():
+            bad.append(f"{instance.name}/jobs/{job.name}/{p['path']} ({p['problem']} after sealing)")
+        explore = job / "explore"
+        for topic in explore.iterdir() if explore.is_dir() else []:
+            # __pycache__ 是导入 explore 里的脚本时 Python 自动生成的，不是探索主题 / Python's import cache, not a topic
+            if topic.is_dir() and topic.name != "__pycache__" and not (topic / "README.md").is_file():
+                bad.append(f"{instance.name}/jobs/{job.name}/explore/{topic.name} (no README.md)")
     assert bad == [], "work/ layout (DESIGN.md 任务目录): instance = daemon/ + jobs/; job extras only notes/, checks/, explore/<topic>/ with README.md: " + ", ".join(bad)
 
 

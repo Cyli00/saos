@@ -9,7 +9,7 @@ import pytest
 from saos import jobs
 from saos.backend.fake import FakeBackend
 from saos.daemon import Daemon, compare_surfaces
-from saos.protocol import ErrorCode
+from saos.protocol import ErrorCode, SaosError
 
 
 @pytest.fixture
@@ -169,6 +169,7 @@ def test_compare_surfaces_detects_changes():
 
 def test_unmanaged_window_dirty_state_is_captured_before_replacement(daemon, fake_lens_file, monkeypatch):
     job = jobs.create_job('protect-window')
+    daemon.zos = daemon.backend  # 窗口即已连接的 OpticStudio 会话 / the window is the connected OpticStudio session
     daemon.backend.load(fake_lens_file)
     monkeypatch.setattr(daemon.backend, 'has_unsaved_changes', lambda: True)
     ok_result(call(daemon, 'lens.import', job=job.id, src=str(fake_lens_file), name='copy.zmx'))
@@ -185,6 +186,7 @@ def test_unmanaged_window_dirty_state_is_captured_before_replacement(daemon, fak
 def test_native_unsaved_state_survives_queries(saos_home, fake_lens_file, monkeypatch, query):
     backend = FakeBackend()
     daemon = Daemon(backend, {**backend.start(), "initial_needs_save": False}, "extension")
+    daemon.zos = backend
     monkeypatch.setattr(backend, "has_unsaved_changes", lambda: True)
     job = jobs.create_job("window")
     backend.load(fake_lens_file)
@@ -200,6 +202,7 @@ def test_native_unsaved_state_survives_queries(saos_home, fake_lens_file, monkey
 def test_save_clears_initial_protection_without_refreshing(saos_home, fake_lens_file, monkeypatch):
     backend = FakeBackend()
     daemon = Daemon(backend, {**backend.start(), "initial_needs_save": True}, "extension")
+    daemon.zos = backend
     job = jobs.create_job("saved-window")
     backend.load(fake_lens_file)
     ok_result(call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx"))
@@ -223,6 +226,7 @@ def test_save_clears_initial_protection_without_refreshing(saos_home, fake_lens_
 def test_unsaved_window_content_at_connect_is_protected(saos_home, fake_lens_file):
     backend = FakeBackend()
     daemon = Daemon(backend, {**backend.start(), "initial_needs_save": True}, "extension")
+    daemon.zos = backend
     job = jobs.create_job("window")
     ok_result(call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx"))
     backend.load(fake_lens_file)
@@ -235,3 +239,35 @@ def test_blocking_dialog_fails_fast(daemon, loaded, monkeypatch):
     out = call(daemon, "lens.info", job=loaded.id)
     assert err_code(out) == ErrorCode.UI_BLOCKED and out["error"]["details"]["dialogs"] == ["Zemax Error Message"]
     assert call(daemon, "ping")["ok"]
+
+
+def test_entering_opticstudio_keeps_the_window_copy_before_loading(daemon, fake_lens_file):
+    """连接后、加载前先存窗口副本；副本失败时窗口内容不被替换。 / The window copy comes after connecting and before loading;
+    if the copy fails the window content is not replaced."""
+    from saos.backend.fake import FakeBackend
+
+    job = jobs.create_job("window")
+    window = FakeBackend()
+    window.start()
+    window.load(fake_lens_file)
+    window.set_surface(1, "radius", 44.0)  # 窗口里有未保存的修改 / unsaved edits in the window
+    order: list[str] = []
+    real_save, real_load = window.save_as, window.load
+    window.save_as = lambda path: (order.append("save"), real_save(path))[1]
+    window.load = lambda path: (order.append("load"), real_load(path))[1]
+    window.has_unsaved_changes = lambda: True
+    daemon.zos = window
+    backend, captured = daemon.enter_zos(job, fake_lens_file)
+    assert backend is window and captured and (job.root / "lenses" / captured).is_file()
+    assert order == ["save", "load"]
+
+    order.clear()
+
+    def failing_save(path):
+        order.append("save")
+        raise SaosError(ErrorCode.ZOS_SAVE_FAILED, "injected: the copy could not be written")
+
+    window.save_as = failing_save
+    with pytest.raises(SaosError):
+        daemon.enter_zos(job, fake_lens_file)
+    assert order == ["save"]  # 副本失败，窗口没有被加载替换 / the window was not replaced

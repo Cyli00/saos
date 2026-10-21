@@ -27,7 +27,7 @@ def lens(index, z, thickness, r1=20.0, r2=-20.0, sd=5.0):
 def test_separate_lenses_and_a_cemented_doublet_are_clean():
     cemented = [surface(5, 20.0, 30.0, 5, "N-BK7"), surface(6, 24.0, -15.0, 5, "F2"), surface(7, 26.0, -60.0, 5)]
     out = geometry.interference([*lens(1, 0.0, 4.0), *lens(3, 8.0, 4.0), *cemented, surface(8, 40.0)])
-    assert out == {"crossings": [], "overlaps": [], "tolerance": geometry.TOL}
+    assert out["crossings"] == [] and out["overlaps"] == [] and out["tolerance"] == geometry.TOL
 
 
 def test_a_biconvex_lens_with_negative_edge_thickness_crosses_itself():
@@ -64,7 +64,7 @@ def test_prism_faces_and_dummy_surfaces_do_not_raise_false_alarms():
              surface(2, 0.2, sd=0.85, material="MIRROR", rot=hyp, comment="prism hypotenuse"),
              surface(3, 0.2, sd=0.31, material="N-BK7", comment="dummy exit")]
     out = geometry.interference(prism)
-    assert out == {"crossings": [], "overlaps": [], "tolerance": geometry.TOL}
+    assert out["crossings"] == [] and out["overlaps"] == [] and out["tolerance"] == geometry.TOL
     assert prism[1]["in_glass_mirror"] and not prism[2]["boundary"]
     # 空气里的反射镜照常检查 / a mirror in air is still checked
     fold = surface(3, 2.0, sd=8.0, material="MIRROR", rot=hyp)

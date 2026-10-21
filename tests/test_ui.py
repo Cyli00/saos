@@ -57,7 +57,9 @@ def test_stage_follows_the_workflow_files(flow):
     snap = stage.snapshot(job)
     assert snap["current"] == "model_approve" and snap["steps"][3] == {"id": "model_approve", "status": "waiting", "detail": folder}
     assert call(daemon, "lens.approve", job=job.id, model=folder, quote="模型可以")["ok"]
-    assert steps(job) == ("design", {**dict.fromkeys(stage.STEPS[:4], "done"), "design": "active", "deliver": "pending"})
+    # zos 与 final_report 只在 zos begin 之后才有状态，之前都是 pending / zos and final_report stay pending until zos begin
+    assert steps(job) == ("design", {**dict.fromkeys(stage.STEPS[:4], "done"), "design": "active", "deliver": "pending",
+                                     "zos": "pending", "final_report": "pending"})
 
     r0 = call(daemon, "round.record", job=job.id)["result"]
     assert r0["viz"]["ok"] and (job.root / r0["viz"]["file"]).is_file()

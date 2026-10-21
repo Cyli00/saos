@@ -123,6 +123,7 @@ def test_archives_keep_incrementing_past_three_digits(daemon, loaded, monkeypatc
 
 
 def test_context_load_captures_unsaved_window_content(daemon, loaded, monkeypatch):
+    daemon.zos = daemon.backend  # 窗口即已连接的 OpticStudio 会话 / the window is the connected OpticStudio session
     unsaved = [True]
     monkeypatch.setattr(daemon.backend, "has_unsaved_changes", lambda: unsaved[0])
     load = daemon.backend.load

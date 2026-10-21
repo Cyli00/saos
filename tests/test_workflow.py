@@ -24,6 +24,11 @@ DEMAND = {
 }
 
 
+# 深度优化要求结构已由用户指定，或本需求版本下有已封存的结构比较 / deep optimisation needs a user-fixed structure or a sealed comparison
+FIXED_STRUCTURE = {"structure": {"mode": "prescribed", "reason": "测试样品的结构由用户指定"}}
+OPT_DEMAND = {**DEMAND, **FIXED_STRUCTURE}
+
+
 def demand_with(*objectives, **top):
     return {**DEMAND, "objectives": list(objectives), **top}
 
@@ -495,7 +500,7 @@ def test_invalid_rounds_neither_count_as_tried_nor_as_progress():
 def test_blocking_question_stops_rounds_and_optimisation(setup):
     """blocking 的待确认问题：不记录轮次、不跑优化；非阻塞问题不拦。"""
     daemon, job = setup
-    asked = {**DEMAND, "open_questions": [{"question": "目标脑区是哪里？", "blocking": True}, {"question": "染料？", "blocking": False}]}
+    asked = {**OPT_DEMAND, "open_questions": [{"question": "目标脑区是哪里？", "blocking": True}, {"question": "染料？", "blocking": False}]}
     write_demand(job, asked)
     for op in ("round.record", "opt.local"):
         refused = call(daemon, op, job=job.id)["error"]
@@ -655,7 +660,7 @@ def test_agent_reported_merit_is_marked(setup):
 def test_long_operations_report_progress_and_honour_cancel(setup, monkeypatch):
     """长操作写 progress.json；旧的取消请求在开始时清掉；脚本和优化都能收到取消（scan 的取消见 test_kit_parallel）。"""
     daemon, job = setup
-    write_demand(job, DEMAND)
+    write_demand(job, OPT_DEMAND)
     job.request_cancel()  # 上一次留下的请求，不该影响新操作 / a stale request must not affect a new operation
     assert call(daemon, "round.record", job=job.id)["ok"]
     progress = job.read_progress()
@@ -701,7 +706,7 @@ def test_hammer_and_global_need_a_budget_and_archive_the_systems_they_write(setu
         return {"final_merit": 0.5, "stopped_by": "timeout"}
 
     daemon.backend.optimize_search = search
-    write_demand(job, DEMAND, confirm=None)
+    write_demand(job, OPT_DEMAND, confirm=None)
     assert call(daemon, "opt.global", job=job.id, max_seconds=5)["error"]["code"] == ErrorCode.DEMAND_NOT_CONFIRMED
     demand.confirm(job.root, "确认，开始吧")
     assert call(daemon, "opt.global", job=job.id)["error"]["code"] == ErrorCode.BAD_ARGS  # 没有预算 / no budget
@@ -1039,3 +1044,33 @@ def test_saos_code_used_by_checks_joins_the_method_version(setup):
     files = with_recipe[demand.CODE_KEY]["files"]
     assert "src/saos/kit.py" in files and any(f.startswith("src/saos/recipes/fiber/") for f in files)
     assert demand.method_digest(with_recipe) != demand.method_digest(plain)
+
+
+def test_a_round_records_the_version_of_the_backend_that_measured_it(setup):
+    """守护进程启动时的后端版本（这里故意不同）不能写进测量记录。 / The daemon's start-up version must not reach the measurement record."""
+    daemon, job = setup
+    daemon.zos_info = {**daemon.zos_info, "backend": "optiland", "version": "0.0.0-start-backend", "precision": "float64"}
+    write_demand(job, DEMAND, confirm="确认，开始吧")
+    out = call(daemon, "round.record", job=job.id)["result"]
+    evaluation = json.loads((job.root / out["record"]["evaluation"]).read_text(encoding="utf-8"))
+    assert evaluation["environment"]["backend"] == "fake" and evaluation["environment"]["backend_version"] == "fake"
+    assert evaluation["environment"]["opticstudio"] is None and evaluation["environment"]["precision"] is None
+
+
+def test_every_optimiser_entry_follows_the_same_rule(setup):
+    """G05：需求确认、结构有资格、当前模型已认可，三者缺一，所有寻优入口一致拒绝。
+    Every optimiser entry refuses alike when any of the three is missing; all three present, all of them run."""
+    daemon, job = setup
+    daemon.backend.optimize = lambda cycles, cores, **kw: {"merit": 1.0}
+    daemon.backend.optimize_search = lambda kind, cores, **kw: {"final_merit": 0.5, "stopped_by": "timeout"}
+    entries = [("opt.local", {}), ("opt.hammer", {"max_seconds": 5}), ("opt.global", {"max_seconds": 5})]
+    write_demand(job, DEMAND)  # 结构由优化器自己选：没有比较，所以不能深度优化 / free structure without comparison: refused
+    for op, extra in entries:
+        assert call(daemon, op, job=job.id, **extra)["error"]["code"] == ErrorCode.BAD_ARGS, op
+    write_demand(job, OPT_DEMAND)  # 用户指定结构：三个入口都可以运行 / structure fixed by the user: all three run
+    for op, extra in entries:
+        assert call(daemon, op, job=job.id, **extra)["ok"], op
+    # 第一片玻璃换成空气，结构已不是认可的那一份：三个入口都拒绝 / the first glass becomes air: the approved structure no longer applies
+    daemon.backend.lens["surfaces"][1]["material"] = ""
+    for op, extra in entries:
+        assert call(daemon, op, job=job.id, **extra)["error"]["code"] == ErrorCode.MODEL_NOT_APPROVED, op
