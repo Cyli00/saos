@@ -6,6 +6,8 @@ status: accepted
 
 用户决定（2026-10-20）：日常建模、调试轮次和扫描默认在 Optiland 0.6.3 上算；OpticStudio 不再在每一轮里复算，而是放在调试轮次跑完、报告交给用户看过以后：用户认为结果没问题，就把镜头交给 OpticStudio 复测（OpticStudio 验证），并在 OpticStudio 里继续优化，轮次上限重新给。最终交付的镜头与指标以 OpticStudio 阶段测得的数值为准。原因：standalone 实例启动 5.8–7.9 s、许可证同时最多 8 个，Zemax 的优化器和逐项 ZERN 拟合拖慢探索；每轮都在后台复算、自动补偿再回传告警的方案（原 Plan 3）要多一条验证队列、一类告警和一份定标镜头，用户认为弄复杂了。用户先看 Optiland 的结果再决定要不要进 OpticStudio，验证只做一次，也只对用户认可的设计做。
 
+> 2026-10-21 用户决定：认可前不再回退到 OpticStudio。会话切换、孪生代算和建模期双端基准对齐被取消，OpticStudio 只在 `zos begin` 认可后启动。见 [DESIGN.md](../../DESIGN.md) 与 [重构计划](../plans/refactor-optiland-first-workflow.md) §15。以下正文中相关段落仅作历史记录。
+
 本条取代 ADR-0008。ADR-0008 的理由仍然成立：自己实现面型和介质的含义容易出错，而且不易察觉。所以边界是：
 
 - 光线追迹、材料色散和面型由计算后端（Optiland 或 OpticStudio）计算；agent 和任务脚本仍不自写追迹器、像差或近轴计算器、代理模型和 GPU 代码。

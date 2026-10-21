@@ -54,7 +54,7 @@ _Avoid_: 工作目录、环境；不要单说“实例”指 OpticStudio 进程�
 持有当前镜头并完成计算的一方：Optiland（默认，在后台进程内运行，不占许可证）或 OpticStudio。每轮的结果记下是哪个后端算的。
 _Avoid_: 引擎、求解器
 
-**后端回退 (Fallback)**：
+**后端回退 (Fallback)**（2026-10-21 已取消：认可前不再回退，见 DESIGN.md）：
 默认后端是 Optiland 时，部分工作交给 OpticStudio，有两种。会话切换：镜头 Optiland 表达不了，或要用只有 OpticStudio 才有的操作，整个镜头按处方在 OpticStudio 中重建，之后的命令都在 OpticStudio 上算，一直占一个许可证。孪生代算：只有某次计算 Optiland 没有映射，由孪生实例算这一次，主会话仍在 Optiland。系统信息的 `fallback_reasons` 列出发生过的回退及原因。
 _Avoid_: 降级、切换（单独使用时分不清是哪一种）
 
@@ -62,7 +62,7 @@ _Avoid_: 降级、切换（单独使用时分不清是哪一种）
 一个占用 ZOS-API 许可的 OpticStudio 进程：用户打开的窗口、standalone 后台进程、孪生实例、worker 池里启动了 OpticStudio 的每个 worker 各算一个。本机 Premium 许可同时最多 8 个（2026-10-15 实测，不是许可文档上的数），`saos daemon status` 报告余量。
 _Avoid_: 实例（单独使用时与运行实例混淆）、license 槽
 
-**孪生实例 (OpticStudio Twin)**：
+**孪生实例 (OpticStudio Twin)**（2026-10-21 已取消，见 DESIGN.md）：
 镜头在 Optiland 中工作时，后台按同一处方搭建的单个 standalone OpticStudio 实例，镜头一改就重建；用于完成未映射的单次计算、写出 Optiland 写不出的 `.zmx`、双端基准对齐和建模说明的布局图。
 _Avoid_: 影子实例、备用连接、worker
 
