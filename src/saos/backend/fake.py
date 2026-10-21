@@ -45,6 +45,9 @@ class FakeBackend(Backend):
         self.started = True
         return {"mode": "fake", "version": "fake", "license": "fake", "program_dir": ""}
 
+    def identity(self) -> dict[str, Any]:
+        return {"backend": "fake", "version": "fake", "precision": None}
+
     def close(self) -> None:
         self.started = False
 

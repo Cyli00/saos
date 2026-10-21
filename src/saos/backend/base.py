@@ -64,6 +64,12 @@ class Backend(ABC):
     @abstractmethod
     def close(self) -> None: ...
 
+    def identity(self) -> dict[str, Any]:
+        """本实例自己的身份（后端名、版本、精度），取自它自己的 start()；未知的字段为 None，不借用别的实例的值。
+        This instance's own identity (backend name, version, precision), from its own start(); unknown fields are None,
+        never another instance's values."""
+        return {"backend": None, "version": None, "precision": None}
+
     @abstractmethod
     def healthy(self) -> bool: ...
 
@@ -188,7 +194,7 @@ class Backend(ABC):
 
     def show_windows(self, viewer: str | None = None, analysis: str | None = None, settings: dict[str, Any] | None = None) -> dict[str, Any]:
         """显性调试：在连接的窗口中打开 Lens Data 和一个布局窗口（剖面图画不了时用 3D 视图），按需再开一个像质分析。"""
-        raise SaosError(ErrorCode.BAD_ARGS, "explicit debugging windows need extension mode (saos daemon start --mode extension)")
+        raise SaosError(ErrorCode.BAD_ARGS, f"{type(self).__name__} has no OpticStudio windows; they exist only in the approved OpticStudio stage (saos zos begin)")
 
     def refresh_windows(self) -> dict[str, Any] | None:
         """改动镜头后刷新显性调试的窗口；隐式运行时什么也不做。"""
@@ -200,7 +206,7 @@ class Backend(ABC):
 
     def screenshots(self, folder: Path, prefix: str) -> list[str]:
         """把连接的 OpticStudio 的可见窗口截成 PNG，返回文件名。"""
-        raise SaosError(ErrorCode.BAD_ARGS, "screenshots need extension mode")
+        raise SaosError(ErrorCode.BAD_ARGS, f"{type(self).__name__} has no OpticStudio windows; screenshots exist only in the approved OpticStudio stage (saos zos begin)")
 
     def describe_model(self, folder: Path | None, prefix: str = "layout") -> dict[str, Any]:
         """建模说明所需的全部数据（系统设置、逐面参数与材料、各波长折射率、孔径、求解）；folder 不为空时把布局图写到那里。

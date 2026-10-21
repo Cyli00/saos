@@ -8,11 +8,51 @@
 from __future__ import annotations
 
 import math
+import re
 from typing import Any
 
 from saos.protocol import ErrorCode, SaosError
 
 MAX_GRID = 256
+
+
+def zernike_values(text: str, terms: tuple[int, ...]) -> dict[int, float]:
+    """读取分析导出的系数与光线积分统计；不以系数统计冒充光线统计。"""
+    number = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[EeDd][-+]?\d+)?"
+    values = {}
+    rays = False
+    labels = {"rms (to centroid)": -4, "rms (to chief)": -5, "rms (to chief ray)": -5,
+              "rms (to zero)": -6, "p-v (to chief)": -7, "p-v (to chief ray)": -7,
+              "p-v (to centroid)": -8, "variance": -3, "strehl ratio": -2}
+    for line in text.splitlines():
+        coefficient = re.match(rf"\s*Z\s*(\d+)\s*(?:[:=]\s*)?({number})(?:\s|$)", line, re.IGNORECASE)
+        if coefficient:
+            values[int(coefficient[1])] = float(coefficient[2].replace("D", "E").replace("d", "e"))
+            continue
+        lower = line.strip().lower()
+        if "from integration of the rays" in lower:
+            rays = True
+            continue
+        if lower.startswith("from "):
+            rays = False
+        found = re.search(rf"[:=]\s*({number})", line)
+        if not found:
+            continue
+        value = float(found[1].replace("D", "E").replace("d", "e"))
+        label = re.split(r"[:=]", lower, maxsplit=1)[0].strip()
+        if "fit" in label and "rms" in label and ("error" in label or "residual" in label):
+            values[-1] = value
+        elif "fit" in label and ("maximum" in label or "max" in label or "peak" in label):
+            values[0] = value
+        elif rays:
+            for key, term in labels.items():
+                if label == key or label.startswith(key + " "):
+                    values[term] = value
+                    break
+    missing = [term for term in terms if term not in values or not math.isfinite(values[term])]
+    if missing:
+        raise SaosError(ErrorCode.ZOS_ERROR, f"Zernike Standard text export lacks finite terms {missing}; no MFE fallback was applied")
+    return {term: values[term] for term in terms}
 # 这三类设置是对象而不是数值：用编号选择，"all" 表示全部（Surface 的 "image" 表示像面）
 SELECTORS = {
     "Field": ("SetFieldNumber", "UseAllFields"),
