@@ -46,35 +46,26 @@ def check(ctx, only: list[str] | None = None) -> dict[str, Any]:
 
 
 def preflight(root: Path) -> tuple[dict[str, Any], str, str]:
-    """耗时计算之前的统一检查：需求已确认、没有 blocking 问题。返回需求、内容哈希和确认原话的哈希。
+    """耗时计算之前的统一检查：需求已确认、没有 blocking 问题。返回需求、计算层哈希（记录轮次、计划和比较时用的版本）和确认原话的哈希。
+    确认只看确认层哈希（改了 source 要重新确认），版本只看计算层哈希（只改依据不使数值证据失效）。
     The common check before any expensive computation: the demand is confirmed and has no blocking question.
-    Returns the demand, its content hash and a hash of the confirming words."""
+    Returns the demand, its compute-layer hash (the version rounds, plans and comparisons use) and a hash of the confirming
+    words. Confirmation is checked on the confirmation layer (a changed source needs confirming again); the version is the
+    compute layer (changing only the basis leaves the numerical evidence valid)."""
     d = demand.load_job(root)
-    sha = demand.digest(d)
-    confirmed = demand.confirmation_for(root, sha)
+    confirmed = demand.confirmation_for(root, demand.digest(d), d)
     if confirmed is None:
         raise SaosError(ErrorCode.DEMAND_NOT_CONFIRMED, "this version of the demand has no user confirmation: show it to the user, then record their words with saos demand confirm",
-                        {"demand_sha": sha})
+                        {"demand_sha": demand.digest(d)})
     blocking = demand.blocking_questions(d)
     if blocking:
         raise SaosError(ErrorCode.DEMAND_BLOCKED, "the demand has blocking open questions; ask the user before spending compute", {"blocking_questions": blocking})
-    return d, sha, hashlib.sha256(confirmed["quote"].encode("utf-8")).hexdigest()[:16]
+    return d, demand.compute_digest(d), hashlib.sha256(confirmed["quote"].encode("utf-8")).hexdigest()[:16]
 
 
 def require_optimise(job, backend) -> tuple[dict[str, Any], str]:
-    """深度优化的唯一判定：需求已确认、结构有资格（用户指定，或本需求版本下有已封存的结构比较）、
-    当前镜头的模型已被用户认可。opt local/hammer/global/glass、scan minimize 与脚本里的优化都只调用这里。
-    The single rule for deep optimisation: the demand is confirmed, the structure is qualified (fixed by the user, or
-    compared under this demand version), and the current lens's model is approved. Every optimiser calls only this."""
-    from saos import candidates
-
+    """深度优化只要求当前需求与模型已确认。"""
     h, sha, _ = preflight(job.root)
-    method_sha = demand.method_digest(demand.prepare_scripts(job.root, h))
-    if demand.structure_mode(h) == "free" and not candidates.structure_compared(job, sha, method_sha):
-        raise SaosError(ErrorCode.BAD_ARGS,
-                        f"the structure is not fixed by the user: compare at least {candidates.MIN_STRUCTURE_CANDIDATES} structures "
-                        "first (saos scan with a candidates plan, measured under this demand), or have the user fix the structure "
-                        "in the demand (structure: {mode: prescribed, reason: ...})", {"demand_sha": sha})
     model_gate.require_approved(job, backend.describe_model(None))
     return h, sha
 
@@ -243,10 +234,10 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
     scripts = demand.prepare_scripts(ctx.job.root, h)
     method_sha = demand.method_digest(scripts)
     path = ctx.path(ledger.LEDGER_FILE)
-    all_history = ledger.load(path)
+    all_history = ledger.load(path, h)
     number = len(all_history)
     history = stages.rounds(ctx.job.root, all_history)
-    ruled = ledger.ruled_out_for(ctx.job.root, sha)
+    ruled = ledger.ruled_out_for(ctx.job.root, sha, h)
     best = None
     if verify_of is not None:
         if history:
@@ -260,7 +251,7 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
         if not tiers or any(t not in h["stop"]["tiers"] for t in tiers):
             raise SaosError(ErrorCode.BAD_ARGS, f"tier must be one or more (comma-separated) of {h['stop']['tiers']} (ladder: {', '.join(TIERS)})")
         last = history[-1]
-        status = ledger.decide(history, stop_policy, ledger.stop_for(ctx.job.root, sha), ruled)["status"]
+        status = ledger.decide(history, stop_policy, ledger.stop_for(ctx.job.root, sha, h), ruled)["status"]
         if ledger.version(last) == (sha, method_sha):
             if status != "continue":
                 raise SaosError(ErrorCode.BAD_ARGS, f"rounds already stopped ({status}); review the demand with the user to continue", {"status": status})
@@ -371,10 +362,10 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
     added = [rebase, record] if rebase is not None else [record]
     for row in added:
         ledger.append(path, row)
-    decision = ledger.decide(history + added, stop_policy, ledger.stop_for(ctx.job.root, sha), ruled)
+    decision = ledger.decide(history + added, stop_policy, ledger.stop_for(ctx.job.root, sha, h), ruled)
     ctx.job.update_state(round=number, round_status=decision["status"])
     out = {"record": record, "decision": decision, "brief": brief(h, evaluation, decision, ledger.current_window(history + added)),
-           "evaluation": evaluation}
+           "evaluation": evaluation, "evidence_notes": model_gate.evidence_notes(ctx.job, desc, method_sha)}
     if rebase is not None:
         out["rebase"] = {k: rebase[k] for k in ("round", "rebase_of", "equivalent", "diffs", "shortfall", "evaluation")}
     if viz:

@@ -110,15 +110,89 @@ def load_job(root: Path) -> dict[str, Any]:
     return load(path_of(root))
 
 
-def digest(demand: dict[str, Any]) -> str:
-    """需求实质内容的哈希：三类条目和终止规则。总结、待确认问题和语言不参与，改写它们不影响差距的可比性。
-    Hash of what the demand means: the three sections and the stop rule. The summary, open questions and language
-    are left out, so rewording them keeps G comparable."""
-    body = {k: demand.get(k) for k in ("schema", *SECTIONS, "stop")}
-    # 结构要求只在声明时参与哈希，旧需求单的哈希保持不变 / the structure rule is hashed only when declared, so old hashes stay
+def _hash(body: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
+
+
+def _body(demand: dict[str, Any], drop: frozenset[str]) -> dict[str, Any]:
+    """哈希的内容：三类条目（去掉 drop 中的字段）和终止规则。总结、待确认问题和语言从不参与。
+    What a hash covers: the three sections (without the fields in drop) and the stop rule. Summary, open questions and language never count."""
+    body: dict[str, Any] = {"schema": demand.get("schema"), "stop": demand.get("stop")}
+    for section in SECTIONS:
+        body[section] = [{k: v for k, v in e.items() if k not in drop} for e in demand.get(section) or []]
+    # 结构要求只在声明时参与哈希 / the structure rule is hashed only when declared
     if "structure" in demand:
         body["structure"] = demand["structure"]
-    return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
+    return body
+
+
+# 两层哈希：确认层决定要不要用户重新确认，计算层决定数值证据（G 的可比性、结构比较、轮次版本、stop、rule-out）是否仍有效。
+# Two layers: the confirmation layer decides whether the user must confirm again; the compute layer decides whether the
+# numerical evidence (comparability of G, structure comparisons, round versions, stops, rule-outs) still holds.
+LAYERS = ("confirm", "compute")
+
+
+def digest(demand: dict[str, Any]) -> str:
+    """确认层：需求的内容版本，决定是否需要用户重新确认。含条目的全部字段（数值、范围、判定、权重、单位、依据 source），
+    不含 description，所以只改描述不需要重新确认。
+    Confirmation layer: the demand version, which decides whether the user must confirm again. Every entry field (value,
+    range, check, weight, unit, source) except description, so rewording a description needs no new confirmation."""
+    return _hash(_body(demand, frozenset({"description"})))
+
+
+def compute_digest(demand: dict[str, Any]) -> str:
+    """计算层：确认层去掉 source。只改依据不改计算时，数值证据仍有效。
+    Compute layer: the confirmation layer without source. Changing only the basis leaves the numbers' evidence valid."""
+    body = _body(demand, frozenset({"description", "source"}))
+    if "structure" in body:
+        body["structure"] = {k: v for k, v in body["structure"].items() if k != "reason"}
+    return _hash(body)
+
+
+def legacy_digest(demand: dict[str, Any]) -> str:
+    """升级前的旧公式（含 description 和 source）。只用来认出升级前写下的记录，新记录不再使用；公式不得改动。
+    The pre-upgrade formula (description and source included). Only recognises records written before the upgrade;
+    new records never use it, and this formula must not change."""
+    body = {k: demand.get(k) for k in ("schema", *SECTIONS, "stop")}
+    if "structure" in demand:
+        body["structure"] = demand["structure"]
+    return _hash(body)
+
+
+def as_current(stored: str | None, demand: dict[str, Any], layer: str = "compute", root: Path | None = None) -> str | None:
+    """升级前写下的哈希，若等于本需求的旧公式值，换成本需求在该层的新哈希；其他值（已是新哈希，或属于别的需求版本）原样返回。
+    A hash written before the upgrade that equals this demand's old formula value becomes this demand's hash in the layer;
+    anything else (a new hash, or another version's hash) comes back unchanged. Nothing in any file is rewritten."""
+    if layer not in LAYERS:
+        raise ValueError(f"unknown hash layer {layer!r}")
+    if stored is None:
+        return stored
+    convert = digest if layer == "confirm" else compute_digest
+    target = convert(demand)
+    if stored in (target, legacy_digest(demand)):
+        return target
+    # 从存档全文验证旧哈希的来源，再比较对应层；绝不把另一份需求的哈希直接替换成当前版本。
+    for archived in archived_demands(root) if root is not None else ():
+        hashes = {legacy_digest(archived), digest(archived),
+                  _hash(_body(archived, frozenset({"description", "source"})))}
+        if stored in hashes and convert(archived) == target:
+            return target
+    return stored
+
+
+def archived_demands(root: Path):
+    for record in confirmations(root):
+        try:
+            if record.get("content"):
+                yield validate(yaml.safe_load(record["content"]))
+        except (SaosError, yaml.YAMLError, TypeError, ValueError):
+            continue
+    for path in sorted((root / "evaluations").glob("*/result.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            yield validate(data["demand"])
+        except (OSError, ValueError, KeyError, TypeError, SaosError):
+            continue
 
 
 def structure_mode(demand: dict[str, Any]) -> str:
@@ -432,10 +506,13 @@ def confirmations(root: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def confirmation_for(root: Path, sha: str) -> dict[str, Any] | None:
-    """用户对这一版需求内容的最近一次确认；确认绑定内容哈希，改了内容就要重新确认。
-    The user's latest confirmation of this demand version; it is bound to the content hash."""
-    return next((c for c in reversed(confirmations(root)) if c.get("demand_sha") == sha), None)
+def confirmation_for(root: Path, sha: str, demand: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """用户对这一版需求（确认层哈希 sha）的最近一次确认；确认绑定确认层哈希，source 或数值等改了就要重新确认，只改描述不用。
+    给出 demand 时，升级前写下的确认（旧公式哈希）也按这一版认出。
+    The user's latest confirmation of this demand version (confirmation-layer hash sha). Given demand, confirmations
+    written before the upgrade (old formula) are recognised too."""
+    return next((c for c in reversed(confirmations(root))
+                 if (c.get("demand_sha") if demand is None else as_current(c.get("demand_sha"), demand, "confirm", root)) == sha), None)
 
 
 def confirm(root: Path, quote: str) -> dict[str, Any]:
@@ -466,7 +543,7 @@ def show(root: Path) -> dict[str, Any]:
     Validate the demand and return its version, confirmation state and open questions; no OpticStudio needed."""
     d = load_job(root)
     sha = digest(d)
-    confirmed = confirmation_for(root, sha)
+    confirmed = confirmation_for(root, sha, d)
     return {"demand_sha": sha, "confirmed": confirmed, "blocking_questions": blocking_questions(d),
             "open_questions": [q["question"] for q in d.get("open_questions") or [] if not q.get("blocking")],
             "counts": {s: len(d.get(s) or []) for s in SECTIONS}, "checks": [i["id"] for i in checked(d)],
@@ -503,6 +580,14 @@ def _evidence_path(ctx, path: Path) -> str | None:
         return None
 
 
+def _error_kind(exc: Exception) -> str:
+    """判定出错的类别：材料数据不可用为 material，其余为 computation。按类型判断，不看消息文字。
+    The kind of a failed check: unusable material data is material, anything else computation. Decided by type, not by text."""
+    from saos.backend.optiland_materials import MaterialError
+
+    return "material" if isinstance(exc, MaterialError) else "computation"
+
+
 def measure(ctx: ScriptContext, item: dict[str, Any], folder: Path, scripts: dict[str, dict[str, Any]]) -> dict[str, Any]:
     """在 OpticStudio 中取一项的值；返回值和取值依据。
     Measure one item in OpticStudio; return the value and its evidence."""
@@ -537,7 +622,7 @@ def measure(ctx: ScriptContext, item: dict[str, Any], folder: Path, scripts: dic
         # a failed measurement is a reportable result; a lost connection or a blocked window still goes to the daemon
         if not ctx.backend.healthy() or (isinstance(exc, SaosError) and exc.code in (ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.UI_BLOCKED)):
             raise
-        return {"value": None, "error": f"{type(exc).__name__}: {exc}", "evidence": evidence}
+        return {"value": None, "error": f"{type(exc).__name__}: {exc}", "error_kind": _error_kind(exc), "evidence": evidence}
     if not math.isfinite(value):
         # 判定正常执行、但这个设计给不出有效数值（例如光线到不了像面）：是设计结果，不是测量失败
         # the check ran but this design has no valid value (e.g. no ray reaches the image): a design result, not a failed measurement
@@ -616,7 +701,7 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
               # 执行出错的判定（脚本异常、读不到文件）：这一轮的结论不可信，不能当作设计不达标
               # checks that failed to run: the round says nothing about the design and must not count as a shortfall result
               "measurement_errors": [i["id"] for i in items if i.get("error")],
-              "demand": demand, "demand_sha": digest(demand), "method_sha": method_digest(scripts),
+              "demand": demand, "demand_sha": compute_digest(demand), "method_sha": method_digest(scripts),
               "support_files": support, **({"saos_code_files": code} if code else {}),
               "environment": {"saos_code_sha256": getattr(daemon, "code_sha256", None),
                               "opticstudio": identity["version"] if backend_name == "zos" else None,
@@ -669,6 +754,7 @@ def quick(ctx, ids: list[str] | None = None) -> dict[str, Any]:
     folder = Path(tempfile.mkdtemp(prefix="saos-measure-"))
     values: dict[str, float | None] = {}
     errors: dict[str, str] = {}
+    error_kinds: dict[str, str] = {}
     gaps: dict[str, float] = {}
     pursued: dict[str, float] = {}
     total = 0.0
@@ -681,6 +767,7 @@ def quick(ctx, ids: list[str] | None = None) -> dict[str, Any]:
             values[item_id] = measured["value"]
             if measured.get("error"):
                 errors[item_id] = measured["error"]
+                error_kinds[item_id] = measured.get("error_kind", "computation")
             if spec["goal"] is not None:
                 gaps[item_id] = shortfall(spec, measured["value"])
                 total += spec["weight"] * gaps[item_id]
@@ -691,4 +778,4 @@ def quick(ctx, ids: list[str] | None = None) -> dict[str, Any]:
         shutil.rmtree(folder, ignore_errors=True)
     return {"values": values, "shortfall": total, "gaps": gaps, "pursuit": pursued,
             "hard_failing": [i for i, g in gaps.items() if specs[i]["kind"] in HARD_KINDS and g > 0],
-            "invalid": [i for i, v in values.items() if v is None and i not in errors], "errors": errors}
+            "invalid": [i for i, v in values.items() if v is None and i not in errors], "errors": errors, "error_kinds": error_kinds}

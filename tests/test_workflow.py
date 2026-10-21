@@ -151,7 +151,7 @@ def setup(saos_home, fake_lens_file):
 def approve_model(daemon, job, quote="模型可以"):
     """建模说明并记录确认 / describe the model and record the user's approval."""
     folder = daemon.handle({"op": "lens.describe", "args": {"job": job.id, "notes": NOTES}})["result"]["folder"]
-    assert daemon.handle({"op": "lens.approve", "args": {"job": job.id, "model": folder, "quote": quote}})["ok"]
+    assert daemon.handle({"op": "lens.approve", "args": {"job": job.id, "model": folder, "quote": quote, "rebuild_reason": "自动化测试夹具：结构调整"}})["ok"]
     return folder
 
 
@@ -588,9 +588,9 @@ def test_stop_needs_the_users_words_and_ends_the_rounds(setup):
     daemon, job = setup
     write_demand(job, DEMAND)
     with pytest.raises(SaosError):
-        ledger.record_stop(job.root, demand.digest(demand.validate(DEMAND)), "no real focus", "")  # 没有轮次、没有原话
+        ledger.record_stop(job.root, demand.compute_digest(demand.validate(DEMAND)), "no real focus", "")  # 没有轮次、没有原话
     call(daemon, "round.record", job=job.id)
-    sha = demand.digest(demand.validate(DEMAND))
+    sha = demand.compute_digest(demand.validate(DEMAND))
     with pytest.raises(SaosError):
         ledger.record_stop(job.root, sha, "no real focus", " ")
     stop = ledger.record_stop(job.root, sha, "F20: no real focus even on axis", "c：保持现结构")
@@ -631,7 +631,7 @@ def test_environment_surfaces_do_not_block_delivery(setup):
     notes = {**NOTES, "environment": [2]}
     folder = daemon.handle({"op": "lens.describe", "args": {"job": job.id, "notes": notes}})["result"]
     assert any("外购件" in w or "bought-in" in w for w in folder["warnings"])
-    assert call(daemon, "lens.approve", job=job.id, model=folder["folder"], quote="样品介质按模型")["ok"]
+    assert call(daemon, "lens.approve", job=job.id, model=folder["folder"], quote="样品介质按模型", rebuild_reason="样品面改声明为环境")["ok"]
     record = call(daemon, "round.record", job=job.id)["result"]["record"]
     assert record["model_glass"] == [] and record["environment"] == [2] and ledger.deliverable(record)
     bad = daemon.handle({"op": "lens.describe", "args": {"job": job.id, "notes": {**NOTES, "environment": [99]}}})
@@ -843,7 +843,7 @@ def test_rounds_may_use_several_tiers_and_tiers_can_be_ruled_out():
 def test_rule_out_needs_a_reason_and_feeds_the_round_decision(setup):
     daemon, job = setup
     write_demand(job, DEMAND)
-    sha = demand.digest(demand.load_job(job.root))
+    sha = demand.compute_digest(demand.load_job(job.root))
     with pytest.raises(SaosError):
         ledger.record_rule_out(job.root, sha, ["structure"], "probes/001")  # 还没有轮次 / no round yet
     assert call(daemon, "round.record", job=job.id)["ok"]
@@ -1058,15 +1058,17 @@ def test_a_round_records_the_version_of_the_backend_that_measured_it(setup):
 
 
 def test_every_optimiser_entry_follows_the_same_rule(setup):
-    """G05：需求确认、结构有资格、当前模型已认可，三者缺一，所有寻优入口一致拒绝。
-    Every optimiser entry refuses alike when any of the three is missing; all three present, all of them run."""
+    """G05：需求与模型确认缺一则拒绝；自由结构缺比较记录不拒绝。"""
     daemon, job = setup
     daemon.backend.optimize = lambda cycles, cores, **kw: {"merit": 1.0}
     daemon.backend.optimize_search = lambda kind, cores, **kw: {"final_merit": 0.5, "stopped_by": "timeout"}
     entries = [("opt.local", {}), ("opt.hammer", {"max_seconds": 5}), ("opt.global", {"max_seconds": 5})]
-    write_demand(job, DEMAND)  # 结构由优化器自己选：没有比较，所以不能深度优化 / free structure without comparison: refused
+    write_demand(job, DEMAND, confirm=None)
     for op, extra in entries:
-        assert call(daemon, op, job=job.id, **extra)["error"]["code"] == ErrorCode.BAD_ARGS, op
+        assert call(daemon, op, job=job.id, **extra)["error"]["code"] == ErrorCode.DEMAND_NOT_CONFIRMED, op
+    demand.confirm(job.root, "自动化测试夹具：确认需求")
+    for op, extra in entries:
+        assert call(daemon, op, job=job.id, **extra)["ok"], op
     write_demand(job, OPT_DEMAND)  # 用户指定结构：三个入口都可以运行 / structure fixed by the user: all three run
     for op, extra in entries:
         assert call(daemon, op, job=job.id, **extra)["ok"], op
@@ -1074,3 +1076,54 @@ def test_every_optimiser_entry_follows_the_same_rule(setup):
     daemon.backend.lens["surfaces"][1]["material"] = ""
     for op, extra in entries:
         assert call(daemon, op, job=job.id, **extra)["error"]["code"] == ErrorCode.MODEL_NOT_APPROVED, op
+
+
+def test_a_job_from_before_the_upgrade_keeps_its_confirmation_and_rounds(setup):
+    """升级前写下的确认和轮次（旧公式哈希）：只把哈希字段改回旧值，继续记轮次、取报告都照常，不要求重新确认。
+    A job written before the upgrade (old formula hashes, only those fields rewritten): rounds and the report carry on, no reconfirmation."""
+    daemon, job = setup
+    write_demand(job, DEMAND)
+    assert call(daemon, "round.record", job=job.id)["ok"]
+    old = demand.legacy_digest(demand.load_job(job.root))
+    confirmations = job.root / "confirmations.jsonl"
+    rows = [json.loads(line) for line in confirmations.read_text(encoding="utf-8").splitlines() if line.strip()]
+    confirmations.write_text("".join(json.dumps({**r, "demand_sha": old}, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
+    ledger_file = job.root / ledger.LEDGER_FILE
+    rounds = [json.loads(line) for line in ledger_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    ledger_file.write_text("".join(json.dumps({**r, "demand_sha": old}, ensure_ascii=False) + "\n" for r in rounds), encoding="utf-8")
+    daemon.backend.lens["surfaces"][1]["radius"] = 45.0
+    out = call(daemon, "round.record", job=job.id, tier="local")
+    assert out["ok"], out.get("error")
+    assert out["result"]["record"]["demand_sha"] == demand.compute_digest(demand.load_job(job.root))
+    # 第 0 轮（升级前）和第 1 轮（升级后）是同一个版本：第 1 轮计入轮次预算；不认旧值时这里会变成 0 / round 0 (before) and 1 (after) are one version: round 1 counts
+    assert out["result"]["decision"]["rounds_in_version"] == 1
+    assert report.build(job)["confirmed"] is not None
+
+
+def test_legacy_stop_survives_rewording_through_round_entry(setup):
+    daemon, job = setup
+    write_demand(job, DEMAND)
+    assert call(daemon, "round.record", job=job.id)["ok"]
+    old = demand.legacy_digest(demand.load_job(job.root))
+    d = demand.load_job(job.root)
+    ledger.record_stop(job.root, demand.compute_digest(d), "测试停止", "自动化测试夹具：停止", d)
+    for name in ("confirmations.jsonl", "ledger.jsonl", "stops.jsonl"):
+        path = job.root / name
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        path.write_text("".join(json.dumps({**r, "demand_sha": old}, ensure_ascii=False) + "\n" for r in rows), encoding="utf-8")
+    changed = json.loads(json.dumps(DEMAND))
+    changed["objectives"][0]["description"] = "只改描述"
+    write_demand(job, changed, confirm="自动化测试夹具：重新确认文字")
+    out = call(daemon, "round.record", job=job.id, tier="local")
+    assert not out["ok"] and out["error"]["code"] == ErrorCode.BAD_ARGS
+    assert len(ledger.load(job.root / ledger.LEDGER_FILE)) == 1
+
+
+def test_tampered_approved_model_refuses_round_entry(setup):
+    daemon, job = setup
+    write_demand(job, DEMAND)
+    model = next((job.root / "models").glob("*/model.json"))
+    model.write_text(model.read_text(encoding="utf-8") + " ", encoding="utf-8")
+    result = call(daemon, "round.record", job=job.id)
+    assert result["error"]["code"] == ErrorCode.EVIDENCE_TAMPERED
+    assert ledger.load(job.root / ledger.LEDGER_FILE) == []

@@ -35,8 +35,8 @@ has also been escalated. Tiers, low to high:
     continue   其他情况；给出最后一次进步以来还没试过、也没排除的最低层级 / otherwise; suggests the lowest tier neither tried nor ruled out
 一轮可以同时用几个层级（tiers）；排除某个层级要写明证据，只对最后一次进步之后有效，有了新进步就要重新判断。
 A round may use several tiers at once; ruling a tier out needs the evidence and holds only until the next gain.
-需求的实质内容一变（哈希不同），G 的定义就变了，进步从改动后的第一轮重新算起。
-When the demand content changes (different hash), G means something else and progress is counted afresh.
+需求的计算层哈希一变（数值、范围、判定、权重、单位等；只改描述或依据 source 不算），G 的定义就变了，进步从改动后的第一轮重新算起。
+When the demand's compute-layer hash changes (values, ranges, checks, weights, units; rewording a description or a source does not count), G means something else and progress is counted afresh.
 判定代码改了，saos round 先用新判定重测此前最好的一轮（tier 为 rebase），之后的轮次和它比较：数值不变则窗口延续，
 变了就从这条重测记录开始新窗口。
 When the check code changes, saos round first re-measures the best earlier round with the new checks (tier "rebase")
@@ -51,7 +51,7 @@ from pathlib import Path
 from typing import Any
 
 from saos import jobs
-from saos.demand import TIERS
+from saos.demand import TIERS, as_current
 from saos.protocol import ErrorCode, SaosError, jsonable
 
 LEDGER_FILE = "ledger.jsonl"
@@ -61,13 +61,26 @@ RULED_OUT_FILE = "ruled_out.jsonl"
 REBASE = "rebase"
 
 
-def load(path: Path) -> list[dict[str, Any]]:
+def load(path: Path, demand: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """读取 ledger。给出 demand 时，升级前写下的轮次版本（旧公式哈希）在内存里换成这一版需求的计算层哈希，文件不改。
+    Read the ledger. Given demand, round versions written before the upgrade are swapped in memory for this demand's
+    compute-layer hash; the file is not touched."""
     if not path.is_file():
         return []
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     for r in rows:
         r["shortfall"] = float(r["shortfall"])
+        if demand is not None:
+            stored = version(r)[0]
+            current = as_current(stored, demand, "compute", path.parent)
+            if current != stored:
+                r["demand_sha"] = current
     return rows
+
+
+def _current(stored: str | None, demand: dict[str, Any] | None, root: Path) -> str | None:
+    """停止和排除记录的版本哈希：给出 demand 时同样认出升级前的旧公式值。/ stop and rule-out versions: legacy values recognised when demand is given."""
+    return stored if demand is None else as_current(stored, demand, "compute", root)
 
 
 def append(path: Path, record: dict[str, Any]) -> None:
@@ -82,19 +95,19 @@ def stops(root: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def stop_for(root: Path, demand_sha: str) -> dict[str, Any] | None:
-    """这一版需求下最近一次停止决定；需求改了版本就不再适用。
-    The latest stop decision under this demand version; a new version starts afresh."""
-    return next((s for s in reversed(stops(root)) if s.get("demand_sha") == demand_sha), None)
+def stop_for(root: Path, demand_sha: str, demand: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """这一版需求（计算层哈希 demand_sha）下最近一次停止决定；需求的数值等改了版本就不再适用。
+    The latest stop decision under this demand version (compute-layer hash); a changed value starts afresh."""
+    return next((s for s in reversed(stops(root)) if _current(s.get("demand_sha"), demand, root) == demand_sha), None)
 
 
-def record_stop(root: Path, demand_sha: str, reason: str, quote: str) -> dict[str, Any]:
+def record_stop(root: Path, demand_sha: str, reason: str, quote: str, demand: dict[str, Any] | None = None) -> dict[str, Any]:
     """记录用户的停止决定。停止等于接受达不到需求，所以必须有用户原话。
     Record the user's decision to stop. Stopping accepts that the demand is not met, so it needs the user's words."""
     reason, quote = str(reason or "").strip(), str(quote or "").strip()
     if not reason or not quote:
         raise SaosError(ErrorCode.BAD_ARGS, "a stop needs --reason (why, with the evidence) and --quote (the user's own words deciding to stop)")
-    rounds = load(root / LEDGER_FILE)
+    rounds = load(root / LEDGER_FILE, demand)
     if not rounds or version(rounds[-1])[0] != demand_sha:
         raise SaosError(ErrorCode.BAD_ARGS, "record a round under the current demand before stopping; the stop refers to the last round")
     record = {"round": int(rounds[-1]["round"]), "demand_sha": demand_sha, "reason": reason, "quote": quote, "time": jobs.now_iso()}
@@ -107,15 +120,15 @@ def tiers_of(record: dict[str, Any]) -> list[str]:
     return [t for t in (record.get("tiers") or [record.get("tier")]) if t]
 
 
-def ruled_out_for(root: Path, demand_sha: str) -> list[dict[str, Any]]:
+def ruled_out_for(root: Path, demand_sha: str, demand: dict[str, Any] | None = None) -> list[dict[str, Any]]:
     path = root / RULED_OUT_FILE
     if not path.is_file():
         return []
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-    return [r for r in rows if r.get("demand_sha") == demand_sha]
+    return [r for r in rows if _current(r.get("demand_sha"), demand, root) == demand_sha]
 
 
-def record_rule_out(root: Path, demand_sha: str, tiers: list[str], reason: str) -> dict[str, Any]:
+def record_rule_out(root: Path, demand_sha: str, tiers: list[str], reason: str, demand: dict[str, Any] | None = None) -> dict[str, Any]:
     """带证据排除层级，免得为了走完阶梯去试与诊断结论无关的手段。只对最后一次进步之后有效。
     Rule tiers out with the evidence, so no round is spent on a tier the diagnosis says cannot help. Holds until the next gain."""
     reason = str(reason or "").strip()
@@ -124,7 +137,7 @@ def record_rule_out(root: Path, demand_sha: str, tiers: list[str], reason: str) 
         raise SaosError(ErrorCode.BAD_ARGS, f"--tier must name tiers of the ladder ({', '.join(TIERS)}); got {unknown or tiers}")
     if not reason:
         raise SaosError(ErrorCode.BAD_ARGS, "--reason must say why the tier cannot help, citing the evidence (e.g. scans/NNN, a first-order result)")
-    rounds = load(root / LEDGER_FILE)
+    rounds = load(root / LEDGER_FILE, demand)
     if not rounds or version(rounds[-1])[0] != demand_sha:
         raise SaosError(ErrorCode.BAD_ARGS, "record a round under the current demand first; a tier is ruled out after a given round")
     record = {"round": int(rounds[-1]["round"]), "demand_sha": demand_sha, "tiers": list(dict.fromkeys(tiers)), "reason": reason, "time": jobs.now_iso()}

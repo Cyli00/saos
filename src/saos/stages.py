@@ -120,7 +120,7 @@ def begin(ctx, quote: str, selected: int | None = None, max_rounds: int | None =
     problems = job.verify_seals()
     if problems:
         raise SaosError(ErrorCode.EVIDENCE_TAMPERED, "sealed evidence changed; restore it before entering OpticStudio", {"problems": problems[:50]})
-    history = ledger.load(root / ledger.LEDGER_FILE)
+    history = ledger.load(root / ledger.LEDGER_FILE, h)
     entry = read(root)
     if entry:
         if (entry["quote"] != quote or selected not in (None, entry["source_round"])
@@ -128,7 +128,7 @@ def begin(ctx, quote: str, selected: int | None = None, max_rounds: int | None =
             raise SaosError(ErrorCode.BAD_ARGS, "this job already has an immutable OpticStudio entry; resume with its original arguments")
         if completed(root):
             return {"entry": entry, **json.loads((root / RESULT).read_text(encoding="utf-8")), "resumed": True}
-        if (entry["demand_sha"], entry["method_sha"]) != (sha, method_sha):
+        if (demand.as_current(entry["demand_sha"], h, "compute", root), entry["method_sha"]) != (sha, method_sha):
             raise SaosError(ErrorCode.SPEC_CHANGED, "restore the demand and checks of the pending OpticStudio entry before resuming")
     else:
         meta_path = root / REPORT
@@ -145,7 +145,7 @@ def begin(ctx, quote: str, selected: int | None = None, max_rounds: int | None =
         shown = root / "report" / "index.html"
         if not shown.is_file() or shown.read_bytes() != archive.read_bytes():
             raise SaosError(ErrorCode.EVIDENCE_TAMPERED, "the displayed report differs from the archived report; regenerate it before asking for acceptance")
-        if ((meta.get("demand_sha"), meta.get("method_sha")) != (sha, method_sha)
+        if ((demand.as_current(meta.get("demand_sha"), h, "compute", root), meta.get("method_sha")) != (sha, method_sha)
                 or meta.get("last_round") != (history[-1]["round"] if history else None)):
             raise SaosError(ErrorCode.SPEC_CHANGED, "the report is stale; regenerate it and ask the user to accept that report")
         selected = meta["round"] if selected is None else selected
