@@ -648,7 +648,9 @@ class ZosBackend(Backend):
         self._material_cache.clear()
 
     def rebuild_companion(self, payload: dict[str, Any]) -> None:
-        self.build(payload["prescription"])
+        from saos.prescription import snapshot_prescription
+
+        self.build(snapshot_prescription(payload["prescription"]))
         if payload.get("configuration", 1) != 1:
             self.select_configuration(int(payload["configuration"]))
         settings = payload.get("optimization") or {}

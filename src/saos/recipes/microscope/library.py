@@ -25,7 +25,8 @@ from typing import Any
 import yaml
 
 from saos import config
-from saos.protocol import ErrorCode, SaosError, read_json, write_json
+from saos.starts import library as starting_library
+from saos.protocol import write_json
 from saos.recipes.microscope.spec import REFERENCE_TUBE_MM
 
 ENTRY_ID_CHARS = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.")
@@ -45,16 +46,11 @@ def library_dir() -> Path:
 
 
 def entry_dir(entry_id: str) -> Path:
-    if not entry_id or not set(entry_id) <= ENTRY_ID_CHARS:
-        raise SaosError(ErrorCode.BAD_ARGS, f"entry id may only contain letters, digits and -_.: {entry_id!r}")
-    return library_dir() / "entries" / entry_id
+    return starting_library.entry_path(library_dir(), entry_id)
 
 
 def load_entry(entry_id: str) -> dict[str, Any]:
-    path = entry_dir(entry_id) / "entry.json"
-    if not path.is_file():
-        raise SaosError(ErrorCode.FILE_NOT_FOUND, f"no library entry {entry_id}")
-    return read_json(path)
+    return starting_library.load_entry(library_dir(), entry_id)
 
 
 def save_entry(entry_id: str, entry: dict[str, Any]) -> None:
@@ -72,10 +68,7 @@ def write_file(entry_id: str, name: str, data: Any) -> Path:
 
 
 def all_entries() -> list[dict[str, Any]]:
-    root = library_dir() / "entries"
-    if not root.is_dir():
-        return []
-    return [read_json(p / "entry.json") for p in sorted(root.iterdir()) if (p / "entry.json").is_file()]
+    return starting_library.entries(library_dir())
 
 
 # ---- 指标 ----

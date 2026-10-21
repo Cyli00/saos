@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "id": "double_gauss",
+  "form": "Double-Gauss 六片缩小物镜",
+  "version": "2026-10-21",
+  "status": "sourced_unverified",
+  "source": {
+    "patent": "US4863251A",
+    "locator": "LENS SURFACE DATA TABLE，说明书第 2 页",
+    "url": "https://patents.google.com/patent/US4863251A/en",
+    "review": {
+      "level": "primary_checked_by_reviewer",
+      "basis": "用户本轮报告：处方与专利原表逐面相符；本次未重新执行光学验证。"
+    }
+  },
+  "metrics": {
+    "focal_length_mm": 50,
+    "elements": 6,
+    "half_field_deg": 17,
+    "f_number": 5.6
+  },
+  "applicability": {
+    "half_field_deg_max": 17,
+    "f_number_min": 5.6,
+    "wavelength_um": [
+      0.4861327,
+      0.6562725
+    ],
+    "conjugate": "finite",
+    "wavelength_basis": "F/d/C 初筛假设"
+  },
+  "notes": [
+    "原始有限共轭，总长 550 mm、倍率 0.1102；不能直接当成无限远摄影镜头。",
+    "光谱采用 F/d/C 作为初筛假设，专利未给波长采样。原牌号缺失时报告材料未评估。",
+    "原文 f/5.6 是无限远 f 数，原处方用标称 EFL/5.6 设置入瞳直径；生成后的 f_number 参数是目标像方 f 数，有限共轭需核对工作 f 数。"
+  ]
+}

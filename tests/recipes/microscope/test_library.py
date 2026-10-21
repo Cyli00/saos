@@ -155,3 +155,22 @@ def test_verify_preserves_dirty_lens_unless_discard_is_explicit(lib, saos_home, 
         assert not (target.lenses_dir / "X.zmx").exists()
         assert (library.entry_dir("X") / "entry.json").read_bytes() == original_entry
     assert json.loads((current.lenses_dir / "original.zmx").read_text())["surfaces"][1]["radius"] == 50.0
+
+
+def test_verify_reads_prescription_and_expectation_through_protocol(lib, saos_home, monkeypatch):
+    from argparse import Namespace
+    from saos import jobs
+    from saos.recipes.microscope import library_cli
+    library.save_entry("sample", {"id": "sample", "status": "extracted", "metrics": {}})
+    library.write_file("sample", "prescription.json", {"title": "自动化测试夹具"})
+    library.write_file("sample", "expect.json", {"efl": 50})
+    job = jobs.create_job("library-verify-read")
+    seen = []
+    monkeypatch.setattr(library_cli.client, "request", lambda op, args, **kwargs: seen.append((op,args)))
+    def repro(op, job_id, timeout, **kwargs):
+        assert op == "repro" and kwargs["expect"] == {"efl":50}
+        return {"pass":False,"metrics":[{"metric":"efl","rel_error":.1,"pass":False}]}
+    monkeypatch.setattr(library_cli.calls,"call",repro)
+    result = library_cli.cmd_verify(Namespace(id="sample",job=job.id,timeout=10,discard=True))
+    assert seen[0][0] == "lens.build" and seen[0][1]["prescription"]["title"] == "自动化测试夹具"
+    assert result["status"] == "rejected"

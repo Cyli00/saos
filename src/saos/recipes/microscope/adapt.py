@@ -9,7 +9,8 @@ import math
 from typing import Any
 
 from saos import glasscat, prescription
-from saos.recipes.microscope.paraxial import Surface, back_focal_distance, effective_focal_length, front_focal_distance
+from saos.starts.scaling import scale_surface
+from saos.starts.paraxial import Surface, back_focal_distance, effective_focal_length, front_focal_distance
 from saos.recipes.microscope import layout
 from saos.protocol import ErrorCode, SaosError
 from saos.recipes.microscope.spec import REFERENCE_TUBE_MM
@@ -232,13 +233,14 @@ def from_extraction(
 
     surfaces: list[dict[str, Any]] = []
     for k, r in enumerate(rows):
+        scaled = scale_surface({"radius": _num(r["r"]), "thickness": _num(r.get("d") or 0.0)}, scale)
         material = glasses[_glass_key(r)]["material"] if "n" in r else ""
         last = k == len(rows) - 1
-        thickness = bfd if (last and stop == "rear_focal") else (0.0 if last else _num(r["d"]) * scale)
+        thickness = bfd if (last and stop == "rear_focal") else (0.0 if last else scaled["thickness"])
         is_stop = (stop == "printed" and r.get("stop")) or stop == f"r{r.get('i')}"
         surfaces.append(
             {
-                "radius": _num(r["r"]) * scale,
+                "radius": scaled["radius"],
                 "thickness": thickness,
                 "material": material,
                 "comment": layout.TAG_STOP if (r.get("stop") and math.isinf(_num(r["r"]))) else f"patent r{r.get('i')}",

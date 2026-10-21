@@ -111,10 +111,10 @@ def cmd_verify(args: argparse.Namespace) -> Any:
     t = args.timeout
     client.request(
         "lens.build",
-        {"job": job.id, "prescription": library.read_json(d / "prescription.json"), "file": lens_name, "overwrite": True, "discard": args.discard},
+        {"job": job.id, "prescription": _read_json(d / "prescription.json"), "file": lens_name, "overwrite": True, "discard": args.discard},
         timeout=t,
     )
-    repro = calls.call("repro", job.id, t, expect=library.read_json(d / "expect.json"))
+    repro = calls.call("repro", job.id, t, expect=_read_json(d / "expect.json"))
     library.write_file(args.id, "repro.json", repro)
     entry["repro"] = {"pass": repro["pass"], "metrics": {m["metric"]: round(m["rel_error"], 6) for m in repro["metrics"]}}
     if not repro["pass"]:

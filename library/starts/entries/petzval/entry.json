@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "id": "petzval",
+  "form": "Petzval",
+  "version": "2026-10-21",
+  "status": "sourced_unverified",
+  "source": {
+    "book": "Milton Laikin, Lens Design, 4th ed., CRC Press, 2007",
+    "page": 75,
+    "url": "https://github.com/optiland/optiland/blob/v0.6.3/optiland/samples/objectives.py",
+    "transcription": "Optiland 0.6.3 samples/objectives.py；原始英寸数值统一乘 25.4。",
+    "gallery": "https://optiland.readthedocs.io/en/stable/gallery/basic_lenses/petzval.html",
+    "review": {
+      "level": "secondary_transcription",
+      "original_pages_checked": false,
+      "note": "书目与页码来自 Optiland 转引；尚未取得原书页逐面核对。"
+    }
+  },
+  "metrics": {
+    "focal_length_mm": null,
+    "elements": 4,
+    "half_field_deg": 7,
+    "f_number": 1.4
+  },
+  "applicability": {
+    "half_field_deg_max": 7,
+    "f_number_min": 1.4,
+    "wavelength_um": [
+      0.4861327,
+      0.6562725
+    ],
+    "conjugate": "infinite"
+  },
+  "notes": [
+    "范围来自该处方示例，属于选库筛选依据，不保证达标；尚未进行本仓库数值验收。"
+  ]
+}

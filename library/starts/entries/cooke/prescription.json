@@ -1,0 +1,68 @@
+{
+  "title": "Cooke 三片",
+  "units": "mm",
+  "aperture": {
+    "type": "image_f_number",
+    "value": 5
+  },
+  "object": {
+    "thickness": "inf"
+  },
+  "fields": {
+    "type": "angle",
+    "y": [
+      0,
+      14.0,
+      20
+    ]
+  },
+  "wavelengths": {
+    "um": [
+      0.4861327,
+      0.5875618,
+      0.6562725
+    ],
+    "primary": 2
+  },
+  "catalogs": [
+    "SCHOTT"
+  ],
+  "surfaces": [
+    {
+      "radius": 22.01359,
+      "thickness": 3.258956,
+      "material": "SK16",
+      "stop": false
+    },
+    {
+      "radius": -435.7604,
+      "thickness": 6.007551,
+      "material": "",
+      "stop": false
+    },
+    {
+      "radius": -22.21328,
+      "thickness": 0.9999746,
+      "material": "F2",
+      "stop": false
+    },
+    {
+      "radius": 20.29192,
+      "thickness": 4.750409,
+      "material": "",
+      "stop": true
+    },
+    {
+      "radius": 79.6836,
+      "thickness": 2.952076,
+      "material": "SK16",
+      "stop": false
+    },
+    {
+      "radius": -18.3783,
+      "thickness": 42.18171,
+      "material": "",
+      "stop": false
+    }
+  ]
+}

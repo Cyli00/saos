@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "id": "cooke",
+  "form": "Cooke 三片",
+  "version": "2026-10-21",
+  "status": "sourced_unverified",
+  "source": {
+    "patent": "EP1425624B1",
+    "locator": "Figure 9 前的无相位编码三片处方表",
+    "url": "https://patents.google.com/patent/EP1425624B1/en",
+    "material_note": "原文 SK16 未指定厂家，目录候选用 SCHOTT；找不到原牌号则报告材料未评估，禁止自动换 N-SK16。",
+    "review": {
+      "level": "primary_checked_by_reviewer",
+      "basis": "用户本轮报告：处方与专利原表逐面相符；本次未重新执行光学验证。"
+    }
+  },
+  "metrics": {
+    "focal_length_mm": 50,
+    "elements": 3,
+    "half_field_deg": 20,
+    "f_number": 5
+  },
+  "applicability": {
+    "half_field_deg_max": 20,
+    "f_number_min": 5,
+    "wavelength_um": [
+      0.4861327,
+      0.6562725
+    ],
+    "conjugate": "infinite",
+    "wavelength_basis": "F/d/C 初筛假设"
+  },
+  "notes": [
+    "范围来自该处方示例，属于选库筛选依据，不保证达标；尚未进行本仓库数值验收。",
+    "F/d/C 波长采样为初筛假设，不把原文未列出的波段性能标为已验证。"
+  ]
+}

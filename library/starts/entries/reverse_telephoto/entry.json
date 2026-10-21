@@ -1,0 +1,112 @@
+{
+  "schema": 1,
+  "id": "reverse_telephoto",
+  "form": "反远摄五片",
+  "version": "2026-10-21",
+  "status": "sourced_unverified",
+  "source": {
+    "patent": "US3799655A",
+    "locator": "第 4 个 PDF 页，说明书栏 3 数值表；已对照 PDF 图像",
+    "url": "https://patents.google.com/patent/US3799655",
+    "pdf": "https://patentimages.storage.googleapis.com/34/e2/44/4fa180878b01a7/US3799655.pdf",
+    "review": {
+      "level": "primary_radius_table_checked",
+      "pdf_page": 4,
+      "printed_column": 3,
+      "pdf_sha256": "55391791ea266700aaf50e6c6e56ff3c77f01f98df4af9c2a92fcc970c08b0a4",
+      "radii": [
+        {
+          "label": "R1",
+          "radius_in": "-2.2313",
+          "expected_mm": "-56.67502",
+          "stored_mm": -56.675019999999996,
+          "delta_mm": "4E-15"
+        },
+        {
+          "label": "R2",
+          "radius_in": "0.4653",
+          "expected_mm": "11.81862",
+          "stored_mm": 11.81862,
+          "delta_mm": "0.00000"
+        },
+        {
+          "label": "R3",
+          "radius_in": "0.5624",
+          "expected_mm": "14.28496",
+          "stored_mm": 14.28496,
+          "delta_mm": "0.00000"
+        },
+        {
+          "label": "R5",
+          "radius_in": "0.5392",
+          "expected_mm": "13.69568",
+          "stored_mm": 13.69568,
+          "delta_mm": "0.00000"
+        },
+        {
+          "label": "R6",
+          "radius_in": "1.9427",
+          "expected_mm": "49.34458",
+          "stored_mm": 49.34458,
+          "delta_mm": "0.00000"
+        },
+        {
+          "label": "R7",
+          "radius_in": "-1.2898",
+          "expected_mm": "-32.76092",
+          "stored_mm": -32.76092,
+          "delta_mm": "0.00000"
+        },
+        {
+          "label": "R8",
+          "radius_in": "inf",
+          "expected_mm": "inf",
+          "stored_mm": "inf",
+          "delta_mm": null
+        },
+        {
+          "label": "R9",
+          "radius_in": "inf",
+          "expected_mm": "inf",
+          "stored_mm": "inf",
+          "delta_mm": null
+        },
+        {
+          "label": "R10",
+          "radius_in": "0.6841",
+          "expected_mm": "17.37614",
+          "stored_mm": 17.37614,
+          "delta_mm": "0.00000"
+        },
+        {
+          "label": "R11",
+          "radius_in": "-0.9352",
+          "expected_mm": "-23.75408",
+          "stored_mm": -23.75408,
+          "delta_mm": "0.00000"
+        }
+      ],
+      "note": "仅核对半径转录与英寸换算；不据此声明材料或光学性能已验收。"
+    }
+  },
+  "metrics": {
+    "focal_length_mm": 30,
+    "elements": 5,
+    "half_field_deg": 14.25,
+    "f_number": 3.5
+  },
+  "applicability": {
+    "half_field_deg_max": 14.25,
+    "f_number_min": 3.5,
+    "wavelength_um": [
+      0.4799,
+      0.6438
+    ],
+    "conjugate": "infinite"
+  },
+  "notes": [
+    "原表用英寸，乘 25.4。R4 是入瞳位置而非折射面，未作为镜片加入；R8 是实体光阑，距 R7 为 0.154 in。",
+    "半视场筛选值 14.25° 由原文 0.6 in 全对角像高、30 mm 焦距按 atan(7.62/30) 取整得到，非实测视场。",
+    "原玻璃数据采用 e 线；不将 Ne/Ve 冒充 nd/Vd，不自动替换牌号。"
+  ]
+}

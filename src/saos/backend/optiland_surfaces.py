@@ -6,6 +6,7 @@ import re
 import numpy as np
 
 from saos.backend.optiland_materials import unsupported
+from saos.prescription import canonical_surface_params
 
 TYPES = {"standard": "standard", "evenaspheric": "even_asphere", "oddaspheric": "odd_asphere",
          "paraxial": "paraxial", "coordinatebreak": "standard", "toroidal": "toroidal",
@@ -22,11 +23,18 @@ DISPLAY = {"standard": "Standard", "evenaspheric": "Even Asphere", "oddaspheric"
 
 
 def kind(row):
-    return re.sub(r"[ _-]", "", row.get("type", "standard")).lower()
+    name = re.sub(r"[ _-]", "", row.get("type", "standard")).lower()
+    return {"evenasphere": "evenaspheric", "oddasphere": "oddaspheric"}.get(name, name)
 
 
 def parameters(row):
-    return {**row.get("params", {}), **{key: value for key, value in row.items() if re.fullmatch(r"par[1-9]\d*", key)}}
+    params = canonical_surface_params(row.get("type", "standard"),
+                                      {**(row.get("params") or {}), **{key: value for key, value in row.items() if re.fullmatch(r"par[1-9]\d*", key)}})
+    if kind(row) in ("evenaspheric", "oddaspheric"):
+        unknown = [key for key in params if not re.fullmatch(r"par[1-9]\d*", key)]
+        if unknown:
+            raise unsupported(f"未登记非球面表头 {unknown}；请使用已核实的 parN 列号，不能忽略这些系数")
+    return params
 
 
 def geometry_kwargs(row):

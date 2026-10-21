@@ -1,0 +1,98 @@
+{
+  "title": "Double-Gauss 六片缩小物镜",
+  "units": "mm",
+  "aperture": {
+    "type": "entrance_pupil_diameter",
+    "value": 8.928571428571429
+  },
+  "object": {
+    "thickness": 486.5845
+  },
+  "fields": {
+    "type": "angle",
+    "y": [
+      0,
+      11.899999999999999,
+      17
+    ]
+  },
+  "wavelengths": {
+    "um": [
+      0.4861327,
+      0.5875618,
+      0.6562725
+    ],
+    "primary": 2
+  },
+  "catalogs": [
+    "HOYA"
+  ],
+  "surfaces": [
+    {
+      "radius": 29.863,
+      "thickness": 2.67,
+      "material": "LAC8",
+      "stop": false
+    },
+    {
+      "radius": 75.6383,
+      "thickness": 0.7584,
+      "material": "",
+      "stop": false
+    },
+    {
+      "radius": 11.756,
+      "thickness": 2.68,
+      "material": "LAC9",
+      "stop": false
+    },
+    {
+      "radius": 20.8345,
+      "thickness": 1.71,
+      "material": "FD15",
+      "stop": false
+    },
+    {
+      "radius": 9.5827,
+      "thickness": 5.1627,
+      "material": "",
+      "stop": false
+    },
+    {
+      "radius": "inf",
+      "thickness": 8.8292,
+      "material": "",
+      "stop": true
+    },
+    {
+      "radius": -11.0582,
+      "thickness": 1.31,
+      "material": "FEL4",
+      "stop": false
+    },
+    {
+      "radius": 99.1725,
+      "thickness": 3.9641,
+      "material": "BACD5",
+      "stop": false
+    },
+    {
+      "radius": -16.0504,
+      "thickness": 0.2547,
+      "material": "",
+      "stop": false
+    },
+    {
+      "radius": -229.5088,
+      "thickness": 2.4985,
+      "material": "LACL5",
+      "stop": false
+    },
+    {
+      "radius": -31.7189,
+      "thickness": 33.5779,
+      "material": "",
+      "stop": false
+    }
+  ]
+}

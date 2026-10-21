@@ -55,3 +55,16 @@ def test_two_stops_rejected():
     p["surfaces"][0]["stop"] = True
     with pytest.raises(SaosError):
         prescription.normalize(p)
+
+
+def test_asphere_headers_reach_optiland_without_changing_orders():
+    from saos.prescription import canonical_surface_params
+    from saos.backend.optiland_surfaces import geometry_kwargs
+    params = {"par2":1.2e-5, "6th Order Term":-3e-8}
+    assert canonical_surface_params("EvenAspheric",params) == {"par2":1.2e-5,"par3":-3e-8}
+    _, geometry = geometry_kwargs({"type":"EvenAspheric","params":params})
+    assert geometry["coefficients"] == [0,1.2e-5,-3e-8]
+    with pytest.raises(SaosError):
+        canonical_surface_params("EvenAspheric",{"par3":1,"6th Order Term":2})
+    with pytest.raises(SaosError):
+        canonical_surface_params("EvenAspheric",{"5th Order Term":1})

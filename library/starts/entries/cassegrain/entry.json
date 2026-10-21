@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "id": "cassegrain",
+  "form": "Cassegrain 双反射加四片校正",
+  "version": "2026-10-21",
+  "status": "sourced_unverified",
+  "source": {
+    "book": "Milton Laikin, Lens Design, 4th ed., CRC Press, 2007",
+    "page": 198,
+    "url": "https://optiland.readthedocs.io/en/stable/gallery/reflective/Cassegrain.html",
+    "review": {
+      "level": "secondary_transcription",
+      "original_pages_checked": false,
+      "note": "书目与页码来自 Optiland 转引；尚未取得原书页逐面核对。"
+    }
+  },
+  "metrics": {
+    "focal_length_mm": null,
+    "elements": 6,
+    "half_field_deg": 0.1951,
+    "f_number": 10
+  },
+  "applicability": {
+    "half_field_deg_max": 0.1951,
+    "f_number_min": 10,
+    "wavelength_um": [
+      0.55,
+      0.55
+    ],
+    "conjugate": "infinite"
+  },
+  "notes": [
+    "两反射镜、四块校正玻璃；单色示例。",
+    "原示例的中心孔半径 2 保留为 circular_obscuration；自动口径来自追迹，机械余量须按任务补充。"
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "title": "远摄",
+  "units": "mm",
+  "aperture": {
+    "type": "image_f_number",
+    "value": 5.6
+  },
+  "object": {
+    "thickness": "inf"
+  },
+  "fields": {
+    "type": "angle",
+    "y": [
+      0,
+      7.0,
+      10
+    ]
+  },
+  "wavelengths": {
+    "um": [
+      0.4861327,
+      0.5875618,
+      0.6562725
+    ],
+    "primary": 2
+  },
+  "catalogs": [
+    "SCHOTT"
+  ],
+  "surfaces": [
+    {
+      "radius": 21.81606,
+      "thickness": 6.0731399999999995,
+      "material": "N-BK7",
+      "stop": false
+    },
+    {
+      "radius": -68.33108,
+      "thickness": 2.2859999999999996,
+      "material": "N-BASF2",
+      "stop": false
+    },
+    {
+      "radius": 77.00771999999999,
+      "thickness": 1.2217399999999998,
+      "material": "",
+      "stop": false
+    },
+    {
+      "radius": "inf",
+      "thickness": 26.28138,
+      "material": "",
+      "stop": true
+    },
+    {
+      "radius": -14.5161,
+      "thickness": 2.2859999999999996,
+      "material": "N-ZK7",
+      "stop": false
+    },
+    {
+      "radius": -18.854419999999998,
+      "thickness": 2.5527,
+      "material": "N-LAF33",
+      "stop": false
+    },
+    {
+      "radius": -29.03982,
+      "thickness": 0.39624,
+      "material": "",
+      "stop": false
+    },
+    {
+      "radius": -432.78551999999996,
+      "thickness": 2.01422,
+      "material": "SF1",
+      "stop": false
+    },
+    {
+      "radius": -70.3453,
+      "thickness": 62.98184,
+      "material": "",
+      "stop": false
+    }
+  ]
+}

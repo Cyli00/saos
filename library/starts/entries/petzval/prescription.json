@@ -1,0 +1,86 @@
+{
+  "title": "Petzval",
+  "units": "mm",
+  "aperture": {
+    "type": "image_f_number",
+    "value": 1.4
+  },
+  "object": {
+    "thickness": "inf"
+  },
+  "fields": {
+    "type": "angle",
+    "y": [
+      0,
+      4.8999999999999995,
+      7
+    ]
+  },
+  "wavelengths": {
+    "um": [
+      0.4861327,
+      0.5875618,
+      0.6562725
+    ],
+    "primary": 2
+  },
+  "catalogs": [
+    "SCHOTT"
+  ],
+  "surfaces": [
+    {
+      "radius": 33.6931,
+      "thickness": 10.16,
+      "material": "N-LAK12",
+      "stop": false
+    },
+    {
+      "radius": -68.37425999999999,
+      "thickness": 1.5239999999999998,
+      "material": "",
+      "stop": false
+    },
+    {
+      "radius": -50.87112,
+      "thickness": 4.064,
+      "material": "SF4",
+      "stop": false
+    },
+    {
+      "radius": 138.42746,
+      "thickness": 2.54,
+      "material": "",
+      "stop": false
+    },
+    {
+      "radius": "inf",
+      "thickness": 22.85746,
+      "material": "",
+      "stop": true
+    },
+    {
+      "radius": 29.77896,
+      "thickness": 7.619999999999999,
+      "material": "N-LAK12",
+      "stop": false
+    },
+    {
+      "radius": -62.489079999999994,
+      "thickness": 5.64134,
+      "material": "",
+      "stop": false
+    },
+    {
+      "radius": -21.8821,
+      "thickness": 2.032,
+      "material": "LF5",
+      "stop": false
+    },
+    {
+      "radius": 76.29906,
+      "thickness": 9.95934,
+      "material": "",
+      "stop": false
+    }
+  ]
+}

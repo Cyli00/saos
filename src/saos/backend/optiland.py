@@ -779,7 +779,9 @@ class OptilandBackend(OpticalState, Backend):
         previous = self.__dict__.copy()
         try:
             self._store = MaterialStore(payload.get("materials") or {})
-            self.build(payload["prescription"])
+            from saos.prescription import snapshot_prescription
+
+            self.build(snapshot_prescription(payload["prescription"]))
             if payload.get("aiming") in ("paraxial", "iterative", "robust") and payload["aiming"] != self._aiming:
                 self._aiming = payload["aiming"]
                 self._sync_optical_state()

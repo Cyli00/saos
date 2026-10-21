@@ -1,0 +1,92 @@
+{
+  "title": "反远摄五片",
+  "units": "mm",
+  "aperture": {
+    "type": "image_f_number",
+    "value": 3.5
+  },
+  "object": {
+    "thickness": "inf"
+  },
+  "fields": {
+    "type": "angle",
+    "y": [
+      0,
+      9.975,
+      14.25
+    ]
+  },
+  "wavelengths": {
+    "um": [
+      0.4799,
+      0.5461,
+      0.6438
+    ],
+    "primary": 2
+  },
+  "catalogs": [
+    "SCHOTT"
+  ],
+  "surfaces": [
+    {
+      "radius": -56.675019999999996,
+      "thickness": 2.4384,
+      "material": "PK50",
+      "stop": false
+    },
+    {
+      "radius": 11.81862,
+      "thickness": 7.848599999999999,
+      "material": "",
+      "stop": false
+    },
+    {
+      "radius": 14.28496,
+      "thickness": 2.9972,
+      "material": "SF1",
+      "stop": false
+    },
+    {
+      "radius": 13.69568,
+      "thickness": 2.1336,
+      "material": "",
+      "stop": false
+    },
+    {
+      "radius": 49.34458,
+      "thickness": 7.289799999999999,
+      "material": "LF4",
+      "stop": false
+    },
+    {
+      "radius": -32.76092,
+      "thickness": 3.9115999999999995,
+      "material": "",
+      "stop": false
+    },
+    {
+      "radius": "inf",
+      "thickness": 2.1082,
+      "material": "",
+      "stop": true
+    },
+    {
+      "radius": "inf",
+      "thickness": 1.8033999999999997,
+      "material": "SF1",
+      "stop": false
+    },
+    {
+      "radius": 17.37614,
+      "thickness": 5.4356,
+      "material": "LAK21",
+      "stop": false
+    },
+    {
+      "radius": -23.75408,
+      "thickness": 53.91403999999999,
+      "material": "",
+      "stop": false
+    }
+  ]
+}

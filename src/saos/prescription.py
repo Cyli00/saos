@@ -200,6 +200,55 @@ def normalize_material(value: Any, name: str) -> Any:
     raise _bad(f"{name} has a malformed material: {value!r}")
 
 
+def asphere_parameter_order(surface_type: str, key: str) -> int | None:
+    kind = re.sub(r"[ _-]", "", surface_type).lower()
+    if kind not in ("evenaspheric", "oddaspheric", "evenasphere", "oddasphere"):
+        return None
+    text = key.lower().replace(" ", "")
+    par = re.fullmatch(r"par([1-9][0-9]*)", text)
+    header = re.fullmatch(r"([1-9][0-9]*)(?:st|nd|rd|th)orderterm", text)
+    if par:
+        return int(par[1]) * (2 if kind.startswith("even") else 1)
+    if header:
+        order = int(header[1])
+        if kind.startswith("even") and order % 2:
+            raise _bad(f"{surface_type}: 偶次非球面不支持 {key}")
+        return order
+    return None
+
+
+def canonical_surface_params(surface_type: str, values: dict[str, Any], *, allow_equal_aliases: bool = False) -> dict[str, Any]:
+    kind = re.sub(r"[ _-]", "", surface_type).lower()
+    result = {}
+    for key, value in values.items():
+        order = asphere_parameter_order(surface_type, key)
+        if kind in ("evenaspheric", "oddaspheric", "evenasphere", "oddasphere"):
+            if order is not None:
+                value = _finite(value, f"{surface_type}.{key}")
+        name = f"par{order // 2 if kind.startswith('even') else order}" if order is not None else key
+        if name in result:
+            if allow_equal_aliases and result[name] == value:
+                continue
+            raise _bad(f"{surface_type}: {name} 被列号和表头名重复指定；请在新的处方副本中保留一个明确系数")
+        result[name] = value
+    return result
+
+
+def snapshot_prescription(data: dict[str, Any]) -> dict[str, Any]:
+    """只在快照原始字节通过哈希校验后，兼容内存副本中的同值别名；不改写存档。"""
+    import copy
+
+    out = copy.deepcopy(data)
+    for name, surface in [("object", out.get("object")), ("image", out.get("image")),
+                          *((f"surfaces[{i}]", s) for i, s in enumerate(out.get("surfaces", [])))]:
+        if surface and surface.get("params"):
+            try:
+                surface["params"] = canonical_surface_params(surface.get("type", "standard"), surface["params"], allow_equal_aliases=True)
+            except SaosError as exc:
+                raise SaosError(exc.code, f"存档处方 {name}：{exc.message}", {"surface": name, "phase": "snapshot_parameters"}) from exc
+    return out
+
+
 def _params(value: Any, name: str) -> dict[str, Any]:
     """面型参数：键为 par<N> 或 OpticStudio 的列标题，按给出的顺序写入（有的面型先要写项数，后面的列才出现）。"""
     out: dict[str, Any] = {}
@@ -342,7 +391,7 @@ def _surface(s: Any, name: str, image: bool = False) -> dict[str, Any]:
     if s.get("mech_semi_diameter") is not None:
         item["mech_semi_diameter"] = _size(s["mech_semi_diameter"], f"{name}.mech_semi_diameter")
     if s.get("params"):
-        item["params"] = _params(s["params"], f"{name}.params")
+        item["params"] = canonical_surface_params(kind, _params(s["params"], f"{name}.params"))
     if s.get("decenter_tilt"):
         item["decenter_tilt"] = _decenter_tilt(s["decenter_tilt"], f"{name}.decenter_tilt")
     if s.get("aperture"):
@@ -1029,6 +1078,12 @@ Surfaces and image
     one), semi_diameter (fixed if given, otherwise automatic), mech_semi_diameter
     (part outer edge used by interference checks), material, coating.
   material: catalog name, MIRROR, or {"model": {"nd": 1.5, "vd": 60, "dpgf": 0}}.
+  EvenAspheric: par2 is the fourth-order term; par3 and "6th Order Term"
+  both mean the sixth-order term. OddAsphere par1..par8 mean orders 1..8.
+  Unknown headers remain available for ZOS column lookup; Optiland rejects
+  unsupported headers explicitly. New inputs reject duplicate aliases.
+  Hash-verified snapshots merge equal aliases in memory only; conflicting
+  values require a new, unambiguous prescription copy.
   params: {"par2": 1e-5, "6th Order Term": -3e-8}. Keys are Par column numbers or
     case-insensitive column headers; values follow the cell's number/integer/text
     type. Entries are applied in order (some types expose columns after setting

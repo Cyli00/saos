@@ -1,0 +1,85 @@
+{
+  "title": "Cassegrain 双反射加四片校正",
+  "units": "mm",
+  "aperture": {
+    "type": "image_f_number",
+    "value": 10
+  },
+  "object": {
+    "thickness": "inf"
+  },
+  "fields": {
+    "type": "angle",
+    "y": [
+      0,
+      0.13657,
+      0.1951
+    ]
+  },
+  "wavelengths": {
+    "um": [
+      0.55
+    ],
+    "primary": 1
+  },
+  "catalogs": [
+    "SCHOTT"
+  ],
+  "surfaces": [
+    {
+      "radius": -102.364,
+      "thickness": -37.8137,
+      "material": "MIRROR",
+      "stop": true,
+      "conic": -1.075613,
+      "aperture": {
+        "type": "circular_obscuration",
+        "min": 0,
+        "max": 2
+      }
+    },
+    {
+      "radius": -35.3325,
+      "thickness": 48.8327,
+      "material": "MIRROR",
+      "stop": false,
+      "conic": -3.376732
+    },
+    {
+      "radius": 23.5556,
+      "thickness": 0.25,
+      "material": "N-SK16",
+      "stop": false
+    },
+    {
+      "radius": 97.0299,
+      "thickness": 0.36,
+      "material": "LF5",
+      "stop": false
+    },
+    {
+      "radius": -8.4651,
+      "thickness": 0.3492,
+      "material": "",
+      "stop": false
+    },
+    {
+      "radius": -6.0339,
+      "thickness": 0.25,
+      "material": "LLF1",
+      "stop": false
+    },
+    {
+      "radius": 2.3002,
+      "thickness": 0.5,
+      "material": "LF5",
+      "stop": false
+    },
+    {
+      "radius": 8.5504,
+      "thickness": 5.4581,
+      "material": "",
+      "stop": false
+    }
+  ]
+}
