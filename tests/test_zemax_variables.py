@@ -1,28 +1,25 @@
-"""变量类型在真实 OpticStudio 2024 R1 上的回归：面型参数列 par<N>、模型玻璃、目录内替换、非轴对称判断。
+"""变量类型在真实 OpticStudio 2024 R1 上的回归：面型参数列 par<N>、模型玻璃、目录内替换、非轴对称判断，
+以及 3 个 worker 并发与主实例逐个计算的一致性。
 
+迁移说明（A3）：旧版从 SAOS_BACKEND=zos 直接启动守护进程并导入 Cooke 样例（该入口已按设计拒绝）。现在在经用户认可
+进入的 OpticStudio 会话上执行同样的断言；样品为两片玻璃（N-BK7 与 N-SF2），替代旧版的 Cooke 样例。
 默认跳过。运行：SAOS_RUN_ZEMAX=1 uv run pytest tests/test_zemax_variables.py -s
-用 standalone 实例（不弹窗口），任务目录放在临时 SAOS_HOME 下。
 """
 
 from __future__ import annotations
 
-import json
 import os
-import subprocess
-import sys
-from pathlib import Path
 
 import pytest
 
 from saos import glasscat
 from saos.protocol import ErrorCode
+from zemax_support import accepted_session
 
 pytestmark = [
     pytest.mark.zemax,
     pytest.mark.skipif(os.environ.get("SAOS_RUN_ZEMAX") != "1", reason="需要真实 OpticStudio，设置 SAOS_RUN_ZEMAX=1"),
 ]
-
-SAMPLE = Path.home() / "Documents/Zemax/Samples/Sequential/Objectives/Cooke 40 degree field.zmx"
 
 ASPHERE = """
 def run(ctx):
@@ -45,77 +42,72 @@ def run(ctx):
     return {"before": before, "after": bool(ctx.system.IsNonAxial), "mode": str(ctx.system.Mode)}
 """
 
+CATALOGS = """
+def run(ctx):
+    return [str(c) for c in ctx.system.SystemData.MaterialCatalogs.GetCatalogsInUse() if str(c)]
+"""
 
-def saos(*args, env):
-    proc = subprocess.run([sys.executable, "-m", "saos", *map(str, args)], capture_output=True, env=env, timeout=300)
-    out = json.loads(proc.stdout.decode("utf-8"))
-    print(f"saos {' '.join(map(str, args))} -> {'ok' if out['ok'] else out['error']['code']}")
-    return out
+MODEL = """
+def run(ctx):
+    m = ctx.system.LDE.GetSurfaceAt({surface}).MaterialCell.GetSolveData()._S_MaterialModel
+    return {{'nd': m.IndexNd, 'vd': m.AbbeVd, 'vary': [m.VaryIndex, m.VaryAbbe]}}
+"""
 
 
-def ok(out):
-    assert out["ok"], out
-    return out["result"]
+def ok(reply):
+    assert reply["ok"], reply
+    return reply["result"]
 
 
-def test_variable_kinds(tmp_path):
-    env = {**os.environ, "SAOS_HOME": str(tmp_path / "home"), "SAOS_BACKEND": "zos"}
-    ok(saos("daemon", "start", env=env))
-    try:
-        job = ok(saos("job", "create", "--name", "vars", env=env))["job"]
-        ok(saos("lens", "import", "--job", job, SAMPLE, "--as", "cooke.zmx", env=env))
-        ok(saos("lens", "load", "--job", job, "cooke.zmx", env=env))
-        surfaces = ok(saos("lens", "surfaces", "--job", job, env=env))["surfaces"]
-        glass = next(s for s in surfaces if s["material"] and s["index"] > 0)
+def script(daemon, job, source, name="probe", **args):
+    """运行脚本，返回脚本的返回值。 / Run a script and return its value."""
+    return ok(daemon.handle({"op": "script.exec", "args": {"job": job.id, "name": name, "source": source, "args": args}}))["result"]
 
-        # 模型玻璃：起点取目录玻璃的 nd、νd；--off 保留数值、停止变化
-        varied = ok(saos("opt", "vary", "--job", job, "--param", "material", "--mode", "model", "--surfaces", glass["index"], env=env))
+
+def test_variable_kinds_on_the_accepted_lens(tmp_path, monkeypatch):
+    with accepted_session(tmp_path / "home", monkeypatch, "kinds") as (daemon, job, _):
+        surfaces = ok(daemon.handle({"op": "lens.surfaces", "args": {"job": job.id}}))["surfaces"]
+        glass = next(s for s in surfaces if s["material"] and s["index"] > 0)  # N-BK7
+
+        # 模型玻璃：起点取目录玻璃的 nd、νd；--off 保留数值、停止变化 / model glass starts from the catalog glass's nd and Vd
+        varied = ok(daemon.handle({"op": "opt.vary", "args": {"job": job.id, "param": "material", "mode": "model", "surfaces": [glass["index"]]}}))
         assert list(varied["solves"].values()) == ["MaterialModel"]
-        script = tmp_path / "model.py"
-        script.write_text(f"def run(ctx):\n    m = ctx.system.LDE.GetSurfaceAt({glass['index']}).MaterialCell.GetSolveData()._S_MaterialModel\n"
-                          "    return {'nd': m.IndexNd, 'vd': m.AbbeVd, 'vary': [m.VaryIndex, m.VaryAbbe]}\n", encoding="utf-8")
-        model = ok(saos("exec", script, "--job", job, env=env))["result"]
+        model_src = MODEL.format(surface=glass["index"])
+        model = script(daemon, job, model_src, "model")
         assert 1.4 < model["nd"] < 2.1 and 15 < model["vd"] < 100 and model["vary"] == [True, True], model
-        ok(saos("opt", "vary", "--job", job, "--param", "material", "--surfaces", glass["index"], "--off", env=env))
-        fixed = ok(saos("exec", script, "--job", job, env=env))["result"]
+        ok(daemon.handle({"op": "opt.vary", "args": {"job": job.id, "param": "material", "surfaces": [glass["index"]], "on": False}}))
+        fixed = script(daemon, job, model_src, "model_fixed")
         assert fixed["nd"] == pytest.approx(model["nd"]) and fixed["vary"] == [False, False]
+
         # 替换：不给 --catalog 时用在产目录；对空气面报错且不改在用目录，成功时才把目录加进去
-        # substitution: the in-production catalog by default; an air surface fails without touching the catalogs in use
         air = next(s for s in surfaces if not s["material"] and 0 < s["index"] < len(surfaces) - 1)
-        catalogs = tmp_path / "catalogs.py"
-        catalogs.write_text("def run(ctx):\n    return [str(c) for c in ctx.system.SystemData.MaterialCatalogs.GetCatalogsInUse() if str(c)]\n",
-                            encoding="utf-8")
-        before = ok(saos("exec", catalogs, "--job", job, env=env))["result"]
-        assert saos("opt", "vary", "--job", job, "--param", "material", "--mode", "substitute", "--surfaces", air["index"], env=env)["error"]["code"] == ErrorCode.BAD_ARGS
-        assert ok(saos("exec", catalogs, "--job", job, env=env))["result"] == before
-        sub = ok(saos("opt", "vary", "--job", job, "--param", "material", "--mode", "substitute", "--surfaces", glass["index"], env=env))
+        before = script(daemon, job, CATALOGS, "catalogs")
+        refused = daemon.handle({"op": "opt.vary", "args": {"job": job.id, "param": "material", "mode": "substitute", "surfaces": [air["index"]]}})
+        assert refused["error"]["code"] == ErrorCode.BAD_ARGS
+        assert script(daemon, job, CATALOGS, "catalogs") == before
+        sub = ok(daemon.handle({"op": "opt.vary", "args": {"job": job.id, "param": "material", "mode": "substitute", "surfaces": [glass["index"]]}}))
         assert list(sub["solves"].values()) == ["MaterialSubstitute"]
         assert sub["outside_catalog"] == []  # 这一面现在是模型玻璃，不是哪家的牌号 / a model glass belongs to no maker
         if (glasscat.DEFAULT_GLASSCAT_DIR / "SAOS_CDGM_INPROD.AGF").is_file():
-            assert sub["catalog"] == "SAOS_CDGM_INPROD" and "SAOS_CDGM_INPROD" in ok(saos("exec", catalogs, "--job", job, env=env))["result"]
-            # Cooke 的其他玻璃是 SCHOTT 牌号，不在成都光明的目录里 / Cooke's other SCHOTT glasses are not in CDGM's catalog
+            assert sub["catalog"] == "SAOS_CDGM_INPROD" and "SAOS_CDGM_INPROD" in script(daemon, job, CATALOGS, "catalogs")
+            # 第 3 面 N-SF2 是 SCHOTT 牌号，不在成都光明的目录里 / N-SF2 (SCHOTT) is not in CDGM's catalog
             other = next(s for s in surfaces if s["material"] and s["index"] > glass["index"])
-            sub = ok(saos("opt", "vary", "--job", job, "--param", "material", "--mode", "substitute", "--surfaces", other["index"], env=env))
+            sub = ok(daemon.handle({"op": "opt.vary", "args": {"job": job.id, "param": "material", "mode": "substitute", "surfaces": [other["index"]]}}))
             assert sub["outside_catalog"] == [{"surface": other["index"], "material": other["material"]}] and "note" in sub, sub
-        assert saos("opt", "vary", "--job", job, "--param", "material", "--mode", "model", "--surfaces", air["index"], env=env)["error"]["code"] == ErrorCode.BAD_ARGS
+        assert daemon.handle({"op": "opt.vary", "args": {"job": job.id, "param": "material", "mode": "model", "surfaces": [air["index"]]}})["error"]["code"] \
+            == ErrorCode.BAD_ARGS
 
-        # 面型参数列：偶次非球面的系数可以写入、读回、设为变量；没有的列报错
-        script = tmp_path / "asphere.py"
-        script.write_text(ASPHERE, encoding="utf-8")
-        headers = ok(saos("exec", script, "--job", job, env=env))["result"]
-        print("EvenAspheric headers:", headers)
-        set_ = ok(saos("lens", "set", "--job", job, "--surface", 1, "--param", "par2", "--value", 1e-6, env=env))
+        # 面型参数列：偶次非球面的系数可以写入、读回、设为变量；没有的列报错 / asphere coefficients: write, read back, vary; missing columns refused
+        headers = script(daemon, job, ASPHERE, "asphere")
+        assert set(headers) == {1, 2, 3}, headers
+        set_ = ok(daemon.handle({"op": "lens.set", "args": {"job": job.id, "surface": 1, "param": "par2", "value": 1e-6}}))
         assert set_["after"] == pytest.approx(1e-6) and set_["before"] == 0.0
-        assert ok(saos("opt", "vary", "--job", job, "--param", "par2", "--surfaces", 1, env=env))["solves"] == {"1": "Variable"}
-        assert saos("lens", "set", "--job", job, "--surface", 2, "--param", "par2", "--value", 1, env=env)["error"]["code"] == ErrorCode.BAD_ARGS
+        assert ok(daemon.handle({"op": "opt.vary", "args": {"job": job.id, "param": "par2", "surfaces": [1]}}))["solves"] == {1: "Variable"}
+        assert daemon.handle({"op": "lens.set", "args": {"job": job.id, "surface": 2, "param": "par2", "value": 1}})["error"]["code"] == ErrorCode.BAD_ARGS
 
-        # 插入带倾斜的坐标断点后系统变为非轴对称，剖面图窗口据此改用 3D
-        script = tmp_path / "fold.py"
-        script.write_text(FOLD, encoding="utf-8")
-        fold = ok(saos("exec", script, "--job", job, env=env))["result"]
+        # 插入带倾斜的坐标断点后系统变为非轴对称，剖面图窗口据此改用 3D / a tilted break makes the system non-axial
+        fold = script(daemon, job, FOLD, "fold")
         assert fold == {"before": False, "after": True, "mode": "Sequential"}, fold
-    finally:
-        ok(saos("daemon", "stop", "--discard", env=env))
 
 
 WORK = """
@@ -128,7 +120,7 @@ ONE = """
 def run(ctx):
     ctx.backend.set_surface(1, "radius", ctx.args["r"])
     value = ctx.backend.operand("RSCE", 6, 0, [0.0, 1.0])
-    ctx.load("cooke.zmx")
+    ctx.load(ctx.args["lens"])
     return value
 """
 
@@ -138,26 +130,17 @@ def run(ctx):
 """
 
 
-def test_parallel_matches_the_main_instance(tmp_path):
-    """3 个 standalone worker 并发算出的 RSCE 与主实例逐个算的相同。"""
-    env = {**os.environ, "SAOS_HOME": str(tmp_path / "home"), "SAOS_BACKEND": "zos"}
-    ok(saos("daemon", "start", env=env))
-    try:
-        job = ok(saos("job", "create", "--name", "par", env=env))["job"]
-        ok(saos("lens", "import", "--job", job, SAMPLE, "--as", "cooke.zmx", env=env))
-        ok(saos("lens", "load", "--job", job, "cooke.zmx", env=env))
-        r0 = ok(saos("lens", "surfaces", "--job", job, env=env))["surfaces"][1]["radius"]
+def test_parallel_matches_the_main_instance_on_the_accepted_lens(tmp_path, monkeypatch):
+    """3 个 standalone worker 并发算出的 RSCE 与主实例逐个算的相同。 / Three standalone workers match the main instance one by one."""
+    with accepted_session(tmp_path / "home", monkeypatch, "parallel") as (daemon, job, _):
+        lens = "zos-entry.zmx"
+        r0 = ok(daemon.handle({"op": "lens.surfaces", "args": {"job": job.id}}))["surfaces"][1]["radius"]
         radii = [r0 * (1 + 0.002 * k) for k in range(30)]
-        explore = tmp_path / "home" / "jobs" / job / "explore"
-        explore.mkdir(parents=True)
+        explore = job.root / "explore"
+        explore.mkdir(parents=True, exist_ok=True)
         (explore / "work.py").write_text(WORK, encoding="utf-8")
-        for name, text in (("scan.py", SCAN), ("one.py", ONE)):
-            (tmp_path / name).write_text(text, encoding="utf-8")
-        res = ok(saos("exec", tmp_path / "scan.py", "--job", job, "--arg", f"radii={json.dumps(radii)}", "--timeout", 600, env=env))["result"]
-        print("workers:", res["workers"], "elapsed:", res["elapsed_s"])
+        res = script(daemon, job, SCAN, "scan", radii=radii)
         assert res["workers_available"] >= 1 and not res["errors"] and not res["not_run"]
         for k in (0, 17, 29):
-            single = ok(saos("exec", tmp_path / "one.py", "--job", job, "--arg", f"r={radii[k]}", env=env))["result"]
+            single = script(daemon, job, ONE, f"one{k}", r=radii[k], lens=lens)
             assert res["results"][k] == pytest.approx(single, rel=1e-12), (k, res["results"][k], single)
-    finally:
-        ok(saos("daemon", "stop", "--discard", env=env))

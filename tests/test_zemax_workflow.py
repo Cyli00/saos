@@ -1,137 +1,60 @@
-"""通用工作流的真实回归：改镜头数据 → 取光学指标 → 分析 → 下一轮 → 达成或无法再优化 → HTML 报告。
+"""通用工作流在 OpticStudio 阶段的真实回归：认可之后，在 OpticStudio 里改镜头 → 局部优化 → 记轮次 → 报告只选 ZOS 轮次。
+
+迁移说明（A3）：旧版从 SAOS_BACKEND=zos 直接启动守护进程并导入 Cooke 样例。该入口已按设计拒绝（OpticStudio 只能经
+zos begin 进入）。现在从 Optiland 搭建的两片样品开始，经用户认可进入 OpticStudio；保留原来的 EFFL 不超 1 % 与光斑下降断言。
+旧版的第二段（无法再优化 → exhausted，含 Hammer 与全局搜索）未迁移，见计划第 13 节。
 
 默认跳过。运行：SAOS_RUN_ZEMAX=1 uv run pytest tests/test_zemax_workflow.py -s
 """
 
 from __future__ import annotations
 
-import json
 import os
-import subprocess
-import sys
-from pathlib import Path
 
 import pytest
-import yaml
+
+from saos import ledger, report
+from zemax_support import accepted_session
 
 pytestmark = [
     pytest.mark.zemax,
     pytest.mark.skipif(os.environ.get("SAOS_RUN_ZEMAX") != "1", reason="需要真实 OpticStudio，设置 SAOS_RUN_ZEMAX=1"),
 ]
 
-SAMPLE = Path.home() / "Documents/Zemax/Samples/Sequential/Objectives/Cooke 40 degree field.zmx"
 
-def saos(*args, env):
-    proc = subprocess.run([sys.executable, "-m", "saos", *map(str, args)], capture_output=True, env=env, timeout=600)
-    out = json.loads(proc.stdout.decode("utf-8"))
-    print(f"saos {' '.join(map(str, args))[:110]} -> {'ok' if out['ok'] else out['error']['code']}")
-    return out
+def ok(reply):
+    assert reply["ok"], reply
+    return reply["result"]
 
 
-def ok(out):
-    assert out["ok"], out
-    return out["result"]
+def test_accepted_design_is_improved_in_opticstudio_and_reported(tmp_path, monkeypatch):
+    with accepted_session(tmp_path / "home", monkeypatch, "workflow") as (daemon, job, entry):
+        assert entry["source_round"] == 0
+        f0 = ok(daemon.handle({"op": "lens.operand", "args": {"job": job.id, "type": "EFFL", "int2": 2}}))["value"]
+        spot0 = ok(daemon.handle({"op": "lens.analysis", "args": {"job": job.id, "type": "StandardSpot"}}))["spot"]["rms_radius"][0][0]
 
+        # 放开全部曲率，RMS 光斑为评价函数并约束焦距，在 OpticStudio 中做阻尼最小二乘 / radii free, RMS spot merit held to f0
+        ok(daemon.handle({"op": "opt.vary", "args": {"job": job.id, "param": "radius", "surfaces": [1, 2, 3, 4]}}))
+        ok(daemon.handle({"op": "opt.merit", "args": {"job": job.id, "action": "wizard",
+                                                       "settings": {"type": "RMS", "data": "Spot Radius", "reference": "Centroid"}}}))
+        ok(daemon.handle({"op": "opt.merit", "args": {"job": job.id, "action": "add",
+                                                       "rows": [{"type": "EFFL", "int2": 2, "target": f0, "weight": 10}]}}))
+        ok(daemon.handle({"op": "opt.local", "args": {"job": job.id, "algorithm": "dls"}}))
+        decision = ok(daemon.handle({"op": "round.record", "args": {"job": job.id, "tier": "local", "note": "radii + DLS in OpticStudio"}}))["decision"]
 
-def write_demand(home, job, data, quote):
-    (home / "jobs" / job / "sources" / "demand.yaml").write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
-    ok(saos("demand", "confirm", "--job", job, "--quote", quote, env={**os.environ, "SAOS_HOME": str(home), "SAOS_UI": "0"}))
+        # OpticStudio 阶段的轮次都有 verify 基线：第一轮 verify_of 指向认可的轮次 / every ZOS-stage round follows the verify baseline
+        rows = ledger.load(job.root / ledger.LEDGER_FILE)
+        zos_rows = [r for r in rows if r.get("stage") == "zos"]
+        assert zos_rows[0]["verify_of"] == entry["source_round"] and zos_rows[0]["tier"] == "verify"
+        assert zos_rows[-1]["round"] == rows[-1]["round"] and rows[-1]["stage"] == "zos"
 
+        # EFFL 保持在 1 % 之内；光斑 RMS 从验证基线下降 / EFFL held within 1 %; spot RMS falls from the verified baseline
+        effl = ok(daemon.handle({"op": "lens.operand", "args": {"job": job.id, "type": "EFFL", "int2": 2}}))["value"]
+        assert effl == pytest.approx(f0, rel=0.01)
+        spot = ok(daemon.handle({"op": "lens.analysis", "args": {"job": job.id, "type": "StandardSpot"}}))["spot"]["rms_radius"][0][0]
+        assert spot < spot0 and decision["status"] in ("achieved", "continue")
 
-def test_workflow_until_achieved_or_exhausted_with_reports(saos_home, tmp_path):
-    env = {**os.environ, "SAOS_HOME": str(saos_home), "SAOS_BACKEND": "zos"}
-    ok(saos("daemon", "start", env=env))
-    try:
-        job = ok(saos("job", "create", "--name", "cooke", env=env))["job"]
-        ok(saos("lens", "import", "--job", job, SAMPLE, "--as", "sample.zmx", env=env))
-        ok(saos("lens", "load", "--job", job, "sample.zmx", env=env))
-        f0 = ok(saos("lens", "operand", "--job", job, "EFFL", env=env))["value"]
-        spot0 = ok(saos("lens", "analysis", "--job", job, "StandardSpot", env=env))["spot"]["rms_radius"][0][1]
-
-        # 改镜头数据：扰动两个曲率，存为起点
-        surfaces = ok(saos("lens", "surfaces", "--job", job, env=env))["surfaces"]
-        ok(saos("lens", "set", "--job", job, "--surface", 1, "--param", "radius", "--value", surfaces[1]["radius"] * 1.04, env=env))
-        ok(saos("lens", "set", "--job", job, "--surface", 4, "--param", "radius", "--value", surfaces[4]["radius"] * 0.96, env=env))
-        ok(saos("lens", "save", "--job", job, "--as", "start.zmx", env=env))
-
-        write_demand(saos_home, job, {
-            "schema": 2,
-            "constants": [{"id": "efl", "description": "effective focal length", "check": {"operand": {"type": "EFFL"}},
-                           "goal": {"equals": f0, "tol": 0.01 * f0}, "source": "user: keep the original focal length within 1 %"},
-                          {"id": "system", "description": "the sample's fields and wavelengths", "value": "as in the sample", "source": "agent assumption: not discussed"}],
-            "variables": [{"id": "radii_thickness", "description": "radii and thicknesses are free"}],
-            "objectives": [
-                {"id": "spot_axis", "description": "on-axis RMS spot radius (um), primary wave",
-                 "check": {"analysis": {"type": "StandardSpot", "path": "spot.rms_radius[0][1]"}}, "origin": "user", "must": {"max": 1.5 * spot0},
-                 "source": "user: no worse than 50 % above the original design"},
-                {"id": "track", "description": "total track", "check": {"operand": {"type": "TOTR"}}, "origin": "agent"},
-            ],
-            "summary": "焦距保持原样（±1%），轴上像点尽量小，不比原设计差 50% 以上。发现任何这个demand可能存在的问题，要大胆质疑和询问。",
-            "stop": {"rel": 0.01, "max_rounds": 8, "tiers": ["local", "variables", "global"]},
-        }, "可以，按这个做")
-        # 模型确认：没有确认过的建模说明不能记录轮次 / model gate: no rounds before an approved description
-        assert saos("round", "--job", job, env=env)["error"]["code"] == "MODEL_NOT_APPROVED"
-        notes = tmp_path / "notes.json"
-        notes.write_text(json.dumps({"surfaces": {str(i): f"surface {i} of the sample" for i in range(len(surfaces))},
-                                     "assumptions": ["sample lens"], "first_order": ["focal length as designed"]}), encoding="utf-8")
-        described = ok(saos("lens", "describe", "--job", job, "--notes", notes, env=env))
-        ok(saos("lens", "approve", "--job", job, "--model", described["folder"], "--quote", "模型没问题", env=env))
-        r0 = ok(saos("round", "--job", job, "--note", "perturbed start", env=env))
-        assert all(m["kind"] == "catalog" for m in r0["record"]["materials"]) and r0["record"]["model_glass"] == []
-        assert r0["record"]["tier"] == "baseline" and not r0["record"]["achieved"]
-
-        # 下一轮调试：放开曲率，评价函数为 RMS 光斑并约束焦距，局部优化
-        ok(saos("opt", "vary", "--job", job, "--param", "radius", "--surfaces", "1-6", env=env))
-        settings = tmp_path / "wizard.json"
-        settings.write_text(json.dumps({"type": "RMS", "data": "Spot Radius", "reference": "Centroid"}), encoding="utf-8")
-        ok(saos("opt", "merit", "--job", job, "wizard", "--file", settings, env=env))
-        rows = tmp_path / "rows.json"
-        rows.write_text(json.dumps([{"type": "EFFL", "int2": 2, "target": f0, "weight": 10}]), encoding="utf-8")
-        ok(saos("opt", "merit", "--job", job, "add", "--file", rows, env=env))
-        ok(saos("opt", "local", "--job", job, env=env))
-        decision = ok(saos("round", "--job", job, "--tier", "local", "--note", "radii + DLS", env=env))["decision"]
-        if decision["status"] != "achieved":
-            ok(saos("opt", "vary", "--job", job, "--param", "thickness", "--surfaces", "1-5", env=env))
-            ok(saos("opt", "local", "--job", job, env=env))
-            decision = ok(saos("round", "--job", job, "--tier", "variables", "--note", "+ thickness", env=env))["decision"]
-        assert decision["status"] == "achieved", decision
-        rep = ok(saos("report", "--job", job, env=env))
-        html = Path(rep["report"]).read_text(encoding="utf-8")
-        assert rep["status"] == "achieved" and "达成" in html and "StandardSpot" in html and "EFFL" in html
-
-        # 无法再优化：只放开曲率，总长 ≤ 1 mm 永远改变不了；逐级用完允许的手段后判停
-        job2 = ok(saos("job", "create", "--name", "impossible", env=env))["job"]
-        ok(saos("lens", "import", "--job", job2, saos_home / "jobs" / job / "lenses" / rep["deliver"], "--as", "start.zmx", env=env))
-        ok(saos("lens", "load", "--job", job2, "start.zmx", "--discard", env=env))
-        write_demand(saos_home, job2, {
-            "schema": 2,
-            "objectives": [{"id": "track", "description": "total track", "check": {"operand": {"type": "TOTR"}}, "origin": "user", "must": {"max": 1.0},
-                            "source": "user: an unreachable track to force the exhausted ending"}],
-            "summary": "总长做到 1 mm 以内。发现任何这个demand可能存在的问题，要大胆质疑和询问。",
-            "stop": {"rel": 0.01, "max_rounds": 10, "tiers": ["local", "global"]},
-        }, "试试看")
-        described = ok(saos("lens", "describe", "--job", job2, "--notes", notes, env=env))
-        ok(saos("lens", "approve", "--job", job2, "--model", described["folder"], "--quote", "同一个模型", env=env))
-        ok(saos("round", "--job", job2, env=env))
-        ok(saos("opt", "vary", "--job", job2, "--param", "radius", "--surfaces", "1-6", env=env))
-        ok(saos("opt", "merit", "--job", job2, "wizard", "--file", settings, env=env))
-        ok(saos("opt", "local", "--job", job2, env=env))
-        d1 = ok(saos("round", "--job", job2, "--tier", "local", env=env))["decision"]
-        assert d1["status"] == "continue" and d1["next_tier"] == "global"
-        # 全局层级：Hammer 与全局搜索都不会自己结束，按 --max-seconds 中断；运行中写在镜头旁的系统移进 lenses/<kind>/NNN/
-        lens_dir = saos_home / "jobs" / job2 / "lenses"
-        hammer = ok(saos("opt", "hammer", "--job", job2, "--max-seconds", 5, env=env))
-        assert hammer["stopped_by"] == "timeout" and hammer["systems"] > 0
-        assert hammer["final_merit"] <= hammer["initial_merit"] + 1e-12
-        found = ok(saos("opt", "global", "--job", job2, "--max-seconds", 5, env=env))
-        assert found["stopped_by"] == "timeout" and found["final_merit"] == found["best_merits"][0]
-        assert found["files"] and all(f.startswith("global/001/GLOPT_") for f in found["files"]), found["files"]
-        assert not list(lens_dir.glob("GLOPT_*")) and not list(lens_dir.glob("*_HAMMER.zmx"))
-        d2 = ok(saos("round", "--job", job2, "--tier", "global", "--note", "Hammer 5 s + global search 5 s", env=env))["decision"]
-        assert d2["status"] == "exhausted", d2
-        assert saos("round", "--job", job2, "--tier", "local", env=env)["error"]["code"] == "BAD_ARGS"
-        rep2 = ok(saos("report", "--job", job2, env=env))
-        html2 = Path(rep2["report"]).read_text(encoding="utf-8")
-        assert rep2["status"] == "exhausted" and "无法再优化" in html2 and "超出" in html2
-    finally:
-        ok(saos("daemon", "stop", "--discard", env=env))
+        # 报告只选 OpticStudio 阶段的合资格轮次 / the report selects only deliverable OpticStudio-stage rounds
+        generated = report.write(job)
+        assert generated["deliverable"] is True and generated["deliver"], generated
+        assert any(r["file"] == generated["deliver"] and r.get("stage") == "zos" for r in rows), generated["deliver"]
