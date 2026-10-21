@@ -99,7 +99,7 @@ def test_viz_failure_never_undoes_the_round(flow, monkeypatch):
     folder = call(daemon, "lens.describe", job=job.id, notes=NOTES)["result"]["folder"]
     call(daemon, "lens.approve", job=job.id, model=folder, quote="可以")
 
-    def broken(folder):
+    def broken(folder, **kwargs):
         raise RuntimeError("ray trace failed")
 
     monkeypatch.setattr(daemon.backend, "viz_data", broken)
@@ -422,3 +422,77 @@ def test_live_structure_change_requires_description_before_any_new_model_page(fl
     modeling = next(s for s in snap["steps"] if s["id"] == "modeling")
     assert modeling["detail"]["needs_description"] is True
     assert len(list((job.root / "models").glob("*/model.json"))) == 1
+
+
+
+def test_structure_a_to_b_back_to_a_matches_the_round_gate(flow, monkeypatch):
+    daemon, job = flow
+    monkeypatch.setenv("SAOS_VIEW", "1")
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
+    demand.confirm(job.root, "自动化测试夹具：确认需求")
+    folder = call(daemon, "lens.describe", job=job.id, notes=NOTES)["result"]["folder"]
+    assert call(daemon, "lens.approve", job=job.id, model=folder, quote="自动化测试夹具：确认模型")["ok"]
+
+    # A -> B：改结构并说明 B，但用户不确认；窗口应停在建模
+    daemon.backend.lens["surfaces"][1]["material"] = ""
+    daemon.export_view(rays=False)
+    assert steps(job)[0] == "modeling"
+    folder_b = call(daemon, "lens.describe", job=job.id, notes=NOTES)["result"]["folder"]
+    daemon.export_view(rays=False)
+    snap = stage.snapshot(job)
+    assert snap["current"] == "model_approve"
+    assert next(s for s in snap["steps"] if s["id"] == "model_approve")["status"] == "waiting"
+
+    # 改回 A：较早的完整确认仍适用，窗口和 round 应一致
+    daemon.backend.lens["surfaces"][1]["material"] = "N-BK7"
+    daemon.export_view(rays=False)
+    snap = stage.snapshot(job)
+    assert snap["current"] == "design"
+    assert next(s for s in snap["steps"] if s["id"] == "model_approve")["status"] == "done"
+    assert call(daemon, "round.record", job=job.id)["ok"]
+
+    # 半径调参不是结构变化，不应重新要求确认
+    daemon.backend.lens["surfaces"][1]["radius"] = 61
+    daemon.export_view(rays=False)
+    snap = stage.snapshot(job)
+    assert next(s for s in snap["steps"] if s["id"] == "model_approve")["status"] == "done"
+    assert folder_b
+
+
+def test_view_and_state_use_the_same_relative_lens_path(flow):
+    daemon, job = flow
+    daemon.export_view(rays=False)
+    view = json.loads((job.root / jobs.VIEW_FILE).read_text(encoding="utf-8"))
+    state = job.read_state()
+    assert view["lens"] == state["current_lens"] == "a.zmx"
+    assert "\\" not in view["lens"]
+
+
+def test_a_view_of_another_lens_is_not_adopted(flow):
+    daemon, job = flow
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
+    demand.confirm(job.root, "自动化测试夹具：确认需求")
+    folder = call(daemon, "lens.describe", job=job.id, notes=NOTES)["result"]["folder"]
+    assert call(daemon, "lens.approve", job=job.id, model=folder, quote="自动化测试夹具：确认模型")["ok"]
+    daemon.export_view(rays=False)
+    view_file = job.root / jobs.VIEW_FILE
+    view = json.loads(view_file.read_text(encoding="utf-8"))
+    view["lens"] = "other.zmx"
+    view["model"]["surfaces"][1]["type"] = "Even Asphere"
+    view_file.write_text(json.dumps(view), encoding="utf-8")
+    snap = stage.snapshot(job)
+    assert next(s for s in snap["steps"] if s["id"] == "model_approve")["status"] == "done"
+
+
+
+def test_snapshot_without_a_view_still_uses_the_approval(flow, monkeypatch):
+    daemon, job = flow
+    monkeypatch.setenv("SAOS_VIEW", "0")
+    (job.root / jobs.VIEW_FILE).unlink(missing_ok=True)
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
+    demand.confirm(job.root, "自动化测试夹具：确认需求")
+    folder = call(daemon, "lens.describe", job=job.id, notes=NOTES)["result"]["folder"]
+    assert call(daemon, "lens.approve", job=job.id, model=folder, quote="自动化测试夹具：确认模型")["ok"]
+    assert not (job.root / jobs.VIEW_FILE).exists()
+    snap = stage.snapshot(job)
+    assert next(s for s in snap["steps"] if s["id"] == "model_approve")["status"] == "done"

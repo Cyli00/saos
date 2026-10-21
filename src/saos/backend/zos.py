@@ -2157,7 +2157,8 @@ class ZosBackend(Backend):
                 edge = max(edge, value)
         return edge
 
-    def viz_data(self, folder: Path | None, *, pupil_grid: int = 31, fan: int = 7, full: bool = True, rays: bool = True) -> dict[str, Any]:
+    def viz_data(self, folder: Path | None, *, pupil_grid: int = 31, fan: int = 7, full: bool = True, rays: bool = True,
+                 plots: frozenset[str] | None = None) -> dict[str, Any]:
         """saos ui 用的数据：逐面全局几何、布局光线、Lens Data、交叠检查；full 时另有点列图光线、点列图 RMS/GEO 和 FFT MTF
         （每轮的 viz.json）。不带 full 是改动镜头后给界面的当前视图。
         几何与光线坐标都来自 ZOS-API（GetGlobalMatrix、GetSag、批量光线追迹），这里只做坐标变换。

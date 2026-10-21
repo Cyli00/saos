@@ -263,3 +263,21 @@ tr.sel td { background: var(--accent-soft); }
   position: absolute; pointer-events: none; max-width: 420px; padding: 6px 9px; border-radius: 8px; z-index: 2;
   background: var(--bg-raise); border: 1px solid var(--border); box-shadow: var(--shadow); font: 11px/1.5 var(--mono); color: var(--text);
 }
+
+/* 光线扇图、场曲 / 畸变、起点页 / ray fan, field curvature and distortion, starts page */
+.fan-grid { display: grid; gap: 14px; min-width: 480px; }
+.fan-row .cap { font-size: 12px; margin-bottom: 4px; }
+.fan-pair, .field-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.field-pair { min-width: 560px; }
+.fan-pair > div, .field-pair > div { min-width: 0; }
+.fan-pair .empty, .field-pair .empty { height: 160px; border: 1px dashed var(--border-soft); border-radius: 8px; font-size: 12px; }
+.starts h3.sub { font-size: 12px; margin: 16px 0 6px; color: var(--text-2); }
+.starts td small { color: var(--text-3); }
+.starts .mono { font-family: var(--mono); white-space: nowrap; }
+.starts a { color: var(--accent); }
+ul.plain { margin: 0; padding-left: 18px; font-size: 12px; color: var(--text-2); }
+.tag.warn { background: var(--wait-soft); color: var(--wait); }
+.lens-data tr[data-surf] { cursor: default; }
+.lens-data tr.hl td { background: var(--accent-soft); }
+.metric-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.metric-grid .card h3 small { color: var(--text-3); font-weight: 400; }

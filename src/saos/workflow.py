@@ -203,8 +203,10 @@ def export_viz(ctx, evidence_dir: str) -> dict[str, Any]:
     exports in viz/. Runs after the round is in the ledger: a failure is noted, never undoes the round."""
     folder = ctx.job.root / evidence_dir
     started = time.monotonic()
+    from saos import ui
+
     try:
-        data = {"ok": True, **ctx.backend.viz_data(folder / "viz")}
+        data = {"ok": True, **ctx.backend.viz_data(folder / "viz", plots=ui.round_plots(ctx.job))}
     except Exception as exc:  # noqa: BLE001 - 界面数据缺失不影响轮次
         data = {"ok": False, "error": f"{type(exc).__name__}: {getattr(exc, 'message', exc)}"}
     data["elapsed_s"] = round(time.monotonic() - started, 2)

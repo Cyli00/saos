@@ -256,10 +256,78 @@ def _guard_focus(before: int) -> None:
         subprocess.Popen(cmd, creationflags=flags, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
 
 
-def open_window(job_id: str, *, window: bool = True, activate: bool = True) -> dict[str, Any]:
+# 窗口上方可选的标签页；control（显性调试的窗口控制）在 extension 模式下总在最前，不由这里选
+# tabs the window can show; control (explicit-debugging window controls) always leads in extension mode and is not chosen here
+TABS = ("layout", "spot", "fan", "field", "mtf", "detectors", "metrics", "rounds", "starts")
+# 每轮 viz.json 里要算的分析图（其余标签页不需要导出）/ per-round plots computed into viz.json; other tabs need no export
+ROUND_PLOTS = ("spot", "fan", "field", "mtf")
+
+
+def _ids(value: str | None, label: str) -> list[str] | None:
+    if value is None:
+        return None
+    items = [v.strip() for v in value.split(",") if v.strip()]
+    if not items or len(set(items)) != len(items):
+        raise SaosError(ErrorCode.BAD_ARGS, f"{label} must be a comma-separated list without repeats")
+    return items
+
+
+def configure(job: jobs.Job, *, tabs: str | None = None, metrics: str | None = None, reset: bool = False) -> dict[str, Any] | None:
+    """按任务记住窗口的标签页和“指标”页要看的需求条目（state.json 的 ui）；之后自动重开的窗口照用。
+    Remember the window's tabs and the demand items the Metrics tab plots, per job (ui in state.json); later reopened
+    windows use them too."""
+    current = None if reset else job.read_state().get("ui")
+    chosen_tabs, chosen_metrics = _ids(tabs, "--tabs"), _ids(metrics, "--metrics")
+    if chosen_tabs is None and chosen_metrics is None:
+        if reset:
+            job.update_state(ui=None)
+        return current
+    if chosen_tabs is not None:
+        unknown = [t for t in chosen_tabs if t not in TABS]
+        if unknown:
+            raise SaosError(ErrorCode.BAD_ARGS, f"unknown tab(s) {unknown}; choose from {list(TABS)}")
+    if chosen_metrics is not None:
+        from saos import demand
+
+        try:
+            d = demand.load_job(job.root)
+        except SaosError:
+            d = None
+        if d is not None:
+            known = {e["id"] for s in demand.SECTIONS for e in d.get(s) or []}
+            missing = [m for m in chosen_metrics if m not in known]
+            if missing:
+                raise SaosError(ErrorCode.BAD_ARGS, f"--metrics names items not in the demand: {missing}", {"known": sorted(known)})
+    ui = dict(current or {})
+    if chosen_tabs is not None:
+        ui["tabs"] = chosen_tabs
+    if chosen_metrics is not None:
+        ui["metrics"] = chosen_metrics
+        # 给了指标而标签页里没有“指标”页，就放在轮次页之前 / metrics given without the tab: put it before rounds
+        tabs_now = ui.get("tabs")
+        if tabs_now is not None and "metrics" not in tabs_now:
+            at = tabs_now.index("rounds") if "rounds" in tabs_now else len(tabs_now)
+            ui["tabs"] = [*tabs_now[:at], "metrics", *tabs_now[at:]]
+    job.update_state(ui=ui)
+    return ui
+
+
+def round_plots(job: jobs.Job) -> frozenset[str] | None:
+    """记轮次时要导出的分析图：任务选过标签页就只算选中的，否则全部（None）。
+    The plots a round exports: only the chosen tabs once the job chose tabs, otherwise all (None)."""
+    try:
+        tabs = (job.read_state().get("ui") or {}).get("tabs")
+    except (OSError, ValueError):
+        return None
+    return None if tabs is None else frozenset(t for t in tabs if t in ROUND_PLOTS)
+
+
+def open_window(job_id: str, *, window: bool = True, activate: bool = True, tab: str | None = None) -> dict[str, Any]:
     job = jobs.get_job(job_id)
+    if tab is not None and tab not in (*TABS, "control"):
+        raise SaosError(ErrorCode.BAD_ARGS, f"--tab must be one of {[*TABS, 'control']}")
     state = ensure_server()
-    url = f"http://127.0.0.1:{state['port']}/?job={job.id}&t={state['token']}"
+    url = f"http://127.0.0.1:{state['port']}/?job={job.id}&t={state['token']}" + (f"&tab={tab}" if tab else "")
     opened, guarded = None, False
     if window:
         chrome = _chrome()

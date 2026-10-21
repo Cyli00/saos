@@ -205,7 +205,7 @@ class FakeBackend(Backend):
     def interference(self) -> dict[str, Any]:
         return geometry.interference(self._geometry_items())
 
-    def viz_data(self, folder: Path | None, *, full: bool = True, rays: bool = True) -> dict[str, Any]:
+    def viz_data(self, folder: Path | None, *, full: bool = True, rays: bool = True, plots: frozenset[str] | None = None) -> dict[str, Any]:
         """假数据：面沿 z 轴排开，光线平行于轴到像面，只用来测试导出、存档和界面读取。"""
         lens = self._require()
         surfaces, z = [], 0.0

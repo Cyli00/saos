@@ -43,7 +43,7 @@
 | 优化 | `saos opt local --job J [--cycles N] [--algorithm trf\|lm\|lbfgsb\|nelder-mead\|powell\|torch-lbfgs\|torch-adam\|dls\|od] [--device auto\|cpu\|cuda] [--max-seconds S] [--cores N] [--measure IDS] [--detach]` | 深度优化统一要求需求与当前模型确认；缺初筛仅提示。运行有预算的局部优化：Optiland 会话默认 scipy trf，torch 算法对可微子集用自动微分，进程内、不占许可证；dls / od 在 OpticStudio。SciPy/Torch 候选步遇到交叠或任一视场/波长有效率不足 95% 时最多减半 12 次；Torch 另加连续可微失效光线惩罚，返回回退次数与原因。 |
 | 优化 | `saos opt hammer --job J --max-seconds S [--cores N] [--measure IDS] [--detach]` / `saos opt global --job J --max-seconds S [--method de\|basinhopping\|shgo] [--cores N] [--measure IDS] [--detach]` | 运行限时 Hammer（OpticStudio）或全局搜索；Optiland 会话里全局搜索用 scipy，de / shgo 要求每个变量都有上下界。 |
 | 优化 | `saos opt glass --job J [--surfaces RANGE] [--catalog C] [--neighbours N] [--cycles N] [--algorithm A] [--max-seconds S] [--measure IDS] [--detach]` | Optiland 阶段的在产玻璃替换：贪心邻域搜索，每种候选都重新局部优化。 |
-| 流程图 | `saos ui open --job J [--no-window]` / `saos ui notify --job J --message TEXT` | 打开工作流窗口或在询问用户前显示提示。 |
+| 流程图 | `saos ui open --job J [--tabs LIST] [--metrics IDS] [--tab ID] [--reset] [--no-window]` / `saos ui notify --job J --message TEXT` | 打开工作流窗口（流程、布局、点列图、光线扇图、场曲/畸变、MTF、轮次、起点与初筛）或在询问用户前显示提示。`--tabs` 按系统类型选定并排序上方标签页，`--metrics` 指定“指标”页按轮显示的需求条目，两者按任务记住；Optiland 阶段每轮只导出选中的分析图。 |
 | 配方 | `saos microscope adapt EXTRACT --out DIR [--embodiment ID] [--focal-length F] [--field-number N] [--tube-lens F] [--catalogs …] [--stop S]` | 将提取数据适配成处方和期望值。 |
 | 配方 | `saos microscope repro --job J EXPECT` / `saos microscope accept --job J --spec FILE` | 做复现校验或规格验收。 |
 | 配方 | `saos microscope perturb --job J --seed S --radius-rel A [--thickness-rel B]` | 对物镜施加可复现扰动。 |

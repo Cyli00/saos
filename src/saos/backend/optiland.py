@@ -548,8 +548,11 @@ class OptilandBackend(OpticalState, Backend):
         return geometry.interference(self._geometry_items())
 
     @timing.timed("optiland.viz")
-    def viz_data(self, folder: Path | None, *, pupil_grid: int = 31, fan: int = 7, full: bool = True, rays: bool = True) -> dict[str, Any]:
+    def viz_data(self, folder: Path | None, *, pupil_grid: int = 31, fan: int = 7, full: bool = True, rays: bool = True,
+                 plots: frozenset[str] | None = None) -> dict[str, Any]:
         self._require()
+        # plots 为 None 时导出全部按轮分析图；否则只算其中列出的（saos ui open --tabs 选定）/ None exports every per-round plot, otherwise only those listed
+        want = lambda name: plots is None or name in plots  # noqa: E731
         info = self.system_info()
         image = len(self._rows) - 1
         primary = self.primary_wave()
@@ -624,7 +627,7 @@ class OptilandBackend(OpticalState, Backend):
         grid = [2 * k / (pupil_grid - 1) - 1 for k in range(pupil_grid)]
         pupil = [(px, py) for py in grid for px in grid if px * px + py * py <= 1.0]
         spots = []
-        for f, (hx, hy) in enumerate(norm):
+        for f, (hx, hy) in enumerate(norm if want("spot") else []):
             chief = self.trace_batch([(primary, hx, hy, 0.0, 0.0)], image)
             cx, cy = (chief.x[0], chief.y[0]) if chief.ok[0] else (math.nan, math.nan)
             per_wave = []
@@ -651,14 +654,73 @@ class OptilandBackend(OpticalState, Backend):
                     scratch.rmdir()
             return None
 
-        spot_analysis = run("StandardSpot", {"ReferTo": "ChiefRay"}, ("ReferTo", "Pattern", "RayDensity"))
-        mtf = run("FftMtf", {"ShowDiffractionLimit": True, "Wavelength": primary}, ("MaximumFrequency", "SampleSize", "Type", "Wavelength"))
+        # 光线像差扇形图：子午扇 (0, py) 的 Δy 与弧矢扇 (px, 0) 的 Δx，相对主波长主光线，同点列图的参考
+        # ray fan: Δy over the tangential fan (0, py) and Δx over the sagittal fan (px, 0), relative to the primary chief ray as in the spot diagram
+        started = time.monotonic()
+        fan_steps = [2 * k / 20 - 1 for k in range(21)]
+        fans = []
+        for f, (hx, hy) in enumerate(norm if want("fan") else []):
+            chief = self.trace_batch([(primary, hx, hy, 0.0, 0.0)], image)
+            if not chief.ok[0]:
+                fans.append({"field": f, "tangential": None, "sagittal": None})
+                continue
+            cx, cy = float(chief.x[0]), float(chief.y[0])
+            tangential, sagittal = [], []
+            for w in range(1, self.wavelength_count() + 1):
+                ty = self.trace_batch([(w, hx, hy, 0.0, p) for p in fan_steps], image)
+                sx = self.trace_batch([(w, hx, hy, p, 0.0) for p in fan_steps], image)
+                tangential.append([round(float(y - cy), 7) if ok else None for y, ok in zip(ty.y, ty.ok)])
+                sagittal.append([round(float(x - cx), 7) if ok else None for x, ok in zip(sx.x, sx.ok)])
+            fans.append({"field": f, "tangential": tangential, "sagittal": sagittal})
+        timings["ray_fan"] = round(time.monotonic() - started, 3)
+        field_plots = self._field_plots(info, errors, timings) if want("field") else None
+
+        spot_analysis = run("StandardSpot", {"ReferTo": "ChiefRay"}, ("ReferTo", "Pattern", "RayDensity")) if want("spot") else None
+        mtf = run("FftMtf", {"ShowDiffractionLimit": True, "Wavelength": primary}, ("MaximumFrequency", "SampleSize", "Type", "Wavelength")) if want("mtf") else None
         spot_stats = (spot_analysis or {}).get("spot") or {}
-        return {**base,
-                "spot": {"reference": "chief ray, primary wavelength", "pupil_grid": pupil_grid, "fields": spots,
-                         "rms_radius": spot_stats.get("rms_radius"), "geo_radius": spot_stats.get("geo_radius"),
-                         "analysis_settings": (spot_analysis or {}).get("settings")},
-                "mtf": mtf, "timings_s": timings, "errors": errors}
+        out = {**base, "timings_s": timings, "errors": errors, "plots": sorted(plots) if plots is not None else None}
+        if want("spot"):
+            out["spot"] = {"reference": "chief ray, primary wavelength", "pupil_grid": pupil_grid, "fields": spots,
+                           "rms_radius": spot_stats.get("rms_radius"), "geo_radius": spot_stats.get("geo_radius"),
+                           "analysis_settings": (spot_analysis or {}).get("settings")}
+        if want("fan"):
+            out["ray_fan"] = {"reference": "chief ray, primary wavelength", "pupil": fan_steps, "fields": fans}
+        if want("field"):
+            out["field_plots"] = field_plots
+        if want("mtf"):
+            out["mtf"] = mtf
+        return out
+
+    def _field_plots(self, info: dict[str, Any], errors: dict[str, str], timings: dict[str, float], points: int = 21) -> dict[str, Any] | None:
+        """场曲与畸变：直接用 Optiland 的 FieldCurvature、Distortion（与 Optiland GUI 的分析列表同一实现），只取数据不画图。
+        Field curvature and distortion from Optiland's FieldCurvature and Distortion (the same classes the Optiland GUI lists); data only."""
+        import optiland.backend as be
+        from optiland.analysis import Distortion, FieldCurvature
+
+        try:
+            max_field = float(np.asarray(be.to_numpy(self.optic.fields.max_field)).reshape(-1)[0])
+        except Exception as exc:  # noqa: BLE001 - 读不到视场就两张图都不给 / no field extent: neither plot
+            errors["field_plots"] = f"{type(exc).__name__}: {exc}"[:300]
+            return None
+        out: dict[str, Any] = {"max_field": max_field, "field_type": info["fields"]["type"], "points": points}
+        started = time.monotonic()
+        try:
+            curvature = FieldCurvature(self.optic, num_points=points)
+            out["curvature"] = [{"um": float(wp.value), "tangential": np.asarray(be.to_numpy(d[0]), dtype=float).round(7).tolist(),
+                                 "sagittal": np.asarray(be.to_numpy(d[1]), dtype=float).round(7).tolist()}
+                                for wp, d in zip(curvature.wavelengths, curvature.data)]
+        except Exception as exc:  # noqa: BLE001 - 非轴对称等情况 Optiland 算不出，界面显示缺口 / shown as a gap
+            errors["field_curvature"] = f"{type(exc).__name__}: {exc}"[:300]
+        timings["field_curvature"] = round(time.monotonic() - started, 3)
+        started = time.monotonic()
+        try:
+            distortion = Distortion(self.optic, num_points=points)
+            out["distortion"] = [{"um": float(wp.value), "percent": np.asarray(be.to_numpy(d), dtype=float).round(7).tolist()}
+                                 for wp, d in zip(distortion.wavelengths, distortion.data)]
+        except Exception as exc:  # noqa: BLE001
+            errors["distortion"] = f"{type(exc).__name__}: {exc}"[:300]
+        timings["distortion"] = round(time.monotonic() - started, 3)
+        return out
 
     # ---- 文件 ----
 

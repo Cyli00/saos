@@ -98,7 +98,8 @@ measured numbers stay comparable.
 """,
     "ui": """Show the user's workflow, current lens and archived round visualizations.
 The local service listens only on 127.0.0.1 and reads job files. Optical controls
-use the daemon; spot/MTF data come from round exports. A user-closed window reopens
+use the daemon; spot, ray fan, field curvature/distortion and MTF data come from
+round exports, and the Starts tab reads explore/starts and scans. A user-closed window reopens
 automatically only at unconfirmed demand show, lens describe or round; ui open
 always opens it. Gate windows restore/raise without taking keyboard focus.
 """,
@@ -320,8 +321,10 @@ COMMANDS.update({
         "  keeps the window; otherwise a new window starts. Rebases do not consume a\n"
         "  round or reset demand-version limits/stops. Support copies are sealed under\n"
         "  evaluations/NNN/support/_saos/.\n"
-        "  After ledger append, exports viz.json and viz/ (geometry/layout/spot/MTF)\n"
-        "  for the workflow window unless --no-viz. Export errors under viz do not\n"
+        "  After ledger append, exports viz.json and viz/ (geometry/layout/spot/ray\n"
+        "  fan/field curvature/distortion/MTF; Optiland exports the fan and field\n"
+        "  plots, a missing one shows as a gap) for the workflow window unless\n"
+        "  --no-viz. Export errors under viz do not\n"
         "  invalidate the recorded round. MTF falls back to per-field calculation when\n"
         "  a chief ray fails; errors.FftMtf explains missing fields. StandardSpot traces\n"
         "  fewer rays for wavelength weights <1, so its GEO may understate point extent.",
@@ -362,10 +365,18 @@ COMMANDS.update({
         "SPEC_CHANGED, EVIDENCE_TAMPERED, FILE_NOT_FOUND, JOB_NOT_FOUND"),
     "ui open": (
         "Start the local workflow service if needed and open the user's job window.",
-        "--no-window starts only the service and returns its URL. Normally uses a\n"
+        "--tabs a,b,... picks and orders the top tabs (layout, spot, fan, field, mtf,\n"
+        "  detectors, metrics, rounds, starts); --metrics id,... names demand items the\n"
+        "  Metrics tab plots per round (unknown ids are refused when the demand exists).\n"
+        "  Both are stored as ui in the job's state.json and apply to every later window;\n"
+        "  --reset forgets them. Tabs that do not apply (detectors in a sequential system,\n"
+        "  starts before generation) are skipped. Optiland round exports compute only\n"
+        "  the chosen spot/fan/field/mtf plots. --tab ID opens on that tab.\n"
+        "  --no-window starts only the service and returns its URL. Normally uses a\n"
         "  1080x720 Chrome app window, falling back to the default browser; window is\n"
         "  chrome-app/browser/raised. Six steps show gates/blockers; current geometry,\n"
-        "  Lens Data and interference use view.json; archived spot/MTF use viz.json.\n"
+        "  Lens Data and interference use view.json; archived spot/fan/field/MTF use\n"
+        "  viz.json; Starts lists generated starts, predictions and screening.\n"
         "  URL &ld=1 expands Lens Data. 2D uses the system symmetry plane (section in\n"
         "  geometry); systems without a common plane offer 3D only.\n"
         "  Service state/log: daemon/ui.json, ui.log, endpoint in ui-endpoint.json.\n"

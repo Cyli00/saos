@@ -53,6 +53,20 @@ const TEXT = {
     th_obj: ["#", "类型", "注释", "材料", "体散射", "面属性"], face_is: { reflective: "反射", absorbing: "吸收" }, face_word: "面", kind_source: "光源", kind_detector: "探测器",
     det_none: "这一轮没有探测器读数。", det_note: "读数是这一轮判定最后一次追迹留在内存里的结果；判定没有追迹时为空。图为照度（W/cm²），每个像素一格。",
     det_power: "功率", det_hits: "命中光线", det_pixels: "像素", det_peak: "最大照度",
+    tab_fan: "光线扇图", tab_field: "场曲 / 畸变", tab_starts: "起点",
+    gap: (name, b) => `这一轮的 ${b || "后端"} 导出里没有${name}。缺口如实显示，界面不另行计算。`,
+    fan_t: "子午 ey(py)", fan_s: "弧矢 ex(px)", pupil: "归一化光瞳",
+    fan_foot_opt: "Optiland 批量光线追迹：子午扇 (0, py) 的 Δy、弧矢扇 (px, 0) 的 Δx，相对主波长主光线，被拦光线不画；各视场共用纵轴范围。",
+    curv: "场曲（离像面距离）", dist: "畸变 %", field_axis: "视场", field_foot_opt: "Optiland FieldCurvature（近轴邻近光线求子午、弧矢焦点）与 Distortion（f·tanθ 参考，近轴）原样导出；实线子午，虚线弧矢。",
+    starts_none: "还没有 starts.generate 的记录。生成起点后，这里列出来源、缩放、超范围项、一阶与三阶预判和初筛结果。",
+    st_form: "形式", st_source: "来源", st_scale: "缩放", st_tight: "最吃紧", st_extra: "超出来源示例", st_efl: "EFL", st_bfl: "BFL", st_fno: "f/#",
+    st_petz: "Petzval R/f", st_seidel: "Seidel 合计 SI–SV", st_aoi: "最大入射角", st_excluded: "未入选的形式", st_noteval: "未评估（材料/计算）",
+    st_screen: "零优化初筛", st_short: (s) => `同预算短优化 · ${s} s`, st_running: "运行中", st_verdict: { valid: "有效", invalid: "预算内无效", material: "未评估：材料", computation: "未评估：计算" },
+    st_g: "G 起点 → 终点", st_warn: "数值警告", st_page: "比较页", st_foot: "只读 explore/starts 与 scans 中已有文件；预判由 Optiland 的一阶、三阶和色差分析给出，不是优化结论。",
+    hover_row: "指向表格一行，布局中高亮对应的面",
+    tab_metrics: "指标", metrics_none: "还没有记录轮次；记下轮次后，这里按轮显示所选需求条目的测量值。",
+    metric_missing: "需求单里已没有这一条", metric_bound: "界限", metric_no_value: "无有效值",
+    metrics_foot: "数值取自每轮账本记录的测量值（与 saos round 的判定同一来源）；虚线为需求单的界限。条目由 saos ui open --metrics 选定。",
   },
   en: {
     interview: "Interview & feasibility", demand_confirm: "Confirm demand", modeling: "Start designs & model", model_approve: "Approve model", design: "Autonomous design", deliver: "Delivery report",
@@ -100,6 +114,20 @@ const TEXT = {
     th_obj: ["#", "Type", "Comment", "Material", "Volume physics", "Faces"], face_is: { reflective: "reflective", absorbing: "absorbing" }, face_word: "face", kind_source: "source", kind_detector: "detector",
     det_none: "This round has no detector readings.", det_note: "Readings are what the last trace of this round's checks left in memory; empty when the checks traced nothing. The map is irradiance (W/cm²), one cell per pixel.",
     det_power: "Power", det_hits: "Ray hits", det_pixels: "Pixels", det_peak: "Peak irradiance",
+    tab_fan: "Ray Fan", tab_field: "Field Curv. / Distortion", tab_starts: "Starts",
+    gap: (name, b) => `This round's ${b || "backend"} export has no ${name}. The gap is shown as is; the window computes nothing itself.`,
+    fan_t: "Tangential ey(py)", fan_s: "Sagittal ex(px)", pupil: "Normalised pupil",
+    fan_foot_opt: "Optiland batch ray trace: Δy over the tangential fan (0, py) and Δx over the sagittal fan (px, 0), relative to the primary chief ray; vignetted rays are not drawn. All fields share one vertical range.",
+    curv: "Field curvature (distance from image)", dist: "Distortion %", field_axis: "Field", field_foot_opt: "Optiland FieldCurvature (tangential and sagittal foci from parabasal rays) and Distortion (f·tanθ reference, paraxial), exported as is; solid tangential, dashed sagittal.",
+    starts_none: "No starts.generate record yet. After starts are generated, this lists sources, scaling, exceeded ranges, first- and third-order predictions and the screening.",
+    st_form: "Form", st_source: "Source", st_scale: "Scale", st_tight: "Tightest", st_extra: "Outside the source example", st_efl: "EFL", st_bfl: "BFL", st_fno: "f/#",
+    st_petz: "Petzval R/f", st_seidel: "Seidel totals SI–SV", st_aoi: "Max incidence", st_excluded: "Forms not selected", st_noteval: "Not evaluated (material/computation)",
+    st_screen: "Zero-optimisation screening", st_short: (s) => `Equal short budget · ${s} s`, st_running: "running", st_verdict: { valid: "valid", invalid: "invalid within budget", material: "not evaluated: material", computation: "not evaluated: computation" },
+    st_g: "G start → end", st_warn: "Numeric warnings", st_page: "Comparison page", st_foot: "Reads existing files in explore/starts and scans only; predictions come from Optiland's first-order, third-order and chromatic analyses, not from optimisation.",
+    hover_row: "Point at a row to highlight its surface in the layout",
+    tab_metrics: "Metrics", metrics_none: "No rounds yet; once rounds are recorded, this shows the chosen demand items' measured values per round.",
+    metric_missing: "no longer in the demand", metric_bound: "Bound", metric_no_value: "no valid value",
+    metrics_foot: "Values are each round's measured values from the ledger (the same source as saos round's checks); dashed lines are the demand's bounds. Items are chosen with saos ui open --metrics.",
   },
 };
 const ANALYSIS_NAMES = {
@@ -109,6 +137,18 @@ const ANALYSIS_NAMES = {
   FftPsf: ["FFT PSF", "FFT PSF"], HuygensPsf: ["惠更斯 PSF", "Huygens PSF"], FootprintSettings: ["光斑足迹图", "Footprint Diagram"],
 };
 const DEFAULT_ANALYSES = Object.keys(ANALYSIS_NAMES);
+// 每轮 viz.json 里的分析图：一处登记，标签、取数和画法都从这里来（借鉴 Optiland GUI 的 registry.py）。
+// key 是 viz.json 里的字段；某一轮没有这个字段时页面显示缺口，不在界面里补算
+// one registry for the per-round plots in viz.json (after the Optiland GUI's registry.py); a missing key is shown as a gap
+const ROUND_PLOTS = [
+  { id: "spot", key: "spot", render: (v) => renderSpot(v) },
+  { id: "fan", key: "ray_fan", render: (v) => renderFan(v) },
+  { id: "field", key: "field_plots", render: (v) => renderField(v) },
+  { id: "mtf", key: "mtf", render: (v) => renderMtf(v) },
+];
+const NSC_PLOTS = [{ id: "detectors", key: "detectors", gapless: true, render: (v) => renderDetectors(v) }];
+const plotsFor = () => (isNsc() ? NSC_PLOTS : ROUND_PLOTS);
+const plotIds = () => [...ROUND_PLOTS, ...NSC_PLOTS].map((p) => p.id);
 const FIELD_COLORS = ["#4f8ff7", "#f26b3a", "#22b39a", "#e5a00d", "#e5508f", "#3fa34d", "#9b7cf2", "#58c4dd"];
 const MATERIAL_COLORS = ["#5fb3a1", "#7b8fd4", "#c9a35a", "#b57cc4", "#6aaed6", "#d47b7b"];
 
@@ -329,15 +369,22 @@ const vizRounds = () => (state?.rounds || []).filter((r) => r.viz);
 function renderTabs() {
   const list = [];
   if (explicit()) list.push("control");
-  // 非序列系统没有点列图和 MTF，换成探测器读数 / a non-sequential system has detectors instead of spot and MTF
-  if (isNsc()) list.push("layout", "detectors", "rounds");
-  else list.push("layout", "spot", "mtf", "rounds");
+  // 非序列系统没有点列图和 MTF，换成探测器读数；起点页只在生成过起点后出现；指标页要先用 --metrics 选条目
+  // a non-sequential system has detectors instead of spot and MTF; starts appear once generated; metrics need --metrics
+  const hasStarts = !!state?.steps?.find((s) => s.id === "modeling")?.detail?.starts;
+  const hasMetrics = !!state?.ui?.metrics?.length;
+  const applies = (k) => k === "layout" || k === "rounds" || (k === "detectors" ? isNsc() : ["spot", "fan", "field", "mtf"].includes(k) ? !isNsc()
+    : k === "starts" ? hasStarts : k === "metrics" ? hasMetrics : false);
+  // agent 用 saos ui open --tabs 为这类系统选的标签页和顺序；没选时用默认顺序 / tabs the agent chose for this kind of system, else the default
+  const chosen = state?.ui?.tabs;
+  const shown = (chosen || ["layout", ...plotsFor().map((p) => p.id), "metrics", "rounds", "starts"]).filter(applies);
+  list.push(...(shown.length ? shown : ["layout", "rounds"]));
   if (!tab || !list.includes(tab)) tab = list[0];
   $("tabs").innerHTML = list.map((k) => `<button class="tab ${k === tab ? "on" : ""}" data-tab="${k}" role="tab">${esc(t("tab_" + k))}</button>`).join("");
   const vr = vizRounds();
   const sel = $("round-select");
   const withLive = tab === "layout" && state?.live != null;
-  sel.hidden = !["layout", "spot", "mtf", "detectors"].includes(tab) || (!vr.length && !withLive);
+  sel.hidden = !["layout", ...plotIds()].includes(tab) || (!vr.length && !withLive);
   const opts = (withLive ? `<option value="live">${esc(t("live"))}</option>` : "") +
     vr.map((r) => `<option value="${r.round}">${t("select_round", r.round)} · G ${fmtG(r.shortfall)}</option>`).join("");
   if (sel.dataset.opts !== opts) { sel.innerHTML = opts; sel.dataset.opts = opts; }
@@ -369,6 +416,8 @@ async function renderView() {
   const view = $("view");
   if (tab === "control") return renderControl(view);
   if (tab === "rounds") return renderRounds(view);
+  if (tab === "starts") return renderStarts(view);
+  if (tab === "metrics") return renderMetrics(view);
   await ensureViz();
   renderTabs();
   if (!viz) { view.innerHTML = `<div class="empty">${esc(t(tab === "layout" ? "no_live" : "no_viz"))}</div>`; return; }
@@ -376,9 +425,12 @@ async function renderView() {
     const why = roundShown === "live" ? t("live_failed") + (viz.error || "") : viz.error?.includes?.("no viz.json") ? t("viz_missing") : t("viz_failed") + (viz.error || "");
     view.innerHTML = `<div class="empty">${esc(why)}</div>`; return;
   }
-  if (tab === "detectors") renderDetectors(view);
-  else if (tab === "spot") renderSpot(view);
-  else if (tab === "mtf") renderMtf(view);
+  const plot = plotsFor().find((p) => p.id === tab);
+  if (plot && !plot.gapless && viz[plot.key] == null) {
+    view.innerHTML = `<div class="empty">${esc(t("gap", t("tab_" + plot.id), viz.system?.backend))}</div>`;
+    return;
+  }
+  if (plot) plot.render(view);
   else if (isNsc()) renderNscLayout(view);
   else renderLayout(view);
 }
@@ -581,6 +633,177 @@ function niceStep(raw) {
   return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p;
 }
 
+// ---------------- 通用折线图 ----------------
+
+// 一张带网格和刻度的折线图；曲线点为 null 时断开。扇形图、场曲和畸变共用
+// one gridded line plot; a null point breaks the curve. Shared by the ray fan, field curvature and distortion
+function linePlot(host, { W, H, xr, yr, curves, xLabel = "", yLabel = "", zeroX = false, zeroY = false }) {
+  const [, g] = canvasIn(host, W, H);
+  const pad = { l: 52, r: 12, t: yLabel ? 20 : 8, b: 36 };
+  const [x0, x1] = xr[0] === xr[1] ? [xr[0] - 1, xr[1] + 1] : xr, [y0, y1] = yr[0] === yr[1] ? [yr[0] - 1, yr[1] + 1] : yr;
+  const px = (x) => pad.l + ((x - x0) / (x1 - x0)) * (W - pad.l - pad.r), py = (y) => pad.t + (1 - (y - y0) / (y1 - y0)) * (H - pad.t - pad.b);
+  g.fillStyle = css("--plot-bg"); g.fillRect(pad.l, pad.t, W - pad.l - pad.r, H - pad.t - pad.b);
+  g.strokeStyle = css("--grid"); g.lineWidth = 1;
+  g.fillStyle = css("--text-2"); g.font = `11px ${css("--mono")}`;
+  const xs = niceStep((x1 - x0) / 4), ys = niceStep((y1 - y0) / 4);
+  ticks(x0, x1, xs).forEach((x) => {
+    const X = px(x); g.beginPath(); g.moveTo(X + 0.5, pad.t); g.lineTo(X + 0.5, H - pad.b); g.stroke();
+    g.textAlign = "center"; g.textBaseline = "top"; g.fillText(sig(x, 3), X, H - pad.b + 5);
+  });
+  ticks(y0, y1, ys).forEach((y) => {
+    const Y = py(y); g.beginPath(); g.moveTo(pad.l, Y + 0.5); g.lineTo(W - pad.r, Y + 0.5); g.stroke();
+    g.textAlign = "right"; g.textBaseline = "middle"; g.fillText(sig(y, 3), pad.l - 6, Y);
+  });
+  g.strokeStyle = css("--text-3");
+  if (zeroX && x0 < 0 && x1 > 0) { g.beginPath(); g.moveTo(px(0) + 0.5, pad.t); g.lineTo(px(0) + 0.5, H - pad.b); g.stroke(); }
+  if (zeroY && y0 < 0 && y1 > 0) { g.beginPath(); g.moveTo(pad.l, py(0) + 0.5); g.lineTo(W - pad.r, py(0) + 0.5); g.stroke(); }
+  g.fillStyle = css("--text-3"); g.textAlign = "center"; g.textBaseline = "top";
+  g.fillText(xLabel, pad.l + (W - pad.l - pad.r) / 2, H - pad.b + 20);
+  if (yLabel) { g.textAlign = "left"; g.fillText(yLabel, pad.l, 2); }
+  g.save(); g.beginPath(); g.rect(pad.l, pad.t, W - pad.l - pad.r, H - pad.t - pad.b); g.clip();
+  curves.forEach((c) => {
+    g.strokeStyle = c.color; g.lineWidth = 1.6; g.setLineDash(c.dash || []); g.beginPath();
+    let pen = false;
+    c.x.forEach((x, i) => {
+      const y = c.y[i];
+      if (x == null || y == null || !isFinite(x) || !isFinite(y)) { pen = false; return; }
+      pen ? g.lineTo(px(x), py(y)) : g.moveTo(px(x), py(y));
+      pen = true;
+    });
+    g.stroke();
+  });
+  g.restore(); g.setLineDash([]);
+}
+
+const unitOf = (sys) => (sys.lens_units === "Millimeters" ? "mm" : sys.lens_units);
+const extent = (vals) => { const ok = vals.filter((v) => v != null && isFinite(v)); return ok.length ? [Math.min(...ok), Math.max(...ok)] : [-1, 1]; };
+
+// ---------------- 光线扇图 ----------------
+
+function renderFan(view) {
+  const sys = viz.system, fan = viz.ray_fan;
+  const colors = waveColors(sys.wavelengths);
+  // 各视场共用纵轴，才能一眼比较视场之间的像差大小 / one vertical range for all fields so they compare at a glance
+  let half = 0;
+  fan.fields.forEach((f) => [f.tangential, f.sagittal].forEach((set) => (set || []).forEach((ys) => ys.forEach((v) => { if (v != null && isFinite(v)) half = Math.max(half, Math.abs(v)); }))));
+  half = half > 0 ? Number((half * 1.08).toPrecision(2)) : 1e-3;
+  view.innerHTML = `<div class="figure"><div class="fig-head"><div class="legend">${sys.wavelengths.map((w, i) => `<span><i style="background:${colors[i]}"></i>${Math.round(w.um * 1000)} nm</span>`).join("")}</div></div>
+    <div class="fan-grid"></div></div><div class="foot">${esc(foot("fan_foot"))}</div>`;
+  const grid = view.querySelector(".fan-grid");
+  const W = Math.max(220, (grid.clientWidth - 12) / 2);
+  fan.fields.forEach((f) => {
+    const row = document.createElement("div");
+    row.className = "fan-row";
+    row.innerHTML = `<div class="cap"><b>${esc(fieldLabel(sys, f.field))}</b></div><div class="fan-pair"><div></div><div></div></div>`;
+    grid.appendChild(row);
+    const [ht, hs] = row.querySelectorAll(".fan-pair > div");
+    if (!f.tangential) { ht.innerHTML = hs.innerHTML = `<div class="empty">${esc(t("gap", t("tab_fan"), sys.backend))}</div>`; return; }
+    [[ht, f.tangential, "fan_t"], [hs, f.sagittal, "fan_s"]].forEach(([host, set, label]) => linePlot(host, {
+      W, H: 190, xr: [-1, 1], yr: [-half, half], zeroX: true, zeroY: true, xLabel: `${t(label)} · ${t("pupil")}`, yLabel: unitOf(sys),
+      curves: set.map((ys, w) => ({ x: fan.pupil, y: ys, color: colors[w] })),
+    }));
+  });
+}
+
+// ---------------- 场曲 / 畸变 ----------------
+
+function renderField(view) {
+  const sys = viz.system, fp = viz.field_plots;
+  const colors = waveColors(fp.curvature || fp.distortion || []);
+  const fieldUnit = /angle/i.test(fp.field_type || sys.fields.type) ? "°" : ` ${unitOf(sys)}`;
+  const axis = (n, from) => Array.from({ length: n }, (_, k) => from + (fp.max_field - from) * k / (n - 1));
+  view.innerHTML = `<div class="figure"><div class="fig-head"><div class="legend">${(fp.curvature || fp.distortion || []).map((w, i) => `<span><i style="background:${colors[i]}"></i>${Math.round(w.um * 1000)} nm</span>`).join("")}
+    <span><i class="line"></i>${esc(t("tangential"))}</span><span><i class="line dash"></i>${esc(t("sagittal"))}</span></div></div>
+    <div class="field-pair"><div id="curv-plot"></div><div id="dist-plot"></div></div></div>
+    <div class="foot">${esc(foot("field_foot"))}</div>`;
+  const W = Math.max(260, ($("curv-plot").clientWidth || 300));
+  const H = Math.max(280, Math.min(460, view.clientHeight - 120));
+  const yLabel = `${t("field_axis")} (${fieldUnit.trim()})`;
+  if (fp.curvature) {
+    const y = axis(fp.points, 0);
+    const curves = fp.curvature.flatMap((w, i) => [{ x: w.tangential, y, color: colors[i] }, { x: w.sagittal, y, color: colors[i], dash: [6, 4] }]);
+    const [lo, hi] = extent(curves.flatMap((c) => c.x)), m = Math.max(Math.abs(lo), Math.abs(hi)) * 1.1 || 1e-3;
+    linePlot($("curv-plot"), { W, H, xr: [-m, m], yr: [0, fp.max_field], curves, zeroX: true, xLabel: `${t("curv")} (${unitOf(sys)})`, yLabel });
+  } else $("curv-plot").innerHTML = `<div class="empty">${esc(t("gap", t("curv"), sys.backend) + (viz.errors?.field_curvature ? ` ${viz.errors.field_curvature}` : ""))}</div>`;
+  if (fp.distortion) {
+    const y = axis(fp.points, 0);
+    const curves = fp.distortion.map((w, i) => ({ x: w.percent, y, color: colors[i] }));
+    const [lo, hi] = extent(curves.flatMap((c) => c.x)), m = Math.max(Math.abs(lo), Math.abs(hi)) * 1.1 || 0.01;
+    linePlot($("dist-plot"), { W, H, xr: [-m, m], yr: [0, fp.max_field], curves, zeroX: true, xLabel: t("dist"), yLabel });
+  } else $("dist-plot").innerHTML = `<div class="empty">${esc(t("gap", t("dist"), sys.backend) + (viz.errors?.distortion ? ` ${viz.errors.distortion}` : ""))}</div>`;
+}
+
+// ---------------- 指标（按轮次）----------------
+
+function renderMetrics(view) {
+  const items = state.metric_items || (state.ui?.metrics || []).map((id) => ({ id }));
+  const rounds = (state.rounds || []).filter((r) => r.values);
+  if (!rounds.length) { view.innerHTML = `<div class="empty">${esc(t("metrics_none"))}</div>`; return; }
+  const bounds = (b) => (!b ? [] : "equals" in b ? [b.equals] : [b.min, b.max].filter((v) => v != null));
+  const boundText = (b) => (!b ? "" : "equals" in b ? `= ${sig(b.equals, 4)}${b.tol ? ` ± ${sig(b.tol, 3)}` : ""}` : [b.min != null ? `≥ ${sig(b.min, 4)}` : "", b.max != null ? `≤ ${sig(b.max, 4)}` : ""].filter(Boolean).join(" · "));
+  view.innerHTML = `<div class="metric-grid">${items.map((m, k) => `<div class="card"><h3>${esc(m.id)}${m.unit ? ` <small>${esc(m.unit)}</small>` : ""}</h3>
+      <p>${esc(m.missing ? t("metric_missing") : m.description || "")}${m.bound ? ` · ${esc(t("metric_bound"))} ${esc(boundText(m.bound))}` : ""}${m.direction ? ` · ${esc(m.direction)}` : ""}</p>
+      <div id="metric-plot-${k}"></div></div>`).join("")}</div>
+    <div class="table-wrap"><table><tr><th>${esc(t("round"))}</th>${items.map((m) => `<th class="num">${esc(m.id)}</th>`).join("")}</tr>
+      ${rounds.slice().reverse().map((r) => `<tr><td>${t("select_round", r.round)}</td>${items.map((m) => `<td class="num">${r.values[m.id] == null ? esc(t("metric_no_value")) : sig(r.values[m.id], 5)}</td>`).join("")}</tr>`).join("")}</table></div>
+    <div class="foot">${esc(t("metrics_foot"))}</div>`;
+  items.forEach((m, k) => {
+    const host = $(`metric-plot-${k}`);
+    const xs = rounds.map((r) => r.round), ys = rounds.map((r) => r.values[m.id]);
+    const lines = bounds(m.bound);
+    const [lo, hi] = extent([...ys, ...lines]), padY = (hi - lo) * 0.08 || Math.abs(hi) * 0.05 || 1;
+    const x0 = Math.min(...xs), x1 = Math.max(...xs);
+    linePlot(host, { W: Math.max(240, host.clientWidth), H: 170, xr: [x0, x1 === x0 ? x0 + 1 : x1], yr: [lo - padY, hi + padY], xLabel: t("round"),
+      curves: [...lines.map((v) => ({ x: [x0, x1 === x0 ? x0 + 1 : x1], y: [v, v], color: css("--wait"), dash: [6, 4] })), { x: xs, y: ys, color: css("--accent") }] });
+  });
+}
+
+// ---------------- 起点与初筛 ----------------
+
+async function renderStarts(view) {
+  let data;
+  try { data = await api("starts"); } catch (e) { view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
+  if (tab !== "starts") return;
+  const gen = data.generated;
+  if (!gen) { view.innerHTML = `<div class="empty">${esc(t("starts_none"))}</div>`; return; }
+  const num = (v, n = 4) => (v == null || !isFinite(v) ? "–" : sig(v, n));
+  const source = (p) => {
+    const label = p.patent ? `${p.patent}${p.locator ? ` · ${p.locator}` : ""}` : p.book ? `${p.book}${p.page ? ` p.${p.page}` : ""}` : "–";
+    return p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(label)}</a>` : esc(label);
+  };
+  const targets = gen.constraints?.values || {};
+  const head = Object.entries(targets).map(([k, v]) => `${k} ${Array.isArray(v) ? v.map((x) => sig(x, 4)).join("/") : sig(v, 4)}`).join(" · ");
+  const cands = gen.candidates.map((c) => {
+    const fo = c.first_order || {}, extra = c.constraints?.extrapolation || [];
+    const seidel = (c.seidel || []).map((v) => num(v, 3)).join(" / ") || "–";
+    const bad = Object.values(c.errors || {}).join("; ");
+    return `<tr><td><b>${esc(c.id)}</b><br><small>${esc(c.form || "")}</small></td><td>${source(c.provenance)}<br><small>${esc(c.provenance.validation || "")}</small></td>
+      <td class="num">${num(c.provenance.scale)}</td><td>${esc(c.constraints?.tightest || "–")}${extra.length ? `<br><span class="tag warn">${esc(t("st_extra"))}</span> <small>${esc(extra.join("; "))}</small>` : ""}</td>
+      <td class="num">${num(fo.efl)}</td><td class="num">${num(fo.bfl)}</td><td class="num">${num(fo.f_number, 3)}</td>
+      <td class="num">${num(c.petzval?.radius_over_efl, 3)}</td><td class="num mono">${seidel}</td><td class="num">${c.incidence_max == null ? "–" : `${sig(c.incidence_max, 3)}°`}</td></tr>
+      ${bad ? `<tr><td></td><td colspan="9" class="foot warn">${esc(bad)}</td></tr>` : ""}`;
+  }).join("");
+  const scans = data.scans.map((s) => {
+    const title = s.optimised ? t("st_short", sig(s.budget_s, 3)) : t("st_screen");
+    const rows = s.rows.map((r) => {
+      const verdict = (t("st_verdict")[r.verdict] || r.verdict || (r.error ? t("st_verdict").computation : "–"));
+      const why = (r.problems || []).join("; ") || r.error || "";
+      return `<tr><td>${esc(r.id)}</td><td><span class="tag ${r.verdict === "valid" ? "ok" : r.verdict === "invalid" ? "" : "warn"}">${esc(verdict)}</span>${r.still_improving ? " ↘" : ""}<br><small>${esc(why)}</small></td>
+        <td class="num">${fmtG(r.start_shortfall)} → ${fmtG(r.shortfall)}</td><td class="num">${r.numeric_warnings?.count ?? 0}</td></tr>`;
+    }).join("");
+    return `<h3 class="sub">${esc(title)} · ${esc(s.folder)}${s.finished ? "" : ` · ${esc(t("st_running"))}`}</h3>
+      ${rows ? `<table><tr><th>#</th><th>${esc(t("state"))}</th><th class="num">${esc(t("st_g"))}</th><th class="num">${esc(t("st_warn"))}</th></tr>${rows}</table>` : ""}
+      ${s.page ? `<div class="foot">${esc(t("st_page"))}: ${esc(s.page)}</div>` : ""}`;
+  }).join("");
+  const listOf = (items, key) => items.length ? `<h3 class="sub">${esc(t(key))}</h3><ul class="plain">${items.map((x) => `<li><b>${esc(x.id)}</b> · ${esc((x.reasons || [x.error]).join("; "))}</li>`).join("")}</ul>` : "";
+  view.innerHTML = `<div class="table-wrap starts"><div class="foot">${esc(gen.folder)} · ${esc(head)}</div>
+    <table><tr><th>${esc(t("st_form"))}</th><th>${esc(t("st_source"))}</th><th class="num">${esc(t("st_scale"))}</th><th>${esc(t("st_tight"))}</th>
+      <th class="num">${esc(t("st_efl"))}</th><th class="num">${esc(t("st_bfl"))}</th><th class="num">${esc(t("st_fno"))}</th><th class="num">${esc(t("st_petz"))}</th>
+      <th class="num">${esc(t("st_seidel"))}</th><th class="num">${esc(t("st_aoi"))}</th></tr>${cands}</table>
+    ${listOf(gen.not_evaluated, "st_noteval")}${listOf(gen.excluded, "st_excluded")}${scans}
+    <div class="foot">${esc(t("st_foot"))}</div></div>`;
+}
+
 // ---------------- 布局（2D / 3D）----------------
 
 const CAMERA0 = { yaw: -0.62, pitch: 0.32, zoom: 1, panX: 0, panY: 0 };
@@ -611,11 +834,11 @@ function lensDataTable(rows) {
   return `<details class="lens-data" ${lensDataOpen ? "open" : ""}><summary>${esc(t("lens_data"))}</summary>
     <div class="table-wrap"><table><tr><th>#</th><th>${esc(t("ld_type"))}</th><th>${esc(t("ld_comment"))}</th><th class="num">${esc(t("ld_radius"))}</th>
     <th class="num">${esc(t("ld_thickness"))}</th><th>${esc(t("ld_material"))}</th><th class="num">${esc(t("ld_sd"))}</th><th class="num">${esc(t("ld_conic"))}</th></tr>
-    ${rows.map((s) => `<tr><td>${s.index}${s.is_stop ? " STO" : ""}</td><td>${esc(s.type)}</td><td>${esc(s.comment)}</td>
+    ${rows.map((s) => `<tr data-surf="${s.index}"><td>${s.index}${s.is_stop ? " STO" : ""}</td><td>${esc(s.type)}</td><td>${esc(s.comment)}</td>
       <td class="num">${num(s.radius)}${mark(s, "radius")}</td><td class="num">${num(s.thickness)}${mark(s, "thickness")}</td>
       <td>${esc(s.material)}${mark(s, "material")}</td><td class="num">${num(s.semi_diameter)}${mark(s, "semi_diameter")}</td>
       <td class="num">${num(s.conic)}${mark(s, "conic")}</td></tr>`).join("")}</table></div>
-    <div class="foot">${esc(t("ld_solve"))}</div></details>`;
+    <div class="foot">${esc(t("ld_solve"))} · ${esc(t("hover_row"))}</div></details>`;
 }
 
 // 布局图的显示选项按浏览器记住；读写失败（隐私窗口等）就用默认值
@@ -964,6 +1187,16 @@ function renderLayout(view) {
     tip.style.top = `${my + 16 + h > frame.H ? my - h - 10 : my + 16}px`;
   }
 
+  // 布局与 Lens Data 表共用一个悬停状态：指向布局里的面标出表格行，指向表格行高亮布局里的面（借鉴 Optiland GUI 的 SurfaceInteractionState）
+  // the layout and the Lens Data table share one hover state, after the Optiland GUI's SurfaceInteractionState
+  const table = details?.querySelector("table");
+  const markRow = (index) => table?.querySelectorAll("tr[data-surf]").forEach((tr) => tr.classList.toggle("hl", Number(tr.dataset.surf) === index));
+  const setHover = (index) => { if (index === hover) return; hover = index; markRow(index); draw(); };
+  if (table) {
+    table.addEventListener("pointerover", (e) => { const tr = e.target.closest("tr[data-surf]"); if (tr && !drag) setHover(Number(tr.dataset.surf)); });
+    table.addEventListener("pointerleave", () => { if (!drag) setHover(null); });
+  }
+
   draw();
   let drag = null;
   const pos = (e) => { const r = canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
@@ -987,8 +1220,7 @@ function renderLayout(view) {
     const [mx, my] = pos(e);
     showReadout(mx, my);
     if (!drag) {
-      const h = surfaceAt(mx, my);
-      if (h !== hover) { hover = h; draw(); }
+      setHover(surfaceAt(mx, my));
       showTip(mx, my);
       return;
     }
@@ -1009,7 +1241,7 @@ function renderLayout(view) {
     if (drag?.measure && !drag.moved) { ruler = null; draw(); }
     drag = null; canvas.classList.remove("panning", "measuring");
   };
-  canvas.onpointerleave = () => { if (drag) return; readout.textContent = ""; tip.hidden = true; if (hover != null) { hover = null; draw(); } };
+  canvas.onpointerleave = () => { if (drag) return; readout.textContent = ""; tip.hidden = true; setHover(null); };
   canvas.onwheel = (e) => {
     e.preventDefault();
     // 以光标为中心缩放：光标下的点缩放前后不动
@@ -1213,13 +1445,15 @@ async function poll() {
     if (text !== stateText) {
       const roundsChanged = !state || JSON.stringify(state.rounds) !== JSON.stringify(next.rounds);
       const modeChanged = !state || state.daemon.mode !== next.daemon.mode || state.daemon.running !== next.daemon.running;
+      const modelingOf = (st) => JSON.stringify(st?.steps?.find((x) => x.id === "modeling")?.detail ?? null);
+      const startsChanged = tab === "starts" && modelingOf(state) !== modelingOf(next);
       state = next; stateText = text;
       lang = next.lang === "en" ? "en" : "zh";
       document.documentElement.lang = lang;
       renderFlow();
       renderTabs();
       const liveChanged = tab === "layout" && roundShown === "live" && next.live !== liveSeen;
-      if ((roundsChanged || liveChanged) && tab !== "control") renderView();
+      if ((roundsChanged || liveChanged || startsChanged) && tab !== "control") renderView();
       if (modeChanged) { analyses = null; renderView(); }
     }
     renderTop();

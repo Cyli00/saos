@@ -63,7 +63,56 @@ def starts_of(job: jobs.Job) -> dict[str, Any] | None:
     return None
 
 
-def rounds_of(job: jobs.Job) -> list[dict[str, Any]]:
+def starts_detail(job: jobs.Job) -> dict[str, Any]:
+    """起点页的数据：最近一次 starts.generate 的候选（来源、缩放、超范围项、预判）和用同一批起点跑的初筛结果，只读已有文件。
+    The starts page: the latest generated candidates (source, scale, exceeded ranges, prediction) and the screening scans
+    run from them, read from existing files only."""
+    paths = sorted((job.root / "explore" / "starts").glob("*/generated.json"), reverse=True)
+    if not paths:
+        return {"generated": None, "scans": []}
+    folder = paths[0].parent
+    data = json.loads(paths[0].read_text(encoding="utf-8"))
+    candidates = []
+    for c in data.get("candidates", []):
+        p = c.get("prediction") or {}
+        third = (p.get("third_order") or {}).get("totals") or {}
+        candidates.append({"id": c["id"], "form": c.get("form"), "provenance": c.get("provenance") or {},
+                           "constraints": c.get("constraints") or {}, "first_order": p.get("first_order"),
+                           "petzval": p.get("petzval"), "seidel": (p.get("seidel") or {}).get("totals"),
+                           "chromatic": {k: third.get(k) for k in ("LchC", "TchC") if k in third},
+                           "incidence_max": max((s["max_deg"] for s in (p.get("incidence") or {}).get("surfaces", []) if s.get("max_deg") is not None), default=None),
+                           "errors": p.get("errors") or {}})
+    rel = folder.relative_to(job.root).as_posix()
+    scans = []
+    for plan_file in sorted((job.root / "scans").glob("*/plan.json")) if (job.root / "scans").is_dir() else []:
+        try:
+            plan = json.loads(plan_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if plan.get("generation") != rel:
+            continue
+        result_file = plan_file.parent / "result.json"
+        rows = []
+        if result_file.is_file():
+            try:
+                result = json.loads(result_file.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                result = {}
+            rows = [{k: r.get(k) for k in ("id", "verdict", "valid", "shortfall", "start_shortfall", "problems", "numeric_warnings",
+                                           "still_improving", "kept", "error")} for r in result.get("rows", [])]
+        stages_ = plan.get("stages") or []
+        scans.append({"folder": plan_file.parent.relative_to(job.root).as_posix(), "finished": result_file.is_file(),
+                      "budget_s": sum(float(next(iter(s.values())).get("max_seconds", 0)) for s in stages_),
+                      "optimised": bool(stages_), "rows": rows,
+                      "page": (plan_file.parent / "index.html").relative_to(job.root).as_posix() if (plan_file.parent / "index.html").is_file() else None})
+    return {"generated": {"folder": rel, "constraints": data.get("constraints"), "allow_extrapolation": data.get("allow_extrapolation"),
+                          "excluded": data.get("excluded", []), "not_evaluated": data.get("not_evaluated", []), "candidates": candidates},
+            "scans": scans}
+
+
+def rounds_of(job: jobs.Job, metrics: list[str] | None = None) -> list[dict[str, Any]]:
+    """轮次列表；metrics 给出时另带这些需求条目在每轮的测量值（“指标”页用）。
+    The rounds; with metrics, also each round's measured value of those demand items (for the Metrics tab)."""
     out = []
     try:
         current_demand = demand.load_job(job.root)
@@ -75,6 +124,22 @@ def rounds_of(job: jobs.Job) -> list[dict[str, Any]]:
         out.append({"round": r["round"], "tiers": ledger.tiers_of(r), "note": r.get("note", ""), "shortfall": _num(r["shortfall"]),
                     "achieved": bool(r.get("achieved")), "deliverable": ledger.deliverable(r), "time": r.get("time"),
                     "demand_sha": ledger.version(r)[0], "viz": bool(folder) and (job.root / folder / "viz.json").is_file()})
+        if metrics:
+            values = r.get("values") or {}
+            out[-1]["values"] = {k: _num(values.get(k)) for k in metrics}
+    return out
+
+
+def metric_items(d: dict[str, Any], metrics: list[str]) -> list[dict[str, Any]]:
+    """“指标”页各条目的说明、单位和界限，按 --metrics 的顺序；需求里已没有的条目标出来。
+    Description, unit and bound of each Metrics item in --metrics order; items gone from the demand are flagged."""
+    entries = {e["id"]: (section, e) for section in demand.SECTIONS for e in d.get(section) or []}
+    out = []
+    for k in metrics:
+        section, e = entries.get(k, (None, {}))
+        bound = e.get("goal") or e.get("must") or e.get("range") or ({"equals": e["value"]} if section == "constants" and "value" in e else None)
+        out.append({"id": k, "section": section, "missing": section is None, "description": e.get("description"), "unit": e.get("unit"),
+                    "bound": bound, "direction": "minimize" if e.get("minimize") is not None else "maximize" if e.get("maximize") is not None else None})
     return out
 
 
@@ -82,8 +147,11 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
     root = job.root
     status = dict.fromkeys(STEPS, "pending")
     detail: dict[str, Any] = {}
-    out: dict[str, Any] = {"job": job.id, "name": job.read_state().get("name"), "daemon": _daemon(), "progress": None,
-                           "blocking": [], "decision": None, "rounds": rounds_of(job)}
+    job_state = job.read_state()
+    # 任务记住的窗口设置（saos ui open --tabs / --metrics）/ the job's remembered window settings
+    ui = job_state.get("ui") or {}
+    out: dict[str, Any] = {"job": job.id, "name": job_state.get("name"), "daemon": _daemon(), "progress": None,
+                           "blocking": [], "decision": None, "rounds": rounds_of(job, ui.get("metrics")), "ui": ui}
     view = root / jobs.VIEW_FILE
     # 当前镜头视图的版本号：界面看到它变了才重新取 / the live view's version; the window refetches only when it changes
     out["live"] = view.stat().st_mtime_ns if view.is_file() else None
@@ -105,6 +173,8 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
         return {**out, "steps": [{"id": s, "status": status[s], "detail": detail.get(s)} for s in STEPS], "current": "interview"}
 
     out["lang"] = i18n.resolve(d.get("lang"))
+    if ui.get("metrics"):
+        out["metric_items"] = metric_items(d, ui["metrics"])
     sha = demand.digest(d)
     # 版本（轮次、停止、排除、报告）用计算层哈希；确认用确认层哈希 / versions use the compute layer; confirmation uses the confirmation layer
     csha = demand.compute_digest(d)
@@ -131,7 +201,7 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
                          and job.resolve_lens(live_lens, must_exist=False) == job.resolve_lens(current_lens, must_exist=False))
             # 说明写完时不会刷新视图；旧视图不能盖过更新的说明，否则未确认的新结构会被当成已确认
             # describe does not refresh the view; a stale view must not override a newer description
-            live_is_newer = bool(models) and view.stat().st_mtime_ns >= models[-1].stat().st_mtime_ns
+            live_is_newer = bool(models) and view.is_file() and view.stat().st_mtime_ns >= models[-1].stat().st_mtime_ns
             if live.get("model") and same_lens and live_is_newer:
                 current_model = live["model"]
                 env = (latest.get("notes") or {}).get("environment") or []

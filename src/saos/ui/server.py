@@ -187,6 +187,8 @@ class Handler(BaseHTTPRequestHandler):
             return {"closed": job.id}
         if path == "/api/live":
             return live_of(job)
+        if path == "/api/starts":
+            return stage.starts_detail(job)
         if path == "/api/viz":
             try:
                 number = int(args.get("round", ""))

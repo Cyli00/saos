@@ -227,10 +227,13 @@ class Backend(ABC):
         """一次拟合到 max_term 项（Zernike Standard，参考主光线），返回所需各项；负项号含义同 ZERN。"""
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support zernike")
 
-    def viz_data(self, folder: Path | None, *, full: bool = True, rays: bool = True) -> dict[str, Any]:
+    def viz_data(self, folder: Path | None, *, full: bool = True, rays: bool = True, plots: frozenset[str] | None = None) -> dict[str, Any]:
         """saos ui 的数据：逐面全局几何、布局光线、Lens Data、交叠检查；full 时另有点列图光线和分析导出（文本写到 folder）。
         Data for saos ui: global geometry, layout rays, Lens Data, interference; with full also spot rays and analysis exports.
-        rays=False 时没有布局光线（优化运行中）/ no layout rays with rays=False (during an optimisation)."""
+        rays=False 时没有布局光线（优化运行中）/ no layout rays with rays=False (during an optimisation).
+        plots 列出要算的按轮分析图（spot、fan、field、mtf），None 为全部；几何、光线和 Lens Data 总是导出，后端可以忽略 plots 照常全给 /
+        plots lists the per-round plots to compute (spot, fan, field, mtf), None for all; geometry, rays and Lens Data are always
+        exported, and a backend may ignore plots and export everything."""
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support viz_data")
 
     def interference(self) -> dict[str, Any]:
