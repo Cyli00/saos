@@ -43,6 +43,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime
+from pathlib import Path
 import math
 from typing import Any
 
@@ -227,7 +229,13 @@ def _align(approved: dict[str, Any], current: dict[str, Any]) -> None:
 def structure_changes(approved: dict[str, Any], current: dict[str, Any], environment: Any = ()) -> list[str]:
     """已确认模型与当前镜头在结构上的不同之处；视场和波长在末尾追加的采样点不算。
     Structural differences between an approved model and the current lens; sampling points appended to fields or wavelengths do not count."""
-    a, b = fingerprint(approved, environment), fingerprint(current, environment)
+    return fingerprint_changes(fingerprint(approved, environment), fingerprint(current, environment), current)
+
+
+def fingerprint_changes(approved: dict, current: dict, desc: dict | None = None) -> list[str]:
+    import copy
+
+    a, b = copy.deepcopy(approved), copy.deepcopy(current)
     if a.get("mode") != b.get("mode"):
         return ["mode"]
     _align(a, b)
@@ -239,7 +247,7 @@ def structure_changes(approved: dict[str, Any], current: dict[str, Any], environ
             continue
         if len(new) > len(old) and new[:len(old)] == old:
             put(b, new[:len(old)])
-    labels = _break_labels(current)
+    labels = _break_labels(desc or {})
     return [labels.get(path, path) for path in diff(a, b)]
 
 
@@ -315,7 +323,7 @@ def diff(a: Any, b: Any, path: str = "") -> list[str]:
     return [] if a == b else [path or "(root)"]
 
 
-def approve(job: jobs.Job, model: str, quote: str) -> dict[str, Any]:
+def approve(job: jobs.Job, model: str, quote: str, rebuild_reason: str = "") -> dict[str, Any]:
     folder = (job.root / model).resolve()
     if job.root.resolve() not in folder.parents or folder.parent.name != "models":
         raise SaosError(ErrorCode.BAD_ARGS, "model must be a folder under the job's models/, e.g. models/001-start")
@@ -329,43 +337,100 @@ def approve(job: jobs.Job, model: str, quote: str) -> dict[str, Any]:
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"{model} was described without notes; run lens describe --notes with what each surface is, "
                         "the assumptions and the first-order analysis, then show the new page to the user")
     data = json.loads(data_file.read_text(encoding="utf-8"))
-    record = {"model": folder.relative_to(job.root).as_posix(), "lens": data.get("lens"), "quote": quote.strip(),
-              "time": jobs.now_iso(), "fingerprint_sha": data["fingerprint_sha"],
+    _verify_description(job, data_file, data)
+    if not isinstance(rebuild_reason, str):
+        raise SaosError(ErrorCode.BAD_ARGS, "重建原因必须为文字")
+    previous = approvals(job)
+    env = sorted((data.get("notes") or {}).get("environment") or [])
+    changed = bool(previous and (previous[-1]["environment"] != env or
+                   fingerprint_changes(previous[-1]["fingerprint"], data["fingerprint"], data.get("model"))))
+    if changed and not rebuild_reason.strip():
+        raise SaosError(ErrorCode.BAD_ARGS, "结构与上次确认不同；请用 --rebuild-reason 说明重建原因")
+    record = {"rebuild_reason": rebuild_reason.strip() if changed else None, "model": folder.relative_to(job.root).as_posix(), "lens": data.get("lens"), "quote": quote.strip(),
+              "time": jobs.now_iso(timespec="microseconds"), "approval_sequence": max((r.get("approval_sequence", 0) for r in previous), default=0) + 1,
+              "fingerprint_sha": data["fingerprint_sha"],
               # 用户确认时页面上仍有的自动检查结果，一并留档 / warnings still on the page when the user approved
               "warnings_acknowledged": data.get("warnings", [])}
+    if "shown_sha" in data:
+        # 确认页四节（选型依据、需求逐项、计算有效性、下一阶段预算）的摘要，以及当时仍为“未知”的条目；旧描述没有这两项，不写
+        # digest of the four sections shown (structure choice, requirements, computation validity, next budget) and the items still unknown then; older descriptions lack them
+        record["shown_sha"] = data["shown_sha"]
+        record["unknowns_acknowledged"] = data.get("unknowns", [])
     write_json(folder / APPROVAL_FILE, record)
     job.seal(folder / APPROVAL_FILE)
     return record
 
 
-def approvals(job: jobs.Job) -> list[dict[str, Any]]:
+def approvals(job: jobs.Job, *, problems: list | None = None) -> list[dict[str, Any]]:
     root = job.root / "models"
     out = []
+    from saos import stages
+
+    seals = job.root / jobs.SEALS_FILE
+    recorded = set()
+    if seals.is_file():
+        for line in seals.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                recorded.add(json.loads(line)["path"])
     for f in sorted(root.glob(f"*/{APPROVAL_FILE}")) if root.is_dir() else []:
-        record = json.loads(f.read_text(encoding="utf-8"))
-        model = json.loads((f.parent / "model.json").read_text(encoding="utf-8"))
-        env = ((model.get("notes") or {}).get("environment")) or []
-        out.append({**record, "fingerprint": model["fingerprint"], "desc": model.get("model"), "environment": [int(i) for i in env]})
-    return out
+        model_path = f.parent / "model.json"
+        relative = f.relative_to(job.root).as_posix()
+        model_relative = model_path.relative_to(job.root).as_posix()
+        try:
+            record = json.loads(f.read_text(encoding="utf-8"))
+            model = json.loads(model_path.read_text(encoding="utf-8"))
+            sequence = record.get("approval_sequence", 0)
+            if not isinstance(model["fingerprint"], dict) or isinstance(sequence, bool) or not isinstance(sequence, int) or sequence < 0:
+                raise SaosError(ErrorCode.EVIDENCE_TAMPERED, "malformed model approval", {"path": relative})
+            legacy = ("approval_schema" not in model and "shown" not in model
+                      and relative not in recorded and model_relative not in recorded)
+            if not legacy:
+                _verify_description(job, model_path, model)
+                if not stages.sealed(job.root, relative):
+                    raise SaosError(ErrorCode.EVIDENCE_TAMPERED, "model approval is unsealed or changed", {"path": relative})
+            if digest(model["fingerprint"]) != model["fingerprint_sha"] or record["fingerprint_sha"] != model["fingerprint_sha"]:
+                raise SaosError(ErrorCode.EVIDENCE_TAMPERED, "approval and description fingerprints differ", {"path": relative})
+            env = sorted(int(i) for i in ((model.get("notes") or {}).get("environment") or []))
+            out.append({**record, "model": f.parent.relative_to(job.root).as_posix(),
+                        "fingerprint": model["fingerprint"], "desc": model.get("model"), "environment": env,
+                        "legacy_unsealed": legacy, "evidence_context": model.get("evidence_context")})
+        except (OSError, ValueError, KeyError, TypeError, AttributeError, SaosError) as exc:
+            if problems is not None:
+                problems.append({"path": getattr(exc, "details", {}).get("path", relative),
+                                 "message": str(exc), "code": ErrorCode.EVIDENCE_TAMPERED})
+    def approval_time(record):
+        try:
+            return datetime.fromisoformat(record.get("time", "").replace("Z", "+00:00")).timestamp()
+        except (ValueError, TypeError, AttributeError, OverflowError, OSError):
+            return None
+    # 无可解析时间的旧记录保持未知，按目录顺序排在有时间记录前；耗时统计不使用它们。
+    return sorted(out, key=lambda r: (approval_time(r) is not None, approval_time(r) or 0,
+                                      r.get("approval_sequence", 0), r["model"]))
+
+
+def _verify_description(job: jobs.Job, path: Path, data: dict[str, Any]) -> None:
+    from saos import stages
+
+    if not stages.sealed(job.root, path.relative_to(job.root).as_posix()):
+        raise SaosError(ErrorCode.EVIDENCE_TAMPERED, "model description is unsealed or changed; describe it again", {"path": path.relative_to(job.root).as_posix()})
+    if "shown" in data or data.get("approval_schema") == 2:
+        if not data.get("shown_sha") or digest(data.get("shown")) != data["shown_sha"]:
+            raise SaosError(ErrorCode.EVIDENCE_TAMPERED, "model description has no matching shown_sha", {"path": path.relative_to(job.root).as_posix()})
 
 
 def require_approved(job: jobs.Job, desc: dict[str, Any]) -> dict[str, Any]:
     """当前镜头的结构必须与某个已确认的建模说明一致；否则报错并指出变了什么。按当前规则重新比较，旧的确认也适用。
     The current lens must match an approved model description; otherwise fail and say what changed.
     Comparison uses the current rule, so older approvals still count."""
-    found = approvals(job)
+    problems: list[dict] = []
+    found = approvals(job, problems=problems)
     latest_changes: list[str] = []
     for record in reversed(found):
         env = record["environment"]
-        if record.get("desc") is not None:
-            changes = structure_changes(record["desc"], desc, env)
-        else:
-            # 早期的 model.json 没有存完整描述，只能比较当时的指纹 / early model.json files lack the description: compare the stored fingerprint
-            now = fingerprint(desc, env)
-            _align(record["fingerprint"], now)
-            changes = diff(record["fingerprint"], now) if digest(fingerprint(desc, env)) != record["fingerprint_sha"] else []
+        changes = fingerprint_changes(record["fingerprint"], fingerprint(desc, env), desc)
         if not changes:
-            return {"model": record["model"], "fingerprint_sha": digest(fingerprint(desc, env)), "environment": env}
+            return {"model": record["model"], "fingerprint_sha": digest(fingerprint(desc, env)), "environment": env,
+                    "legacy_unsealed": record["legacy_unsealed"], "evidence_problems": problems}
         if record is found[-1]:
             latest_changes = changes
     details: dict[str, Any] = {"fingerprint_sha": digest(fingerprint(desc))}
@@ -376,4 +441,33 @@ def require_approved(job: jobs.Job, desc: dict[str, Any]) -> dict[str, Any]:
                    "run lens describe, show the page to the user and lens approve with their words before recording rounds")
     else:
         message = "no approved model description; run lens describe, show the page to the user and lens approve with their words before recording rounds"
+    if problems:
+        details["problems"] = problems
+        raise SaosError(ErrorCode.EVIDENCE_TAMPERED, "no intact approval matches the current model; see details.problems and describe/approve again", details)
     raise SaosError(ErrorCode.MODEL_NOT_APPROVED, message, details)
+
+
+def evidence_notes(job: jobs.Job, desc: dict[str, Any], method_sha: str) -> list[str]:
+    """确认后证据变化只提示；结构与封存核对仍由确认入口负责。"""
+    problems: list[dict] = []
+    records = approvals(job, problems=problems)
+    notes = [f"历史模型确认不可用：{p['path']}：{p['message']}" for p in problems]
+    if not records:
+        return notes
+    if any(r["legacy_unsealed"] for r in records):
+        notes.append("存在封存机制之前的旧模型确认，未补写封存记录。")
+    context = records[-1].get("evidence_context") or {}
+    if context.get("method_sha") and context["method_sha"] != method_sha:
+        notes.append("判定方法已变，模型确认仍按结构适用。")
+    scan = context.get("scan")
+    if scan:
+        try:
+            result = json.loads(jobs.inside(job.root, scan + "/result.json").read_text(encoding="utf-8"))
+            current = digest(fingerprint(desc))
+            matched = any((r.get("structure") or {}).get(k, {}).get("fingerprint") == current
+                          for r in result.get("rows", []) for k in ("as_built", "end"))
+        except (OSError, ValueError):
+            matched = False
+        if not matched:
+            notes.append("确认时的比较已不对应当前模型，模型确认仍按结构适用。")
+    return notes

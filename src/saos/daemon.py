@@ -289,12 +289,19 @@ class Daemon:
         except Exception as exc:  # noqa: BLE001 - 视图只是给人看的 / the view is for people only
             log.exception(_t("导出当前视图失败", "exporting the live view failed"))
             data = {"ok": False, "error": f"{type(exc).__name__}: {getattr(exc, 'message', exc)}"[:500]}
+        described_at = time.perf_counter()
+        try:
+            data["model"] = self.backend.describe_model(None)
+        except Exception as exc:
+            data["model_error"] = f"{type(exc).__name__}: {exc}"[:500]
+        data["timing"] = {"viz_s": round(described_at - started, 6),
+                          "model_s": round(time.perf_counter() - described_at, 6)}
         self.view_seq += 1
         data.update(lens=loaded.job.relative_lens(loaded.path), dirty=loaded.dirty, updated=jobs.now_iso(), seq=self.view_seq,
                     elapsed_s=round(time.perf_counter() - started, 3))
         write_json(loaded.job.root / jobs.VIEW_FILE, data)
         clash = data.get("interference") or {}
-        return {"elapsed_s": data["elapsed_s"], "ok": data["ok"],
+        return {"elapsed_s": data["elapsed_s"], "timing": data["timing"], "ok": data["ok"],
                 "interference": {k: clash.get(k) for k in ("crossings", "overlaps")} if clash else None}
 
     def _refresh_windows(self, args: dict[str, Any]) -> None:
@@ -547,7 +554,9 @@ class Daemon:
         except SaosError as exc:
             desc["interference"] = {"error": exc.message}
         lens = loaded.path.relative_to(job.lenses_dir).as_posix()
-        result = model_report.write(job, desc, folder, notes, lens, _arg(args, "lang", str, default=None))
+        # 确认页的“需求逐项”用需求单现有的判定入口测当前镜头（不存证据）/ the requirements section measures the lens with the demand's own checks (no evidence kept)
+        measured = model_report.measure_requirements(scripting.ScriptContext(self, job, {}))
+        result = model_report.write(job, desc, folder, notes, lens, _arg(args, "lang", str, default=None), measured=measured)
         if notes is not None:
             notes_file = job.root / "notes" / f"model-{folder.name.split('-', 1)[0]}.json"
             write_json(notes_file, notes)
@@ -560,7 +569,7 @@ class Daemon:
         Record the user's approval (their words) of a model description; rounds then require a matching structure."""
         from saos import model_gate
 
-        return model_gate.approve(self._job(args), _arg(args, "model", str), _arg(args, "quote", str))
+        return model_gate.approve(self._job(args), _arg(args, "model", str), _arg(args, "quote", str), args.get("rebuild_reason") or "")
 
     def op_set(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))

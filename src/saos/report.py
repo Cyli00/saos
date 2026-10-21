@@ -79,6 +79,10 @@ TEXT: dict[str, tuple[str, str]] = {
         "<b>Last clear gain</b>: round {n}; {k} round(s) since without a clear gain; tiers not yet tried: {untried}",
     ),
     "title": ("设计报告", "Design report"),
+    "timing.title": ("流程耗时", "Workflow timing"),
+    "timing.model": ("需求确认至首次模型确认", "Demand confirmation to first model approval"),
+    "timing.report": ("需求确认至报告认可", "Demand confirmation to report acceptance"),
+    "timing.pending": ("未发生或缺少时间戳", "Not reached or timestamp missing"),
     "byline": ("saos 设计报告 · 任务 {job} · 生成于 {time}", "saos design report · job {job} · generated {time}"),
     "deliver": ("<b>交付镜头</b>：{lens}（第 {n} 轮，目标差距 G = {g}）", "<b>Delivered lens</b>: {lens} (round {n}, shortfall G = {g})"),
     "best_so_far": ("<b>目前最好的镜头</b>：{lens}（第 {n} 轮，目标差距 G = {g}）", "<b>Best lens so far</b>: {lens} (round {n}, shortfall G = {g})"),
@@ -316,16 +320,19 @@ def build(job: jobs.Job) -> dict[str, Any]:
     problems = job.verify_seals()
     if problems:
         raise SaosError(ErrorCode.EVIDENCE_TAMPERED, f"{len(problems)} sealed evidence file(s) were changed or deleted; see details", {"problems": problems[:50]})
-    rounds = ledger.load(job.root / ledger.LEDGER_FILE)
+    # 版本哈希用需求文件原样的停止规则（不含阶段覆盖的 max_rounds），与判定和记录时一致
+    # version hashes use the demand file's own stop rule (without the stage's max_rounds), as when judging and recording
+    stored = demand.load_job(job.root)
+    rounds = ledger.load(job.root / ledger.LEDGER_FILE, stored)
     if not rounds:
         raise SaosError(ErrorCode.BAD_ARGS, f"job {job.id} has no recorded rounds; run saos round first")
-    current = (demand.digest(demand.load_job(job.root)), demand.method_digest(demand.prepare_scripts(job.root, d)))
+    current = (demand.compute_digest(stored), demand.method_digest(demand.prepare_scripts(job.root, d)))
     rounds = stages.rounds(job.root, rounds)
     if not rounds:
         raise SaosError(ErrorCode.BAD_ARGS, "no completed round exists in the current stage")
     if ledger.version(rounds[-1]) != current:
         raise SaosError(ErrorCode.SPEC_CHANGED, "no round matches the current demand and check scripts; record a new round before reporting")
-    decision = ledger.decide(rounds, d["stop"], ledger.stop_for(job.root, current[0]), ledger.ruled_out_for(job.root, current[0]))
+    decision = ledger.decide(rounds, d["stop"], ledger.stop_for(job.root, current[0], stored), ledger.ruled_out_for(job.root, current[0], stored))
     rounds = ledger.current_window(rounds)
     final = rounds[-1]
     # 只交付不含模型玻璃、满足硬条件的轮次；都不满足时取最好的一轮并标明不可交付
@@ -353,7 +360,9 @@ def build(job: jobs.Job) -> dict[str, Any]:
     # 文字部分（总结、待确认问题）取当前文件；三类条目取这一轮实际判定时的版本，两者内容哈希相同
     # the wording (summary, open questions) comes from the current file; the sections from the judged version, which hashes the same
     shown = {**evaluation["demand"], "summary": d["summary"], "open_questions": d.get("open_questions") or [], "lang": d.get("lang"), "stop": d["stop"]}
-    return {"demand": shown, "confirmed": demand.confirmation_for(job.root, current[0]), "rounds": rounds, "decision": decision,
+    from saos import milestones
+
+    return {"milestones": milestones.elapsed(job), "demand": shown, "confirmed": demand.confirmation_for(job.root, demand.digest(stored), stored), "rounds": rounds, "decision": decision,
             "deliver": deliver, "items": evaluation["items"], "blocked": not ledger.deliverable(deliver),
             "tolerance": latest_tolerance(job, deliver), "backend": backend, "stage_entry": entry,
             "stage_comparison": json.loads((job.root / stages.RESULT).read_text(encoding="utf-8")) if entry else None}
@@ -372,6 +381,15 @@ def stage_section(data: dict[str, Any], t: Tr) -> str:
     return (f'<h2>{t("stage.title")}</h2><p>{text}</p><p>{t("stage.note")}</p>' + table(comparison["items"])
             + f'<h3>{t("stage.baseline")}</h3>' + table(comparison["baseline"])
             + f'<details><summary>{t("stage.materials")}</summary><pre>{e(json.dumps(details, ensure_ascii=False, indent=2))}</pre></details>')
+
+
+def milestones_section(data: dict, t: Tr) -> str:
+    values = data.get("milestones") or {}
+    def duration(key):
+        value = values.get(key)
+        return f"{value:.3f} s" if value is not None else t("timing.pending")
+    return (f"<h2>{t('timing.title')}</h2><p>{t('timing.model')}: {duration('to_first_model_approval_s')}<br>"
+            f"{t('timing.report')}: {duration('to_report_acceptance_s')}</p>")
 
 
 def latest_tolerance(job: jobs.Job, deliver: dict[str, Any]) -> dict[str, Any] | None:
@@ -561,6 +579,7 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
 <br>{t('backend.' + ('optiland' if data['backend']['name'] == 'optiland' else 'zos'), version=e(data['backend']['version'] or ''))}</div>
 {blocked}
 {stage_section(data, t)}
+{milestones_section(data, t)}
 <h2>{t('h.materials', n=deliver['round'])}</h2>{materials}
 <h2>{t('h.demand')}</h2>{demand_html}
 <p class="muted">{t('confirmed', quote=e(confirmed) or t('not_recorded'))}</p>
@@ -613,8 +632,9 @@ def write(job: jobs.Job, lang: str | None = None) -> dict[str, Any]:
         "shortfall": shown["shortfall"],
         "backend": data["backend"]["name"],
         "opticstudio_verified": data["backend"]["name"] == "zos",
+        "milestones": data["milestones"],
     }
-    history = ledger.load(job.root / ledger.LEDGER_FILE)
+    history = ledger.load(job.root / ledger.LEDGER_FILE, demand.load_job(job.root))
     metadata = {**result, "demand_sha": ledger.version(history[-1])[0], "method_sha": ledger.version(history[-1])[1],
                 "last_round": history[-1]["round"], "stage": "zos" if data["stage_entry"] else "exploration"}
     write_json(archived.with_suffix(".json"), metadata)
