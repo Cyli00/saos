@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -102,20 +103,24 @@ def write_json(path: Path, data: Any, *, strict: bool = False) -> None:
     """原子写入 JSON（先写临时文件再替换）。strict=True 时遇到 NaN/inf 直接报错，不做 jsonable 转换。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) if strict else json.dumps(jsonable(data), ensure_ascii=False, indent=2)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, prefix=path.name + ".", suffix=".tmp", delete=False) as fh:
+        tmp = Path(fh.name)
+        fh.write(text)
     # Windows 上另一进程正打开目标文件读取时（流程图窗口轮询 progress.json、杀毒扫描），替换会报 WinError 5；
     # 读者很快就会关掉文件，短暂重试几次，仍失败才报错
     # on Windows, replacing a file another process holds open for reading (the workflow window polling progress.json,
     # a virus scan) fails with WinError 5; readers close it quickly, so retry briefly before giving up
-    for attempt in range(REPLACE_RETRIES):
-        try:
-            os.replace(tmp, path)
-            return
-        except PermissionError:
-            if attempt == REPLACE_RETRIES - 1:
-                raise
-            time.sleep(REPLACE_WAIT_S * (attempt + 1))
+    try:
+        for attempt in range(REPLACE_RETRIES):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                if attempt == REPLACE_RETRIES - 1:
+                    raise
+                time.sleep(REPLACE_WAIT_S * (attempt + 1))
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def read_json(path: Path | str) -> Any:

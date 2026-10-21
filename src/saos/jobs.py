@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -29,8 +30,8 @@ NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$")
 LENS_SUFFIX = ".zmx"
 
 
-def now_iso() -> str:
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+def now_iso(*, timespec: str = "seconds") -> str:
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec=timespec)
 
 
 SEALS_FILE = "seals.jsonl"
@@ -104,8 +105,27 @@ class Job:
                     lines.append(json.dumps({"path": f.resolve().relative_to(self.root.resolve()).as_posix(),
                                              "sha256": sha256_file(f), "time": now_iso()}, ensure_ascii=False))
         if lines:
-            with (self.root / SEALS_FILE).open("a", encoding="utf-8") as fh:
-                fh.write("".join(line + "\n" for line in lines))
+            # 多个候选 worker 会同时封存；Windows 的追加写入仍需互斥，避免一条记录覆盖另一条。
+            with (self.root / SEALS_FILE).open("a+b") as fh:
+                fh.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+                try:
+                    fh.seek(0, 2)
+                    fh.write("".join(line + "\n" for line in lines).encode("utf-8"))
+                    fh.flush()
+                finally:
+                    fh.seek(0)
+                    if os.name == "nt":
+                        msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:
+                        fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
 
     def verify_seals(self) -> list[dict[str, Any]]:
         """返回被改动或缺失的证据文件（每个路径取最后一次封存）。 / Evidence files changed or missing since sealing."""
