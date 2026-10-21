@@ -221,8 +221,6 @@ def test_live_view_and_window_polls_are_served(ui):
 
 
 def test_job_commands_reopen_the_window_unless_one_is_polling(saos_home, monkeypatch):
-    import argparse
-
     import saos.ui as ui_pkg
     from saos import cli
 
@@ -289,6 +287,8 @@ def test_snapshot_shows_a_detached_scan_as_the_running_operation(saos_home):
     assert stage.snapshot(job)["progress"] is None
 
 
+
+
 def _surface(index, vertex, y_dir, x_dir, sd=1.0):
     """平面镜片面：顶点、局部 y 轴、局部 x 轴的全局方向 / a flat face given its vertex and local y and x axes."""
     at = lambda d, k: [vertex[i] + d[i] * k for i in range(3)]  # noqa: E731
@@ -298,7 +298,7 @@ def _surface(index, vertex, y_dir, x_dir, sd=1.0):
 
 def test_folded_systems_get_a_2d_section_in_their_plane_of_symmetry():
     """轴对称系统画 YZ 面；在 XZ 面内折转（光纤段沿 x，45° 镜后沿 z）画 XZ 面、用弧矢截线和 py = 0 的扇；各面不共面时没有 2D。"""
-    X, Y, Z = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)
+    X, Y = (1.0, 0.0, 0.0), (0.0, 1.0, 0.0)
     axial = {"surfaces": [_surface(1, (0, 0, 0), Y, X), _surface(2, (0, 0, 5), Y, X)],
              "layout": {"rays": [{"field": 0, "px": 0.0, "py": py, "points": [[0, py, 0], [0, py, 5]]} for py in (-1.0, 1.0)]}}
     sec = section.section_plane(axial)
@@ -380,3 +380,45 @@ def test_gates_raise_an_open_window_and_notify_leaves_a_line_for_the_user(ui, mo
     assert get(srv, f"/api/state?job={job.id}")[1]["result"]["notice"] is None
     with pytest.raises(ui_pkg.SaosError):
         ui_pkg.notify(job.id, "  ")
+
+
+def test_describing_same_structure_does_not_restore_approval_gate(flow):
+    daemon, job = flow
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
+    demand.confirm(job.root, "自动化测试夹具：确认需求")
+    folder = call(daemon, "lens.describe", job=job.id, notes=NOTES)["result"]["folder"]
+    assert call(daemon, "lens.approve", job=job.id, model=folder, quote="自动化测试夹具：确认模型")["ok"]
+    daemon.backend.lens["surfaces"][1]["radius"] = 60
+    assert call(daemon, "lens.describe", job=job.id, notes=NOTES)["ok"]
+    assert steps(job)[1]["model_approve"] == "done"
+    daemon.backend.lens["surfaces"][1]["type"] = "Even Asphere"
+    assert call(daemon, "lens.describe", job=job.id, notes=NOTES)["ok"]
+    assert steps(job)[1]["model_approve"] == "waiting"
+
+
+def test_generated_starts_appear_inside_modeling_step(saos_home):
+    job = jobs.create_job("generated-starts")
+    folder = job.root / "explore" / "starts" / "001"
+    folder.mkdir(parents=True)
+    (folder / "generated.json").write_text(json.dumps({"count": 2, "not_evaluated": [{"id": "missing"}]}), encoding="utf-8")
+    assert stage.starts_of(job) == {"count": 2, "not_evaluated": 1, "folder": "explore/starts/001"}
+    assert "starts" not in stage.STEPS
+
+
+def test_live_structure_change_requires_description_before_any_new_model_page(flow, monkeypatch):
+    daemon, job = flow
+    monkeypatch.setenv("SAOS_VIEW", "1")
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(DEMAND,allow_unicode=True),encoding="utf-8")
+    demand.confirm(job.root,"自动化测试夹具：确认需求")
+    folder = call(daemon,"lens.describe",job=job.id,notes=NOTES)["result"]["folder"]
+    assert call(daemon,"lens.approve",job=job.id,model=folder,quote="自动化测试夹具：确认模型")["ok"]
+    daemon.backend.lens["surfaces"][1]["radius"] = 61
+    daemon.export_view(rays=False)
+    assert steps(job)[0] == "design"
+    daemon.backend.lens["surfaces"][1]["material"] = ""
+    daemon.export_view(rays=False)
+    snap = stage.snapshot(job)
+    assert snap["current"] == "modeling"
+    modeling = next(s for s in snap["steps"] if s["id"] == "modeling")
+    assert modeling["detail"]["needs_description"] is True
+    assert len(list((job.root / "models").glob("*/model.json"))) == 1

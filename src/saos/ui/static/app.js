@@ -14,10 +14,11 @@ const TEXT = {
     no_demand: "访谈中，尚无需求单", invalid_demand: "需求单未通过校验", first: "等待用户确认", reconfirm: "需求已改动，待重新确认",
     waiting: "等你确认", blocked: "待回答", active: "进行中", running: "运行中",
     rounds_n: (n) => `第 ${n} 轮`, no_rounds: "尚未记录轮次",
-    explore_run: (n) => `结构探索：${n} 个候选运行中`, explore_done: (n, k) => `结构探索：${n} 个候选，保留 ${k} 个`,
+    starts_done: (n, k) => `已生成 ${n} 个起点 · ${k} 个未评估`,
+    explore_run: (n) => `结构探索：${n} 个候选运行中`, explore_done: (n) => `已比较 ${n} 个候选`,
     st_achieved: "已达成", st_exhausted: "无法再优化", st_limit: "达到轮次上限", st_stopped: "按用户决定停止",
     report_ready: "报告已生成", report_todo: "待生成报告", deliver_cmd: "saos scan（公差，按需）· saos report",
-    back_demand: "需求变更", back_model: "修改模型", back_reach: "结构不可达", feasibility: "质疑结构 · 手算界限",
+    back_demand: "需求变更", back_model: "结构或计算前提改变", back_reach: "结构不可达", feasibility: "质疑结构 · 手算界限",
     explicit: "显式调试 · Interactive Extension", standalone: "后台运行 · standalone", no_daemon: "后台进程未运行",
     tab_control: "窗口控制", tab_layout: "布局", tab_spot: "点列图", tab_mtf: "MTF", tab_rounds: "轮次",
     blocking: "blocking 待确认问题：",
@@ -33,7 +34,9 @@ const TEXT = {
     layout_foot_opt: "几何与光线坐标：Optiland 0.6.3（面坐标系、矢高、批量光线追迹，float64）。",
     spot_foot_opt: (ref) => `点：Optiland 批量光线追迹，相对主波长主光线，未计被拦光线。RMS / GEO：saos 的 Optiland 点列分析（参考 ${ref}，六角采样，每个波长光线数相同），单位 µm。`,
     mtf_foot_opt: "曲线：Optiland FFT MTF，主波长（多波长 MTF 尚未接入）。",
-    modeling_sub: "scan candidates · lens describe", design_sub: "Optiland 优化 · 步长回退 · round · 结构未指定时先比较 ≥3 个候选",
+    model_evidence: "模型确认记录提示：",
+    redescribe: "结构已变：重新描述并确认",
+    modeling_sub: "起点预判 · 同预算初筛", approval_sub: "方向 · 取舍 · 未知项", design_sub: "初筛 · Optiland · round",
     layout_hint_3d: "拖动旋转 · Shift 或右键拖动平移 · 滚轮以光标为中心缩放 · 双击复位 · 指向某面看参数", layout_hint_2d: "拖动平移 · Shift 或右键拖动测距（吸附面上的点）· 滚轮以光标为中心缩放 · 双击复位 · Esc 清除测距 · 指向某面看参数",
     image_z: "像面 z", round: "轮", tiers: "层级", gap: "目标差距", state: "状态", note: "说明", achieved: "达成", deliverable: "可交付",
     pick_round: "点一行在其他视图中查看该轮", sag_flat: "部分面读不到面形，按平面画。", select_round: (n) => `r${String(n).padStart(3, "0")}`,
@@ -58,7 +61,8 @@ const TEXT = {
     no_demand: "interviewing, no demand yet", invalid_demand: "demand fails validation", first: "waiting for the user", reconfirm: "demand changed, confirm again",
     waiting: "your turn", blocked: "question", active: "in progress", running: "running",
     rounds_n: (n) => `round ${n}`, no_rounds: "no rounds yet",
-    explore_run: (n) => `exploring ${n} candidates`, explore_done: (n, k) => `explored ${n} candidates, kept ${k}`,
+    starts_done: (n, k) => `${n} ${n === 1 ? "start" : "starts"} · ${k} not evaluated`,
+    explore_run: (n) => `exploring ${n} ${n === 1 ? "candidate" : "candidates"}`, explore_done: (n) => `compared ${n} ${n === 1 ? "candidate" : "candidates"}`,
     st_achieved: "achieved", st_exhausted: "exhausted", st_limit: "round limit", st_stopped: "stopped by user",
     report_ready: "report written", report_todo: "report pending", deliver_cmd: "saos scan (tolerance, if needed) · saos report",
     back_demand: "demand change", back_model: "revise model", back_reach: "unreachable", feasibility: "question · hand bounds",
@@ -77,7 +81,9 @@ const TEXT = {
     layout_foot_opt: "Geometry and rays: Optiland 0.6.3 (surface frames, sag, batch ray trace, float64).",
     spot_foot_opt: (ref) => `Points: Optiland batch ray trace relative to the primary chief ray, vignetted rays left out. RMS / GEO: saos's Optiland spot analysis (reference ${ref}, hexapolar sampling, the same rays for every wavelength), in µm.`,
     mtf_foot_opt: "Curves: Optiland FFT MTF at the primary wavelength (polychromatic MTF not connected yet).",
-    modeling_sub: "scan candidates · lens describe", design_sub: "Optiland optimise / backtrack / round · compare ≥3 structures first if the structure is not fixed",
+    model_evidence: "Model approval evidence: ",
+    redescribe: "Structure changed: describe and approve",
+    modeling_sub: "Predict starts · equal-budget screening", approval_sub: "Direction · tradeoffs", design_sub: "screening · Optiland · round",
     layout_hint_3d: "drag to rotate · Shift or right-drag to pan · wheel zooms at the cursor · double-click to reset · hover a surface for its data", layout_hint_2d: "drag to pan · Shift or right-drag to measure (snaps to surface points) · wheel zooms at the cursor · double-click to reset · Esc clears the ruler · hover a surface for its data",
     image_z: "image z", round: "Round", tiers: "Tiers", gap: "Shortfall", state: "State", note: "Note", achieved: "achieved", deliverable: "deliverable",
     pick_round: "Click a row to view that round in the other tabs", sag_flat: "Some surface shapes could not be read; drawn flat.", select_round: (n) => `r${String(n).padStart(3, "0")}`,
@@ -172,12 +178,17 @@ function nodeSub(step) {
   if (step.id === "interview") return d ? t(d) : t("feasibility");
   if (step.id === "demand_confirm") return d ? t(d) : "saos demand confirm";
   if (step.id === "modeling") {
+    if (d && d.needs_description) return t("redescribe");
     if (step.status === "active" && state.progress) return `${state.progress.op}`;
     const x = d && d.exploration;
-    if (x) return x.finished ? t("explore_done", x.candidates, x.kept) : t("explore_run", x.candidates);
+    if (x) {
+      if (!x.finished) return t("explore_run", x.candidates);
+      return t("explore_done", x.candidates);
+    }
+    if (d && d.starts) return t("starts_done", d.starts.count, d.starts.not_evaluated);
     return t("modeling_sub");
   }
-  if (step.id === "model_approve") return typeof d === "string" ? d : "saos lens approve";
+  if (step.id === "model_approve") return typeof d === "string" ? d : t("approval_sub");
   if (step.id === "design") {
     if (!d) return t("design_sub");
     const last = d.last;
@@ -189,15 +200,41 @@ function nodeSub(step) {
   return "";
 }
 
+function wrapNodeSub(text, width) {
+  if (!text) return [];
+  const lines = [];
+  let line = "", size = 0;
+  for (const character of text) {
+    const weight = character.charCodeAt(0) > 255 ? 1.7 : 1;
+    if (size + weight > width && line) {
+      const split = line.lastIndexOf(" ");
+      lines.push((split > 0 ? line.slice(0, split) : line).trim());
+      line = split > 0 ? line.slice(split + 1) : "";
+      size = [...line].reduce((total, ch) => total + (ch.charCodeAt(0) > 255 ? 1.7 : 1), 0);
+    }
+    line += character; size += weight;
+  }
+  if (line) lines.push(line.trim());
+  return lines;
+}
+
 function renderFlow() {
   const svg = $("flow");
   const steps = Object.fromEntries(state.steps.map((s) => [s.id, s]));
   const running = !!state.progress;
+  let offset = 0;
+  const nodes = NODES.map((node) => {
+    const lines = wrapNodeSub(nodeSub(steps[node.id]), node.gate ? 20 : 29);
+    const height = Math.max(node.h, 32 + lines.length * 12);
+    const result = {...node, y: node.y + offset, h: height};
+    offset += height - node.h;
+    return result;
+  });
   const parts = [`<defs><filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.6"/></filter></defs>`];
   const cx = NX + NW / 2;
   // 主干连线
-  for (let i = 0; i < NODES.length - 1; i++) {
-    const a = NODES[i], b = NODES[i + 1];
+  for (let i = 0; i < nodes.length - 1; i++) {
+    const a = nodes[i], b = nodes[i + 1];
     const sa = steps[a.id], sb = steps[b.id];
     const y1 = a.y + a.h, y2 = b.y - 6;
     const live = ["active", "waiting", "blocked"].includes(sb.status) && sa.status === "done";
@@ -213,7 +250,7 @@ function renderFlow() {
   }
   // 回退连线（虚线，右侧）
   const back = (from, to, label, lane, dy1 = 0) => {
-    const a = NODES.find((n) => n.id === from), b = NODES.find((n) => n.id === to);
+    const a = nodes.find((n) => n.id === from), b = nodes.find((n) => n.id === to);
     const xr = NX + NW, x2 = xr + lane;
     const y1 = a.y + a.h / 2 + dy1, y2 = b.y + b.h / 2;
     parts.push(`<path class="edge back" d="M${xr},${y1} L${x2},${y1} L${x2},${y2} L${xr + 7},${y2}"/>`);
@@ -229,23 +266,26 @@ function renderFlow() {
   back("zos", "design", t("back_zos"), 54);
   back("deliver", "design", t("back_reject"), 68, -12);
   // 节点
-  NODES.forEach((n, i) => {
+  nodes.forEach((n, i) => {
     const s = steps[n.id];
     const cls = `node ${s.status} ${s.status === "active" && running ? "running" : ""}`;
     const r = n.gate ? n.h / 2 : 10;
     const x = n.gate ? NX + 26 : NX, w = n.gate ? NW - 52 : NW;
-    let sub = nodeSub(s);
-    const maxChars = n.gate ? 23 : 29;
-    if (sub.length > maxChars) sub = sub.slice(0, maxChars - 1) + "…";
+    const fullSub = nodeSub(s);
+    const sub = fullSub;
+    const subLines = wrapNodeSub(sub, n.gate ? 20 : 29);
     parts.push(`<g class="${cls}">`);
+    parts.push(`<title>${esc(fullSub)}</title>`);
     parts.push(`<rect class="glow" x="${x}" y="${n.y}" width="${w}" height="${n.h}" rx="${r}"/>`);
     parts.push(`<rect class="frame" x="${x}" y="${n.y}" width="${w}" height="${n.h}" rx="${r}"/>`);
     parts.push(`<rect class="chase" x="${x}" y="${n.y}" width="${w}" height="${n.h}" rx="${r}" pathLength="100"/>`);
     const icon = s.status === "done" ? "✓" : n.gate ? "◆" : String(i + 1);
     const tx = x + (n.gate ? 22 : 16);
-    parts.push(`<text class="idx" x="${tx - 6}" y="${n.y + n.h / 2 - (sub ? 4 : -4)}" text-anchor="middle">${icon}</text>`);
-    parts.push(`<text class="title" x="${tx + 6}" y="${n.y + n.h / 2 - (sub ? 4 : -4)}">${esc(t(n.id))}</text>`);
-    if (sub) parts.push(`<text class="sub" x="${tx + 6}" y="${n.y + n.h / 2 + 13}">${esc(sub)}</text>`);
+    parts.push(`<text class="idx" x="${tx - 6}" y="${n.y + (sub ? 19 : n.h / 2 + 4)}" text-anchor="middle">${icon}</text>`);
+    parts.push(`<text class="title" x="${tx + 6}" y="${n.y + (sub ? 19 : n.h / 2 + 4)}">${esc(t(n.id))}</text>`);
+    subLines.forEach((line, index) => {
+      parts.push(`<text class="sub" x="${tx + 6}" y="${n.y + 34 + index * 12}">${esc(line)}</text>`);
+    });
     if (["waiting", "blocked"].includes(s.status) || (s.status === "active" && running)) {
       const label = s.status === "active" ? t("running") : t(s.status);
       const bw = label.length * (lang === "zh" ? 11 : 6.4) + 12;
@@ -255,9 +295,10 @@ function renderFlow() {
     parts.push(`</g>`);
   });
   svg.innerHTML = parts.join("");
-  svg.setAttribute("viewBox", `0 0 330 ${NODES[NODES.length - 1].y + 70}`);
+  svg.setAttribute("viewBox", `0 0 330 ${nodes[nodes.length - 1].y + nodes[nodes.length - 1].h + 24}`);
   const note = $("flow-note");
   note.innerHTML = state.blocking.length ? `<div class="q"><b>${esc(t("blocking"))}</b><br>${state.blocking.map(esc).join("<br>")}</div>` : "";
+  if (state.model_evidence?.length) note.innerHTML += `<div class="q"><b>${esc(t("model_evidence"))}</b><br>${state.model_evidence.map((p) => esc(`${p.path}: ${p.code}`)).join("<br>")}</div>`;
 }
 
 function renderTop() {

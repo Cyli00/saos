@@ -31,8 +31,7 @@ def _daemon() -> dict[str, Any]:
 
 
 def exploration_of(job: jobs.Job) -> dict[str, Any] | None:
-    """最近一次结构探索（mode 为 candidates 的扫描）：候选数、是否跑完、保留了几个。
-    The latest structure exploration (a scan whose mode is candidates): candidates, finished, how many were kept."""
+    """读取最新候选初筛的完成状态和保留数量。"""
     root = job.root / "scans"
     plans = sorted(root.glob("*/plan.json")) if root.is_dir() else []
     for plan_file in reversed(plans):
@@ -53,9 +52,24 @@ def exploration_of(job: jobs.Job) -> dict[str, Any] | None:
     return None
 
 
+def starts_of(job: jobs.Job) -> dict[str, Any] | None:
+    for path in sorted((job.root / "explore" / "starts").glob("*/generated.json"), reverse=True):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            return {"count": data["count"], "not_evaluated": len(data.get("not_evaluated", [])),
+                    "folder": path.parent.relative_to(job.root).as_posix()}
+        except (OSError, ValueError, KeyError):
+            continue
+    return None
+
+
 def rounds_of(job: jobs.Job) -> list[dict[str, Any]]:
     out = []
-    for r in ledger.load(job.root / ledger.LEDGER_FILE):
+    try:
+        current_demand = demand.load_job(job.root)
+    except SaosError:
+        current_demand = None
+    for r in ledger.load(job.root / ledger.LEDGER_FILE, current_demand):
         evaluation = r.get("evaluation") or ""
         folder = evaluation.rsplit("/", 1)[0] if evaluation else ""
         out.append({"round": r["round"], "tiers": ledger.tiers_of(r), "note": r.get("note", ""), "shortfall": _num(r["shortfall"]),
@@ -92,8 +106,10 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
 
     out["lang"] = i18n.resolve(d.get("lang"))
     sha = demand.digest(d)
+    # 版本（轮次、停止、排除、报告）用计算层哈希；确认用确认层哈希 / versions use the compute layer; confirmation uses the confirmation layer
+    csha = demand.compute_digest(d)
     status["interview"] = "done"
-    if demand.confirmation_for(root, sha) is None:
+    if demand.confirmation_for(root, sha, d) is None:
         status["demand_confirm"] = "waiting"
         # 确认过旧版本：需求改过，要重新确认 / an older version was confirmed: the demand changed and needs confirming again
         detail["demand_confirm"] = "reconfirm" if demand.confirmations(root) else "first"
@@ -102,13 +118,50 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
         status["demand_confirm"] = "done"
         models = sorted(p for p in (root / "models").glob("*/model.json")) if (root / "models").is_dir() else []
         approved = [m for m in models if (m.parent / model_gate.APPROVAL_FILE).is_file()]
+        latest_approved = False
+        out["model_evidence"] = []
+        needs_description = False
+        latest = {}
+        try:
+            latest = json.loads(models[-1].read_text(encoding="utf-8")) if models else {}
+            current_model = latest.get("model")
+            live = json.loads(view.read_text(encoding="utf-8")) if view.is_file() else {}
+            live_lens, current_lens = live.get("lens"), job.read_state().get("current_lens")
+            same_lens = (isinstance(live_lens, str) and isinstance(current_lens, str)
+                         and job.resolve_lens(live_lens, must_exist=False) == job.resolve_lens(current_lens, must_exist=False))
+            # 说明写完时不会刷新视图；旧视图不能盖过更新的说明，否则未确认的新结构会被当成已确认
+            # describe does not refresh the view; a stale view must not override a newer description
+            live_is_newer = bool(models) and view.stat().st_mtime_ns >= models[-1].stat().st_mtime_ns
+            if live.get("model") and same_lens and live_is_newer:
+                current_model = live["model"]
+                env = (latest.get("notes") or {}).get("environment") or []
+                needs_description = not latest.get("model") or bool(model_gate.structure_changes(latest["model"], current_model, env))
+            if approved and current_model:
+                matched = model_gate.require_approved(job, current_model)
+                latest_approved = True
+                out["model_evidence"] = matched["evidence_problems"]
+                if matched["legacy_unsealed"]:
+                    out["model_evidence"].append({"path": matched["model"], "code": "LEGACY_UNSEALED"})
+            elif approved:
+                latest_approved = bool((models[-1].parent / model_gate.APPROVAL_FILE).is_file())
+        except SaosError as exc:
+            out["model_evidence"] = exc.details.get("problems", [])
+        except (OSError, ValueError, KeyError):
+            pass
         explored = exploration_of(job)
+        generated = starts_of(job)
+        if generated is not None:
+            detail["modeling"] = {"starts": generated}
         if explored is not None:
-            detail["modeling"] = {"exploration": explored}
-        if not approved and not models:
+            detail.setdefault("modeling", {})["exploration"] = explored
+        if needs_description and not latest_approved:
+            status["modeling"] = "active"
+            detail.setdefault("modeling", {})["needs_description"] = True
+            current = "modeling"
+        elif not approved and not models:
             status["modeling"] = "active"
             current = "modeling"
-        elif models and not (models[-1].parent / model_gate.APPROVAL_FILE).is_file():
+        elif models and not latest_approved:
             # 最新一份建模说明还没获确认，包括结构改动后重新出的说明 / the latest description awaits approval, incl. one redone after a structure change
             status["modeling"] = "done"
             status["model_approve"] = "waiting"
@@ -116,11 +169,11 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
             current = "model_approve"
         else:
             status["modeling"] = status["model_approve"] = "done"
-            rows = stages.rounds(root, ledger.load(root / ledger.LEDGER_FILE))
-            in_version = [r for r in ledger.current_window(rows) if ledger.version(r)[0] == sha] if rows else []
+            rows = stages.rounds(root, ledger.load(root / ledger.LEDGER_FILE, d))
+            in_version = [r for r in ledger.current_window(rows) if ledger.version(r)[0] == csha] if rows else []
             decision = None
             if in_version:
-                decision = ledger.decide(rows, stages.stop(root, d["stop"]), ledger.stop_for(root, sha), ledger.ruled_out_for(root, sha))
+                decision = ledger.decide(rows, stages.stop(root, d["stop"]), ledger.stop_for(root, csha, d), ledger.ruled_out_for(root, csha, d))
                 out["decision"] = {k: _num(v) if isinstance(v, float) else v for k, v in decision.items() if k != "stopped"}
             detail["design"] = {"rounds": len(in_version), "last": out["rounds"][-1] if in_version else None}
             if decision is not None and decision["status"] in FINAL:
@@ -159,7 +212,7 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
                 meta = json.loads((root / stages.REPORT).read_text(encoding="utf-8"))
                 current_method = demand.method_digest(demand.prepare_scripts(root, d))
                 if (rows and meta.get("last_round") == rows[-1]["round"] and meta.get("deliverable")
-                        and (meta.get("demand_sha"), meta.get("method_sha")) == (sha, current_method)):
+                        and (meta.get("demand_sha"), meta.get("method_sha")) == (csha, current_method)):
                     status["deliver"] = "done"
                     status["zos"] = "waiting"
                     detail["zos"] = {"state": "zos_accept"}
