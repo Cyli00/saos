@@ -187,6 +187,15 @@ def variables(b) -> list[tuple[int, str]]:
     return out + [(i, column) for i in sorted(b._glass_vary) if isinstance(b._rows[i].get("material"), dict) for column in ("nd", "vd")]
 
 
+def script_scalar(script: Callable[[], Any]) -> float:
+    """脚本损失必须是一个数：多元素向量或张量明确拒绝，不让 float() 抛出未处理的 ValueError。"""
+    value = script()
+    size = value.numel() if hasattr(value, "numel") else 1
+    if size != 1:
+        raise SaosError(ErrorCode.SCRIPT_ERROR, f"the merit loss script must return one number, got {size} values")
+    return float(value)
+
+
 class Problem:
     """变量在优化器里的坐标：半径列取归一化边缘曲率 c·R（R 为该面净半口径，平面为 0），偶次 / 奇次非球面系数取边缘矢高贡献
     A·R^(2N) / A·R^N，厚度按系统最大半口径归一，其余原值。边界换算到同一坐标。"""
@@ -255,7 +264,7 @@ class Problem:
         script_value = None
         if self.script is not None:
             try:
-                script_value = float(self.script())
+                script_value = script_scalar(self.script)
             except SaosError as exc:
                 if exc.code in (ErrorCode.BACKEND_UNSUPPORTED, ErrorCode.SCRIPT_ERROR):
                     raise
@@ -266,6 +275,8 @@ class Problem:
         weights = [row["weight"] for row in self.rows] + ([self.script_weight] if self.script is not None else [])
         total = sum(weights) or 1.0
         scale = np.sqrt(np.asarray(weights, dtype=float) / total)
+        if not np.isfinite(x).all() or np.any(x < self.lo) or np.any(x > self.hi):
+            return scale * PENALTY, PENALTY
         try:
             self.apply(x)
             values, _, script_value = self.measure()
@@ -282,6 +293,7 @@ class Problem:
 def optimize(b, *, algorithm: str | None, cycles: str, max_seconds: float | None, on_progress, should_cancel,
              script: Callable[[], Any] | None = None, script_weight: float = 1.0, device: str | None = None) -> dict[str, Any]:
     from scipy.optimize import least_squares, minimize
+    from saos.backend.optiland_guard import MAX_BACKTRACKS, MIN_VALID_FRACTION, StepGuard
 
     algorithm = algorithm or "trf"
     if algorithm in ZOS_ALGORITHMS:
@@ -321,6 +333,9 @@ def optimize(b, *, algorithm: str | None, cycles: str, max_seconds: float | None
         raise
     initial = merit(rows, values, script_value, script_weight)
     state: dict[str, Any] = {"best": (math.inf, problem.x0.copy()), "evaluations": 0, "stopped_by": None, "reported": started}
+    guard = StepGuard(problem)
+    if math.isfinite(initial) and guard.admissible(problem.x0):
+        state["best"] = (initial, problem.x0.copy())
 
     def residuals(x: np.ndarray) -> np.ndarray:
         if should_cancel is not None and should_cancel():
@@ -329,9 +344,34 @@ def optimize(b, *, algorithm: str | None, cycles: str, max_seconds: float | None
         if max_seconds is not None and time.monotonic() - started > max_seconds:
             state["stopped_by"] = "time"
             raise _Stop
-        r, value = problem.residuals(np.asarray(x, dtype=float))
+        x = np.asarray(x, dtype=float)
+        r, value = problem.residuals(x)
         state["evaluations"] += 1
-        if value < state["best"][0]:
+        admissible = value < PENALTY and guard.admissible(x)
+        if not admissible:
+            # 求解器必须收到原试探点的拒绝值；不能把回退点的残差冒充原点残差，否则雅可比会对应错误坐标。
+            anchor = state["best"][1]
+            for attempt in range(1, MAX_BACKTRACKS + 1):
+                if should_cancel is not None and should_cancel():
+                    state["stopped_by"] = "cancel"
+                    raise _Stop
+                if max_seconds is not None and time.monotonic() - started > max_seconds:
+                    state["stopped_by"] = "time"
+                    raise _Stop
+                trial = anchor + (x - anchor) * 2.0**(-attempt)
+                if not np.isfinite(trial).all():
+                    break
+                guard.backtracks += 1
+                _, trial_value = problem.residuals(trial)
+                state["evaluations"] += 1
+                if trial_value < PENALTY and guard.admissible(trial):
+                    guard.accept_apertures()
+                    if trial_value < state["best"][0]:
+                        state["best"] = (trial_value, trial.copy())
+                    break
+            r, value = np.full_like(r, PENALTY), PENALTY
+        if admissible and value < state["best"][0]:
+            guard.accept_apertures()
             state["best"] = (value, np.array(x, dtype=float))
             if problem.apertures:
                 try:
@@ -365,6 +405,7 @@ def optimize(b, *, algorithm: str | None, cycles: str, max_seconds: float | None
     except _Stop:
         message = {"cancel": "cancelled", "time": "max_seconds reached"}[state["stopped_by"]]
     finally:
+        guard.close()
         best = state["best"][1] if math.isfinite(state["best"][0]) else problem.x0
         try:
             b._commit(problem.physical(best))
@@ -376,9 +417,12 @@ def optimize(b, *, algorithm: str | None, cycles: str, max_seconds: float | None
     values, errors, script_value = problem.measure()
     final = merit(rows, values, script_value, script_weight)
     out = {"initial_merit": initial, "final_merit": final, "variables": n, "targets": len(rows) + (script is not None),
-           "succeeded": success and state["stopped_by"] is None, "stopped_by": state["stopped_by"],
+           "succeeded": success and state["stopped_by"] is None and math.isfinite(state["best"][0]), "stopped_by": state["stopped_by"],
            "elapsed_s": round(time.monotonic() - started, 3), "algorithm": algorithm, "evaluations": state["evaluations"],
-           "inner_loop": "live" if problem.live else "rebuild", "message": message}
+           "inner_loop": "live" if problem.live else "rebuild", "message": message,
+           "backtracks": guard.backtracks, "step_guard_reason": guard.last_reason,
+           "min_valid_fraction": MIN_VALID_FRACTION, "max_backtracks": MAX_BACKTRACKS,
+           "admissible_result": math.isfinite(state["best"][0])}
     if problem.clipped:
         out["start_clipped_to_bounds"] = problem.clipped
     failed = [{"row": k, "type": row["type"], "error": e} for k, (row, e) in enumerate(zip(rows, errors), 1) if e]
@@ -462,11 +506,11 @@ def glass_search(b, *, surfaces: list[int] | None, catalog: str, neighbours: int
                 state["stopped_by"] = state["stopped_by"] or result["stopped_by"]
             return result["final_merit"]
         values, _ = evaluate(b, b._merit)
-        script_value = float(script()) if script is not None else None
+        script_value = script_scalar(script) if script is not None else None
         return merit(b._merit, values, script_value, script_weight)
 
     values, _ = evaluate(b, b._merit)
-    initial = merit(b._merit, values, float(script()) if script is not None else None, script_weight)
+    initial = merit(b._merit, values, script_scalar(script) if script is not None else None, script_weight)
     best = settle()
     before = {i: b.surface_value(i, "material") for i in surfaces}
 
@@ -598,11 +642,14 @@ def global_search(b, *, method: str | None, max_seconds: float, on_progress, sho
         message = str(getattr(result, "message", "") or "")
     except _Stop:
         message = {"cancel": "cancelled", "time": "max_seconds reached"}[state["stopped_by"]]
+    except BaseException:
+        b._commit(problem.physical(problem.x0))
+        raise
     # 挑出彼此不同、零件不交叠的前 keep 个，逐个完整同步后写盘
     ranked = sorted(((-v, x) for v, _, x in found), key=lambda item: item[0])
     chosen: list[tuple[float, np.ndarray]] = []
     for value, x in ranked:
-        if len(chosen) >= keep or not math.isfinite(value):
+        if len(chosen) >= keep or not math.isfinite(value) or value >= PENALTY:
             break
         if any(np.max(np.abs(x - y)) <= 1e-6 for _, y in chosen):
             continue

@@ -316,4 +316,4 @@ def operand(b, name: str, int1: int, int2: int, data: list[float]) -> float:
             raise unsupported("ZERN is mapped for Zernike Standard (Type 1) referenced to the chief ray only")
         term = int1
         return zernike(b, wave=_wave(b, int2), field=int(field) or 1, samp=int(samp) or 1, max_term=max(term, 11), terms=(term,))[term]
-    raise unsupported(f"operand {name} has not been mapped to Optiland; select SAOS_BACKEND=zos for it")
+    raise unsupported(f"operand {name} has not been mapped to Optiland yet; it is a capability gap before the OpticStudio stage")

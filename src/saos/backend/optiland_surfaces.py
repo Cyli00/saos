@@ -240,6 +240,20 @@ def position_surfaces(optic, rows):
                      for cs in spacers[1:]]
 
 
+def _rotate(r: np.ndarray, v: np.ndarray) -> np.ndarray:
+    """r @ v，但跳过 r 中的零元素。无穷远物体的 z 平移是 ±∞：矩阵乘法里 0·∞ 得 NaN，会把横向坐标也污染；
+    这里只让非零的转换项参与，∞ 沿旋转后的方向传递，结果与有限值的情形一致。
+    r @ v that skips the zero entries of r. An object at infinity has an infinite z translation: in a matrix product
+    0·∞ is NaN and would contaminate the transverse coordinates; here only non-zero terms take part, so the infinity
+    follows the rotated direction exactly as finite values do."""
+    out = np.zeros(3)
+    for i in range(3):
+        for j in range(3):
+            if r[i, j] != 0.0:
+                out[i] += r[i, j] * v[j]
+    return out
+
+
 def flatten_frames(frames) -> None:
     """把逐面相连的参考坐标系改成各自的绝对坐标系。Optiland 每次变换都沿参考链递归，链长随面号增长，
     追迹因此按面数平方变慢（300 面 build 10.7 s）。先按缓存一遍算出每个坐标系的有效变换，再原地改写，
@@ -262,7 +276,7 @@ def flatten_frames(frames) -> None:
         t, r = cache[id(node)] if node is not None else (np.zeros(3), np.eye(3))
         for item in reversed(chain):
             lt, lr = local(item)
-            t, r = t + r @ lt, r @ lr
+            t, r = t + _rotate(r, lt), r @ lr
             cache[id(item)] = (t, r)
         return cache[id(cs)]
 

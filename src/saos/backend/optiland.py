@@ -17,7 +17,7 @@ from typing import Any
 
 import numpy as np
 
-from saos import config, geometry, lens_files
+from saos import config, geometry, lens_files, timing
 from saos.backend import optiland_analysis, optiland_operands, optiland_opt
 from saos.backend.base import Backend
 from saos.backend.optiland_materials import MaterialStore, unsupported
@@ -44,8 +44,12 @@ class OptilandBackend(OpticalState, Backend):
         self._warmer = threading.Thread(target=self._warm, name="optiland-import", daemon=True)
         self._warmer.start()
         self.started = True
+        self._identity = {"backend": "optiland", "version": installed, "precision": config.COMPUTE_PRECISION}
         return {"backend": "optiland", "mode": "in_process", "version": installed, "license": None,
                 "device": self.device, "precision": config.COMPUTE_PRECISION, "program_dir": ""}
+
+    def identity(self) -> dict[str, Any]:
+        return dict(getattr(self, "_identity", None) or {"backend": "optiland", "version": None, "precision": None})
 
     def _warm(self) -> None:
         try:
@@ -192,6 +196,7 @@ class OptilandBackend(OpticalState, Backend):
             return None
         return launch(solution.x)
 
+    @timing.timed("optiland.trace")
     def trace_batch(self, rays, to: int):
         from saos.kit import Rays
 
@@ -342,9 +347,11 @@ class OptilandBackend(OpticalState, Backend):
         self._merit_cache = (key, result)
         return result
 
+    @timing.timed("optiland.merit")
     def merit_value(self, script=None) -> float:
         return self._merit_evaluation(script)["merit"]
 
+    @timing.timed("optiland.merit")
     def merit_rows(self, script=None) -> list[dict[str, Any]]:
         ev = self._merit_evaluation(script)
         terms = [row["weight"] * (v - row["target"]) ** 2 if math.isfinite(v) else math.inf for row, v in zip(self._merit, ev["values"])]
@@ -372,6 +379,7 @@ class OptilandBackend(OpticalState, Backend):
             rows.append(item)
         return rows
 
+    @timing.timed("optiland.optimize")
     def optimize(self, cycles: str, cores: int | None = None, *, max_seconds: float | None = None, on_progress=None,
                  should_cancel=None, algorithm: str | None = None, script=None, device: str | None = None) -> dict[str, Any]:
         """scipy 局部优化（cores 不用：进程内单线程追迹）。脚本损失作为评价函数里的一行，按 set_merit_script 的权重计。"""
@@ -401,6 +409,7 @@ class OptilandBackend(OpticalState, Backend):
             raise SaosError(ErrorCode.BAD_ARGS, "the merit function has a loss script but the daemon passed no callable for it")
         return (self._merit_script or {}).get("weight", 1.0)
 
+    @timing.timed("optiland.search")
     def optimize_search(self, kind: str, cores: int | None = None, *, max_seconds: float, on_progress=None, should_cancel=None,
                         method: str | None = None, script=None) -> dict[str, Any]:
         """Optiland 上只有全局搜索（scipy）；Hammer 是 OpticStudio 的。候选系统写在当前镜头旁边，由后台进程归档。"""
@@ -424,6 +433,7 @@ class OptilandBackend(OpticalState, Backend):
     def analysis_types(self) -> list[str]:
         return list(optiland_analysis.ANALYSES)
 
+    @timing.timed("optiland.analysis")
     def analysis(self, name: str, settings: dict[str, Any], text_path: Path, keep_open: bool = False) -> dict[str, Any]:
         self._require()
         return optiland_analysis.analysis(self, name, settings, text_path)
@@ -466,6 +476,7 @@ class OptilandBackend(OpticalState, Backend):
 
     # ---- 建模说明、交叠与界面数据 ----
 
+    @timing.timed("optiland.describe")
     def describe_model(self, folder: Path | None, prefix: str = "layout") -> dict[str, Any]:
         from saos.backend.optiland_surfaces import aperture_description, parameters
 
@@ -497,8 +508,7 @@ class OptilandBackend(OpticalState, Backend):
                 "ray_aiming": {"off": "Off", "paraxial": "Paraxial", "real": "Real"}[p.get("ray_aiming", "real")],
                 "optiland_aiming": self._aiming, "environment": copy.deepcopy(self._effective["environment"]),
                 "configurations": {"count": self.configuration_count(), "current": self._configuration, "operands": operands},
-                "coating_file": "COATING.DAT", "layout": {},
-                "parity_check": {"status": "not_run", "reason": "the dual-backend comparison runs in the hybrid backend"}}
+                "coating_file": "COATING.DAT", "layout": {}}
         if p.get("apodization"):
             desc["apodization"] = {"type": {"uniform": "Uniform", "gaussian": "Gaussian", "cosine_cubed": "CosineCubed"}[p["apodization"]["type"]],
                                    **({"factor": p["apodization"]["factor"]} if "factor" in p["apodization"] else {})}
@@ -537,6 +547,7 @@ class OptilandBackend(OpticalState, Backend):
         self._require()
         return geometry.interference(self._geometry_items())
 
+    @timing.timed("optiland.viz")
     def viz_data(self, folder: Path | None, *, pupil_grid: int = 31, fan: int = 7, full: bool = True, rays: bool = True) -> dict[str, Any]:
         self._require()
         info = self.system_info()
@@ -725,25 +736,44 @@ class OptilandBackend(OpticalState, Backend):
                 "optimization": {"bounds": copy.deepcopy(self._bounds), "merit": copy.deepcopy(self._merit),
                                  "merit_script": copy.deepcopy(self._merit_script), "model_glass_variables": list(self._glass_vary)}}
 
-    def save_as(self, path: Path, primary: bytes | None = None) -> None:
-        """写 .zmx 和同名 .optiland.json。primary 为空时用 Optiland 的写出器生成 .zmx；写出器表达不了的镜头由
-        混合后端用 OpticStudio 从同一处方生成 primary 再传进来。"""
+    @timing.timed("optiland.save")
+    def save_as(self, path: Path) -> None:
+        """保存原生快照（同名 .optiland.json）。保存不写 .zmx：导出件由 export_zmx 显式生成，表达不了时只保留快照。"""
         self._require()
         if path.suffix.lower() != ".zmx":
             raise SaosError(ErrorCode.BAD_ARGS, "save requires a .zmx file")
-        payload = self.companion_payload()
-        if primary is None:
-            digest = hashlib.sha256(lens_files.payload_bytes(payload)).hexdigest()
-            lines = self._zemax_lines()
-            lines.insert(1, f"NOTE 0 {lens_files.CONTENT_MARKER} {digest}")
-            primary = ("\n".join(lines) + "\n").encode("utf-8")
-        lens_files.write_pair(path, primary, lens_files.companion_bytes(primary, payload))
+        lens_files.write_snapshot(path, lens_files.companion_bytes(None, self.companion_payload()))
         self.file = path
 
+    def export_zmx(self, path: Path) -> None:
+        """显式导出 .zmx（与快照成对，哈希绑定）。Optiland 的写出器表达不了时抛出 BACKEND_UNSUPPORTED，快照保持不变。
+        Explicit .zmx export, paired with the snapshot by hash. When Optiland's writer cannot express the model it raises
+        BACKEND_UNSUPPORTED and the snapshot is left untouched."""
+        self._require()
+        if path.suffix.lower() != ".zmx":
+            raise SaosError(ErrorCode.BAD_ARGS, "export requires a .zmx file")
+        payload = self.companion_payload()
+        lines = self._zemax_lines()
+        digest = hashlib.sha256(lens_files.payload_bytes(payload)).hexdigest()
+        lines.insert(1, f"NOTE 0 {lens_files.CONTENT_MARKER} {digest}")
+        primary = ("\n".join(lines) + "\n").encode("utf-8")
+        lens_files.write_pair(path, primary, lens_files.companion_bytes(primary, payload))
+
+    @timing.timed("optiland.load")
     def load(self, path: Path) -> None:
         payload = lens_files.read_companion(path)
         if payload is None:
-            raise unsupported("a .zmx without its .optiland.json companion is imported through OpticStudio")
+            if not path.is_file():
+                raise unsupported(f"{path.name} has no lens file or companion")
+            # 没有伴随文件的 .zmx：用 Optiland 自带的读取器；Optic 到 saos 处方的转换尚未实现，所以这里只到读取为止
+            from optiland.fileio import load_zemax_file
+
+            try:
+                load_zemax_file(str(path))
+            except ValueError as exc:
+                raise unsupported(f"Optiland cannot read {path.name}: {exc}") from exc
+            raise unsupported(f"Optiland read {path.name}, but its Optic is not yet converted to a saos prescription; "
+                              "give the prescription data or an .optiland.json companion")
         if payload.get("optiland_version") != config.OPTILAND_VERSION:
             raise unsupported(f"the companion was written by Optiland {payload.get('optiland_version')}, not {config.OPTILAND_VERSION}")
         previous = self.__dict__.copy()

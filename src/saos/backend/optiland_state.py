@@ -6,7 +6,7 @@ from contextlib import contextmanager
 
 import numpy as np
 
-from saos import config
+from saos import config, timing
 from saos.backend.base import check_size, is_par, parse_numeric, same_number
 from saos.backend.optiland_materials import (
     MaterialStore,
@@ -358,6 +358,7 @@ class OpticalState:
         self._scales = scales
         self._synchronized = key
 
+    @timing.timed("optiland.build")
     def build(self, prescription):
         capability = self.can_handle(prescription)
         if not capability["supported"]:

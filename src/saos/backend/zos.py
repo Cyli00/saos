@@ -9,6 +9,7 @@ import logging
 import math
 import os
 import re
+import tempfile
 import time
 from contextlib import contextmanager
 from pathlib import Path
@@ -394,7 +395,11 @@ class ZosBackend(Backend):
             self.close()
             expected = ".".join(map(str, config.EXPECTED_ZOS_VERSION))
             raise SaosError(ErrorCode.ZOS_VERSION_MISMATCH, f"OpticStudio version is {info['version']}; the project is locked to {expected}", info)
+        self._identity = {"backend": "zos", "version": info["version"], "precision": None}
         return info
+
+    def identity(self) -> dict[str, Any]:
+        return dict(getattr(self, "_identity", None) or {"backend": "zos", "version": None, "precision": None})
 
     @contextmanager
     def activity(self, label: str, quiet: bool):
@@ -633,9 +638,35 @@ class ZosBackend(Backend):
 
     def load(self, path: Path) -> None:
         path = Path(path).resolve()
+        payload = lens_files.read_companion(path)
+        self._untranslated = []
+        if payload is not None:
+            self.rebuild_companion(payload)
+            return
         if not self.system.LoadFile(str(path), False):
             raise SaosError(ErrorCode.ZOS_LOAD_FAILED, f"OpticStudio cannot load {path}")
         self._material_cache.clear()
+
+    def rebuild_companion(self, payload: dict[str, Any]) -> None:
+        self.build(payload["prescription"])
+        if payload.get("configuration", 1) != 1:
+            self.select_configuration(int(payload["configuration"]))
+        settings = payload.get("optimization") or {}
+        self._untranslated = [f"variable bounds {key}: {value}" for key, value in (settings.get("bounds") or {}).items()]
+        if settings.get("merit_script"):
+            self._untranslated.append(f"merit loss script: {settings['merit_script'].get('name')}")
+        for surface in settings.get("model_glass_variables") or []:
+            try:
+                self.vary(int(surface), "material", True, "model")
+            except SaosError as exc:
+                self._untranslated.append(f"model-glass variable surface {surface}: {exc.message}")
+        self.merit_clear()
+        # 原生评价函数从首行插入，倒序添加以保存操作数间的行号引用。
+        for index, row in reversed(list(enumerate(settings.get("merit") or [], 1))):
+            try:
+                self.merit_add([row])
+            except SaosError as exc:
+                self._untranslated.append(f"merit row {index}: {exc.message}")
 
     def save_as(self, path: Path) -> None:
         path = Path(path).resolve()
@@ -659,7 +690,8 @@ class ZosBackend(Backend):
         lde = system.LDE
         if nsc.is_nsc(system):
             # 非序列系统没有孔径、视场和面；物体按序号列出 / no aperture, fields or surfaces; objects listed instead
-            return {"mode": "non_sequential", "file": str(system.SystemFile), "title": str(sd.TitleNotes.Title),
+            return {"mode": "non_sequential", "backend": "zos", "version": self.identity()["version"],
+                    "file": str(system.SystemFile), "title": str(sd.TitleNotes.Title),
                     "lens_units": str(sd.Units.LensUnits),
                     "wavelengths": [{"um": float(w.Wavelength), "weight": float(w.Weight), "primary": bool(w.IsPrimary)}
                                     for w in (waves.GetWavelength(i) for i in range(1, waves.NumberOfWavelengths + 1))],
@@ -668,6 +700,9 @@ class ZosBackend(Backend):
                                 for i, o in ((i, system.NCE.GetObjectAt(i)) for i in range(1, int(system.NCE.NumberOfObjects) + 1))]}
         return {
             "file": str(system.SystemFile),
+            "backend": "zos",
+            "version": self.identity()["version"],
+            "untranslated": list(getattr(self, "_untranslated", [])),
             "title": str(sd.TitleNotes.Title),
             "lens_units": str(sd.Units.LensUnits),
             "aperture": {
@@ -1566,33 +1601,22 @@ class ZosBackend(Backend):
         return rows
 
     def zernike(self, *, wave: int, field: int, samp: int, max_term: int, terms: tuple[int, ...]) -> dict[int, float]:
-        # ZERN 的拟合项数取相邻 ZERN 行中最大的 Term（至少 11）。单独调用 GetOperandValue 只会拟合 11 项，
-        # 所以在评价函数末尾临时加一组相邻的 ZERN 行，算完再删掉，不改动原有评价函数
-        zosapi = _load_zosapi(self.root)
-        mfe = self.system.MFE
-        columns = zosapi.Editors.MFE.MeritColumn
-        zern = zosapi.Editors.MFE.MeritOperandType.ZERN
-        requested = [max_term, *terms]
-        start = mfe.NumberOfOperands + 1
-        try:
-            for term in requested:
-                row = mfe.AddOperand()
-                row.ChangeType(zern)
-                row.GetOperandCell(columns.Param1).IntegerValue = int(term)
-                row.GetOperandCell(columns.Param2).IntegerValue = int(wave)
-                row.GetOperandCell(columns.Param3).IntegerValue = int(samp)
-                row.GetOperandCell(columns.Param4).IntegerValue = int(field)
-                row.GetOperandCell(columns.Param5).IntegerValue = 1  # Standard
-                row.GetOperandCell(columns.Param6).DoubleValue = 0.0
-                row.GetOperandCell(columns.Param7).IntegerValue = 0
-                row.Weight = 0.0
-            mfe.CalculateMeritFunction()
-            values = [float(mfe.GetOperandAt(start + k).Value) for k in range(len(requested))]
-        finally:
-            count = mfe.NumberOfOperands - start + 1
-            if count > 0:
-                mfe.RemoveOperandsAt(start, count)
-        return dict(zip(terms, values[1:]))
+        from saos.backend.analysis import zernike_values
+
+        for name, value in (("wave", wave), ("field", field), ("samp", samp), ("max_term", max_term)):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise SaosError(ErrorCode.BAD_ARGS, f"zernike {name} must be a positive integer")
+        if not terms:
+            return {}
+        if any(isinstance(t, bool) or not isinstance(t, int) or t < -8 for t in terms) or samp > 5:
+            raise SaosError(ErrorCode.BAD_ARGS, "Zernike terms must be integers from -8; samp must be 1–5")
+        count = max(11, max_term, *terms)
+        size = 32 * 2 ** (samp - 1)
+        with tempfile.TemporaryDirectory(prefix="saos-zernike-", ignore_cleanup_errors=True) as folder:
+            path = Path(folder) / "coefficients.txt"
+            self.analysis("ZernikeStandardCoefficients", {"Field": field, "Wavelength": wave,
+                          "SampleSize": f"S_{size}x{size}", "MaximumNumberOfTerms": count}, path)
+            return zernike_values(_read_text_export(path), terms)
 
     # ---- 优化 ----
 
