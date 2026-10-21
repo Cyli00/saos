@@ -46,12 +46,6 @@ TEXT: dict[str, tuple[str, str]] = {
     "h.layout": ("布局图", "Layout"),
     "h.assumptions": ("建模假设", "Modelling assumptions"),
     "h.first_order": ("一阶分析", "First-order analysis"),
-    "h.parity": ("双端基准对齐（Optiland 与 OpticStudio）", "Dual-backend baseline (Optiland vs OpticStudio)"),
-    "parity.status": ("结果：{status}；Optiland 光线瞄准 {aiming}", "Result: {status}; Optiland ray aiming {aiming}"),
-    "parity.skipped": ("未比较：{reason}", "Not compared: {reason}"),
-    "th.parity": ("项目|Optiland|OpticStudio|偏差|容差|通过", "Item|Optiland|OpticStudio|Difference|Limit|Pass"),
-    "w.parity_mismatch": ("Optiland 与 OpticStudio 的基准量不一致（{items}），优化前先查清原因或改用 SAOS_BACKEND=zos。",
-                          "Optiland and OpticStudio disagree on the baseline ({items}); find out why before optimising, or use SAOS_BACKEND=zos."),
     "none": ("无", "none"),
     "units": ("长度单位", "Lens units"),
     "aperture": ("系统孔径", "System aperture"),
@@ -260,10 +254,6 @@ def checks(desc: dict[str, Any], notes: dict[str, Any] | None = None, recorded: 
     if desc.get("mode") == "non_sequential":
         return checks_nsc(desc, notes, recorded)
     out: list[tuple[str, dict[str, Any]]] = []
-    parity = desc.get("parity_check") or {}
-    if parity.get("status") == "mismatch":
-        failed = [d["item"] for d in (parity.get("attempts") or [{}])[-1].get("differences", []) if not d.get("pass")]
-        out.append(("parity_mismatch", {"items": ", ".join(failed)}))
     for s in desc["surfaces"]:
         # 混合模式里非序列组的物体：模型玻璃和目录外材料同样要说明 / objects of a mixed-mode group: model glasses and uncatalogued materials
         for o in s.get("objects") or []:
@@ -700,7 +690,6 @@ def render(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[str, A
     assumptions = "".join(f"<li>{e(a)}</li>" for a in notes.get("assumptions") or []) or f"<li>{t('none')}</li>"
     first_order = "".join(f"<li>{e(a)}</li>" for a in notes.get("first_order") or []) or f"<li>{t('none')}</li>"
     configs_html = _configs_html(desc.get("configurations") or {}, t)
-    parity_html = _parity_html(desc.get("parity_check"), t)
     # 混合模式：每个 NonSequential 面一组物体，notes.objects 的键写 "<面号>:<物体号>"
     # mixed mode: one object group per NonSequential surface; notes.objects keys are "<surface>:<object>"
     obj_descr = {str(k): v for k, v in (notes.get("objects") or {}).items()}
@@ -725,24 +714,10 @@ def render(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[str, A
 {params_html}
 {groups_html}
 {configs_html}
-{parity_html}
 <h2>{t('h.first_order')}</h2><ul>{first_order}</ul>
 <h2>{t('h.assumptions')}</h2><ul>{assumptions}</ul>
 <h2>{t('h.layout')}</h2>{''.join(layouts)}
 </main></body></html>"""
-
-
-def _parity_html(parity: dict[str, Any] | None, t: Tr) -> str:
-    if not parity:
-        return ""
-    head = f"<h2>{t('h.parity')}</h2>"
-    if parity.get("status") not in ("pass", "mismatch"):
-        return head + f"<p class='muted'>{e(t('parity.skipped', reason=parity.get('reason', parity.get('status'))))}</p>"
-    rows = "".join(
-        f"<tr><td>{e(d['item'])}</td><td class='num'>{e(fmt(d.get('optiland')))}</td><td class='num'>{e(fmt(d.get('zos')))}</td>"
-        f"<td class='num'>{e(fmt(d.get('delta')))}</td><td class='num'>{e(fmt(d.get('limit')))}</td><td>{'✓' if d.get('pass') else '✗'}</td></tr>"
-        for d in (parity.get("attempts") or [{}])[-1].get("differences", []))
-    return head + f"<p>{e(t('parity.status', status=parity['status'], aiming=parity.get('aiming')))}</p>"         f"<div class='wrap'><table><thead><tr>{header_row(t('th.parity'))}</tr></thead><tbody>{rows}</tbody></table></div>"
 
 
 def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, Any] | None, lens: str, lang: str | None) -> dict[str, Any]:
@@ -764,7 +739,7 @@ def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, An
     warnings = [i18n.text("en", *TEXT["w." + code]).format(**args) for code, args in found]
     fp = model_gate.fingerprint(desc, (notes or {}).get("environment") or ())
     write_json(folder / "model.json", {**meta, "notes": notes, "warnings": warnings, "fingerprint": fp,
-                                        "fingerprint_sha": model_gate.digest(fp), "parity_check": desc.get("parity_check"), "model": desc})
+                                        "fingerprint_sha": model_gate.digest(fp), "model": desc})
     out = folder / "index.html"
     out.write_text(render(desc, notes, meta, chosen, found), encoding="utf-8")
     job.seal(folder)
@@ -773,7 +748,6 @@ def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, An
         "lang": chosen,
         "warnings": warnings,
         "layout": desc.get("layout"),
-        "parity_check": (desc.get("parity_check") or {}).get("status"),
         "next": "show the page to the user; after they approve, run lens approve --model <folder> --quote \"<their words>\"",
     }
 

@@ -150,6 +150,8 @@ def is_rebase(record: dict[str, Any]) -> bool:
 
 
 def _continues(prev: dict[str, Any], record: dict[str, Any]) -> bool:
+    if record.get("stage", "exploration") != prev.get("stage", "exploration"):
+        return False
     if version(record) == version(prev):
         return True
     # 判定改了，但在旧镜头上重测的数值不变：仍是同一个比较窗口 / new checks, same numbers on the old lens: the same window
@@ -165,7 +167,8 @@ def current_version(rounds: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """当前需求版本的轮次。判定改动开的新比较窗口仍在同一版本内：轮次上限和用户停止按版本算，改判定解除不了。
     The rounds of the current demand version. A new comparison window opened by changed checks stays inside it:
     the round budget and the user's stop hold per demand version, so changing the checks does not lift them."""
-    start = max((k for k, r in enumerate(rounds) if k == 0 or version(rounds[k - 1])[0] != version(r)[0]), default=0)
+    start = max((k for k, r in enumerate(rounds) if k == 0 or version(rounds[k - 1])[0] != version(r)[0]
+                 or rounds[k - 1].get("stage", "exploration") != r.get("stage", "exploration")), default=0)
     return rounds[start:]
 
 

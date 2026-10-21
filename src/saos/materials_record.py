@@ -47,9 +47,12 @@ def validate(data: Any) -> dict[str, Any]:
     if not isinstance(materials, list) or not materials:
         raise _bad("materials must be a non-empty list")
     for m in materials:
-        zemax = (m or {}).get("zemax") if isinstance(m, dict) else None
-        if not isinstance(zemax, dict) or not zemax.get("name") or not m.get("id"):
-            raise _bad(f"each material needs id and zemax.name: {m!r}")
+        if not isinstance(m, dict) or not m.get("id"):
+            raise _bad(f"each material needs an id: {m!r}")
+        # 材料的身份是 id 和来源，不是 OpticStudio 牌号；牌号只在用它的目录里才需要（zemax.name 可省略，此时用 name）
+        zemax = m.get("zemax") or {}
+        if not isinstance(zemax, dict) or (not zemax.get("name") and not m.get("name")):
+            raise _bad(f"{m['id']}: give name, or zemax.name when the material is an OpticStudio catalog glass")
         missing = [s for s in m.get("source_ids") or [] if s not in sources]
         if missing:
             raise _bad(f"{m['id']}: source_ids {missing} are not listed under sources")
@@ -59,7 +62,7 @@ def validate(data: Any) -> dict[str, Any]:
 
 
 def recorded_names(job: jobs.Job) -> set[str] | None:
-    """记录中的 OpticStudio 牌号（大写）；没有记录文件时为 None。 / Recorded names (upper case); None without a record."""
+    """记录中的材料牌号（大写）；没有记录文件时为 None。 / Recorded glass names (upper case); None without a record."""
     path = job.root / FILE
     if not path.is_file():
         return None
@@ -67,4 +70,4 @@ def recorded_names(job: jobs.Job) -> set[str] | None:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
         raise _bad(f"cannot parse: {exc}") from exc
-    return {str(m["zemax"]["name"]).upper() for m in validate(data)["materials"]}
+    return {str((m.get("zemax") or {}).get("name") or m["name"]).upper() for m in validate(data)["materials"]}

@@ -77,6 +77,19 @@ def _tilted(s: dict[str, Any]) -> bool:
     return s["type"] == "Coordinate Break" and any(_num(p["value"]) not in (0, 0.0) for p in s.get("params") or [])
 
 
+def _aperture_fingerprint(aperture: dict[str, Any]) -> dict[str, Any]:
+    # 两端对不适用孔径字段分别返回 None、缺省或 0；孔径类型及有效尺寸仍参与结构确认。
+    keys = ("ApertureXDecenter", "ApertureYDecenter", "MinimumRadius", "MaximumRadius", "XHalfWidth", "YHalfWidth")
+    return {**{k: _num(v) for k, v in aperture.items() if k not in keys}, "type": aperture.get("type", "None"),
+            **{k: _num(aperture.get(k) or 0.0) for k in keys}}
+
+
+def _break_fingerprint(surface: dict[str, Any]) -> dict[str, Any]:
+    # 参数列号跨后端一致；显示列名在 OpticStudio 中是标题，在 Optiland 中是 par<N>。
+    columns = {int(p["par"]): _num(p["value"]) for p in surface.get("params") or [] if p.get("par") is not None}
+    return {str(n): columns.get(n, 0.0) for n in sorted(set(range(1, 7)) | set(columns))}
+
+
 # TEMP、PRES 的值是判定条件，不是设计变量 / TEMP and PRES values are conditions of the checks, not design variables
 CONDITION_OPERANDS = ("TEMP", "PRES")
 # 指纹里后来加的项：确认时的描述里没有就不比较 / items added to the fingerprint later: not compared when the approval lacks them
@@ -160,10 +173,10 @@ def fingerprint(desc: dict[str, Any], environment: Any = ()) -> dict[str, Any]:
         item: dict[str, Any] = {"type": s["type"], "stop": bool(s.get("is_stop"))}
         if s["index"] in given:
             item.update(medium=medium_kind(s), material=str(s.get("material", "")).upper(),
-                        aperture={k: _num(v) for k, v in aperture.items()},
+                        aperture=_aperture_fingerprint(aperture),
                         radius=_num(float(s["radius"])), conic=_num(float(s.get("conic", 0.0))))
             if s["type"] == "Coordinate Break":
-                item["break"] = {p["name"]: _num(p["value"]) for p in s.get("params") or []}
+                item["break"] = _break_fingerprint(s)
             if s.get("tilt_decenter"):
                 item["tilt_decenter"] = {k: _num(v) for k, v in s["tilt_decenter"].items()}
             if "coating" in s:
@@ -226,7 +239,17 @@ def structure_changes(approved: dict[str, Any], current: dict[str, Any], environ
             continue
         if len(new) > len(old) and new[:len(old)] == old:
             put(b, new[:len(old)])
-    return diff(a, b)
+    labels = _break_labels(current)
+    return [labels.get(path, path) for path in diff(a, b)]
+
+
+def _break_labels(desc: dict[str, Any]) -> dict[str, str]:
+    """指纹路径 surfaces[k].break.<列号> → 当前描述里的列名，只用于显示；比较仍用列号。
+    Fingerprint path surfaces[k].break.<column> -> the column's name in the current description; for display only, since
+    the comparison itself uses the column number."""
+    return {f"surfaces[{k}].break.{int(p['par'])}": f"surfaces[{k}].break.{p['name']}"
+            for k, surface in enumerate(desc.get("surfaces") or []) for p in surface.get("params") or []
+            if p.get("par") is not None and p.get("name")}
 
 
 def digest(fp: dict[str, Any]) -> str:

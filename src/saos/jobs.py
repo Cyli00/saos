@@ -180,7 +180,8 @@ class Job:
             )
         if path.suffix.lower() != LENS_SUFFIX:
             raise SaosError(ErrorCode.BAD_ARGS, f"lens files must be {LENS_SUFFIX}: {name!r}")
-        if must_exist and not path.is_file():
+        # 原生快照可以单独存在（Optiland 写不出 .zmx 时），所以快照也算镜头存在
+        if must_exist and not (path.is_file() or path.with_suffix(".optiland.json").is_file()):
             raise SaosError(ErrorCode.FILE_NOT_FOUND, f"job {self.id} has no lens file {name!r}")
         return path
 
