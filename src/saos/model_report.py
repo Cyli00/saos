@@ -121,21 +121,21 @@ TEXT: dict[str, tuple[str, str]] = {
         "{cfg}Lenses {l1} ({c1}) and {l2} ({c2}) interpenetrate: {n} sample points of one lie inside the other's glass, usually a negative air gap.",
     ),
     "w.edges_from_clear": (
-        "没有一片镜片的外缘大于净口径：交叠检查和边厚只按净口径算，没算装配余量。按 design-practice.md 表 17-1 给各镜片面设机械半口径"
+        "没有一片镜片的外缘大于净口径：交叠检查和边厚只按净口径算，没算装配余量。按表 17-1（李晓彤）给各镜片面设机械半口径"
         "（lens set --param mech_semi_diameter），检查才对应实物零件；优化后才加余量，正透镜可能没有边厚。",
         "No lens has an outer edge beyond its clear aperture: the interference check and edge thicknesses cover clear apertures only, "
         "without a mounting allowance. Set the lens faces' mechanical semi-diameters (lens set --param mech_semi_diameter) per table 17-1 "
-        "in design-practice.md so the check sees the real parts; an allowance added after optimising can leave a positive lens without edge.",
+        "of 李晓彤's textbook so the check sees the real parts; an allowance added after optimising can leave a positive lens without edge.",
     ),
     "w.thin_edge": (
-        "第 {a}–{b} 面之间的玻璃在外缘附近最薄 {min}（离轴 {r} 处，外径 {d}），低于 design-practice.md 表 17-2 正透镜最小边厚 {need}。",
+        "第 {a}–{b} 面之间的玻璃在外缘附近最薄 {min}（离轴 {r} 处，外径 {d}），低于表 17-2（李晓彤）正透镜最小边厚 {need}。",
         "The glass between surfaces {a} and {b} is thinnest near its edge, {min} ({r} from the axis, outer diameter {d}), below the "
-        "minimum positive-lens edge {need} of table 17-2 in design-practice.md.",
+        "minimum positive-lens edge {need} of table 17-2 in 李晓彤's textbook.",
     ),
     "w.thin_centre": (
-        "第 {a}–{b} 面之间的玻璃在中心附近最薄 {min}（离轴 {r} 处，外径 {d}），低于 design-practice.md 表 17-2 负透镜最小中心厚 {need}。",
+        "第 {a}–{b} 面之间的玻璃在中心附近最薄 {min}（离轴 {r} 处，外径 {d}），低于表 17-2（李晓彤）负透镜最小中心厚 {need}。",
         "The glass between surfaces {a} and {b} is thinnest near its centre, {min} ({r} from the axis, outer diameter {d}), below the "
-        "minimum negative-lens centre {need} of table 17-2 in design-practice.md.",
+        "minimum negative-lens centre {need} of table 17-2 in 李晓彤's textbook.",
     ),
     "w.no_exploration": (
         "没有结构探索记录；请在说明中写明起点依据或直接采用该结构的理由。",
@@ -347,8 +347,8 @@ def _flat(radius: float) -> bool:
     return math.isinf(radius) or abs(radius) > 1e9
 
 
-# design-practice.md 表 17-2 的下限：(外径上限 mm, 正透镜最小边厚, 负透镜最小中心厚)；外径 3 mm 以下表里没有
-# lower bounds of table 17-2 in design-practice.md: (outer diameter up to, mm; min edge of a positive lens; min centre of a negative lens)
+# 表 17-2（李晓彤《几何光学·像差·光学设计》）的下限：(外径上限 mm, 正透镜最小边厚, 负透镜最小中心厚)；外径 3 mm 以下表里没有
+# lower bounds of table 17-2 in that textbook: (outer diameter up to, mm; min edge of a positive lens; min centre of a negative lens)
 MIN_GLASS = ((6, 0.4, 0.6), (10, 0.6, 0.8), (18, 0.8, 1.0), (30, 1.2, 1.5), (50, 1.8, 2.2), (80, 2.4, 3.5), (120, 3.0, 5.0), (math.inf, 4.0, 8.0))
 
 

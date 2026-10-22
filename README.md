@@ -7,7 +7,7 @@ OpticStudio 2024 R1 Premium 加 ZOS-API 能建模的系统都在范围内：序�
 ## 怎么工作
 
 - **agent 读技能**：执行设计任务的 agent 读 [skills/saos/SKILL.md](skills/saos/SKILL.md)（入口技能）和按需加载的配方 `skills/recipes/<系统>/`。Claude Code 通过 `.claude/skills/saos` 自动发现入口技能；Codex 等平台从 `~/.agents/skills` 链接。
-- **命令行**：agent 只通过 `uv run saos …` 操作，每条命令打印一个 JSON 对象。参数、输入格式和返回值见 `uv run saos <命令> --help`，中文速览见 [docs/cli.md](docs/cli.md)。
+- **命令行**：agent 只通过 `uv run saos …` 操作，每条命令打印一个 JSON 对象。参数、输入格式和返回值见 `uv run saos <命令> --help`；分组总览、输出协议、环境变量和错误码见 `uv run saos --help`。
 - **常驻后台进程**：持有 OpticStudio 连接，命令行把请求转发给它；需要并发时另带一个 standalone 实例组成的 worker 池。
 - **两个必经停顿**：用户确认需求单（`saos demand confirm`）、确认建模说明（`saos lens approve`），其余由 agent 自己决定。
 - **流程图窗口**：需求确认后打开的本机小窗口（`saos ui`），用户在里面看流程走到哪一步、当前镜头的布局和每轮的点列图、MTF。
@@ -37,13 +37,11 @@ uv run saos job create --name <名字>
 
 | 文件 | 内容 |
 |---|---|
-| [skills/saos/SKILL.md](skills/saos/SKILL.md)、[demand.md](skills/saos/demand.md) | 执行任务的 agent 的工作方式、需求单格式、终止规则（英文） |
-| [docs/cli.md](docs/cli.md) | 中文命令速览、输出协议、环境变量和错误码；详细格式见各命令的 `--help` |
-| [DESIGN.md](DESIGN.md) | 设计原则、用户做过的决定及理由、目录规定 |
-| [GLOSSARY.md](GLOSSARY.md) | 术语（中英并列）和不要用的叫法 |
+| [skills/saos/SKILL.md](skills/saos/SKILL.md)、[demand.example.yaml](skills/saos/demand.example.yaml) | 执行任务的 agent 的工作方式、需求单模板、终止规则（英文） |
+| [DESIGN.md](DESIGN.md) | 架构原则、用户决定、目录规范与中英术语 |
 | [docs/adr/](docs/adr/) | 关键决策记录 |
 | [TODO.md](TODO.md) | 暂缓和待查的事项 |
-| [AGENTS.md](AGENTS.md) | 修改本仓库时给 agent 的规则 |
+| [AGENTS.md](AGENTS.md) | 仓库导航：改本仓库前先读哪几份 |
 | `library/<库>/README.md` | 跨任务共享的参考数据：材料、在产玻璃目录、显微物镜结构库 |
 
 ## 参考资料
@@ -61,11 +59,16 @@ uv run saos job create --name <名字>
 
 ## 测试
 
-修改仓库时的事实来源、工作流同步、验证范围与隔离约束统一见 [AGENTS.md](AGENTS.md)。测试默认使用 `work/verify/`；测试夹具可以通过 `SAOS_HOME` 使用本轮独占的系统临时目录。`SAOS_HOME` 优先于 `SAOS_INSTANCE`，执行前确认实际目录没有指向用户实例。
+修改仓库时的设计原则、用户决定和目录规定见 [DESIGN.md](DESIGN.md)。测试默认使用 `work/verify/`；测试夹具可以通过 `SAOS_HOME` 使用本轮独占的系统临时目录。`SAOS_HOME` 优先于 `SAOS_INSTANCE`，执行前确认实际目录没有指向用户实例。
 
 ```bash
 SAOS_INSTANCE=verify uv run pytest                     # 不启动 Zemax 的单元测试和假后端的生命周期测试
 SAOS_INSTANCE=verify SAOS_RUN_ZEMAX=1 uv run pytest -m zemax -s  # 在本机 OpticStudio 上跑工具和工作流回归
 ```
 
-按改动范围和用户指定的验证模式选择检查；测试交给其他执行者时标明 `NOT RUN` 并交接。工作流窗口与流程图的检查命令见 AGENTS.md，图渲染测试已包含命令一致性检查，无需重复执行。
+按改动范围和用户指定的验证模式选择检查；测试交给其他执行者时标明 `NOT RUN` 并交接。改动涉及工作流窗口或流程图时，另跑：
+
+```bash
+SAOS_INSTANCE=verify uv run saos ui open --job <任务> --no-window                    # 打开返回的 URL，检查中英文标签与返回边
+SAOS_INSTANCE=verify SAOS_RENDER_DRAWIO=1 uv run pytest tests/test_docs_sync.py -s  # 渲染流程图 PNG 供查看，已含命令一致性检查
+```

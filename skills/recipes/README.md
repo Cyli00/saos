@@ -24,5 +24,5 @@ Scope and Verified are required. Write the others when the job taught you someth
 4. **Starting designs** — where to get one (library, patents, Zemax samples, first-order synthesis) and how to adapt it to the user's scale.
 5. **Modelling notes** — layout conventions, solves, apertures, pitfalls seen in practice.
 6. **Optimisation** — which variables and merit constructions worked, per strategy tier.
-7. **Manufacturing and assembly** — limits this family usually needs (minimum thicknesses, diameter allowance, centring, test plates, mounting), with sources; general values are in `skills/saos/design-practice.md`.
+7. **Manufacturing and assembly** — limits this family usually needs (minimum thicknesses, diameter allowance, centring, test plates, mounting), with sources.
 8. **Verified** — what has been measured on real OpticStudio (jobs, test files, numbers) and what is still unverified.

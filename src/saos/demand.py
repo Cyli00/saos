@@ -1,8 +1,8 @@
 """需求（demand）：读取、校验 sources/demand.yaml，确认记录，以及在 OpticStudio 中逐项取值并判定。
 Demand: read and validate sources/demand.yaml, record the user's confirmation, measure and judge every check in OpticStudio.
 
-文件放在任务的 sources/demand.yaml，字段用英文（给 agent 读写），格式见 skills/saos/demand.md：
-The file is the job's sources/demand.yaml; keys are English (the agent writes it); format in skills/saos/demand.md:
+文件放在任务的 sources/demand.yaml，字段用英文（给 agent 读写），格式见 skills/saos/demand.example.yaml：
+The file is the job's sources/demand.yaml; keys are English (the agent writes it); format in skills/saos/demand.example.yaml:
 
     schema: 2
     constants:     [{id, description, value, unit, source, check?, goal?}]       # 固定条件 / fixed conditions
@@ -94,7 +94,7 @@ def path_of(root: Path) -> Path:
     if path.is_file():
         return path
     if (root / LEGACY_FILE).is_file():
-        raise SaosError(ErrorCode.FILE_NOT_FOUND, f"{LEGACY_FILE} is the old format; rewrite it as {DEMAND_FILE} (skills/saos/demand.md) and get it confirmed with saos demand confirm")
+        raise SaosError(ErrorCode.FILE_NOT_FOUND, f"{LEGACY_FILE} is the old format; rewrite it as {DEMAND_FILE} (skills/saos/demand.example.yaml) and get it confirmed with saos demand confirm")
     raise SaosError(ErrorCode.FILE_NOT_FOUND, f"no {DEMAND_FILE}; frame the need with the user first")
 
 

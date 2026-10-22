@@ -1,6 +1,6 @@
-"""工作流写在四处（AGENTS.md），DESIGN.md 也会提到命令：这里自动核对其中能机械核对的部分，减少靠人记得同步。
+"""工作流写在技能、界面和流程图里，几处都会提到命令：这里自动核对其中能机械核对的部分，减少靠人记得同步。
 
-- SKILL.md、demand.md、DESIGN.md、docs/cli.md、各级命令帮助和 workflow.drawio 中出现的命令都存在于命令行；
+- SKILL.md、DESIGN.md、各级命令帮助和 workflow.drawio 中出现的命令都存在于命令行；
   已删除的命令只能以历史说明出现。
 - workflow.drawio 能被 draw.io 官方查看器渲染（默认跳过，需要 Chrome 和网络：SAOS_RENDER_DRAWIO=1 uv run pytest tests/test_docs_sync.py -s，
   打印出 PNG 路径，供人看图核对）。
@@ -21,7 +21,7 @@ import pytest
 from saos import cli, config
 
 ROOT = config.REPO_ROOT
-DOCS = ("skills/saos/SKILL.md", "skills/saos/demand.md", "DESIGN.md", "docs/cli.md")
+DOCS = ("skills/saos/SKILL.md", "DESIGN.md")
 DIAGRAM = ROOT / "docs" / "workflow.drawio"
 COMMAND_RE = re.compile(r"(?<!from )\bsaos ([a-z][a-z-]*)(?: ([a-z][a-z-]*))?(?: ([a-z][a-z-]*))?")
 # 已删除的命令：只能出现在“原……并入 / 已取消”这类历史说明里 / removed commands may only appear in historical notes

@@ -478,7 +478,7 @@
         <mxCell id="e0b" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="a0" target="a1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="a2b" value="&lt;b&gt;从物理上质疑结构（写需求单之前）&lt;/b&gt;&lt;br&gt;每个元件的作用；增删后其余部分还能否承担&lt;br&gt;优化器动不了的界限：光展量 / 拉氏不变量、Petzval、衍射极限、临界角、空间与口径、自由度 vs 目标数&lt;br&gt;制造工艺做不到什么（镀膜、面形、尺寸、材料）&lt;br&gt;公式手算界限（feasibility.md）+ 追迹/操作数核实决定性的数，不用优化器 → 每项 must：可达 / 边缘 / 不可达" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+        <mxCell id="a2b" value="&lt;b&gt;从物理上质疑结构（写需求单之前）&lt;/b&gt;&lt;br&gt;每个元件的作用；增删后其余部分还能否承担&lt;br&gt;优化器动不了的界限：光展量 / 拉氏不变量、Petzval、衍射极限、临界角、空间与口径、自由度 vs 目标数&lt;br&gt;制造工艺做不到什么（镀膜、面形、尺寸、材料）&lt;br&gt;公式手算界限 + 追迹/操作数核实决定性的数，不用优化器 → 每项 must：可达 / 边缘 / 不可达" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="490" y="320" width="320" height="170.0" as="geometry" />
         </mxCell>
         <mxCell id="e6b" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="a2b" target="a3">

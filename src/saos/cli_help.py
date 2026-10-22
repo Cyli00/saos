@@ -40,6 +40,8 @@ Busy, cancellation and timeouts
   job progress and archived results before retrying. Cancellation is cooperative;
   completed work is retained. progress.json write failures are retried then
   logged without aborting computation. log.jsonl gains a row only on completion.
+  Long computations leave the user cores free (default: logical cores minus 2,
+  at least 1) and run below normal priority.
 
 Environment
   SAOS_INSTANCE: work/<instance> (default main); isolates jobs and daemon state.
@@ -49,8 +51,9 @@ Environment
     updates (slower); long operations normally refresh once at completion.
   SAOS_UI_PID: select an OpticStudio window for extension mode when several exist.
   SAOS_POOL_IDLE_S: worker idle lifetime, default 600 seconds.
+  SAOS_DEVICE: auto/cpu/cuda for the torch optimisers; float64 is required.
   SAOS_OPTICSTUDIO_DIR: OpticStudio installation; SAOS_BACKEND=fake for tool tests;
-    SAOS_LIBRARY: microscope starting-design library.
+    SAOS_LIBRARY: microscope starting-design library, default <repo>/library/microscope.
 
 Help
   uv run saos <command> --help
@@ -89,7 +92,7 @@ material changes require saving before worker scans; model glass is exploratory
 and cannot be delivered. Optimization keeps the best reached system in memory.
 """,
     "demand": """Validate and confirm sources/demand.yaml locally, without OpticStudio.
-Format, check definitions, shortfall and stop rules: skills/saos/demand.md.
+Format: skills/saos/demand.example.yaml; shortfall and stop rules: saos round --help.
 Each bound needs a source; confirmation records the user's actual approval and
 content hash. Constants, variables, objectives (except their descriptions) and stop define
 the version; rewording a description, the summary, questions or language does not
@@ -266,8 +269,8 @@ COMMANDS.update({
         "  glasses that substitution may replace. Use per-surface catalogs to preserve\n"
         "  manufacturers. Local optimization does not substitute glasses. --off fixes\n"
         "  variables (model glasses keep their current nd/Vd). Partial failures can leave\n"
-        "  earlier surfaces modified and the lens dirty. Design constraints:\n"
-        "  skills/saos/design-practice.md.\n"
+        "  earlier surfaces modified and the lens dirty. Minimum thicknesses and mounting\n"
+        "  allowances: table 17-2 of 李晓彤《几何光学·像差·光学设计》.\n"
         "  Optiland session: radius, curvature, thickness, conic and par<N> vary in\n"
         "  Optiland (variables are variable solves in the companion's prescription);\n"
         "  --param material --mode model turns the glass into a model glass whose nd/Vd\n"
@@ -287,7 +290,7 @@ COMMANDS.update({
         "  objectives, open_questions, summary, notes, lang, stop. Check method: operand,\n"
         "  analysis or script. Bounds use finite max/min or equals+tol; directional\n"
         "  goals use minimize/maximize with scale (maximize also ideal), not must.max=0.\n"
-        "  Legacy harness.yaml is not converted. Format: skills/saos/demand.md.", "BAD_ARGS, FILE_NOT_FOUND, JOB_NOT_FOUND"),
+        "  Legacy harness.yaml is not converted. Format: skills/saos/demand.example.yaml.", "BAD_ARGS, FILE_NOT_FOUND, JOB_NOT_FOUND"),
     "demand confirm": (
         "Record the user's approval of the exact current demand version.",
         "Every limit requires source. --quote must contain the user's approval.\n"
@@ -315,6 +318,13 @@ COMMANDS.update({
         "  version is refused; inspect the previous round after a client timeout.\n"
         "  Stop states: continue/achieved/exhausted/limit/stopped. Directional goals keep\n"
         "  improving after thresholds pass until ideal values or exhausted strategies.\n"
+        "  Shortfall G sums max(0, excess over the bound)/scale per bounded item, plus for\n"
+        "  directional goals max(0, distance to ideal)/scale, each times its weight; a check\n"
+        "  with no valid value counts as infinite. Constants and variable ranges are hard:\n"
+        "  a round breaking one is never delivered and lists it in hard_failing.\n"
+        "  Decision order: invalid round (a check failed to run) -> achieved -> limit\n"
+        "  (max_rounds, default 30) -> stopped -> exhausted (every tier tried or ruled out\n"
+        "  since the last gain of rel, default 0.01) -> continue with next_tier.\n"
         "  Changed checks (including helpers/data and used recipe/kit code) remeasure\n"
         "  the earlier best archived round first: rebase_of, rebase.equivalent and diffs\n"
         "  describe the comparison. Relative agreement within 1e-9 and no check errors\n"
@@ -807,7 +817,7 @@ Results and files
   faces; explicit noncircular apertures are not extended. clearances gives the
   minimum glass/air spacing (negative means crossing); lenses lists clear and
   outer radii. edges_from_clear warns if no element has a mechanical margin;
-  in mm, thin glass warns against design-practice.md table 17-2 (diameter >=3 mm).
+  in mm, thin glass warns against table 17-2 of 李晓彤 (diameter >=3 mm).
   NSC outlines: cylinders, rectangular volumes, sources and rectangular
   detectors from parameters; other types (Standard Lens, CAD, polygon objects)
   from a per-object ExportCAD STL mesh, cached by type, file, parameters and
