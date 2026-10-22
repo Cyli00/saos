@@ -1,8 +1,10 @@
+> 历史归档（2026-10-22）：本文保留当时的方案、实施与测试记录，不再是执行入口。当前待办见[整合计划](../../integration-workflow.md)。正文中的“当前”“下一轮”、路径与执行指令均属于原记录；未完成事项的去向以新计划为准。
+
 # Optiland 重构剩余工作交接
 
 日期：2026-10-21。
 
-本文用于交接下一轮实施，说明改什么、怎么改、查什么、测什么。它补充[综合计划](./refactor-optiland-first-workflow.md)，按最新进展重新安排剩余工作的顺序，沿用 R0–R7 工作包和 S/Z/G/M/H/N/D/E 测试编号。技术目标仍以综合计划为准；后续批次按本文安排。
+本文用于交接下一轮实施，说明改什么、怎么改、查什么、测什么。它补充[综合计划](refactor-optiland-first-workflow.md)，按最新进展重新安排剩余工作的顺序，沿用 R0–R7 工作包和 S/Z/G/M/H/N/D/E 测试编号。技术目标仍以综合计划为准；后续批次按本文安排。
 
 完成状态只维护在综合计划第 13 节，本文不再维护第二张状态表。下述基线来自用户交接报告和该节记录，本次编写没有重新运行测试，也没有复核全部源码。收到本文不等于已经取得新的测试结果。
 
@@ -97,7 +99,7 @@ A 已执行（见综合计划第 13 节执行记录）。2026-10-21 用户改定
 
 ### B0. 回退与保留
 
-本轮选型加固的改动全部未提交（HEAD `b4c0851`），详见[本轮交接](./refactor-optiland-selection-handoff.md)第 3 节。按新方向处理如下。回退要逐处改代码并同步测试与工作流四处，不用 `git checkout` 整文件，因为同一文件里有要保留的改动。
+本轮选型加固的改动全部未提交（HEAD `b4c0851`），详见[本轮交接](refactor-optiland-selection-handoff.md)第 3 节。按新方向处理如下。回退要逐处改代码并同步测试与工作流四处，不用 `git checkout` 整文件，因为同一文件里有要保留的改动。
 
 | 改动 | 处理 | 理由 |
 |---|---|---|
@@ -112,7 +114,7 @@ A 已执行（见综合计划第 13 节执行记录）。2026-10-21 用户改定
 | UI 的“已选择 id”、drawio 中 `scan select` 的文字、SKILL/demand/cli 中相关说明 | 随上一行回退 | 工作流四处必须与代码一致 |
 | DESIGN 中“结构淘汰须有事先登记的推翻条件”“深度优化的模型必须是比较中选定的结构” | 已改为新决定（本次文档更新） | 用户改定 |
 
-另有一批修复在方向改定前由另一个执行者写入后暂停，同样未提交，记录见[修复暂停交接](./refactor-optiland-selection-fixes-handoff.md)。暂停后主会话复跑非 ZOS 全量：459 通过、11 跳过（2026-10-21）。这批改动按新方向归类如下：
+另有一批修复在方向改定前由另一个执行者写入后暂停，同样未提交，记录见[修复暂停交接](refactor-optiland-selection-fixes-handoff.md)。暂停后主会话复跑非 ZOS 全量：459 通过、11 跳过（2026-10-21）。这批改动按新方向归类如下：
 
 | 改动（暂停交接中的位置） | 处理 |
 |---|---|
@@ -240,14 +242,13 @@ H01 记录版本、同一线程标识、实际工具清单与先前信息的可�
 
 ## 7. 所有批次共同遵守的操作约定
 
-- 保留 Optiland 为前期唯一后端、报告认可后才进入 ZOS、无 fallback、主会话连续设计等既有方向；不大范围改名、搬目录或重写物理内核。
-- 所有终端命令使用 `C:\Git\bin\bash.exe` 和 Bash 语法，Python 使用 `uv run`。临时脚本和 Markdown/HTML 报告放 `%TEMP%`；正式仓库文档放约定目录。
-- 所有 `saos` 命令使用 `SAOS_INSTANCE=verify`。检查是否有 `SAOS_HOME` 或夹具覆盖隔离设置，不读取或写入 `work/main/` 等其他实例，不清空共享 verify 目录。
-- 使用唯一测试任务名，记录自建进程 PID，只关闭本轮创建的进程。真实窗口测试连接自己创建的专用实例；不要沿用历史 PID，不连接用户窗口。
-- 先跑本批新增及受影响测试，接口稳定后再做适用的整体回归。无新改动、新失败或未解问题时，不反复全库运行。
+通用的事实来源、四处同步、验证范围与实例隔离，以仓库 [AGENTS.md](../../../../AGENTS.md) 为准；终端和 Python 工具选择遵循当前会话的用户环境约束。工作流变更须检查四处、只修改受影响项；未完成同步的项仍属未完成。以下只补充本交接特有的执行边界：
+
+- 保留 Optiland 为前期唯一后端、报告认可后才进入 ZOS、不自动转交 ZOS 代算、主会话连续设计等既有方向；不大范围改名、搬目录或重写物理内核。这里的后端边界不禁止 Optiland 内部已明确允许的优化算法回退。
+- 使用唯一测试任务名，不清空共享 verify 目录。真实窗口测试使用本轮创建的专用实例；不要沿用历史 PID。
+- 按用户指定的本轮验证分工执行：由本轮验证时先跑新增及受影响测试，再做适用的整体回归；交给其他执行者时标明 `NOT RUN` 并提供交接。无新改动、新失败或未解问题时，不反复全库运行。
 - 修改测试断言时记录旧含义、新契约和原因，保留原业务目标。容差在运行前登记，不为通过而放宽。
-- 工作流行为变化时，同批同步 `skills/saos/SKILL.md`/`demand.md`、`src/saos/ui/stage.py`/`static/app.js`、`docs/workflow.drawio`、实际 CLI 帮助及 `docs/cli.md`。不能同步的项明确写出原因。
-- 完成状态更新总计划第 13 节；原则变化才更新 DESIGN。保护现有用户修改，不自行提交、推送、打标签或改全局配置。
+- 完成状态更新总计划第 13 节，其他交接只链接该状态与本轮证据。保护现有用户修改，不自行提交、推送、打标签或改全局配置。
 
 ## 8. 每批交付格式
 
@@ -272,7 +273,7 @@ H01 记录版本、同一线程标识、实际工具清单与先前信息的可�
 
 > 本轮完成 B0 与 B2，分两段交付：B0 通过回归后再开始 B2。
 >
-> **先读**：AGENTS.md；DESIGN.md「用户决定与取舍」中 2026-10-21 的四条；综合计划第 7 节；本文第 4 节（B0 两张去留表、B2）；[修复暂停交接](./refactor-optiland-selection-fixes-handoff.md)第 3、5、6 节；[本轮交接](./refactor-optiland-selection-handoff.md)第 3、5 节。然后 `git status`、`git diff --stat`，记下基线：HEAD `b4c0851`，非 ZOS 全量 459 通过、11 跳过。
+> **先读**：AGENTS.md；DESIGN.md「用户决定与取舍」中 2026-10-21 的四条；综合计划第 7 节；本文第 4 节（B0 两张去留表、B2）；[修复暂停交接](refactor-optiland-selection-fixes-handoff.md)第 3、5、6 节；[本轮交接](refactor-optiland-selection-handoff.md)第 3、5 节。然后 `git status`、`git diff --stat`，记下基线：HEAD `b4c0851`，非 ZOS 全量 459 通过、11 跳过。
 >
 > **B0 回退与保留**（`candidates.py`、`scan.py`、`workflow.py`、`model_gate.py`、`model_report.py`、`protocol.py`、`cli.py`、`cli_help.py`、`ui/stage.py`、`ui/static/app.js`、相关 tests）：
 > 1. 按两张去留表逐处修改，不用 `git checkout` 整文件。回退 `refuted_by`（含 bound）、`mechanism`/`risk`/`distinct_by` 必填、structural 与 parameters 的区分、`scan select`、`selection.json`、`require_selected`、`exclusive` 写入、`approval_context` 拦截；无效候选统一记为“预算内无效”；`require_optimise` 只检查需求确认与模型确认；`require_approved` 只按结构指纹判断，判定方法变化和比较不对应改为在确认页与轮次返回中显示。

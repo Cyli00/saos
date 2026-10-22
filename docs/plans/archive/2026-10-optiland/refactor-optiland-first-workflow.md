@@ -1,3 +1,5 @@
+> 历史归档（2026-10-22）：本文保留当时的方案、实施与测试记录，不再是执行入口。当前待办见[整合计划](../../integration-workflow.md)。正文中的“当前”“下一轮”、路径与执行指令均属于原记录；未完成事项的去向以新计划为准。
+
 # saos 收敛与重构计划：先修契约，再完善设计流程
 
 更新：2026-10-21。状态：已有部分实现，存在静态审查发现，尚未完成验收。同日用户改定 R3 方向：从“加固选型证据”改为“起点库、像差预判与诊断工具”，关卡只留在昂贵处（第 7 节）；按同一思路建议 R5 暂缓，待用户决定（第 9 节）。
@@ -350,14 +352,14 @@ SAOS_INSTANCE=verify SAOS_RENDER_DRAWIO=1 uv run pytest tests/test_docs_sync.py 
 
 ## 13. 完成清单与后续执行指令
 
-各批次已有部分实现和测试记录，实际状态以下表为准。剩余工作的执行顺序、检查项和测试安排见[重构剩余工作交接](./refactor-optiland-handoff.md)。后续仅维护下表作为当前状态，不在交接文档中另建完成度表。
+各批次已有部分实现和测试记录，实际状态以下表为准。剩余工作的执行顺序、检查项和测试安排见[重构剩余工作交接](refactor-optiland-handoff.md)。后续仅维护下表作为当前状态，不在交接文档中另建完成度表。
 
 | 批次 | 当前可复用内容 | 退出条件 | 当前状态（2026-10-21 执行记录） |
 |---|---|---|---|
 | R0 | 计划与静态审查 | 工作树/报告可对应；每项问题有状态；测试隔离可说明 | 部分完成：基线 10 失败 / 338 通过 / 10 跳过（改动前）；失败均已归属（见下）；隔离 `SAOS_INSTANCE=verify`，层级测试只读本实例 |
 | R1 | 原生快照、`lens_files` 统一接口 | S01–S07 | 部分完成：快照单独保存、`lens export` 显式导出、覆盖/搜索/封存/候选/回滚已改并有测试（`test_lens_snapshot_files.py`）；S03 删除与篡改后，报告和 zos begin 明确拒绝且不新增认可（`test_evidence_tamper.py`）；S06 旧双文件迁移前后原件摘要不变、副本可加载（`test_evidence_tamper.py`） |
 | R2 | `zos begin`、verify、阶段预算 | Z01–Z06 | 部分完成：窗口副本在连接后、加载前保存，失败不替换（`test_daemon.py`）；后端身份按实例取（`test_workflow.py`）；真实 OpticStudio 认可入口与复测通过（`test_zemax_acceptance.py`、`test_zemax_workflow.py`）。Z03：9 个写入点各注入一次失败后重试，成功后恰有 1 条对应 verify；被改动的入口或比较记录被拒绝且不重新封存（`test_zos_begin_recovery.py`，OpticStudio 会话用测试替身）。Z05：预算按阶段计数，旧停止与排除不进入 OpticStudio 阶段，rebase 不计上限（`test_stage_budgets.py`，真实账本与阶段文件）。Z06：OpticStudio 测量比 Optiland 多 3 mm 时，报告只交付合资格的 ZOS 轮次，比较记录保留 length 104.0 与 107.0（`test_zos_report_selection.py`，替身）。阻断：Z02 专用 extension 窗口（未保存内容的首次与恢复进入）需要自建的 Interactive Extension 实例；`native_ui.ensure_extension` 通过 UI Automation 操作窗口，本轮未执行，需用户确认后再做。取消只作用于当前操作未测 |
-| R3 | 需求/模型关卡、起点生成、预判与候选初筛 | G01–G06 | 用户外部复核旧 63 文件交付：B0 基本合格；B2 无规范化垫片时生成失败。下列 10 项已修源码与文档，修复版仅做静态检查，运行验收 NOT RUN。环境面声明继续属于结构指纹；严格选库范围保留，新增显式外推初筛并逐项显示超范围条件。旧版有垫片 E01、25 条上收对照和数值结果不计作修复版通过。见本节修复记录及 [起点库](../../library/starts/README.md)、[上收记录](../recipes/microscope/starts-extraction.md)。诊断工具属 D，C/R5 暂缓；脚本直调后端仍为已知边界。 |
+| R3 | 需求/模型关卡、起点生成、预判与候选初筛 | G01–G06 | 用户外部复核旧 63 文件交付：B0 基本合格；B2 无规范化垫片时生成失败。下列 10 项已修源码与文档，修复版仅做静态检查，运行验收 NOT RUN。环境面声明继续属于结构指纹；严格选库范围保留，新增显式外推初筛并逐项显示超范围条件。旧版有垫片 E01、25 条上收对照和数值结果不计作修复版通过。见本节修复记录及 [起点库](../../../../library/starts/README.md)、[上收记录](../../../recipes/microscope/starts-extraction.md)。诊断工具属 D，C/R5 暂缓；脚本直调后端仍为已知边界。2026-10-21 晚定位到深度优化 `--max-seconds` 不返回的位置（单次评价内部的自动半口径 + 瞄准回退，实测单根光线 9.6–10.8 s），见[超时报告](refactor-optiland-timeout-handoff.md)；旧原型已撤回；2026-10-22 已实施新的梯度、优化器、预算与结果语义修复，见末节。当前版本的 E01 与优化验收待送测，旧结果不可当作本轮通过。 |
 | R4 | AGF/项目库适配、材料来源 | M01–M04 | 未完成：仅确认 ZMX 无伴随文件时明确拒绝（不部分加载）；M01–M04 未写测试 |
 | R5 | 主会话工具权限 | H01–H04 | 阻断：未能在本环境验证宿主能否在同一线程中更换工具清单；未实现宿主接入。执行端仍只靠 `stages`/`require_optimise` 判定，脚本经 `ctx.backend` 的旁路未封堵 |
 | R6 | SciPy/Torch、guard、timing | N01–N06 | 部分完成：N01 一阶焦距与薄厚透镜解析式对照（`test_optiland_numerics.py`，容差 0.02 mm，实测偏差 1.5e-4 mm）；真实任务流程与局部优化（`test_optiland_flow.py`）。未做：Torch 梯度有限差分（N02）、冷热性能（N06）、CUDA（无设备）。A1：`invalid value encountered in matmul` 的根因是无穷远物面的 0·∞（`optiland_surfaces.py` 的 `_rotate` 跳过零矩阵项），已修复并有直接回归（`test_an_object_at_infinity_builds_without_a_runtime_warning`），修复前后追迹与焦距一致。Optiland 的 DeprecationWarning（`set_field_type`、`set_ray_aiming`）仍在，未处理 |
@@ -401,6 +403,30 @@ R3 确认时间改用公共 jobs.now_iso 的微秒选项，并增加同时间排
 - 用户已有的 4 个 OpticStudio 进程（PID 145624、136484、91872、165556）在批次 A 的所有测试前后均未变化；测试只关闭自己启动的会话。
 - 改过的旧断言（均与新行为对应，不是为通过而放宽）：几何测试的完整字典比较改为比较交叠与穿插字段；需求单指纹的显示名；UI 步骤集合增加 zos 与 final_report；图的步骤命令映射；优化类测试改用指定结构的需求；窗口相关测试显式连接窗口会话；扫描 minimize 测试改用统一判定。
 
-A 已有执行记录；B0/B2 当前先由其他模型定向验收，再决定 B1/D 的后续范围。具体边界见[交接文档](./refactor-optiland-handoff.md)。以下说明保留为各批次共同约束：
+A 已有执行记录；B0/B2 当前先由其他模型定向验收，再决定 B1/D 的后续范围。具体边界见[交接文档](refactor-optiland-handoff.md)。
+
+### 优化超时与结果语义（2026-10-21 晚）
+
+问题：E01（Cooke 三片）`saos opt local --max-seconds 30` 用默认 `trf` 跑满约 7 分钟仍未返回；`lbfgsb 10 s` 那次只是每次评价都短。已定位到单次评价里的自动半口径重算触发了 Optiland 强健瞄准的逐根回退，实测单根光线 9.6–10.8 s，而预算只在两次评价之间检查；同一路径两次以 access violation 结束。
+
+本轮只做定位与验证，没有保留源码或测试改动（用户要求撤回）：看门狗原型在本机实测能把 20 s 预算的 trf 拉到 20.59 s 返回，但原型已移出仓库，HEAD 行为不变。详见[超时报告](refactor-optiland-timeout-handoff.md)，其中第 3 节列出 HEAD 仍需核对的 `stopped_by` 三套词、`succeeded` 含义、`--max-seconds` 不校验正数，第 5 节给出可复现的验收用例（Cooke、厚度变量、TOTR 上限 55 mm：20 s 到期时 56.82 mm，90 s 收敛到 54.00 mm）。
+
+当前状态必须分开看：**流程通过**（上一轮 E01 报告 `achieved`，对应旧工作树，本轮未重跑）；**优化验收**（NOT RUN，需按第 5 节测到期退出、充分预算改善、保存后重算一致）；**R8 实机兼容**（NOT RUN，2024 R1 Odd Asphere 列标题仍未在隔离实例中读取）。
+
+以下说明保留为各批次共同约束：
 
 > 按 `docs/plans/refactor-optiland-first-workflow.md` 的 R0–R7 收敛现有实现。先固定实际工作树和测试隔离范围，优先修文件/证据与窗口保护，再统一设计资格、材料输入和主会话工具权限。保留已有物理后端，保护所有用户改动与运行任务，不恢复 fallback，不默认把连续设计拆给子代理。逐批报告改了什么、删了什么、查了什么和仍缺哪些证据。测试按本次执行指令明确授权的批次运行；未授权项只列待测。不得自行提交、推送、打验收标签或改用户全局配置。宿主能力不足时完成独立工作并明确阻断，不能把引导模式写成强隔离完成。
+
+
+## 2026-10-22 复测后修复（实现待送测）
+
+上一轮 14 项复测确认：真实光线梯度偏差、默认 L-BFGS 零步、非有限脚本错误被吞和成功状态误报。本轮修改代码，未运行测试：
+
+- auto 改为 torch-trf：Torch CPU float64 残差/雅可比，SciPy 信赖域选步；明确的可微能力缺口才回退差分 trf。显式 torch-lbfgs/torch-adam 保留，零步不计接受。
+- 中心、未折叠系统的实际瞄准使用隐式导数，保留原生前向解，补上参考光阑半径随变量变化的导数；偏心、折叠与其他视场定义目前报 aiming_geometry 能力缺口。需要 T01 证明精度，静态定位不等于数值验收。
+- 非有限脚本值和脚本异常按 SCRIPT_ERROR 传播；初始化在 Torch 状态下执行，不再要求脚本先接受 float。improved/converged/停止原因分开，Optiland succeeded 不再依赖英文消息。
+- Optiland Python 评价/瞄准循环按预算中断，退出恢复已验证的镜头快照，不重新追迹最好点。全局搜索在预算内边验证边保存；前后测量、复核和归档计入命令用时。未完成复核标 completed=false、valid=false，不可据此宣称通过。
+- 中断检查依赖返回 Python 的检查点；原生 C/CUDA 调用与文件系统操作不保证硬实时。瞄准内部关闭不必要的逐面记录，但 access violation 是否消失仍需复现验证。
+- 送测先跑梯度、非有限值、Cooke 与单镜片回归、超时/取消及恢复，再跑回退链与回归，最后补实际不少于 20 变量的同质量性能比较。R8、CUDA、OpticStudio 和浏览器实机仍单列待测。
+
+这段是当前实施状态。前文 2026-10-21 的原型计时和“未实施”描述是历史记录，不能作为本轮通过证据。

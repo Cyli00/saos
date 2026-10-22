@@ -1,6 +1,8 @@
+> 历史归档（2026-10-22）：本文保留当时的方案、实施与测试记录，不再是执行入口。当前待办见[整合计划](../../integration-workflow.md)。正文中的“当前”“下一轮”、路径与执行指令均属于原记录；未完成事项的去向以新计划为准。
+
 # Plan 3：用户认可后的 OpticStudio 验证与继续优化阶段
 
-决定与理由见 [ADR-0012](../adr/0012-optiland-default-opticstudio-final-stage.md)（2026-10-20 用户决定）。本计划取代原来的“每轮 `round` 后台异步 ZOS 交叉验证 + Auto-Polish 定标 + `zos_alert` 告警 + 删除约 4,000 行 ZOS 代码”的方案：用户认为那样弄复杂了。
+决定与理由见 [ADR-0012](../../../adr/0012-optiland-default-opticstudio-final-stage.md)（2026-10-20 用户决定）。本计划取代原来的“每轮 `round` 后台异步 ZOS 交叉验证 + Auto-Polish 定标 + `zos_alert` 告警 + 删除约 4,000 行 ZOS 代码”的方案：用户认为那样弄复杂了。
 
 ## 1. 为什么要做（Why）
 

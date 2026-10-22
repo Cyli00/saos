@@ -151,7 +151,7 @@
         <mxCell id="f4" value="sources/materials.yaml" style="shape=note;whiteSpace=wrap;html=1;size=12;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;fontFamily=Consolas;" parent="1" vertex="1">
           <mxGeometry x="1050" y="1095.0" width="260" height="46" as="geometry" />
         </mxCell>
-        <mxCell id="a8" value="&lt;b&gt;起点生成与预判&lt;/b&gt;&lt;br&gt;有来源处方 · 显式标记外推&lt;br&gt;检查 prepare 变量与评价函数&lt;br&gt;零优化 → 同预算短优化&lt;br&gt;&lt;b&gt;saos scan&lt;/b&gt; → 初筛表&lt;br&gt;缺比较只提示，不设配额" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
+        <mxCell id="a8" value="&lt;b&gt;起点生成与预判&lt;/b&gt;&lt;br&gt;有来源处方 · 显式标记外推&lt;br&gt;检查 prepare 变量与评价函数&lt;br&gt;零优化 → 同预算短优化（自动微分优先）&lt;br&gt;&lt;b&gt;saos scan&lt;/b&gt; → 初筛表&lt;br&gt;缺比较只提示，不设配额" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="1170" width="320" height="130" as="geometry" />
         </mxCell>
         <mxCell id="u3" value="带证据回到用户&lt;br&gt;（可能改需求单）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
@@ -236,7 +236,7 @@
         <mxCell id="u5" value="&lt;b&gt;停下来问用户&lt;/b&gt;&lt;br&gt;证据 · 影响 · 建议选项&lt;br&gt;用户选：改需求 / 停止 / 继续" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="85" y="1850.0" width="240" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="a14" value="&lt;b&gt;按机理选择优化手段&lt;/b&gt;&lt;br&gt;Optiland：local（SciPy / Torch）、global、glass&lt;br&gt;OpticStudio：DLS、Hammer、全局搜索&lt;br&gt;未翻译的边界与脚本损失逐项重设&lt;br&gt;&lt;br&gt;SciPy / Torch：交叠或任一视场/波长有效率 &amp;lt;95%&lt;br&gt;拒绝候选步，最多减半 12 次；只保留已接受步&lt;br&gt;Torch：连续失效光线惩罚，保护路径不作为实测&lt;br&gt;分段报告收益；物理不成立的状态不得交付" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+        <mxCell id="a14" value="&lt;b&gt;按机理选择优化手段&lt;/b&gt;&lt;br&gt;Optiland：local / glass 默认 Torch 雅可比 + 信赖域；能力缺口回退 trf；global 全局搜索&lt;br&gt;OpticStudio：DLS、Hammer、全局搜索&lt;br&gt;到期恢复快照；复核未完成则补查后再记录轮次&lt;br&gt;&lt;br&gt;SciPy / Torch：交叠或任一视场/波长有效率 &amp;lt;95%&lt;br&gt;拒绝候选步；信赖域缩步或下降法回溯，只保留已验证快照&lt;br&gt;Torch：连续失效光线惩罚，保护路径不作为实测&lt;br&gt;分段报告收益；物理不成立的状态不得交付" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="2170.0" width="320" height="180" as="geometry" />
         </mxCell>
         <mxCell id="t8" value="&lt;b&gt;saos opt vary / merit / local / glass / hammer / global&lt;/b&gt;&lt;br&gt;saos lens analysis · saos exec（kit / ctx.measure）&lt;br&gt;saos scan / ctx.map：常驻 worker 池按任务阶段选后端&lt;br&gt;scan --detach：后台线程，主实例仍可用；--show 看进度&lt;br&gt;opt / exec / check / round --detach：runs/ 下保存结果&lt;br&gt;review：交叠检查、--measure 前后对比与 valid&lt;br&gt;progress.json：saos job show / saos job cancel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">

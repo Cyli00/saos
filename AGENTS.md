@@ -1,28 +1,59 @@
-# Working on the saos repository
+# SAOS Repository Harness
 
-`skills/saos/` is what the agent running a job reads; each command's `--help` defines its parameters, formats and results, while `docs/cli.md` is the Chinese command overview. `DESIGN.md` records only the design principles, the decisions the user made with their reasons, and the directory rules. The rules below are about changing this repository.
+## 1. Architecture & Source of Truth
 
-## The workflow lives in four places; change them together
+| Concern | Authoritative location | Contract |
+| --- | --- | --- |
+| Runtime agent instructions | `skills/saos/` | Defines the workflow read by the agent executing a job. |
+| CLI specifications | Each command's `--help` | Defines parameters, formats, and results. Register help in `src/saos/cli.py`, or the recipe's CLI module; keep detailed formats next to their implementation. |
+| Chinese command overview | `docs/cli.md` | Summarizes the CLI in Chinese; must agree with command help. |
+| Workflow state | Job files, interpreted by `src/saos/ui/stage.py` | Derive steps and status from job files only. |
+| Workflow presentation | `src/saos/ui/static/app.js` and `docs/workflow.drawio` | Present the same workflow as the runtime instructions and CLI. |
+| Design records | `DESIGN.md` | Contains only design principles, user decisions with rationale, and directory rules. |
 
-A change to the workflow (a step, a gate, what the agent does before or after a step, the stop rule, a command or flag a step uses) is not done until each of these says the same thing:
+**DESIGN.md update contract**:
 
-1. `skills/saos/SKILL.md`, and `skills/saos/demand.md` when the demand format or its confirmation changes.
-2. The user's workflow window: steps and their status in `src/saos/ui/stage.py` (`STEPS`, `snapshot`), node labels, sub-text and return edges in `src/saos/ui/static/app.js` (`NODES`, `TEXT` in both languages, `back(...)`). The window infers steps from job files only: a step that leaves no file behind belongs in the label or sub-text of the step it is part of, not in a new node. Return edges each need their own lane.
-3. The workflow diagram `docs/workflow.drawio`.
-4. The corresponding command's `--help` registered in `src/saos/cli.py` (recipe commands in their own CLI modules, detailed formats next to their implementation), and the command overview in `docs/cli.md`, for every command or flag that was added or changed.
+- Trigger: a design principle, user decision, or directory rule changes.
+- Required update: 1–2 sentences stating the change and its reason.
+- Excluded content: commands, flags, thresholds, measured timings, and incident stories. Keep operational details in code and the relevant workflow targets below.
 
-`tests/test_docs_sync.py` checks that every `saos` command named in SKILL.md, demand.md, DESIGN.md, docs/cli.md, parser descriptions/epilogs and the diagram exists, and that the diagram names the command of every step; the wording itself is still yours to keep in step.
+## 2. Four-Way Workflow Sync
 
-When one of them cannot follow yet, say which one and why in your report instead of leaving it silently behind.
+**Trigger**: any change to a workflow step, gate, pre/post-step agent action, stop rule, or step command/flag.
 
-Change `DESIGN.md` only when a principle, a user decision or a directory rule changes, and then in a sentence or two with the reason. Commands, flags, thresholds, measured timings and incident stories stay out of it: they live in the four places above and in the code, where they cannot drift from what runs.
+**Required action**: review all four targets. Update each affected target so behavior and wording remain consistent. A target that already matches requires no edit.
 
-## Checks that run the program
+| Target | Review and update scope |
+| --- | --- |
+| Agent skill docs | `skills/saos/SKILL.md`; also `skills/saos/demand.md` when demand format or confirmation logic changes. |
+| Workflow UI | `src/saos/ui/stage.py`: `STEPS`, `snapshot`; `src/saos/ui/static/app.js`: `NODES`, `TEXT` in both languages, `back(...)`. |
+| Workflow diagram | `docs/workflow.drawio`. |
+| CLI help and overview | The corresponding command's help and `docs/cli.md` for every added or modified command/flag. |
 
-- The workflow window in a browser: `uv run saos ui open --job J --no-window` gives the URL. Check that the steps, labels and return edges match the change.
-- The workflow diagram: `SAOS_RENDER_DRAWIO=1 uv run pytest tests/test_docs_sync.py -s` renders `docs/workflow.drawio` with the draw.io viewer and prints the PNG path (needs Chrome and the network); look at the PNG.
+**UI invariants**:
 
-## Isolation during verification
+- A step that leaves no job file belongs in the label or sub-text of the step containing it; do not create a separate node.
+- Each return edge has its own lane.
 
-- Run every `saos` command with `SAOS_INSTANCE=verify`, so jobs and daemon state go under `work/verify/`. Never read or write the jobs in `work/main/` or any other instance.
-- Stop only the processes you started, by PID. Leave the user's daemon and OpticStudio windows running.
+**Completion condition**: all four targets agree. If a target cannot be brought into sync, identify the target and reason in the final delivery report. Reporting an outstanding mismatch does not make the workflow change complete.
+
+## 3. Verification & Visual Checks
+
+**Execution scope**: run checks relevant to the changed targets, subject to the user's requested verification scope. If execution is delegated or unavailable, report the checks as `NOT RUN` and provide handoff instructions.
+
+| Trigger | Command | Required inspection |
+| --- | --- | --- |
+| Workflow command references change | `SAOS_INSTANCE=verify uv run pytest tests/test_docs_sync.py` | Check command consistency results. |
+| Workflow diagram changes | `SAOS_INSTANCE=verify SAOS_RENDER_DRAWIO=1 uv run pytest tests/test_docs_sync.py -s` | Inspect the generated PNG for labels, layout, and return edges. Requires Chrome and network. This includes the command consistency test; do not run it separately without a reason. |
+| Workflow UI changes | `SAOS_INSTANCE=verify uv run saos ui open --job <JOB_ID> --no-window` | Open the returned URL in a browser. Inspect affected states, steps, labels in both languages, and return-edge lanes. |
+
+**Automated coverage**: `tests/test_docs_sync.py` checks that each `saos` command named in `SKILL.md`, `demand.md`, `DESIGN.md`, `docs/cli.md`, parser descriptions/epilogs, and the diagram exists, and that the diagram names the command of every step. It does not establish semantic or visual consistency; review those separately.
+
+## 4. Runtime & Process Isolation
+
+| Boundary | Constraint |
+| --- | --- |
+| Instance selection | Set `SAOS_INSTANCE=verify` for every `saos` command and verification invocation. The default verification directory is `work/verify/`; `SAOS_HOME` overrides it. Confirm the resolved directory before accessing job or daemon state. |
+| Temporary test homes | Tests may set `SAOS_HOME` to a dedicated directory created for the current task under the system temporary directory, including directories provided by test fixtures. |
+| Data access | Access job and daemon state only in `work/verify/` or the dedicated temporary test home. Never point `SAOS_HOME` at `work/main/` or another user instance, and do not read or write their state. |
+| Process ownership | Stop only processes started for the current task, targeting them by PID. Leave the user's daemon and OpticStudio windows running. |
