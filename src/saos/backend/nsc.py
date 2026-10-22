@@ -922,6 +922,8 @@ def trace(system, *, split: bool = True, scatter: bool = True, polarization: boo
     save_rays 是 ZRD 文件名（写在镜头文件旁边）。
     A non-sequential trace; returns the time, whether it finished, why it stopped, and OpticStudio's DeadRayErrors,
     DeadRayThreshold and total energy. save_rays is a ZRD file name, written next to the lens file."""
+    from saos.backend.optiland_budget import Budget
+    Budget(max_seconds)
     tool = system.Tools.OpenNSCRayTrace()
     if tool is None:
         raise SaosError(ErrorCode.ZOS_ERROR, "cannot open the NSC ray trace tool (another tool is open, or the system is not non-sequential)")
@@ -951,7 +953,7 @@ def trace(system, *, split: bool = True, scatter: bool = True, polarization: boo
             if should_cancel is not None and should_cancel():
                 stopped_by = "cancel"
             elif max_seconds is not None and time.monotonic() - started > max_seconds:
-                stopped_by = "max_seconds"
+                stopped_by = "timeout"
             if stopped_by:
                 tool.Cancel()
                 tool.WaitForCompletion()

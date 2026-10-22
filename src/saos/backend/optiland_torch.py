@@ -1,4 +1,4 @@
-"""Optiland 阶段的 torch 自动微分优化（torch-lbfgs、torch-adam，Plan 2 §2.2、§2.3）。
+"""Optiland 阶段的 torch 自动微分优化（torch-trf、torch-lbfgs、torch-adam，Plan 2 §2.2、§2.3）。
 
 只对可微子集求梯度：RSCE、RWCE、REAY、EFFL、TOTR、CTVA、ETVA 以及由 CTVA / ETVA 构成的边界行（CTGT、CTLT、ETGT、ETLT），
 再加上返回 Tensor 的损失脚本（在脚本里用 ctx.backend.torch_operand 取可微的操作数值）。评价函数里有别的操作数时直接报错并列出，
@@ -18,14 +18,27 @@ from typing import Any
 import numpy as np
 
 from saos.backend.base import is_par
-from saos.backend.optiland_guard import DomainPenalty, MAX_BACKTRACKS, MIN_VALID_FRACTION, StepGuard
-from saos.backend.optiland_opt import BOUNDARY, CYCLES, PENALTY, REPORT_EVERY_S, Problem, _Stop, evaluate, merit, script_scalar
+from saos.backend.optiland_guard import DomainPenalty, InvalidTrial, MIN_VALID_FRACTION, StepGuard
+from saos.backend.optiland_opt import BOUNDARY, CYCLES, PENALTY, REPORT_EVERY_S, Problem, evaluate, merit
+from saos.backend.optiland_budget import Snapshot, outcome
 from saos.backend.optiland_state import array
+from saos.backend.optiland_torch_aiming import differentiable_aiming
 from saos.protocol import ErrorCode, SaosError
 
 TORCH_OPERANDS = {"RSCE", "RWCE", "REAY", "EFFL", "TOTR", "CTVA", "ETVA", *BOUNDARY}
+
+
+class TorchUnavailable(SaosError):
+    """明确的可微能力缺口；只有自动选择算法时允许据此回退。"""
+
+    def __init__(self, reason: str, message: str):
+        super().__init__(ErrorCode.BAD_ARGS, message, {"kind": "torch_unavailable", "reason": reason})
+        self.reason = reason
+
+
 # 曲率恰为 0（平面）时 1/c 的梯度是无穷大；取一个不影响矢高的极小曲率
 FLAT = 1e-12
+TORCH_MAX_BACKTRACKS = 32
 
 
 class TorchState:
@@ -132,13 +145,13 @@ class TorchState:
 
 
 def _clean(param) -> None:
-    """梯度为空（损失与变量无关）时补零；个别分量非有限时置零，不让一步更新把变量带到 NaN。"""
+    """梯度为空时补零；非有限导数明确报错，不能伪装成平坦方向。"""
     import torch
 
     if param.grad is None:
         param.grad = torch.zeros_like(param)
     elif not torch.isfinite(param.grad).all():
-        param.grad = torch.nan_to_num(param.grad, nan=0.0, posinf=0.0, neginf=0.0)
+        raise InvalidTrial("the merit gradient is non-finite")
 
 
 def _device() -> str:
@@ -150,12 +163,12 @@ def _device() -> str:
 def _check(b, rows: list[dict[str, Any]]) -> None:
     others = sorted({row["type"] for row in rows} - TORCH_OPERANDS)
     if others:
-        raise SaosError(ErrorCode.BAD_ARGS, f"the torch algorithms differentiate only {sorted(TORCH_OPERANDS)}; the merit function also has "
+        raise TorchUnavailable("operands", f"the torch algorithms differentiate only {sorted(TORCH_OPERANDS)}; the merit function also has "
                                             f"{others}. Use --algorithm trf (finite differences over every mapped operand)")
     for i, row in enumerate(b._rows):
         for column, spec in row.get("solves", {}).items():
             if spec.get("type") == "marginal_ray_height" and spec.get("zone", 0):
-                raise SaosError(ErrorCode.BAD_ARGS, f"surface {i}: a marginal-ray-height solve with a nonzero zone is not differentiable "
+                raise TorchUnavailable("solve", f"surface {i}: a marginal-ray-height solve with a nonzero zone is not differentiable "
                                                     "here; use --algorithm trf")
 
 
@@ -170,7 +183,7 @@ def _rays(b, wave: int, hx: float, hy: float, px: np.ndarray, py: np.ndarray, ta
     b._torch_state.penalize(wave, hx, hy, px, py, target)
 
     def trace(x, y, grad: bool):
-        with be.grad_mode.temporary_enable() if grad else torch.no_grad():
+        with differentiable_aiming(b), be.grad_mode.temporary_enable() if grad else torch.no_grad():
             rays = b.optic.ray_tracer.ray_generator.generate_rays(float(nhx), float(nhy), be.array(x), be.array(y), um)
             for i, surface in enumerate(b.optic.surfaces):
                 if i > target:
@@ -212,8 +225,10 @@ def operand(b, state: TorchState, name: str, int1: int, int2: int, data: list[fl
     if name == "ETVA":
         zone, mode = (list(data) + [0.0, 0.0])[:2]
         surface = _surface(b, int1)
-        if zone or int2 or int(mode) not in (0, 1) or not 1 <= surface < len(b._rows) - 1:
-            raise SaosError(ErrorCode.BAD_ARGS, "ETVA on the torch path takes Code 0, zone 0 and Mode 0 or 1 on a surface with a successor")
+        if not 1 <= surface < len(b._rows) - 1:
+            raise SaosError(ErrorCode.BAD_ARGS, "ETVA requires a surface with a successor")
+        if zone or int2 or int(mode) not in (0, 1):
+            raise TorchUnavailable("operand_parameters", "ETVA on the torch path takes Code 0, zone 0 and Mode 0 or 1 on a surface with a successor")
         r = float(b.surface_value(surface, "semi_diameter" if int(mode) else "mech_semi_diameter"))
         zero, edge = torch.zeros(1, dtype=torch.float64, device=_device()), torch.full((1,), r, dtype=torch.float64, device=_device())
         sag = lambda k: b.optic.surfaces[k].geometry.sag(zero, edge).reshape(-1)[0]
@@ -253,7 +268,7 @@ def operand(b, state: TorchState, name: str, int1: int, int2: int, data: list[fl
             cx, cy = (wt * x).sum(), (wt * y).sum()
             return torch.sqrt((wt * ((x - cx) ** 2 + (y - cy) ** 2)).sum() + 1e-30), bad
         return _rwce(b, waves, int2, hx, hy, px, py, weights, wave_weights)
-    raise SaosError(ErrorCode.BAD_ARGS, f"{name} has no torch implementation")
+    raise TorchUnavailable("operands", f"{name} has no torch implementation")
 
 
 def _rwce(b, waves, int2, hx, hy, px, py, weights, wave_weights):
@@ -261,9 +276,17 @@ def _rwce(b, waves, int2, hx, hy, px, py, weights, wave_weights):
     import torch
 
     from optiland.distribution import create_distribution
-    from optiland.wavefront import Wavefront
+    from optiland.wavefront.strategy import ChiefRayStrategy
+    from optiland.wavefront.reference_geometry import SphericalReference
 
     import optiland.backend as be
+
+    class DifferentiableChiefRay(ChiefRayStrategy):
+        def _create_spherical_ref(self, x, y, z):
+            # 原策略的 item() 会切断主光线与出瞳的导数；其余追迹、光程和参考球求交全部复用。
+            xp_x, xp_y, xp_z = self.exit_pupil_point
+            radius = torch.sqrt((x - xp_x) ** 2 + (y - xp_y) ** 2 + (z - xp_z) ** 2)
+            return SphericalReference((x.reshape(()), y.reshape(()), z.reshape(())), radius.reshape(()))
 
     nhx, nhy = b._native_fields(hx, hy)
     total, norm, bad = 0.0, 0.0, 0.0
@@ -274,9 +297,8 @@ def _rwce(b, waves, int2, hx, hy, px, py, weights, wave_weights):
         def opd(x, y, grad: bool):
             distribution = create_distribution("uniform")
             distribution.x, distribution.y = be.array(x), be.array(y)
-            with be.grad_mode.temporary_enable() if grad else torch.no_grad():
-                data = Wavefront(b.optic, fields=[(float(nhx), float(nhy))], wavelengths=[um], distribution=distribution,
-                                 strategy="chief_ray").get_data((float(nhx), float(nhy)), um)
+            with differentiable_aiming(b), be.grad_mode.temporary_enable() if grad else torch.no_grad():
+                data = DifferentiableChiefRay(b.optic, distribution).compute_wavefront_data((float(nhx), float(nhy)), um)
             return data.opd.reshape(-1), data.intensity.reshape(-1)
 
         try:
@@ -309,6 +331,10 @@ def optimize(b, *, algorithm: str, cycles: str, max_seconds: float | None, on_pr
              script: Callable[[], Any] | None, script_weight: float, device: str | None) -> dict[str, Any]:
     import torch
 
+    if not hasattr(b, "_opt_budget"):
+        from saos.backend.optiland_opt import optimize as run
+        return run(b, algorithm=algorithm, cycles=cycles, max_seconds=max_seconds, on_progress=on_progress,
+                   should_cancel=should_cancel, script=script, script_weight=script_weight, device=device)
     if cycles not in CYCLES:
         raise SaosError(ErrorCode.BAD_ARGS, f"cycles must be one of {list(CYCLES)}")
     if device == "cuda" and not torch.cuda.is_available():
@@ -320,10 +346,10 @@ def optimize(b, *, algorithm: str, cycles: str, max_seconds: float | None, on_pr
     b._sync_optical_state()
     problem = Problem(b, rows, script, script_weight)
     if not problem.live:
-        raise SaosError(ErrorCode.BAD_ARGS, "the torch path sets radius, curvature, thickness, conic and even/odd asphere terms in place; "
+        raise TorchUnavailable("variables", "the torch path sets radius, curvature, thickness, conic and even/odd asphere terms in place; "
                                             "this lens has another kind of variable or pickup (or a varying model glass). Use trf")
-    values, _ = evaluate(b, rows)
-    initial = merit(rows, values, script_scalar(script) if script is not None else None, script_weight)
+    budget = b._opt_budget
+    initial = None
     weights = [row["weight"] for row in rows] + ([script_weight] if script is not None else [])
     total = sum(weights) or 1.0
     scale = [math.sqrt(w / total) for w in weights]
@@ -336,6 +362,7 @@ def optimize(b, *, algorithm: str, cycles: str, max_seconds: float | None, on_pr
                                  "bad": 0.0, "accepted_steps": 0, "rejected_steps": 0}
     guard = StepGuard(problem)
     message = ""
+    converged = False
     b._torch_device = "cuda" if device == "cuda" else "cpu"
     try:
         b._synchronized = None
@@ -344,13 +371,8 @@ def optimize(b, *, algorithm: str, cycles: str, max_seconds: float | None, on_pr
         b._torch_state = state
         param = torch.nn.Parameter(torch.as_tensor(problem.x0, dtype=torch.float64, device=chosen_device))
 
-        def loss_of(x):
-            if should_cancel is not None and should_cancel():
-                out_state["stopped_by"] = "cancel"
-                raise _Stop
-            if max_seconds is not None and time.monotonic() - started > max_seconds:
-                out_state["stopped_by"] = "time"
-                raise _Stop
+        def loss_of(x, *, vector=False):
+            budget.check()
             state.values.clear()
             state.domain_keys.clear()
             state.penalties.clear()
@@ -368,6 +390,7 @@ def optimize(b, *, algorithm: str, cycles: str, max_seconds: float | None, on_pr
                 state.write(i, column, v)
             state.settle()
             terms, bad = [], 0.0
+            out_state["script_value"] = None
             for k, row in enumerate(rows):
                 value, failed = operand(b, state, row["type"], row["int1"], row["int2"], row["data"], row["target"])
                 bad += failed
@@ -378,13 +401,29 @@ def optimize(b, *, algorithm: str, cycles: str, max_seconds: float | None, on_pr
                 else:
                     terms.append(scale[k] * (value - row["target"]))
             if script is not None:
-                value = script()
+                try:
+                    value = script()
+                except SaosError:
+                    raise
+                except Exception as exc:
+                    raise SaosError(ErrorCode.SCRIPT_ERROR, f"merit script raised {type(exc).__name__}: {exc}") from exc
                 if not isinstance(value, torch.Tensor):
-                    raise SaosError(ErrorCode.BAD_ARGS, "the merit script returned a float; only a Tensor (from ctx.backend.torch_operand or "
+                    try:
+                        scalar = float(value)
+                    except (TypeError, ValueError) as exc:
+                        raise SaosError(ErrorCode.SCRIPT_ERROR, "the merit loss script must return one number") from exc
+                    if not math.isfinite(scalar):
+                        raise SaosError(ErrorCode.SCRIPT_ERROR, "the merit loss script returned a non-finite value")
+                    raise TorchUnavailable("script_not_tensor", "the merit script returned a float; only a Tensor (from ctx.backend.torch_operand or "
                                                         "ctx.backend.optic) works with the torch algorithms. Use trf")
                 if value.numel() != 1:
-                    raise SaosError(ErrorCode.BAD_ARGS, "the merit loss script must return a scalar Tensor")
+                    raise SaosError(ErrorCode.SCRIPT_ERROR, "the merit loss script must return a scalar Tensor")
+                if not torch.isfinite(value).all():
+                    raise SaosError(ErrorCode.SCRIPT_ERROR, "the merit loss script returned a non-finite Tensor")
+                if not value.requires_grad or torch.autograd.grad(value, x, retain_graph=True, allow_unused=True)[0] is None:
+                    raise TorchUnavailable("script_detached", "the merit loss Tensor is not connected to the optimisation variables")
                 value = value.to(device=chosen_device, dtype=torch.float64)
+                out_state["script_value"] = float(value.detach())
                 terms.append(scale[-1] * value.reshape(()) if torch.isfinite(value).all()
                              else torch.as_tensor(scale[-1] * PENALTY, dtype=torch.float64, device=chosen_device))
             r = torch.stack([t.reshape(()) for t in terms])
@@ -397,142 +436,198 @@ def optimize(b, *, algorithm: str, cycles: str, max_seconds: float | None, on_pr
                         state.penalize(wave, hx, hy, px, py, len(b._rows) - 1)
             domain = torch.stack(state.penalties).sum() if state.penalties else x.sum() * 0
             # 边界由 clamp 保证、越界方向梯度为零；不再加二次罚项，否则线搜索第一步的越界试点会被压成远大于 merit 的值而原地不动。
-            loss = (r * r).sum() + PENALTY**2 * domain + 0.0 * x.sum()
+            out_state["current_merit"] = float(torch.linalg.vector_norm(r).detach())
+            r = torch.cat((r, (PENALTY * torch.sqrt(domain + 1e-30)).reshape(1))) + 0.0 * x.sum()
+            loss = (r * r).sum()
+            if not torch.isfinite(loss):
+                raise InvalidTrial("the differentiable merit or domain penalty is non-finite")
             out_state["evaluations"] += 1
+            budget.result["evaluations"] = out_state["evaluations"]
             out_state["bad"] = bad
-            value = float(loss.detach().sqrt())
             now = time.monotonic()
             if on_progress is not None and now - out_state["reported"] >= REPORT_EVERY_S:
                 out_state["reported"] = now
-                on_progress({"merit": out_state["best"][0], "evaluations": out_state["evaluations"], "elapsed_s": round(now - started, 2)})
-            return loss
+                best = out_state["best"][0]
+                on_progress({"merit": best if math.isfinite(best) else None,
+                             "evaluations": out_state["evaluations"], "elapsed_s": round(now - started, 2)})
+            return r if vector else loss
 
-        trial_errors = (SaosError, ValueError, ZeroDivisionError, FloatingPointError, RuntimeError)
+        def remember(point, value):
+            value = out_state.get("verified_merit", value)
+            previous = out_state["best"][0]
+            if not math.isfinite(previous) or value < previous - 1e-12 * max(1., abs(previous)):
+                snapshot = Snapshot(guard.probe)
+                if math.isfinite(previous) and not np.array_equal(point, out_state["best"][1]):
+                    out_state["accepted_steps"] += 1
+                    budget.result["accepted_steps"] = out_state["accepted_steps"]
+                out_state["best"] = (value, point.copy())
+                budget.best = snapshot
+                budget.result["final_merit"] = value
+                return True
+            return False
+
+        def acceptable(point, value):
+            if not (math.isfinite(value) and out_state["bad"] == 0 and guard.admissible(point)):
+                return False
+            try:
+                values, errors = evaluate(guard.probe, rows)
+                verified = merit(rows, values, out_state["script_value"], script_weight)
+            finally:
+                b._configure()
+            if any(errors) or not math.isfinite(verified):
+                return False
+            if abs(verified - value) > 1e-8 * max(1., abs(value)):
+                raise SaosError(ErrorCode.OPTILAND_ERROR, "Torch merit disagrees with the rebuilt lens",
+                                {"torch_merit": value, "rebuilt_merit": verified})
+            out_state["verified_merit"] = verified
+            return True
 
         def accept_step(before, proposal, optimizer):
-            for attempt in range(MAX_BACKTRACKS + 1):
+            base_value = out_state["best"][0]
+            for attempt in range(TORCH_MAX_BACKTRACKS + 1):
+                budget.check()
                 if attempt:
                     guard.backtracks += 1
                 with torch.no_grad():
                     trial = before + (proposal - before) * 2.0**(-attempt)
                     param.copy_(torch.maximum(torch.minimum(trial, hi), lo))
+                if torch.equal(before, param):
+                    break
                 try:
-                    loss = loss_of(param)
-                    value = float(loss.detach().sqrt())
-                    point = param.detach().cpu().numpy().copy()
-                    good = math.isfinite(value) and out_state["bad"] == 0 and guard.admissible(point)
-                except trial_errors as exc:
-                    if isinstance(exc, SaosError) and exc.code in (ErrorCode.BAD_ARGS, ErrorCode.BACKEND_UNSUPPORTED, ErrorCode.SCRIPT_ERROR):
-                        raise
-                    good = False
-                if good:
-                    guard.accept_apertures()
-                    out_state["accepted_steps"] += 1
-                    if value < out_state["best"][0]:
-                        out_state["best"] = (value, point)
-                    if attempt:
-                        optimizer.state.clear()
-                    return value
+                    loss_of(param)
+                except InvalidTrial:
+                    out_state["rejected_steps"] += 1
+                    budget.result["rejected_steps"] = out_state["rejected_steps"]
+                    continue
+                value = out_state["current_merit"]
+                point = param.detach().cpu().numpy().copy()
+                if value < base_value - 1e-12 * max(1., abs(base_value)) and acceptable(point, value):
+                    if remember(point, value):
+                        if attempt:
+                            optimizer.state.clear()
+                        return out_state["best"][0]
             with torch.no_grad():
                 param.copy_(before)
             optimizer.state.clear()
             out_state["rejected_steps"] += 1
+            budget.result["rejected_steps"] = out_state["rejected_steps"]
             return None
 
         limit = CYCLES[cycles]
         import optiland.backend as be
 
         with be.grad_mode.temporary_enable():
-            try:
-                try:
-                    start_loss = loss_of(param)
-                    if out_state["bad"] == 0 and torch.isfinite(start_loss) and guard.admissible(problem.x0):
-                        out_state["best"] = (float(start_loss.detach().sqrt()), problem.x0.copy())
-                except trial_errors as exc:
-                    if isinstance(exc, SaosError) and exc.code in (ErrorCode.BAD_ARGS, ErrorCode.BACKEND_UNSUPPORTED, ErrorCode.SCRIPT_ERROR):
-                        raise
-                    pass
-                if algorithm == "torch-lbfgs":
-                    optimizer = torch.optim.LBFGS([param], lr=1.0, max_iter=1, history_size=20, line_search_fn="strong_wolfe",
-                                                  tolerance_grad=1e-12, tolerance_change=1e-15)
+            loss_of(param)
+            initial = out_state["current_merit"]
+            budget.result["initial_merit"] = initial
+            budget.result["final_merit"] = initial
+            budget.result.update(variables=len(problem.keys), targets=len(rows) + (script is not None),
+                                 device=chosen_device, inner_loop="torch")
+            if not math.isfinite(initial):
+                raise SaosError(ErrorCode.OPTILAND_ERROR, "initial merit is non-finite")
+            if not acceptable(problem.x0, initial):
+                raise SaosError(ErrorCode.OPTILAND_ERROR, "the initial lens fails the optical step guard")
+            remember(problem.x0, initial)
+            if algorithm == "torch-trf":
+                from scipy.optimize import least_squares
+                budget.watch(least_squares)
 
+                cache = {}
+                def residuals(point):
+                    budget.check()
+                    leaf = torch.tensor(point, dtype=torch.float64, device=chosen_device, requires_grad=True)
+                    try:
+                        r = loss_of(leaf, vector=True)
+                        jac = torch.stack([torch.autograd.grad(component, leaf, retain_graph=True)[0] for component in r])
+                        if not torch.isfinite(r).all() or not torch.isfinite(jac).all():
+                            raise InvalidTrial("non-finite autograd residual or Jacobian")
+                    except InvalidTrial:
+                        if not cache:
+                            raise
+                        # SciPy TRF 对非有限试点缩小信赖域并重试，不请求该点的雅可比。
+                        out_state["rejected_steps"] += 1
+                        budget.result["rejected_steps"] = out_state["rejected_steps"]
+                        return np.full(len(weights) + 1, np.inf)
+                    value = out_state["current_merit"]
+                    values = r.detach().cpu().numpy().copy()
+                    derivative = jac.detach().cpu().numpy().copy()
+                    if value < out_state["best"][0] and acceptable(point, value):
+                        remember(point, value)
+                    elif value < out_state["best"][0]:
+                        # 拒绝的坐标必须返回自身的罚值，不能用回退点冒充原坐标的残差。
+                        values = np.full_like(values, np.inf)
+                        derivative = np.zeros_like(derivative)
+                        out_state["rejected_steps"] += 1
+                        budget.result["rejected_steps"] = out_state["rejected_steps"]
+                    cache.update(point=point.copy(), jac=derivative)
+                    return values
+
+                def jacobian(point):
+                    if "point" not in cache or not np.array_equal(point, cache["point"]):
+                        residuals(point)
+                    return cache["jac"]
+
+                result = least_squares(residuals, problem.x0, jac=jacobian, bounds=(problem.lo, problem.hi),
+                                       method="trf", x_scale="jac", max_nfev=None if limit is None else limit + 1)
+                converged = bool(result.success and np.allclose(result.x, out_state["best"][1], rtol=1e-7, atol=1e-9))
+                message = str(result.message)
+            else:
+                if algorithm == "torch-lbfgs":
+                    optimizer = torch.optim.LBFGS([param], lr=1.0, max_iter=1, history_size=20,
+                                                 line_search_fn="strong_wolfe", tolerance_grad=1e-12, tolerance_change=1e-15)
+                else:
+                    optimizer = torch.optim.Adam([param], lr=1e-2)
+                for _ in range((limit or 100) * (50 if algorithm == "torch-adam" else 1)):
+                    budget.check()
+                    before = param.detach().clone()
                     def closure():
                         optimizer.zero_grad()
                         loss = loss_of(param)
                         loss.backward()
                         _clean(param)
                         return loss
-
-                    previous = math.inf
-                    for _ in range(limit or 100):
-                        before = param.detach().clone()
-                        try:
-                            optimizer.step(closure)
-                        except trial_errors as exc:
-                            if isinstance(exc, SaosError) and exc.code in (ErrorCode.BAD_ARGS, ErrorCode.BACKEND_UNSUPPORTED, ErrorCode.SCRIPT_ERROR):
-                                raise
-                            optimizer.state.clear()
-                        current = accept_step(before, param.detach().clone(), optimizer)
-                        if current is None:
-                            message = "no admissible step after backtracking"
-                            break
-                        if math.isfinite(previous) and abs(previous - current) <= 1e-12 * max(1.0, current):
-                            message = "converged"
-                            break
-                        previous = current
-                else:
-                    optimizer = torch.optim.Adam([param], lr=1e-2)
-                    previous, flat = math.inf, 0
-                    for _ in range((limit or 20) * 50):
-                        before = param.detach().clone()
-                        optimizer.zero_grad()
-                        loss = loss_of(param)
-                        loss.backward()
-                        _clean(param)
-                        optimizer.step()
-                        current = accept_step(before, param.detach().clone(), optimizer)
-                        if current is None:
-                            message = "no admissible step after backtracking"
-                            break
-                        flat = flat + 1 if abs(previous - current) <= 1e-10 * max(1.0, current) else 0
-                        if flat >= 20:
-                            message = "converged"
-                            break
-                        previous = current
+                    closure()
+                    gradient = param.grad.detach().clone()
+                    projected = torch.where(((param <= lo) & (gradient > 0)) | ((param >= hi) & (gradient < 0)), 0., gradient)
+                    if float(projected.abs().max()) <= 1e-12:
+                        converged = True
+                        message = "projected gradient converged"
+                        break
+                    try:
+                        optimizer.step(closure) if algorithm == "torch-lbfgs" else optimizer.step()
+                    except InvalidTrial:
+                        # L-BFGS 的内部线搜索可能停在非法试点；清空历史，以已验证点的负梯度重试。
+                        optimizer.state.clear()
+                        out_state["rejected_steps"] += 1
+                        budget.result["rejected_steps"] = out_state["rejected_steps"]
+                        with torch.no_grad():
+                            param.copy_(before - projected / max(1., float(projected.abs().max())))
+                    current = accept_step(before, param.detach().clone(), optimizer)
+                    if current is None and algorithm == "torch-lbfgs":
+                        # 零步或上升步不算接受；仍在 Torch 内用有界负梯度方向回溯。
+                        direction = -projected / max(1., float(projected.abs().max()))
+                        current = accept_step(before, before + direction, optimizer)
+                    if current is None:
+                        message = "no improving admissible step"
+                        break
                 message = message or "step budget reached"
-            except _Stop:
-                message = {"cancel": "cancelled", "time": "max_seconds reached"}[out_state["stopped_by"]]
+            budget.result["converged"] = converged
+    except TorchUnavailable:
+        # 仅在尚未接受优化步时回退；中途变化的脚本属于执行错误，不重启另一套优化。
+        if out_state["accepted_steps"]:
+            raise SaosError(ErrorCode.SCRIPT_ERROR, "Torch compatibility changed after an accepted step; no fallback was started")
+        raise
     finally:
         guard.close()
         b._torch_device = None
         b._torch_state = None
-        best = out_state["best"][1]
-        try:
-            b._commit(problem.physical(best))
-            clash = b.interference()
-            if clash.get("crossings") or clash.get("overlaps"):
-                b._commit(problem.physical(problem.x0))
-                message = "the best point has interfering parts, so the start was restored"
-        except SaosError:
-            b._commit(problem.physical(problem.x0))
-            message = "the best point failed the full rebuild, so the start was restored"
-    values, errors = evaluate(b, rows)
-    final = merit(rows, values, script_scalar(script) if script is not None else None, script_weight)
-    # 收敛只表示相邻步不再变化；若最终值并未低于起点，说明没有任何步被接受为下降，不能报告为成功。
-    stalled = message == "converged" and not final < initial - 1e-12 * max(1.0, initial)
-    if stalled:
-        message = "converged without improvement: no step lowered the merit"
-    out = {"initial_merit": initial, "final_merit": final, "variables": len(problem.keys), "targets": len(rows) + (script is not None),
-           "succeeded": out_state["stopped_by"] is None and math.isfinite(out_state["best"][0]) and "restored" not in message
-                        and message != "no admissible step after backtracking" and not stalled,
-           "stopped_by": out_state["stopped_by"],
-           "elapsed_s": round(time.monotonic() - started, 3), "algorithm": algorithm, "evaluations": out_state["evaluations"],
-           "device": "cuda" if device == "cuda" else "cpu", "inner_loop": "torch", "message": message,
-           "accepted_steps": out_state["accepted_steps"], "rejected_steps": out_state["rejected_steps"],
-           "backtracks": guard.backtracks, "step_guard_reason": guard.last_reason,
-           "min_valid_fraction": MIN_VALID_FRACTION, "max_backtracks": MAX_BACKTRACKS,
-           "ray_penalty": "differentiable_domain"}
-    failed = [{"row": k, "type": row["type"], "error": e} for k, (row, e) in enumerate(zip(rows, errors), 1) if e]
-    if failed:
-        out["failed_rows"] = failed
-    return out
+    final = budget.result["final_merit"]
+    return {"initial_merit": initial, "final_merit": final, "variables": len(problem.keys),
+            "targets": len(rows) + (script is not None), "stopped_by": None,
+            **outcome(initial, final, converged=converged, stopped_by=None),
+            "elapsed_s": round(time.monotonic() - started, 3), "algorithm": algorithm,
+            "evaluations": out_state["evaluations"], "device": chosen_device, "inner_loop": "torch",
+            "message": message, "accepted_steps": out_state["accepted_steps"], "rejected_steps": out_state["rejected_steps"],
+            "backtracks": guard.backtracks, "step_guard_reason": guard.last_reason,
+            "min_valid_fraction": MIN_VALID_FRACTION, "max_backtracks": 0 if algorithm == "torch-trf" else TORCH_MAX_BACKTRACKS,
+            "admissible_result": budget.best is not None, "ray_penalty": "differentiable_domain"}

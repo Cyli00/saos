@@ -102,8 +102,10 @@ class OptilandBackend(OpticalState, Backend):
         path 不为空时逐面（1…target）追加 (全局落点, 全局出射方向, error, vignette)，供布局光线一次追迹画完全部面。"""
         be = self._configure()
         try:
-            rays = self.optic.ray_tracer.ray_generator.generate_rays(hx, hy, be.array(px), be.array(py),
-                                                                     self._effective["wavelengths"]["um"][wave - 1])
+            from saos.backend.optiland_guard import aiming_without_records
+            with aiming_without_records(self.optic):
+                rays = self.optic.ray_tracer.ray_generator.generate_rays(hx, hy, be.array(px), be.array(py),
+                                                                         self._effective["wavelengths"]["um"][wave - 1])
         except (ValueError, ZeroDivisionError, FloatingPointError, RuntimeError):
             # 瞄准对整组光线一起迭代，组里有一根瞄不上就整组失败；逐根重试，单根仍瞄不上时用后备瞄准，再不行才记为第 1 面错误
             # the aimer iterates the whole group at once, so one unaimable ray fails all; retry ray by ray, then a fallback aimer
@@ -382,7 +384,7 @@ class OptilandBackend(OpticalState, Backend):
     @timing.timed("optiland.optimize")
     def optimize(self, cycles: str, cores: int | None = None, *, max_seconds: float | None = None, on_progress=None,
                  should_cancel=None, algorithm: str | None = None, script=None, device: str | None = None) -> dict[str, Any]:
-        """scipy 局部优化（cores 不用：进程内单线程追迹）。脚本损失作为评价函数里的一行，按 set_merit_script 的权重计。"""
+        """默认优先 Torch 自动微分，能力不支持时回退 SciPy。脚本损失按 set_merit_script 的权重计。"""
         self._require()
         if self._merit_script and script is None:
             raise SaosError(ErrorCode.BAD_ARGS, "the merit function has a loss script but the daemon passed no callable for it")

@@ -108,6 +108,13 @@ def validate(root: Path, plan: dict[str, Any], items: dict[str, dict[str, Any]],
             raise _bad(f"{kind} stage: max_seconds must be a positive number; every stage needs a budget")
         if kind == "local" and str(spec.get("cycles", "auto")) not in CYCLES:
             raise _bad(f"local stage: cycles must be one of {CYCLES}")
+        if kind == "local":
+            from saos.backend.optiland_opt import ALGORITHMS, TORCH_ALGORITHMS, ZOS_ALGORITHMS
+
+            if spec.get("algorithm") is not None and spec["algorithm"] not in ("auto", *ALGORITHMS, *TORCH_ALGORITHMS, *ZOS_ALGORITHMS):
+                raise _bad("local stage: unknown algorithm")
+            if spec.get("device") is not None and spec["device"] not in ("auto", "cpu", "cuda"):
+                raise _bad("local stage: device must be auto, cpu or cuda")
     prepare = plan.get("prepare")
     if prepare is not None and not (isinstance(prepare, str) and jobs.inside(root, prepare).is_file()):
         raise _bad("prepare: a job-relative path of a script defining run(w)")
@@ -276,11 +283,16 @@ def _obsolete(w) -> list[dict[str, Any]] | None:
 def _run_stage(w, kind: str, spec: dict[str, Any]) -> dict[str, Any]:
     cores = int(w.args.get("cores") or 1)
     if kind == "local":
+        options = {key: spec[key] for key in ("algorithm", "device") if spec.get(key) is not None}
+        if "device" in options and w.backend.identity().get("backend") != "optiland":
+            raise _bad("local stage: device applies only to the Optiland backend")
         res = w.backend.optimize(str(spec.get("cycles", "auto")), cores, max_seconds=float(spec["max_seconds"]),
-                                 should_cancel=w.cancel_requested)
+                                 should_cancel=w.cancel_requested, **options)
     else:
         res = w.backend.optimize_search(kind, cores, max_seconds=float(spec["max_seconds"]), should_cancel=w.cancel_requested)
-    return {k: res.get(k) for k in ("initial_merit", "final_merit", "variables", "stopped_by", "elapsed_s", "materials_changed") if k in res}
+    return {k: res.get(k) for k in ("initial_merit", "final_merit", "variables", "stopped_by", "elapsed_s", "materials_changed",
+                                  "algorithm", "requested_algorithm", "device", "fallback", "improved", "converged", "succeeded",
+                                  "accepted_steps", "rejected_steps", "restored", "admissible_result") if k in res}
 
 
 def _evaluate(w, item: dict[str, Any], row: dict[str, Any], temp: Path) -> None:

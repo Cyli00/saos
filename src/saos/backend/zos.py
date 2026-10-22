@@ -1790,7 +1790,7 @@ class ZosBackend(Backend):
             raise SaosError(ErrorCode.BAD_ARGS, f"cycles must be one of {list(names)}")
         # 非序列系统的探测器评价函数有统计噪声，阻尼最小二乘的差分导数不可靠，默认用正交下降（OpticStudio 对非序列的建议）
         # a non-sequential detector merit is noisy and spoils DLS's finite differences: default to orthogonal descent there
-        algorithm = algorithm or ("od" if nsc.is_nsc(self.system) else "dls")
+        algorithm = ("od" if nsc.is_nsc(self.system) else "dls") if algorithm in (None, "auto") else algorithm
         if algorithm not in ("dls", "od"):
             raise SaosError(ErrorCode.BAD_ARGS, f"algorithm must be dls or od, got {algorithm!r}")
         tool = self.system.Tools.OpenLocalOptimization()
@@ -1802,12 +1802,16 @@ class ZosBackend(Backend):
                 tool.NumberOfCores = int(cores)
             stopped_by, elapsed = self._run_optimizer(tool, lambda: {"merit": float(tool.CurrentMeritFunction)},
                                                       max_seconds, on_progress, should_cancel)
+            from saos.backend.optiland_budget import outcome
+            initial, final = float(tool.InitialMeritFunction), float(tool.CurrentMeritFunction)
+            improved = outcome(initial, final, converged=False, stopped_by=stopped_by)["improved"]
             return {
-                "initial_merit": float(tool.InitialMeritFunction),
-                "final_merit": float(tool.CurrentMeritFunction),
+                "initial_merit": initial,
+                "final_merit": final,
                 "variables": int(tool.Variables),
                 "targets": int(tool.Targets),
-                "succeeded": bool(tool.Succeeded),
+                "succeeded": bool(tool.Succeeded) and improved and stopped_by is None,
+                "solver_succeeded": bool(tool.Succeeded), "improved": improved, "converged": None,
                 "stopped_by": stopped_by,
                 "elapsed_s": elapsed,
                 "algorithm": algorithm,
@@ -1913,13 +1917,17 @@ class ZosBackend(Backend):
                 best = lambda: float(tool.CurrentMeritFunction(1))  # noqa: E731
             stopped_by, elapsed = self._run_optimizer(tool, lambda: {"merit": best(), "systems": int(tool.Systems)},
                                                       max_seconds, on_progress, should_cancel)
+            from saos.backend.optiland_budget import outcome
+            initial, final = float(tool.InitialMeritFunction), best()
+            improved = outcome(initial, final, converged=False, stopped_by=stopped_by)["improved"]
             out = {
-                "initial_merit": float(tool.InitialMeritFunction),
-                "final_merit": best(),
+                "initial_merit": initial,
+                "final_merit": final,
                 "systems": int(tool.Systems),
                 "variables": int(tool.Variables),
                 "targets": int(tool.Targets),
-                "succeeded": bool(tool.Succeeded),
+                "succeeded": bool(tool.Succeeded) and improved and stopped_by is None,
+                "solver_succeeded": bool(tool.Succeeded), "improved": improved, "converged": None,
                 "stopped_by": stopped_by,
                 "elapsed_s": elapsed,
             }
@@ -1942,6 +1950,8 @@ class ZosBackend(Backend):
         A failing progress callback (progress.json refused, …) is only logged and the run goes on; any other error in the
         loop first cancels the tool and waits until it has stopped, because Close does not close a running tool, which then
         holds the system and blocks every later trace and optimisation (nightvision job, scripts 021–024, 2026-10-19)."""
+        from saos.backend.optiland_budget import Budget
+        Budget(max_seconds)
         started = time.monotonic()
         stopped_by = None
         progress_error = None

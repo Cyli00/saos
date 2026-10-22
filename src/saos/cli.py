@@ -490,19 +490,21 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("script_file", nargs="?", help="for script: a Python file that defines loss(ctx) (Optiland only)")
     q.add_argument("--file", help="wizard settings JSON, or the operand list JSON for add")
     q.add_argument("--weight", type=float, default=1.0, help="for script: the weight of the loss row (default 1)")
-    q = opt_cmd("local", "run local optimization (scipy on Optiland; damped least squares or orthogonal descent in OpticStudio). "
+    q = opt_cmd("local", "run local optimization (Torch autograd first on Optiland; damped least squares or orthogonal descent in OpticStudio). "
                 "The demand and current model must be approved; missing comparisons only produce notes")
     q.add_argument("--cycles", default="auto", choices=("auto", "1", "5", "10", "50"))
-    q.add_argument("--algorithm", choices=("trf", "lm", "lbfgsb", "nelder-mead", "powell", "torch-lbfgs", "torch-adam", "dls", "od"),
-                   help="Optiland: trf (default; bounded trust-region least squares), lm, lbfgsb, nelder-mead, powell (finite "
-                        "differences), torch-lbfgs, torch-adam (autograd over RSCE, RWCE, REAY, EFFL, TOTR, CTVA, ETVA and their boundary rows). "
+    q.add_argument("--algorithm", choices=("auto", "trf", "lm", "lbfgsb", "nelder-mead", "powell", "torch-trf", "torch-lbfgs", "torch-adam", "dls", "od"),
+                   help="Optiland: auto (default) prefers torch-trf in float64 and falls back to trf only for a reported differentiability gap. "
+                        "Explicit algorithms never fall back: trf (bounded trust-region least squares), lm, lbfgsb, nelder-mead, powell (finite "
+                        "differences), torch-trf, torch-lbfgs, torch-adam (autograd over RSCE, RWCE, REAY, EFFL, TOTR, CTVA, ETVA and their boundary rows). "
                         "OpticStudio: dls = damped least squares, od = orthogonal descent (default od for a non-sequential system, "
                         "dls otherwise); in an Optiland session dls and od are refused (they run only in the approved OpticStudio stage), "
                         "and in that stage the Optiland names are refused")
     q.add_argument("--device", choices=("auto", "cpu", "cuda"), help="for the torch algorithms: auto / cpu (float64 on the CPU, default) or cuda; "
                                                                      "the scipy ones run on the CPU")
     q.add_argument("--cores", type=int, help="CPU cores for OpticStudio (default: all logical cores but 2)")
-    q.add_argument("--max-seconds", type=float, help="cancel the optimisation after this many seconds and keep what it reached")
+    q.add_argument("--max-seconds", type=float, help="optimisation budget in seconds (Optiland requires finite positive values); "
+                        "includes measurements and review; an incomplete review returns completed=false and valid=false. Native calls may overrun")
     for name, help_text in (("hammer", "run Hammer optimisation (escapes local minima; with material --mode substitute it swaps real glasses); "
                                        "keeps the best system found. Requires that the "
                                        "demand and current model have been approved"),
@@ -519,7 +521,8 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--catalog", help="in-production catalog to choose from (default SAOS_CDGM_INPROD; SAOS_NHG_INPROD also exists)")
     q.add_argument("--neighbours", type=int, default=7, help="glasses tried per surface in each pass (default 7)")
     q.add_argument("--cycles", default="5", choices=("auto", "1", "5", "10", "50"), help="local re-optimisation per candidate (default 5)")
-    q.add_argument("--algorithm", choices=("trf", "lm", "lbfgsb", "nelder-mead", "powell"), help="local optimiser per candidate (default trf)")
+    q.add_argument("--algorithm", choices=("auto", "trf", "lm", "lbfgsb", "nelder-mead", "powell", "torch-trf", "torch-lbfgs", "torch-adam"),
+                   help="local optimiser per candidate (default auto: torch-trf, then trf for reported differentiability gaps)")
     q.add_argument("--max-seconds", type=float, help="stop after this many seconds and keep the best combination found")
     for name in ("local", "hammer", "global", "glass"):
         q = osub.choices[name]

@@ -19,6 +19,7 @@ OpticStudio 2024 R1 Premium 加 ZOS-API 能建模的系统都在范围内：序�
 
 - Windows，Ansys Zemax OpticStudio 2024 R1.00 Premium（ZOS-API）。默认从 `C:\Program Files\Ansys Zemax OpticStudio 2024 R1.00` 加载 DLL，其他位置用 `SAOS_OPTICSTUDIO_DIR` 指定。
 - Python 3.12，一律通过 [uv](https://docs.astral.sh/uv/) 运行。
+- Optiland 固定为 0.6.3，其他版本后台进程拒绝启动；计算精度 float64，默认 CPU。
 - 流程图窗口优先用 Chrome 应用窗口，没装时用系统默认浏览器。
 
 ## 开始
@@ -38,7 +39,7 @@ uv run saos job create --name <名字>
 |---|---|
 | [skills/saos/SKILL.md](skills/saos/SKILL.md)、[demand.md](skills/saos/demand.md) | 执行任务的 agent 的工作方式、需求单格式、终止规则（英文） |
 | [docs/cli.md](docs/cli.md) | 中文命令速览、输出协议、环境变量和错误码；详细格式见各命令的 `--help` |
-| [DESIGN.md](DESIGN.md) | 设计原则、用户做过的决定及理由、环境事实、目录规定 |
+| [DESIGN.md](DESIGN.md) | 设计原则、用户做过的决定及理由、目录规定 |
 | [GLOSSARY.md](GLOSSARY.md) | 术语（中英并列）和不要用的叫法 |
 | [docs/adr/](docs/adr/) | 关键决策记录 |
 | [TODO.md](TODO.md) | 暂缓和待查的事项 |
@@ -60,7 +61,11 @@ uv run saos job create --name <名字>
 
 ## 测试
 
+修改仓库时的事实来源、工作流同步、验证范围与隔离约束统一见 [AGENTS.md](AGENTS.md)。测试默认使用 `work/verify/`；测试夹具可以通过 `SAOS_HOME` 使用本轮独占的系统临时目录。`SAOS_HOME` 优先于 `SAOS_INSTANCE`，执行前确认实际目录没有指向用户实例。
+
 ```bash
-uv run pytest                                # 不启动 Zemax 的单元测试和假后端的生命周期测试
-SAOS_RUN_ZEMAX=1 uv run pytest -m zemax -s   # 在本机 OpticStudio 上跑工具和工作流回归
+SAOS_INSTANCE=verify uv run pytest                     # 不启动 Zemax 的单元测试和假后端的生命周期测试
+SAOS_INSTANCE=verify SAOS_RUN_ZEMAX=1 uv run pytest -m zemax -s  # 在本机 OpticStudio 上跑工具和工作流回归
 ```
+
+按改动范围和用户指定的验证模式选择检查；测试交给其他执行者时标明 `NOT RUN` 并交接。工作流窗口与流程图的检查命令见 AGENTS.md，图渲染测试已包含命令一致性检查，无需重复执行。

@@ -16,12 +16,13 @@ from typing import Any
 import numpy as np
 
 from saos.backend.base import is_par
+from saos.backend.optiland_budget import Budget, Snapshot, Stop, outcome
 from saos.backend.optiland_materials import unsupported
 from saos.backend.optiland_surfaces import kind
 from saos.protocol import ErrorCode, SaosError
 
 ALGORITHMS = ("trf", "lm", "lbfgsb", "nelder-mead", "powell")
-TORCH_ALGORITHMS = ("torch-lbfgs", "torch-adam")
+TORCH_ALGORITHMS = ("torch-trf", "torch-lbfgs", "torch-adam")
 ZOS_ALGORITHMS = ("dls", "od")
 CYCLES = {"auto": None, "1": 1, "5": 5, "10": 10, "50": 50}
 # 单面边界操作数：满足时值等于目标，不满足时为实际值，所以满足时这一行不贡献评价函数
@@ -38,10 +39,6 @@ WIZARD_KEYS = {"type", "data", "reference", "rings", "arms", "glass", "air", "st
 WIZARD_OPERANDS = {("wavefront", "centroid"): "RWCE", ("wavefront", "chiefray"): "RWCH",
                    ("spotradius", "centroid"): "RSCE", ("spotradius", "chiefray"): "RSCH"}
 REPORT_EVERY_S = 1.0
-
-
-class _Stop(Exception):
-    pass
 
 
 def _number(value: Any, label: str) -> float:
@@ -189,11 +186,22 @@ def variables(b) -> list[tuple[int, str]]:
 
 def script_scalar(script: Callable[[], Any]) -> float:
     """脚本损失必须是一个数：多元素向量或张量明确拒绝，不让 float() 抛出未处理的 ValueError。"""
-    value = script()
+    try:
+        value = script()
+    except SaosError:
+        raise
+    except Exception as exc:
+        raise SaosError(ErrorCode.SCRIPT_ERROR, f"merit script raised {type(exc).__name__}: {exc}") from exc
     size = value.numel() if hasattr(value, "numel") else 1
     if size != 1:
         raise SaosError(ErrorCode.SCRIPT_ERROR, f"the merit loss script must return one number, got {size} values")
-    return float(value)
+    try:
+        value = float(value)
+    except (ValueError, TypeError) as exc:
+        raise SaosError(ErrorCode.SCRIPT_ERROR, "the merit loss script must return one number") from exc
+    if not math.isfinite(value):
+        raise SaosError(ErrorCode.SCRIPT_ERROR, "the merit loss script returned a non-finite value")
+    return value
 
 
 class Problem:
@@ -292,10 +300,76 @@ class Problem:
 
 def optimize(b, *, algorithm: str | None, cycles: str, max_seconds: float | None, on_progress, should_cancel,
              script: Callable[[], Any] | None = None, script_weight: float = 1.0, device: str | None = None) -> dict[str, Any]:
+    from saos.backend.optiland_torch import TorchUnavailable
+
+    requested = algorithm or "auto"
+    selected = "torch-trf" if requested == "auto" else requested
+    budget = Budget(max_seconds, should_cancel)
+    budget.watch(script)
+    original = Snapshot(b)
+    fallback = None
+    result = None
+    b._opt_budget = budget
+    try:
+        with budget.interruptible():
+            try:
+                result = _optimize(b, algorithm=selected, cycles=cycles, max_seconds=budget.remaining(),
+                                   on_progress=on_progress, should_cancel=should_cancel, script=script,
+                                   script_weight=script_weight, device=device)
+            except TorchUnavailable as exc:
+                if requested != "auto":
+                    raise
+                fallback = {"from": selected, "to": "trf", "reason": exc.reason, "message": exc.message}
+                original.restore(b)
+                budget.best = None
+                budget.result.update(initial_merit=None, final_merit=None, evaluations=0, accepted_steps=0, rejected_steps=0)
+                budget.check()
+                selected = "trf"
+                result = _optimize(b, algorithm=selected, cycles=cycles, max_seconds=budget.remaining(),
+                                   on_progress=on_progress, should_cancel=should_cancel, script=script,
+                                   script_weight=script_weight, device="cpu")
+            budget.result.update(result)
+    except Stop:
+        result = {**budget.result, "stopped_by": budget.stopped_by,
+                  "message": "cancelled" if budget.stopped_by == "cancel" else "max_seconds reached"}
+    finally:
+        glass_budget = getattr(b, "_glass_budget", None)
+        if glass_budget is not None:
+            # 外层计时器可能在局部调用返回前中断；算法与已验证快照必须先发布给外层。
+            choice = {"algorithm": selected, "requested_algorithm": requested, "fallback": fallback}
+            choices = glass_budget.result.setdefault("local_algorithms", [])
+            if choice not in choices:
+                choices.append(choice)
+            if glass_budget.result["initial_merit"] is None:
+                glass_budget.result["initial_merit"] = budget.result.get("initial_merit")
+            value = budget.result.get("final_merit")
+            previous = glass_budget.result.get("final_merit")
+            if result is not None and budget.best is not None and value is not None and (previous is None or value < previous):
+                glass_budget.best = budget.best
+                glass_budget.result["final_merit"] = value
+        # 快照来自已完整重建且通过关卡的 NumPy Optic；退出不再做求解或光线计算。
+        (budget.best or original).restore(b)
+        del b._opt_budget
+    for key in ("initial_merit", "final_merit"):
+        if result.get(key) is not None and not math.isfinite(result[key]):
+            result[key] = None
+    result.update(outcome(result.get("initial_merit"), result.get("final_merit"),
+                          converged=result.get("converged", False), stopped_by=result.get("stopped_by"),
+                          admissible=budget.best is not None))
+    result.update(algorithm=selected, requested_algorithm=requested, fallback=fallback,
+                  budget_s=max_seconds, elapsed_s=round(time.monotonic() - budget.started, 3),
+                  restored=budget.best is None, admissible_result=budget.best is not None)
+    result.setdefault("device", "cuda" if device == "cuda" and selected in TORCH_ALGORITHMS else "cpu")
+    return result
+
+
+def _optimize(b, *, algorithm: str, cycles: str, max_seconds: float | None, on_progress, should_cancel,
+              script: Callable[[], Any] | None = None, script_weight: float = 1.0, device: str | None = None) -> dict[str, Any]:
     from scipy.optimize import least_squares, minimize
     from saos.backend.optiland_guard import MAX_BACKTRACKS, MIN_VALID_FRACTION, StepGuard
+    b._opt_budget.watch(least_squares)
+    b._opt_budget.watch(minimize)
 
-    algorithm = algorithm or "trf"
     if algorithm in ZOS_ALGORITHMS:
         raise unsupported(f"--algorithm {algorithm} is OpticStudio's optimiser")
     if algorithm in TORCH_ALGORITHMS:
@@ -317,6 +391,7 @@ def optimize(b, *, algorithm: str | None, cycles: str, max_seconds: float | None
     b._sync_optical_state()
     problem = Problem(b, rows, script, script_weight)
     n = len(problem.keys)
+    budget = b._opt_budget
     if algorithm == "lm" and problem.bounded:
         raise SaosError(ErrorCode.BAD_ARGS, "lm takes no variable bounds; use trf, lbfgsb, nelder-mead or powell, or remove --min / --max")
     if algorithm == "lm" and len(rows) + (script is not None) < n:
@@ -327,37 +402,30 @@ def optimize(b, *, algorithm: str | None, cycles: str, max_seconds: float | None
         problem.apply(problem.x0)
         values, errors, script_value = problem.measure()
     except BaseException:
-        # 活 Optic 上可能已写入夹到边界里的起点，按处方重建回去
-        b._synchronized = None
-        b._sync_optical_state()
+        # 外层用进入时的镜头快照恢复，避免取消后重新做长追迹。
         raise
     initial = merit(rows, values, script_value, script_weight)
+    budget.result.update(initial_merit=initial if math.isfinite(initial) else None,
+                         final_merit=initial if math.isfinite(initial) else None, variables=n,
+                         targets=len(rows) + (script is not None), inner_loop="live" if problem.live else "rebuild", device="cpu")
     state: dict[str, Any] = {"best": (math.inf, problem.x0.copy()), "evaluations": 0, "stopped_by": None, "reported": started}
     guard = StepGuard(problem)
     if math.isfinite(initial) and guard.admissible(problem.x0):
         state["best"] = (initial, problem.x0.copy())
+        budget.best = Snapshot(guard.probe)
 
     def residuals(x: np.ndarray) -> np.ndarray:
-        if should_cancel is not None and should_cancel():
-            state["stopped_by"] = "cancel"
-            raise _Stop
-        if max_seconds is not None and time.monotonic() - started > max_seconds:
-            state["stopped_by"] = "time"
-            raise _Stop
+        budget.check()
         x = np.asarray(x, dtype=float)
         r, value = problem.residuals(x)
         state["evaluations"] += 1
+        budget.result["evaluations"] = state["evaluations"]
         admissible = value < PENALTY and guard.admissible(x)
         if not admissible:
             # 求解器必须收到原试探点的拒绝值；不能把回退点的残差冒充原点残差，否则雅可比会对应错误坐标。
             anchor = state["best"][1]
             for attempt in range(1, MAX_BACKTRACKS + 1):
-                if should_cancel is not None and should_cancel():
-                    state["stopped_by"] = "cancel"
-                    raise _Stop
-                if max_seconds is not None and time.monotonic() - started > max_seconds:
-                    state["stopped_by"] = "time"
-                    raise _Stop
+                budget.check()
                 trial = anchor + (x - anchor) * 2.0**(-attempt)
                 if not np.isfinite(trial).all():
                     break
@@ -367,12 +435,18 @@ def optimize(b, *, algorithm: str | None, cycles: str, max_seconds: float | None
                 if trial_value < PENALTY and guard.admissible(trial):
                     guard.accept_apertures()
                     if trial_value < state["best"][0]:
+                        snapshot = Snapshot(guard.probe)
                         state["best"] = (trial_value, trial.copy())
+                        budget.best = snapshot
+                        budget.result["final_merit"] = trial_value
                     break
             r, value = np.full_like(r, PENALTY), PENALTY
         if admissible and value < state["best"][0]:
             guard.accept_apertures()
+            snapshot = Snapshot(guard.probe)
             state["best"] = (value, np.array(x, dtype=float))
+            budget.best = snapshot
+            budget.result["final_merit"] = value
             if problem.apertures:
                 try:
                     b._update_apertures()
@@ -401,23 +475,14 @@ def optimize(b, *, algorithm: str | None, cycles: str, max_seconds: float | None
             method = {"lbfgsb": "L-BFGS-B", "nelder-mead": "Nelder-Mead", "powell": "Powell"}[algorithm]
             result = minimize(squared, problem.x0, method=method, bounds=bounds if problem.bounded else None,
                               options={} if limit is None else {"maxiter": limit})
-        message, success = str(result.message), bool(result.success)
-    except _Stop:
-        message = {"cancel": "cancelled", "time": "max_seconds reached"}[state["stopped_by"]]
+        message = str(result.message)
+        success = bool(result.success and np.allclose(result.x, state["best"][1], rtol=1e-7, atol=1e-9))
     finally:
         guard.close()
-        best = state["best"][1] if math.isfinite(state["best"][0]) else problem.x0
-        try:
-            b._commit(problem.physical(best))
-        except SaosError:
-            # 最好的点完整同步不了（例如自动半口径追不到光线）：退回起点，起点在开始时同步过
-            b._commit(problem.physical(problem.x0))
-            message = f"{message}; the best point failed the full rebuild, so the start was restored".strip("; ")
-            success = False
-    values, errors, script_value = problem.measure()
-    final = merit(rows, values, script_value, script_weight)
+    final = budget.result["final_merit"]
+    budget.result["converged"] = success
     out = {"initial_merit": initial, "final_merit": final, "variables": n, "targets": len(rows) + (script is not None),
-           "succeeded": success and state["stopped_by"] is None and math.isfinite(state["best"][0]), "stopped_by": state["stopped_by"],
+           **outcome(initial, final, converged=success, stopped_by=None, admissible=budget.best is not None), "stopped_by": None,
            "elapsed_s": round(time.monotonic() - started, 3), "algorithm": algorithm, "evaluations": state["evaluations"],
            "inner_loop": "live" if problem.live else "rebuild", "message": message,
            "backtracks": guard.backtracks, "step_guard_reason": guard.last_reason,
@@ -425,30 +490,42 @@ def optimize(b, *, algorithm: str | None, cycles: str, max_seconds: float | None
            "admissible_result": math.isfinite(state["best"][0])}
     if problem.clipped:
         out["start_clipped_to_bounds"] = problem.clipped
-    failed = [{"row": k, "type": row["type"], "error": e} for k, (row, e) in enumerate(zip(rows, errors), 1) if e]
-    if failed:
-        out["failed_rows"] = failed
     return out
 
 
-def _restore(b, prescription: dict[str, Any]) -> None:
-    b._prescription = prescription
-    b._invalidate()
-    b._synchronized = None
-    b._sync_optical_state()
+def glass_search(b, *, max_seconds=None, should_cancel=None, **kwargs):
+    budget = Budget(max_seconds, should_cancel)
+    budget.watch(kwargs.get("script"))
+    original = Snapshot(b)
+    b._glass_budget = budget
+    try:
+        with budget.interruptible():
+            result = _glass_search(b, max_seconds=budget.remaining(), should_cancel=should_cancel, **kwargs)
+    except Stop:
+        result = {**budget.result, "stopped_by": budget.stopped_by, "message": "glass search interrupted"}
+    finally:
+        (budget.best or original).restore(b)
+        del b._glass_budget
+    for key in ("initial_merit", "final_merit"):
+        if result.get(key) is not None and not math.isfinite(result[key]):
+            result[key] = None
+    result.update(outcome(result.get("initial_merit"), result.get("final_merit"),
+                          converged=result.get("stopped_by") is None, stopped_by=result.get("stopped_by"),
+                          admissible=budget.best is not None))
+    result.update(budget_s=max_seconds, elapsed_s=round(time.monotonic() - budget.started, 3), restored=budget.best is None)
+    return result
 
 
-def glass_search(b, *, surfaces: list[int] | None, catalog: str, neighbours: int, cycles: str, max_seconds: float | None,
+def _glass_search(b, *, surfaces: list[int] | None, catalog: str, neighbours: int, cycles: str, max_seconds: float | None,
                  on_progress, should_cancel, script: Callable[[], Any] | None = None, script_weight: float = 1.0,
                  algorithm: str | None = None) -> dict[str, Any]:
     """Optiland 阶段的在产玻璃替换：沿用 Optiland GlassExpert 的贪心邻域算法（先在整个目录的 k 均值代表里找，再在当前玻璃的
     最近邻里找；每试一种玻璃都对连续变量做一次局部优化，变好才保留），候选牌号与色散全部取自在产 AGF（MaterialStore），
     不用 GlassExpert 按名字查 refractiveindex 数据库的部分。AGF 色散公式 1、2 以外的牌号不作候选，列在 skipped 里。"""
-    import copy
-
     from scipy.cluster.vq import kmeans2
 
-    started = time.monotonic()
+    budget = b._glass_budget
+    started = budget.started
     if isinstance(neighbours, bool) or not isinstance(neighbours, int) or not 2 <= neighbours <= 50:
         raise SaosError(ErrorCode.BAD_ARGS, f"--neighbours must be an integer 2–50, got {neighbours!r}")
     b._sync_optical_state()
@@ -486,37 +563,49 @@ def glass_search(b, *, surfaces: list[int] | None, catalog: str, neighbours: int
         b._change(lambda p: p["catalogs"].append(catalog.upper()))
     has_variables = bool(variables(b))
     state: dict[str, Any] = {"trials": 0, "stopped_by": None}
+    local_algorithms = []
+    budget.result["local_algorithms"] = local_algorithms
 
     def remaining() -> float | None:
-        return None if max_seconds is None else max(0.0, max_seconds - (time.monotonic() - started))
+        return budget.remaining()
 
     def check_stop() -> bool:
-        if should_cancel is not None and should_cancel():
-            state["stopped_by"] = "cancel"
-        elif max_seconds is not None and time.monotonic() - started > max_seconds:
-            state["stopped_by"] = "time"
+        budget.check()
         return state["stopped_by"] is not None
 
     def settle() -> float:
         """当前玻璃下的评价函数：有连续变量时先局部优化，否则直接取值。"""
         if has_variables:
-            result = optimize(b, algorithm=algorithm, cycles=cycles, max_seconds=remaining(), on_progress=None,
+            seconds = remaining()
+            if check_stop() or seconds == 0:
+                state["stopped_by"] = state["stopped_by"] or "timeout"
+                return math.inf
+            result = optimize(b, algorithm=algorithm, cycles=cycles, max_seconds=seconds, on_progress=None,
                               should_cancel=should_cancel, script=script, script_weight=script_weight)
+            choice = {k: result.get(k) for k in ("algorithm", "requested_algorithm", "fallback")}
+            if choice not in local_algorithms:
+                local_algorithms.append(choice)
             if result.get("stopped_by"):
                 state["stopped_by"] = state["stopped_by"] or result["stopped_by"]
-            return result["final_merit"]
+            if budget.result["initial_merit"] is None:
+                budget.result["initial_merit"] = result.get("initial_merit")
+            return result["final_merit"] if result.get("final_merit") is not None else math.inf
         values, _ = evaluate(b, b._merit)
         script_value = script_scalar(script) if script is not None else None
         return merit(b._merit, values, script_value, script_weight)
 
-    values, _ = evaluate(b, b._merit)
-    initial = merit(b._merit, values, script_scalar(script) if script is not None else None, script_weight)
     best = settle()
+    if not math.isfinite(best) and not state["stopped_by"]:
+        raise SaosError(ErrorCode.OPTILAND_ERROR, "initial glass-search merit is non-finite")
+    initial = budget.result["initial_merit"] if has_variables else best
+    budget.result.update(initial_merit=initial, final_merit=best if math.isfinite(best) else initial)
+    if math.isfinite(best):
+        budget.best = Snapshot(b)
     before = {i: b.surface_value(i, "material") for i in surfaces}
 
     def explore(surface: int, candidates: list[str]) -> None:
         nonlocal best
-        saved = copy.deepcopy(b._prescription)
+        saved = Snapshot(b)
         chosen_state = None
         for glass in candidates:
             if check_stop():
@@ -524,22 +613,26 @@ def glass_search(b, *, surfaces: list[int] | None, catalog: str, neighbours: int
             if glass == b.surface_value(surface, "material"):
                 continue
             state["trials"] += 1
+            budget.result["trials"] = state["trials"]
             try:
                 b._change(lambda p: b._nominal_row(p, surface).__setitem__("material", glass))
                 value = settle()
             except SaosError as exc:
                 if exc.code in (ErrorCode.BACKEND_UNSUPPORTED, ErrorCode.SCRIPT_ERROR):
-                    _restore(b, saved)
                     raise
                 value = math.inf
-            if value < best:
-                best, chosen_state = value, copy.deepcopy(b._prescription)
-            _restore(b, copy.deepcopy(saved))
+            else:
+                if value < best:
+                    best, chosen_state = value, Snapshot(b)
+                    budget.best = chosen_state
+                    budget.result["final_merit"] = best
+            finally:
+                saved.restore(b)
             if on_progress is not None:
                 on_progress({"merit": best, "surface": surface, "candidate": glass, "trials": state["trials"],
                              "elapsed_s": round(time.monotonic() - started, 2)})
         if chosen_state is not None:
-            _restore(b, chosen_state)
+            chosen_state.restore(b)
 
     # 第一遍：目录的 k 均值代表（固定种子，结果可复现）
     _, labels = kmeans2(unit, min(neighbours, len(names)), minit="points", seed=1234)
@@ -563,7 +656,7 @@ def glass_search(b, *, surfaces: list[int] | None, catalog: str, neighbours: int
     out = {"initial_merit": initial, "final_merit": best, "catalog": catalog.upper(), "surfaces": surfaces,
            "changes": [{"surface": i, "before": before[i], "after": after[i]} for i in surfaces if before[i] != after[i]],
            "trials": state["trials"], "candidates": len(pool), "stopped_by": state["stopped_by"],
-           "elapsed_s": round(time.monotonic() - started, 3), "reoptimized": has_variables}
+           "elapsed_s": round(time.monotonic() - started, 3), "reoptimized": has_variables, "local_algorithms": local_algorithms}
     if skipped:
         out["skipped"] = {"reason": "AGF dispersion formula other than 1 or 2", "glasses": sorted(skipped)}
     return out
@@ -574,113 +667,96 @@ GLOBAL_METHODS = ("de", "basinhopping", "shgo")
 
 def global_search(b, *, method: str | None, max_seconds: float, on_progress, should_cancel, folder, keep: int = 10,
                   script: Callable[[], Any] | None = None, script_weight: float = 1.0) -> dict[str, Any]:
-    """scipy 全局搜索：de（差分进化，默认）、basinhopping、shgo。在 max_seconds 或方法自己的收敛判据处停；所有求值过的点里
-    评价函数最小、彼此不同、零件不交叠的前 keep 个写成 folder/GLOPT_NNNN.zmx（与 OpticStudio 全局搜索同名，由后台进程归档），
-    编辑器里留下其中最好的一个。"""
-    import heapq
-
+    """在预算内验证并保存候选；到期后只恢复已验证快照。"""
     from scipy.optimize import basinhopping, differential_evolution, shgo
+    from saos.backend.optiland_guard import StepGuard
 
+    budget = Budget(max_seconds, should_cancel)
+    for fn in (script, basinhopping, differential_evolution, shgo):
+        budget.watch(fn)
+    original = Snapshot(b)
     method = method or "de"
     if method not in GLOBAL_METHODS:
         raise SaosError(ErrorCode.BAD_ARGS, f"--method must be one of {list(GLOBAL_METHODS)}")
+    if isinstance(keep, bool) or not isinstance(keep, int) or keep < 1:
+        raise SaosError(ErrorCode.BAD_ARGS, "keep must be a positive integer")
     rows = list(b._merit)
     if not rows and script is None:
-        raise SaosError(ErrorCode.BAD_ARGS, "the merit function is empty; use saos opt merit wizard, add or script first")
-    b._sync_optical_state()
-    problem = Problem(b, rows, script, script_weight)
-    if method in ("de", "shgo"):
-        missing = [f"{i}.{column}" for (i, column), lo, hi in zip(problem.keys, problem.lo, problem.hi) if not (np.isfinite(lo) and np.isfinite(hi))]
-        if missing:
-            raise SaosError(ErrorCode.BAD_ARGS, f"--method {method} searches a box: give every variable --min and --max "
-                                                f"(saos opt vary); missing {missing}")
-    started = time.monotonic()
-    try:
-        problem.apply(problem.x0)
-        values, _, script_value = problem.measure()
-    except BaseException:
-        b._synchronized = None
-        b._sync_optical_state()
-        raise
-    initial = merit(rows, values, script_value, script_weight)
-    state: dict[str, Any] = {"evaluations": 0, "stopped_by": None, "reported": started, "best": math.inf}
-    # 求值过的点里最好的若干个（取负值进最小堆，堆顶是其中最差的）
-    found: list[tuple[float, int, np.ndarray]] = []
-
-    def objective(x: np.ndarray) -> float:
-        if should_cancel is not None and should_cancel():
-            state["stopped_by"] = "cancel"
-            raise _Stop
-        if time.monotonic() - started > max_seconds:
-            state["stopped_by"] = "time"
-            raise _Stop
-        _, value = problem.residuals(np.asarray(x, dtype=float))
-        state["evaluations"] += 1
-        state["best"] = min(state["best"], value)
-        item = (-value, state["evaluations"], np.array(x, dtype=float))
-        if len(found) < 50 * keep:
-            heapq.heappush(found, item)
-        elif value < -found[0][0]:
-            heapq.heapreplace(found, item)
-        now = time.monotonic()
-        if on_progress is not None and now - state["reported"] >= REPORT_EVERY_S:
-            state["reported"] = now
-            on_progress({"merit": state["best"], "systems": state["evaluations"], "elapsed_s": round(now - started, 2)})
-        return value * value
-
-    bounds = list(zip(problem.lo, problem.hi))
+        raise SaosError(ErrorCode.BAD_ARGS, "the merit function is empty")
+    chosen, saved, unsaved = {}, {}, []
+    guard = None
+    converged = False
+    initial = None
+    file = b.file
     message = ""
     try:
-        if method == "de":
-            result = differential_evolution(objective, bounds, x0=problem.x0, seed=1234, polish=False, maxiter=100000, tol=1e-8)
-        elif method == "shgo":
-            result = shgo(objective, bounds, options={"maxtime": max_seconds})
-        else:
-            local = {"method": "L-BFGS-B", "bounds": bounds if problem.bounded else None}
-            # 连续 50 跳没有更好的极小值就算收敛 / converged after 50 hops without a better minimum
-            result = basinhopping(objective, problem.x0, niter=100000, minimizer_kwargs=local, stepsize=0.5, niter_success=50, seed=1234)
-        message = str(getattr(result, "message", "") or "")
-    except _Stop:
-        message = {"cancel": "cancelled", "time": "max_seconds reached"}[state["stopped_by"]]
-    except BaseException:
-        b._commit(problem.physical(problem.x0))
-        raise
-    # 挑出彼此不同、零件不交叠的前 keep 个，逐个完整同步后写盘
-    ranked = sorted(((-v, x) for v, _, x in found), key=lambda item: item[0])
-    chosen: list[tuple[float, np.ndarray]] = []
-    for value, x in ranked:
-        if len(chosen) >= keep or not math.isfinite(value) or value >= PENALTY:
-            break
-        if any(np.max(np.abs(x - y)) <= 1e-6 for _, y in chosen):
-            continue
-        try:
-            b._commit(problem.physical(x))
-            clash = b.interference()
-        except SaosError:
-            continue
-        if clash.get("crossings") or clash.get("overlaps"):
-            continue
-        chosen.append((value, x))
-    saved, unsaved = [], []
-    file = b.file
-    try:
-        for k, (_, x) in enumerate(chosen):
-            b._commit(problem.physical(x))
-            path = folder / f"GLOPT_{k:04d}.zmx"
-            try:
-                b.save_as(path)
-                saved.append(path.name)
-            except SaosError as exc:
-                unsaved.append({"file": path.name, "error": exc.message})
+        with budget.interruptible():
+            b._sync_optical_state()
+            problem = Problem(b, rows, script, script_weight)
+            if method in ("de", "shgo") and not (np.isfinite(problem.lo).all() and np.isfinite(problem.hi).all()):
+                raise SaosError(ErrorCode.BAD_ARGS, "global de/shgo require finite bounds on every variable")
+            guard = StepGuard(problem)
+            reported = time.monotonic()
+
+            def objective(x):
+                nonlocal reported
+                budget.check()
+                point = np.asarray(x, dtype=float)
+                _, value = problem.residuals(point)
+                budget.result["evaluations"] += 1
+                unique = not any(np.max(np.abs(point - item[1])) <= 1e-6 for item in chosen.values())
+                slot = next((i for i in range(keep) if i not in chosen), None)
+                if slot is None:
+                    slot = max(chosen, key=lambda i: chosen[i][0])
+                eligible = slot not in chosen or value < chosen[slot][0]
+                if unique and eligible and value < PENALTY and guard.admissible(point):
+                    snapshot = Snapshot(guard.probe)
+                    chosen[slot] = (value, point.copy(), snapshot)
+                    best_value, _, best_snapshot = min(chosen.values(), key=lambda item: item[0])
+                    budget.best = best_snapshot
+                    budget.result["final_merit"] = best_value
+                    budget.check()
+                    path = folder / f"GLOPT_{slot:04d}.zmx"
+                    try:
+                        # 写已验证 probe 的快照；不把主优化器改成候选，也不在到期后重建。
+                        guard.probe.save_as(path)
+                        saved[slot] = value
+                    except SaosError as exc:
+                        unsaved.append({"file": path.name, "error": exc.message})
+                now = time.monotonic()
+                if on_progress is not None and now - reported >= REPORT_EVERY_S:
+                    reported = now
+                    on_progress({"merit": budget.result["final_merit"], "systems": budget.result["evaluations"],
+                                 "elapsed_s": now - budget.started})
+                return value * value
+
+            initial = math.sqrt(objective(problem.x0))
+            budget.result["initial_merit"] = initial
+            bounds = list(zip(problem.lo, problem.hi))
+            if method == "de":
+                result = differential_evolution(objective, bounds, x0=problem.x0, seed=1234, polish=False, maxiter=100000, tol=1e-8)
+            elif method == "shgo":
+                result = shgo(objective, bounds, options={"maxtime": budget.remaining()})
+            else:
+                local = {"method": "L-BFGS-B", "bounds": bounds if problem.bounded else None}
+                result = basinhopping(objective, problem.x0, niter=100000, minimizer_kwargs=local,
+                                      stepsize=0.5, niter_success=50, seed=1234)
+            message = str(getattr(result, "message", "") or "")
+            converged = bool(getattr(result, "success", False))
+    except Stop:
+        message = "cancelled" if budget.stopped_by == "cancel" else "max_seconds reached"
     finally:
+        if guard is not None:
+            guard.close()
+        (budget.best or original).restore(b)
         b.file = file
-    b._commit(problem.physical(chosen[0][1] if chosen else problem.x0))
-    values, _, script_value = problem.measure()
-    out = {"initial_merit": initial, "final_merit": merit(rows, values, script_value, script_weight), "systems": state["evaluations"],
-           "stopped_by": state["stopped_by"], "elapsed_s": round(time.monotonic() - started, 3), "method": method, "message": message,
-           "best_merits": [value for value, _ in chosen], "inner_loop": "live" if problem.live else "rebuild"}
-    if not chosen:
-        out["note"] = "no evaluated system was free of interference; the start was restored"
+    final = budget.result["final_merit"] if budget.best else initial
+    out = {"initial_merit": initial, "final_merit": final, "systems": budget.result["evaluations"],
+           **outcome(initial, final, converged=converged, stopped_by=budget.stopped_by, admissible=budget.best is not None),
+           "stopped_by": budget.stopped_by, "elapsed_s": round(time.monotonic() - budget.started, 3),
+           "budget_s": max_seconds, "method": method, "message": message,
+           "best_merits": sorted(saved.values()), "saved": [f"GLOPT_{i:04d}.zmx" for i in sorted(saved)],
+           "restored": budget.best is None, "admissible_result": budget.best is not None}
     if unsaved:
         out["unsaved"] = unsaved
     return out

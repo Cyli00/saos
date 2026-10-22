@@ -103,6 +103,11 @@ HELP_EPILOG = """Input: --plan FILE, a JSON file (choose exactly one of the six 
     Each candidate has a unique id and exactly one job-relative lens or prescription.
     First screen every candidate with stages: []; then run all on the same short stage budget,
     e.g. [{"local": {"max_seconds": 60}}]. Each stage needs positive max_seconds.
+    Local stages accept algorithm and device. Omitted algorithm / auto uses the
+    backend default: Optiland prefers torch-trf (CPU float64), with trf fallback
+    only for a known differentiability gap; OpticStudio keeps its dls/od default.
+    Explicit algorithms never fall back. Stage results retain the actual algorithm,
+    requested_algorithm, device and fallback reason when supplied by the backend.
     prepare defines run(w) and sets variables/merit consistently. It is required for
     prescriptions with optimisation stages. It is optional for stages: [] and saved
     lenses that already have a merit function. Empty merit before a required stage

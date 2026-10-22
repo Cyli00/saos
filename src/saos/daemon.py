@@ -861,6 +861,7 @@ class Daemon:
                 raise SaosError(ErrorCode.SCRIPT_ERROR, f"merit script {stored['name']} raised {type(exc).__name__}: {exc}",
                                 {"traceback": traceback.format_exc()[-4000:]}) from exc
 
+        run._saos_budget_files = (loss.__code__.co_filename,) if hasattr(loss, "__code__") else ()
         return {"script": run}
 
     def _optimizer_hooks(self, job: jobs.Job, stage: str) -> Callable[[dict[str, Any]], None]:
@@ -960,6 +961,40 @@ class Daemon:
         out["warnings"] = warnings
         return out
 
+    def _run_budgeted_optimization(self, job, loaded, args, run):
+        from saos.backend.optiland_budget import Budget, Stop
+
+        seconds = _arg(args, "max_seconds", (int, float), default=None)
+        budget = Budget(seconds, job.cancel_requested)
+        ids = self._measure_ids(job, args)
+        result = {"initial_merit": None, "final_merit": None, "improved": False,
+                  "converged": False, "succeeded": False}
+        phase = "measure_before"
+        try:
+            with budget.interruptible():
+                before = self._measure_before(job, ids)
+            budget.check()
+            phase = "optimization"
+            try:
+                result = run(budget.remaining())
+            finally:
+                loaded.dirty = True
+            phase = "review"
+            with budget.interruptible():
+                review = self._review(job, ids, before)
+            review["completed"] = True
+        except Stop:
+            result["stopped_by"] = result.get("stopped_by") or budget.stopped_by
+            result["succeeded"] = False
+            review = {"completed": False, "valid": False, "stopped_by": budget.stopped_by,
+                      "phase": phase, "warnings": ["budget ended before the command and its review completed"]}
+        if result.get("stopped_by"):
+            job.write_progress(stopped_by=result["stopped_by"])
+        result["optimizer_elapsed_s"] = result.get("elapsed_s")
+        result["elapsed_s"] = round(time.monotonic() - budget.started, 3)
+        result["budget_s"] = seconds
+        return {**loaded.describe(), **result, "review": review}
+
     def op_optimize(self, args: dict[str, Any]) -> dict[str, Any]:
         job = self._job(args)
         stages.require_ready(job.root)
@@ -967,24 +1002,16 @@ class Daemon:
         # 优化可能跑很久：需求未确认或有 blocking 问题时先问用户，不进入优化
         # an optimisation may run for a long time: with an unconfirmed demand or a blocking question, ask the user first
         workflow.require_optimise(job, self.backend)
-        ids = self._measure_ids(job, args)
-        before = self._measure_before(job, ids)
         kw = self._merit_script_kw(job)
         device = _arg(args, "device", str, default=None)
         self._optiland_only("device", device)
         if device is not None:
             kw["device"] = device
-        try:
-            result = self.backend.optimize(str(args.get("cycles", "auto")), args.get("cores") or config.compute_cores(),
-                                           max_seconds=_arg(args, "max_seconds", (int, float), default=None),
-                                           algorithm=_arg(args, "algorithm", str, default=None),
-                                           on_progress=self._optimizer_hooks(job, "opt.local"), should_cancel=job.cancel_requested, **kw)
-        finally:
-            # 出错时编辑器里也是优化器走到的系统，不能当作未改动 / after an error the editor still holds what the optimiser reached
-            loaded.dirty = True
-        if result.get("stopped_by"):
-            job.write_progress(stopped_by=result["stopped_by"])
-        return {**loaded.describe(), **result, "review": self._review(job, ids, before)}
+        def run(seconds):
+            return self.backend.optimize(str(args.get("cycles", "auto")), args.get("cores") or config.compute_cores(),
+                                         max_seconds=seconds, algorithm=_arg(args, "algorithm", str, default=None),
+                                         on_progress=self._optimizer_hooks(job, "opt.local"), should_cancel=job.cancel_requested, **kw)
+        return self._run_budgeted_optimization(job, loaded, args, run)
 
     def op_search(self, args: dict[str, Any]) -> dict[str, Any]:
         """Hammer 或全局搜索。两者都不会自己结束，必须给 max_seconds。OpticStudio 运行中把找到的系统写在镜头文件旁边，
@@ -998,8 +1025,8 @@ class Daemon:
         if kind not in SEARCH_FILES:
             raise SaosError(ErrorCode.BAD_ARGS, f"kind must be one of {list(SEARCH_FILES)}")
         max_seconds = _arg(args, "max_seconds", (int, float))
-        if max_seconds <= 0:
-            raise SaosError(ErrorCode.BAD_ARGS, "max_seconds must be positive")
+        from saos.backend.optiland_budget import Budget
+        Budget(max_seconds)
         workflow.require_optimise(job, self.backend)
         lens_dir = loaded.path.parent
         pattern = SEARCH_FILES[kind].format(stem=glob.escape(loaded.path.stem))
@@ -1010,24 +1037,22 @@ class Daemon:
         if kind == "global" and before:
             raise SaosError(ErrorCode.BAD_ARGS, f"{len(before)} GLOPT_*.zmx files already lie next to {job.relative_lens(loaded.path)}; "
                             "global search would overwrite them. Save the lens elsewhere first (saos lens save --as NAME)")
-        ids = self._measure_ids(job, args)
-        measured = self._measure_before(job, ids)
         kw = self._merit_script_kw(job)
         method = _arg(args, "method", str, default=None)
         self._optiland_only("method", method)
         if method is not None:
             kw["method"] = method
-        try:
-            result = self.backend.optimize_search(kind, args.get("cores") or config.compute_cores(), max_seconds=float(max_seconds),
-                                                  on_progress=self._optimizer_hooks(job, f"opt.{kind}"), should_cancel=job.cancel_requested, **kw)
-        finally:
-            loaded.dirty = True
-            after = self._search_stamps(lens_dir, pattern)
-            written = [lens_dir / name for name in sorted(after) if before.get(name) != after[name]]
-            files = self._archive_search_files(job, kind, written)
-        if result.get("stopped_by"):
-            job.write_progress(stopped_by=result["stopped_by"])
-        return {**loaded.describe(), **result, "files": files, "review": self._review(job, ids, measured)}
+        def run(seconds):
+            try:
+                result = self.backend.optimize_search(kind, args.get("cores") or config.compute_cores(), max_seconds=seconds,
+                                                      on_progress=self._optimizer_hooks(job, f"opt.{kind}"),
+                                                      should_cancel=job.cancel_requested, **kw)
+            finally:
+                after = self._search_stamps(lens_dir, pattern)
+                written = [lens_dir / name for name in sorted(after) if before.get(name) != after[name]]
+                files = self._archive_search_files(job, kind, written)
+            return {**result, "files": files}
+        return self._run_budgeted_optimization(job, loaded, args, run)
 
     @staticmethod
     def _search_stamps(folder: Path, pattern: str) -> dict[str, int]:
@@ -1061,22 +1086,16 @@ class Daemon:
             raise SaosError(ErrorCode.BAD_ARGS, "opt glass is the Optiland stage's glass substitution; in OpticStudio use opt hammer "
                                                 "or opt global with opt vary --param material --mode substitute")
         workflow.require_optimise(job, self.backend)
-        ids = self._measure_ids(job, args)
-        before = self._measure_before(job, ids)
         surfaces = _arg(args, "surfaces", list, default=None)
         if surfaces is not None and any(isinstance(s, bool) or not isinstance(s, int) for s in surfaces):
             raise SaosError(ErrorCode.BAD_ARGS, f"surfaces must be integers, got {surfaces!r}")
         catalog = _arg(args, "catalog", str, default=None) or self.backend.substitute_catalog(None) or "SAOS_CDGM_INPROD"
-        try:
-            result = run(surfaces=surfaces, catalog=catalog, neighbours=_arg(args, "neighbours", int, default=7),
-                         cycles=str(args.get("cycles") or "auto"), max_seconds=_arg(args, "max_seconds", (int, float), default=None),
-                         algorithm=_arg(args, "algorithm", str, default=None), on_progress=self._optimizer_hooks(job, "opt.glass"),
-                         should_cancel=job.cancel_requested, **self._merit_script_kw(job))
-        finally:
-            loaded.dirty = True
-        if result.get("stopped_by"):
-            job.write_progress(stopped_by=result["stopped_by"])
-        return {**loaded.describe(), **result, "review": self._review(job, ids, before)}
+        def optimize_glass(seconds):
+            return run(surfaces=surfaces, catalog=catalog, neighbours=_arg(args, "neighbours", int, default=7),
+                       cycles=str(args.get("cycles") or "auto"), max_seconds=seconds,
+                       algorithm=_arg(args, "algorithm", str, default=None), on_progress=self._optimizer_hooks(job, "opt.glass"),
+                       should_cancel=job.cancel_requested, **self._merit_script_kw(job))
+        return self._run_budgeted_optimization(job, loaded, args, optimize_glass)
 
     def op_exec(self, args: dict[str, Any]) -> dict[str, Any]:
         """执行 agent 编写的脚本（ADR-0007）。当前加载的是其他任务的镜头时拒绝。"""

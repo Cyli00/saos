@@ -82,7 +82,8 @@ def test_optiland_task_runs_from_build_to_a_recorded_round(flow):
     assert call(daemon, "opt.vary", job=job.id, surfaces=[2], param="thickness", min=60.0, max=95.0)["ok"]
     optimised = call(daemon, "opt.local", job=job.id, max_seconds=20)
     assert optimised["ok"], optimised
-    assert optimised["result"]["final_merit"] < optimised["result"]["initial_merit"]
+    # 同一起点的数值差分可下降约 58%；保守要求至少下降 50%，排除舍入误差冒充改善。
+    assert optimised["result"]["final_merit"] < 0.5 * optimised["result"]["initial_merit"], optimised
     second = call(daemon, "round.record", job=job.id, tier="local")
     assert second["ok"], second
     assert second["result"]["record"]["shortfall"] < first_shortfall

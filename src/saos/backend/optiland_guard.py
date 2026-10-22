@@ -17,6 +17,34 @@ MIN_VALID_FRACTION = 0.95
 MAX_BACKTRACKS = 12
 
 
+class InvalidTrial(SaosError):
+    """试点超出可微定义域；初值仍报错，优化中的试点可以拒绝并重试。"""
+
+    def __init__(self, message):
+        super().__init__(ErrorCode.OPTILAND_ERROR, message)
+
+
+@contextmanager
+def aiming_without_records(optic):
+    """瞄准只需要末端光线，禁止内部试探追迹覆盖各面的分析记录。"""
+    restores = []
+    try:
+        for surface in optic.surfaces:
+            previous = vars(surface).get("trace")
+            original = surface.trace
+            def trace(rays, record=False, original=original):
+                return original(rays, record=False)
+            restores.append((surface, previous))
+            surface.trace = trace
+        yield
+    finally:
+        for surface, previous in restores:
+            if previous is None:
+                del surface.trace
+            else:
+                surface.trace = previous
+
+
 class DomainPenalty:
     def __init__(self, backend):
         self.backend = backend
@@ -28,7 +56,7 @@ class DomainPenalty:
 
         if isinstance(margin, torch.Tensor) and torch.is_grad_enabled():
             if not bool(torch.isfinite(margin).all()):
-                raise SaosError(ErrorCode.OPTILAND_ERROR, "the differentiable ray-domain penalty is non-finite; reject this trial")
+                raise InvalidTrial("the differentiable ray-domain penalty is non-finite; reject this trial")
             if margin.numel():
                 self.terms.append(torch.relu(margin).square().mean())
 
@@ -129,10 +157,11 @@ class DomainPenalty:
     def trace(self, wave, hx, hy, px, py, target):
         import torch
         import optiland.backend as be
+        from saos.backend.optiland_torch_aiming import differentiable_aiming
 
         nhx, nhy = self.backend._native_fields(hx, hy)
         um = self.backend._effective["wavelengths"]["um"][wave - 1]
-        with self.guarded(), be.grad_mode.temporary_enable():
+        with self.guarded(), differentiable_aiming(self.backend), be.grad_mode.temporary_enable():
             rays = self.backend.optic.ray_tracer.ray_generator.generate_rays(float(nhx), float(nhy), be.array(px), be.array(py), um)
             for surface in self.backend.optic.surfaces[:target + 1]:
                 surface.trace(rays, record=False)
@@ -149,6 +178,8 @@ class StepGuard:
         self.problem = problem
         self.probe = OptilandBackend()
         self.probe.device = "cpu"
+        for name in ("_merit", "_merit_script", "_bounds", "_glass_vary"):
+            setattr(self.probe, name, copy.deepcopy(getattr(problem.b, name)))
         self.prescription = copy.deepcopy(problem.b._require())
         self.materials = MaterialStore(problem.b._store.records)
         self.config = problem.b.current_configuration()

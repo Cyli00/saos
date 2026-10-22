@@ -40,9 +40,9 @@
 | 优化 | `saos opt vary --job J --objects RANGE --param P [--group S] [--off]` | 设置非序列物体的位置、倾斜或参数变量。 |
 | 优化 | `saos opt merit --job J clear\|wizard\|add\|show [--file JSON]` | 编辑或查看评价函数（Zemax 操作数名；Optiland 未映射的操作数切到 OpticStudio）。 |
 | 优化 | `saos opt merit --job J script PATH.py [--weight W]` | Optiland 会话：把脚本的 `loss(ctx)` 作为评价函数的一行。 |
-| 优化 | `saos opt local --job J [--cycles N] [--algorithm trf\|lm\|lbfgsb\|nelder-mead\|powell\|torch-lbfgs\|torch-adam\|dls\|od] [--device auto\|cpu\|cuda] [--max-seconds S] [--cores N] [--measure IDS] [--detach]` | 深度优化统一要求需求与当前模型确认；缺初筛仅提示。运行有预算的局部优化：Optiland 会话默认 scipy trf，torch 算法对可微子集用自动微分，进程内、不占许可证；dls / od 在 OpticStudio。SciPy/Torch 候选步遇到交叠或任一视场/波长有效率不足 95% 时最多减半 12 次；Torch 另加连续可微失效光线惩罚，返回回退次数与原因。 |
+| 优化 | `saos opt local --job J [--cycles N] [--algorithm auto\|trf\|lm\|lbfgsb\|nelder-mead\|powell\|torch-trf\|torch-lbfgs\|torch-adam\|dls\|od] [--device auto\|cpu\|cuda] [--max-seconds S] [--cores N] [--measure IDS] [--detach]` | 深度优化统一要求需求与当前模型确认；缺初筛仅提示。运行有预算的局部优化：Optiland 会话默认 auto，优先 torch-trf（CPU float64），明确的可微能力缺口才回退 trf；显式指定算法不回退，结果以 requested_algorithm、algorithm、fallback 记录选择和原因。候选短优化使用同一默认值，支持 algorithm/device；回退只用剩余预算；命令预算包含前后测量、复核及搜索归档。Python 光线循环有中断检查点，原生调用和原子文件写入须等待返回。到期恢复已验证快照；review.completed=false 时 valid=false，补做复核后再记录轮次。improved、converged 独立记录，Optiland succeeded 要求两者为真且未中断；stopped_by 统一为 null/timeout/cancel。torch-trf 使用 Torch 残差与自动微分雅可比、SciPy 信赖域选步，未采用差分雅可比。torch 算法对可微子集用自动微分，进程内、不占许可证；dls / od 在 OpticStudio。候选步遇到交叠或任一视场/波长有效率不足 95% 时拒绝；torch-trf 缩短信赖域，显式 Torch 下降法最多回溯 32 次，SciPy 路径最多减半 12 次；Torch 另加连续可微失效光线惩罚，返回回退次数与原因。 |
 | 优化 | `saos opt hammer --job J --max-seconds S [--cores N] [--measure IDS] [--detach]` / `saos opt global --job J --max-seconds S [--method de\|basinhopping\|shgo] [--cores N] [--measure IDS] [--detach]` | 运行限时 Hammer（OpticStudio）或全局搜索；Optiland 会话里全局搜索用 scipy，de / shgo 要求每个变量都有上下界。 |
-| 优化 | `saos opt glass --job J [--surfaces RANGE] [--catalog C] [--neighbours N] [--cycles N] [--algorithm A] [--max-seconds S] [--measure IDS] [--detach]` | Optiland 阶段的在产玻璃替换：贪心邻域搜索，每种候选都重新局部优化。 |
+| 优化 | `saos opt glass --job J [--surfaces RANGE] [--catalog C] [--neighbours N] [--cycles N] [--algorithm A] [--max-seconds S] [--measure IDS] [--detach]` | Optiland 阶段的在产玻璃替换：贪心邻域搜索，每种候选都重新局部优化；默认优先 Torch，不支持时回退 trf，local_algorithms 记录选择和原因。 |
 | 流程图 | `saos ui open --job J [--tabs LIST] [--metrics IDS] [--tab ID] [--reset] [--no-window]` / `saos ui notify --job J --message TEXT` | 打开工作流窗口（流程、布局、点列图、光线扇图、场曲/畸变、MTF、轮次、起点与初筛）或在询问用户前显示提示。`--tabs` 按系统类型选定并排序上方标签页，`--metrics` 指定“指标”页按轮显示的需求条目，两者按任务记住；Optiland 阶段每轮只导出选中的分析图。 |
 | 配方 | `saos microscope adapt EXTRACT --out DIR [--embodiment ID] [--focal-length F] [--field-number N] [--tube-lens F] [--catalogs …] [--stop S]` | 将提取数据适配成处方和期望值。 |
 | 配方 | `saos microscope repro --job J EXPECT` / `saos microscope accept --job J --spec FILE` | 做复现校验或规格验收。 |
@@ -53,6 +53,8 @@
 | 内部入口 | `saos daemon run [--mode standalone\|extension]` / `saos ui serve` | 前台运行后台进程或流程图服务，通常由启动命令调用。 |
 
 镜头文件名相对任务的 `lenses/`，当前镜头操作的 `--job` 必须匹配。extension 替换未保存窗口内容前先另存 `lenses/captures/`；agent 自己的修改需保存或显式放弃。需求单格式见 [demand.md](../skills/saos/demand.md)，结构库格式见 [library.md](./recipes/microscope/library.md)。
+
+封存证据由工具记录哈希；文件核验可发现后续改动或删除。存在被改动或缺失的封存文件时，报告生成拒绝继续，不能把损坏证据当作有效结果交付。
 
 长任务的 `--detach` 结果在任务 `runs/NNN-<op>.json`；扫描例外，状态在 `scans/NNN/`。用 `saos job show J` 或 `saos scan --job J --show` 跟进；超时只停止等待，不代表计算结束，不要直接重复提交。
 
@@ -66,6 +68,12 @@
 | `SAOS_UI` / `SAOS_UI_LIVE` | 前者设 0 禁止自动打开流程图窗口；后者设 1 在长操作期间保持 extension 实时刷新。 |
 | `SAOS_UI_PID` | 有多个 OpticStudio 窗口时选择要连接的进程。 |
 | `SAOS_POOL_IDLE_S` / `SAOS_LIBRARY` | worker 空闲释放默认 600 秒；结构库默认 `<仓库>/library/microscope`。 |
+
+开发验证的隔离规则见 [AGENTS.md](../AGENTS.md)：命令和测试均设置 `SAOS_INSTANCE=verify`；允许 `SAOS_HOME` 指向本轮独占的系统临时目录。后者会覆盖实例设置，因此必须确认实际路径，不能仅凭 verify 环境变量认定已隔离，也不能指向用户实例。
+
+资源与窗口策略：默认计算核数为本机逻辑核数减 2、至少 1 核，自建的长时间进程使用低于正常的优先级。extension 默认采用 `UpdateMode=EditorsOnly`，长操作期间暂停实时刷新、结束后刷新一次；`SAOS_UI_LIVE=1` 可开启运行中刷新。窗口操作与通知命令见本页命令表。
+
+判定脚本必须只读镜头；写回原值造成的后端末位舍入按相对 `1e-12`、绝对 `1e-15` 容差比较，超出则拒绝记录。需求权重、停止阈值和轮次默认值统一见 [需求格式](../skills/saos/demand.md)。
 
 ## 错误码
 

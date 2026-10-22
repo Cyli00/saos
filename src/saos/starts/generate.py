@@ -175,7 +175,7 @@ def generate(job: jobs.Job, bindings: dict, *, short_seconds: float, prepare: st
               "allow_extrapolation": allow_extrapolation, "excluded": excluded, "not_evaluated": failures, "count": len(candidates), "screen_plan": None, "short_plan": None}
     if candidates:
         write_json(folder / "screen.json", plan)
-        write_json(folder / "short.json", {**plan, "stages": [{"local": {"max_seconds": short_seconds}}]})
+        write_json(folder / "short.json", {**plan, "stages": [{"local": {"max_seconds": short_seconds, "algorithm": "auto"}}]})
         result.update(screen_plan=(folder / "screen.json").relative_to(job.root).as_posix(),
                       short_plan=(folder / "short.json").relative_to(job.root).as_posix())
     write_json(folder / "generated.json", result)
