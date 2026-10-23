@@ -1,5 +1,5 @@
-"""并发评估：几个 standalone OpticStudio 实例同时调用 ZOS-API（OpticStudio 阶段，ADR-0012）。
-Concurrent evaluation: several standalone OpticStudio instances call ZOS-API at the same time (OpticStudio stage, ADR-0012).
+"""并发评估：几个 standalone OpticStudio 实例同时调用 ZOS-API（ADR-0013）。
+Concurrent evaluation: several standalone OpticStudio instances call ZOS-API at the same time (ADR-0013).
 
 在 saos exec 脚本里 / in a saos exec script:
 
@@ -45,7 +45,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-from saos import config, jobs, stages
+from saos import config, jobs
 from saos.kit import KitMethods
 from saos.protocol import ErrorCode, SaosError, jsonable, write_json
 
@@ -54,14 +54,14 @@ DEFAULT_WORKERS = 4
 
 
 def default_workers(backend: str | None = None) -> int:
-    """默认 worker 数：Optiland worker 不占许可证，用满可用核（逻辑核数减 2，Plan 2）；OpticStudio worker 受许可证限制，仍为 4。
-    Default worker count: Optiland workers take no licence and use the available cores (logical cores minus 2); OpticStudio 4."""
-    return config.compute_cores() if (backend or config.backend_name()) == "optiland" else DEFAULT_WORKERS
+    """默认使用 4 个常驻 OpticStudio worker，实际数量受许可证限制。"""
+    return DEFAULT_WORKERS
 
 
 def backend_for(job: jobs.Job) -> str:
-    """认可之后的任务用 OpticStudio worker，其余用 Optiland；不按文件后缀或伴随文件判断。"""
-    return "zos" if stages.backend(job.root) == "zos" else config.backend_name()
+    """任务使用与 daemon 相同的后端，每个 worker 独占 standalone 会话。"""
+    jobs.require_zos_history(job.root)
+    return config.backend_name()
 
 
 # worker 的协议行带前缀，和 OpticStudio 自己打到标准输出的文字区分开（实测会打印 "*** FRU__delta_init() …"）
@@ -337,7 +337,7 @@ def run_map(ctx, fn: str, items: list[Any], workers: int | None = None, reset: b
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"cannot read {script}")
     if script is not None:
         resolve(fn, script)  # 先在本进程里确认函数存在，免得每个 worker 各报一次 / check once here instead of once per worker
-    stages.require_ready(ctx.job.root)
+    jobs.require_zos_history(ctx.job.root)
     backend = backend_for(ctx.job)
     count = min(len(items), int(workers or default_workers(backend)), config.compute_cores())
     if count < 1:

@@ -1,10 +1,10 @@
-"""从已有时间戳汇总需求确认到模型确认、报告认可的耗时。"""
+"""从已有时间戳汇总需求确认到模型确认、首次报告的耗时。"""
 from __future__ import annotations
 
 import json
 from datetime import datetime
 
-from saos import demand, model_gate, stages
+from saos import demand, model_gate
 
 
 def elapsed(job) -> dict:
@@ -26,8 +26,15 @@ def elapsed(job) -> dict:
     start = min(confirmations) if confirmations else None
     models = [timestamp(r.get("time")) for r in model_gate.approvals(job)]
     models = [v for v in models if v is not None and start is not None and v >= start]
-    accepted = timestamp((stages.read(job.root) or {}).get("time"))
+    reports = []
+    for path in (job.root / "report").glob("*-r*.json"):
+        metadata = json.loads(path.read_text(encoding="utf-8"))
+        if demand.as_current(metadata.get("demand_sha"), d, "compute", job.root) == current:
+            value = timestamp(metadata.get("time"))
+            if value is not None and start is not None and value >= start:
+                reports.append(value)
+    generated = min(reports) if reports else None
     return {"demand_confirmed_at_epoch_s": start,
             "to_first_model_approval_s": min(models) - start if models else None,
-            "to_report_acceptance_s": accepted - start if accepted is not None and start is not None and accepted >= start else None,
+            "to_first_report_s": generated - start if generated is not None and start is not None else None,
             "scope": "当前计算需求版本的首个可追溯确认；未发生或缺时间戳为 null"}

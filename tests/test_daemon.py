@@ -241,7 +241,7 @@ def test_blocking_dialog_fails_fast(daemon, loaded, monkeypatch):
     assert call(daemon, "ping")["ok"]
 
 
-def test_entering_opticstudio_keeps_the_window_copy_before_loading(daemon, fake_lens_file):
+def test_native_load_keeps_the_window_copy_before_loading(daemon, fake_lens_file):
     """连接后、加载前先存窗口副本；副本失败时窗口内容不被替换。 / The window copy comes after connecting and before loading;
     if the copy fails the window content is not replaced."""
     from saos.backend.fake import FakeBackend
@@ -257,8 +257,11 @@ def test_entering_opticstudio_keeps_the_window_copy_before_loading(daemon, fake_
     window.load = lambda path: (order.append("load"), real_load(path))[1]
     window.has_unsaved_changes = lambda: True
     daemon.zos = window
-    backend, captured = daemon.enter_zos(job, fake_lens_file)
-    assert backend is window and captured and (job.root / "lenses" / captured).is_file()
+    daemon.backend = window
+    call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx")
+    result = daemon.op_load({"job": job.id, "file": "a.zmx"})
+    captured = result["captured"]
+    assert captured and (job.root / "lenses" / captured).is_file()
     assert order == ["save", "load"]
 
     order.clear()
@@ -269,5 +272,5 @@ def test_entering_opticstudio_keeps_the_window_copy_before_loading(daemon, fake_
 
     window.save_as = failing_save
     with pytest.raises(SaosError):
-        daemon.enter_zos(job, fake_lens_file)
+        daemon.op_load({"job": job.id, "file": "a.zmx"})
     assert order == ["save"]  # 副本失败，窗口没有被加载替换 / the window was not replaced

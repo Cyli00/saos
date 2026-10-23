@@ -109,8 +109,11 @@ class ScriptContext(KitMethods):
         from saos.daemon import Loaded
 
         path = self.job.resolve_lens(name, must_exist=True)
+        from saos.lens_files import require_native
+
+        jobs.require_zos_history(self.job.root)
+        require_native(path)
         self.capture_window()
-        self._daemon._select_backend(self.job)
         self.backend = self._daemon.backend
         self._daemon.loaded = None
         self.backend.load(path)

@@ -922,7 +922,7 @@ def trace(system, *, split: bool = True, scatter: bool = True, polarization: boo
     save_rays 是 ZRD 文件名（写在镜头文件旁边）。
     A non-sequential trace; returns the time, whether it finished, why it stopped, and OpticStudio's DeadRayErrors,
     DeadRayThreshold and total energy. save_rays is a ZRD file name, written next to the lens file."""
-    from saos.backend.optiland_budget import Budget
+    from saos.budget import Budget
     Budget(max_seconds)
     tool = system.Tools.OpenNSCRayTrace()
     if tool is None:

@@ -1,8 +1,7 @@
-"""优化预算与已验证镜头快照；退出时恢复快照，不再次追迹。"""
+"""优化命令的预算、取消与结果判定。"""
 
 from __future__ import annotations
 
-import copy
 import math
 import sys
 import time
@@ -13,29 +12,6 @@ from saos.protocol import ErrorCode, SaosError
 
 class Stop(BaseException):
     """穿过第三方的计算错误捕获，到优化调用边界退出。"""
-
-
-class Snapshot:
-    FIELDS = ("optic", "_prescription", "_effective", "_rows", "_scales", "_configuration", "_aiming")
-
-    def __init__(self, backend):
-        self.values = copy.deepcopy({name: getattr(backend, name) for name in self.FIELDS})
-
-    def restore(self, backend):
-        # 嵌套优化仍可能受外层预算跟踪；恢复是原子清理，不允许在后端配置中再次被打断。
-        previous = sys.gettrace()
-        sys.settrace(None)
-        try:
-            for name, value in copy.deepcopy(self.values).items():
-                setattr(backend, name, value)
-            backend._torch_state = None
-            backend._torch_device = None
-            backend._invalidate()
-            backend._synchronized = (backend._revision, backend._configuration, backend._aiming)
-            backend._merit_cache = None
-            backend._configure()
-        finally:
-            sys.settrace(previous)
 
 
 class Budget:
@@ -73,11 +49,11 @@ class Budget:
     @contextmanager
     def interruptible(self):
         # 只在第三方计算的 Python 检查点打断，避免异步异常落入快照提交或 finally。
-        # 原生 C/CUDA 调用需返回到 Python 才能中断；不承诺硬实时期限。
+        # 原生调用需返回到 Python 才能中断；不承诺硬实时期限。
         previous = sys.gettrace()
         def trace(frame, event, arg):
             filename = frame.f_code.co_filename.replace("\\", "/").lower()
-            if "/optiland/" not in filename and "/scipy/" not in filename and filename not in self.files:
+            if "/scipy/" not in filename and filename not in self.files:
                 return None
             if time.monotonic() >= self.next_check:
                 self.next_check = time.monotonic() + 0.02

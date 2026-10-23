@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import json
 import math
+import os
 
 import pytest
 
@@ -92,9 +93,11 @@ def test_all_candidates_screen_before_equal_short_budget(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("factor", [.5, 2.0, 10.0])
-def test_optiland_first_order_scales_with_prescription(factor):
-    from saos.backend.optiland import OptilandBackend
-    b = OptilandBackend()
+@pytest.mark.zemax
+@pytest.mark.skipif(os.environ.get("SAOS_RUN_ZEMAX") != "1", reason="需要用户安排真实 ZOS 测试")
+def test_zos_first_order_scales_with_prescription(factor):
+    from saos.backend.zos import ZosBackend
+    b = ZosBackend()
     b.start()
     data = {"aperture": {"type": "entrance_pupil_diameter", "value": 2}, "fields": {"type": "angle", "y": [0, .1]},
             "wavelengths": {"um": [.55]}, "object": {"thickness": "inf"},
@@ -105,31 +108,6 @@ def test_optiland_first_order_scales_with_prescription(factor):
         before = b.operand("EFFL", 0, 0, [])
         b.build(prescription.normalize(scale_prescription(data, factor)))
         assert b.operand("EFFL", 0, 0, []) == pytest.approx(before * factor, rel=1e-9, abs=1e-9)
-    finally:
-        b.close()
-
-
-def test_small_aperture_prediction_against_real_marginal_ray():
-    from saos.backend.optiland import OptilandBackend
-    from saos.backend.optiland_operands import trace_record
-    from saos.starts import predict
-    b = OptilandBackend()
-    b.start()
-    data = {"aperture": {"type": "entrance_pupil_diameter", "value": 1}, "fields": {"type": "angle", "y": [0, .1]},
-            "wavelengths": {"um": [.55]}, "object": {"thickness": "inf"},
-            "surfaces": [{"radius": 50, "thickness": 5, "material": "N-BK7", "stop": True},
-                         {"radius": -50, "thickness": 48, "material": ""}]}
-    try:
-        b.build(prescription.normalize(data))
-        b.set_surface(2, "thickness", 48 + float(b.optic.paraxial.F2()))
-        prediction = predict(b, rings=1, arms=4)
-        assert not prediction["errors"]
-        actual = trace_record(b, 1, 0, 0, 0, 1, 3)[-1]["position"][1]
-        expected = prediction["third_order"]["totals"]["TSC"]
-        assert expected == pytest.approx(actual, rel=.02, abs=1e-7)
-        assert prediction["incidence"]["invalid"] == 0
-        import numpy as np
-        assert np.sum(prediction["seidel"]["surfaces"], axis=0) == pytest.approx(prediction["seidel"]["totals"], rel=1e-12, abs=1e-12)
     finally:
         b.close()
 
@@ -193,7 +171,7 @@ def test_generate_passes_normalized_prescriptions_without_a_shim(saos_home, tmp_
             assert "environment" in data and "ray_aiming" in data
             built.append(copy.deepcopy(data))
         def operand(self, *args): return 50.0
-    monkeypatch.setattr(prediction,"predict",lambda backend: {"first_order": {"efl": 50}})
+    monkeypatch.setattr(prediction,"predict",lambda backend, **kwargs: {"first_order": {"efl": 50}})
     out = starts.generate(job, {"efl_mm":"f","half_field_deg":"h","f_number":"n","wavelengths_um":"w"},
                           short_seconds=1, prepare="prepare.py", root=root, backend_factory=Backend)
     assert out["count"] == 1 and out["not_evaluated"] == [] and len(built) == 2

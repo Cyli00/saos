@@ -103,11 +103,7 @@ HELP_EPILOG = """Input: --plan FILE, a JSON file (choose exactly one of the six 
     Each candidate has a unique id and exactly one job-relative lens or prescription.
     First screen every candidate with stages: []; then run all on the same short stage budget,
     e.g. [{"local": {"max_seconds": 60}}]. Each stage needs positive max_seconds.
-    Local stages accept algorithm and device. Omitted algorithm / auto uses the
-    backend default: Optiland prefers torch-trf (CPU float64), with trf fallback
-    only for a known differentiability gap; OpticStudio keeps its dls/od default.
-    Explicit algorithms never fall back. Stage results retain the actual algorithm,
-    requested_algorithm, device and fallback reason when supplied by the backend.
+    Local stages accept algorithm auto/dls/od; auto selects the OpticStudio default.
     prepare defines run(w) and sets variables/merit consistently. It is required for
     prescriptions with optimisation stages. It is optional for stages: [] and saved
     lenses that already have a merit function. Empty merit before a required stage
@@ -193,8 +189,8 @@ HELP_EPILOG = """Input: --plan FILE, a JSON file (choose exactly one of the six 
     compensate is null, "quick_focus" or {"script": "job-relative.py"} (run(w)).
     measure defaults to bounded/directional demand items; probes add target.
     keep defaults to 3 (probes and tolerance: 0). --workers overrides plan
-    workers, default logical cores minus 2 with Optiland workers (no licence) or
-    4 with OpticStudio, limited by point count and available cores; count the
+    workers, default 4 OpticStudio instances, limited by point count and
+    available cores and licences; count the
     8-instance licence, including user windows and daemon. Cold worker startup
     is about 6-8 s each.
 
@@ -204,7 +200,7 @@ Results and files
   and all rows. The response summarizes the top 10 rows ranked by shortfall.
   Kept point lenses: lenses/scans/NNN/pPPP.zmx, ready for uv run saos lens load.
   Candidate lenses use <id>.zmx; results add kept, budget_limited, best and page
-  (scans/NNN/index.html: hypotheses, validity, stages, measurements, interference,
+  (scans/NNN/index.html: hypotheses, validity, measurements, interference,
   glass status and variable/merit source, prepare or candidate).
   --detach uses a background worker-pool thread, not runs/; the daemon remains
   available. Read scans/NNN/progress.json via uv run saos scan --job J --show [NNN]
@@ -743,9 +739,9 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
     """准备（校验、目录、镜头快照）在本请求里完成；detach 时其余放进后台线程，立即返回，后台进程继续处理其他命令。
     Preparation (validation, folder, lens snapshot) happens in this request; with detach the rest runs in a background
     thread and the call returns at once, so the daemon keeps serving other commands."""
-    from saos import config, parallel, stages, workflow
+    from saos import config, parallel, workflow
 
-    stages.require_ready(ctx.job.root)
+    jobs.require_zos_history(ctx.job.root)
     d = demand.load_job(ctx.job.root)
     plan = validate(plan, d, ctx.job.root)
     exploring = plan["mode"] == "candidates"
@@ -892,11 +888,11 @@ def _execute(job: jobs.Job, folder, plan: dict[str, Any], items: list[dict[str, 
     lens_root = job.lenses_dir / args["lens_dir"]
     for r in ranked:
         if r.get("lens") and r["lens"] not in keep:
-            from saos.lens_files import companion
+            from saos.lens_files import require_native
 
             dropped = job.lenses_dir / r["lens"]
+            require_native(dropped)
             dropped.unlink(missing_ok=True)
-            companion(dropped).unlink(missing_ok=True)
             r["lens"] = None
     if lens_root.is_dir() and not any(lens_root.iterdir()):
         shutil.rmtree(lens_root, ignore_errors=True)

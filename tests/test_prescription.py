@@ -59,13 +59,10 @@ def test_two_stops_rejected():
         prescription.normalize(p)
 
 
-def test_asphere_headers_reach_optiland_without_changing_orders():
+def test_asphere_headers_keep_zos_parameter_orders():
     from saos.prescription import canonical_surface_params
-    from saos.backend.optiland_surfaces import geometry_kwargs
     params = {"par2":1.2e-5, "6th Order Term":-3e-8}
     assert canonical_surface_params("EvenAspheric",params) == {"par2":1.2e-5,"par3":-3e-8}
-    _, geometry = geometry_kwargs({"type":"EvenAspheric","params":params})
-    assert geometry["coefficients"] == [0,1.2e-5,-3e-8]
     with pytest.raises(SaosError):
         canonical_surface_params("EvenAspheric",{"par3":1,"6th Order Term":2})
     with pytest.raises(SaosError):
@@ -74,7 +71,6 @@ def test_asphere_headers_reach_optiland_without_changing_orders():
 
 
 def test_odd_asphere_headers_map_to_odd_orders_and_unknown_headers_stay_visible():
-    from saos.backend.optiland_surfaces import geometry_kwargs
     from saos.prescription import canonical_surface_params
 
     assert canonical_surface_params("OddAsphere", {"1st Order Term": 1.0, "8th Order Term": 2.0}) == {
@@ -82,9 +78,6 @@ def test_odd_asphere_headers_map_to_odd_orders_and_unknown_headers_stay_visible(
     with pytest.raises(SaosError):
         canonical_surface_params("OddAsphere", {"par1": 1.0, "1st Order Term": 1.0})
     assert canonical_surface_params("OddAsphere", {"Odd Term": 1.0}) == {"Odd Term": 1.0}
-    with pytest.raises(SaosError) as refused:
-        geometry_kwargs({"type": "OddAsphere", "params": {"Odd Term": 1.0}})
-    assert refused.value.code == ErrorCode.BACKEND_UNSUPPORTED
 
 
 def test_snapshot_prescription_merges_equal_aliases_without_mutating_input():

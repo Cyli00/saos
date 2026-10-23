@@ -35,7 +35,7 @@ TEXT: dict[str, tuple[str, str]] = {
     "title": ("建模说明", "Model description"),
     "byline": ("任务 {job} · 镜头 {lens} · 生成于 {time}", "Job {job} · lens {lens} · generated {time}"),
     "intro": (
-        "当前模型与需求值由打开镜头的计算后端（Optiland 或 OpticStudio）读取；候选预判和初筛值来自注明版本的存档。开始优化前请核对：每个面代表什么实物、用的什么材料、按什么光阑、视场和波长计算。",
+        "当前模型与需求值由打开镜头的OpticStudio读取；候选预判和初筛值来自注明版本的存档。开始优化前请核对：每个面代表什么实物、用的什么材料、按什么光阑、视场和波长计算。",
         "Current model and requirement values come from the loaded backend; candidate predictions and screening values come from the identified archives. Before optimisation starts, check what each surface stands for, "
         "which material it uses, and which aperture, fields and wavelengths the evaluation uses.",
     ),
@@ -226,7 +226,7 @@ TEXT: dict[str, tuple[str, str]] = {
     "pred.surface": ("面", "Surface"), "pred.total": ("合计", "Total"),
     "pred.incidence": ("各面采样最大入射角", "Sampled maximum incidence per surface"),
     "pred.samples": ("有效样本", "Valid samples"), "pred.invalid": ("失效光线 / 尝试数", "Invalid rays / attempted"),
-    "pred.scope": ("预判使用初筛镜头快照；三阶量为 Optiland 原生口径，尚未与 OpticStudio SEID 对照。入射角为采样最大值。", "Prediction uses the screening snapshot and native Optiland conventions; OpticStudio SEID comparison is not run. Incidence maxima are sampled."),
+    "pred.scope": ("预判来自 OpticStudio；三阶操作数单位为 waves，完整系数与色差见原生文本。入射角为采样最大值。", "Prediction uses OpticStudio; third-order operands are in waves. Full coefficients and color are in the native text. Incidence maxima are sampled."),
     "sel.constraints": ("需求选型指标", "Selection constraints"),
     "sel.prediction": ("像差预判", "Aberration prediction"),
     "sel.no_prediction": ("未记录预判", "No prediction recorded"),
@@ -318,7 +318,7 @@ TEXT: dict[str, tuple[str, str]] = {
     "note.not_in_use": ("在用的目录里找不到", "not in the catalogs in use"),
     "note.local_agf": ("本机 AGF 目录中有此牌号", "found in the local AGF catalogs"),
     "note.local_library": ("材料库 library/materials 中有此牌号", "found in the material library library/materials"),
-    "note.not_local": ("本机没有对应的 AGF 或材料库条目，Optiland 无法加载", "no matching local AGF or library entry; Optiland cannot load it"),
+    "note.not_local": ("本机没有对应的 AGF 或材料库条目", "no matching local AGF or library entry"),
     "note.backend_unknown": ("没有后端信息", "no backend information"),
     "note.model": ("模型玻璃，不对应真实材料", "model glass, not a real material"),
     "note.measured": ("INDX 实测 {n} 个波长", "INDX measured at {n} wavelengths"),
@@ -1018,31 +1018,12 @@ def _level_complete(record: tuple[list[dict[str, Any]] | None, str | None], name
     return _cell("yes", "covered", lo=lo, hi=hi)
 
 
-def _optiland_local(name: str, catalogs: list[str]) -> dict[str, Any]:
-    """Optiland 能否从本机 AGF 或材料库读到这个牌号：只查 MaterialStore 查找的位置，不加载。
-    Whether Optiland can read the glass from the local AGF files or the material library: looks where MaterialStore looks, loads nothing."""
-    from saos.backend import optiland_materials as om
-
-    try:
-        store = om.MaterialStore()
-        if any(store.catalog(cat).get(name.upper()) for cat in catalogs):
-            return _cell("yes", "local_agf")
-        lib = om.library("materials", "catalog.json").get("materials", [])
-        if any(name.casefold() in [str(m.get(k, "")).casefold() for k in ("id", "name", "agf_name")] for m in lib):
-            return _cell("yes", "local_library")
-    except SaosError as exc:
-        return _cell("unknown", "record_unreadable", err=exc.message)
-    return _cell("no", "not_local")
-
-
 def _level_backend(name: str, catalogs: list[str], backend: str | None) -> dict[str, Any]:
     if backend is None:
         return _cell("unknown", "backend_unknown")
     if backend == "zos":
         # OpticStudio 只能用在用目录里的牌号，目录列表由后端给出 / OpticStudio uses only glasses of the catalogues in use, as the backend lists them
         return _cell("yes", "catalog_in_use", catalogs=catalogs) if catalogs else _cell("no", "not_in_use")
-    if backend == "optiland":
-        return _optiland_local(name, catalogs)
     return _cell("unknown", "backend_unknown")
 
 
@@ -1097,7 +1078,7 @@ def _generation_rows(job: jobs.Job, folder: Path) -> tuple[dict, list[dict]]:
 
 def _selection(job: jobs.Job, d: dict[str, Any], desc: dict[str, Any], folder: Path) -> tuple[dict[str, Any], list[tuple[str, dict[str, Any]]]]:
     """只读取已保存的比较，按结构匹配；旧版本显示提示，不阻断确认。"""
-    from saos import candidates, stages
+    from saos import candidates
 
     if demand.structure_mode(d) == "prescribed":
         data = {"mode": "prescribed", "reason": str(d["structure"]["reason"]).strip()}
@@ -1133,7 +1114,7 @@ def _selection(job: jobs.Job, d: dict[str, Any], desc: dict[str, Any], folder: P
             issues.append("checks_changed")
         if demand.as_current(plan.get("demand_sha"), d, "compute", job.root) != demand.compute_digest(d):
             issues.append("comparison_outdated")
-        if not all(stages.sealed(job.root, (scan / f).relative_to(job.root).as_posix()) for f in ("plan.json", "result.json")):
+        if not all(jobs.sealed(job.root, (scan / f).relative_to(job.root).as_posix()) for f in ("plan.json", "result.json")):
             issues.append("comparison_changed")
         if not matched:
             issues.append("comparison_unmatched")
@@ -1255,6 +1236,8 @@ def prediction_html(pred: dict, t: Tr) -> str:
                  [[str(r["surface"]), fmt(r.get("max_deg")), str(r["valid_samples"])] for r in incidence.get("surfaces", [])])
     out += f"<p>{e(t('pred.invalid'))}: {incidence.get('invalid', '—')} / {incidence.get('attempted', '—')}</p>"
     out += f"<p class='muted'>{e(t('pred.scope'))}</p>"
+    if pred.get("native_analysis"):
+        out += "<details><summary>OpticStudio SeidelCoefficients</summary><pre>" + e(pred["native_analysis"]["text"]) + "</pre></details>"
     if pred.get("errors"):
         out += "<p>" + e("; ".join(f"{k}: {v}" for k,v in pred["errors"].items())) + "</p>"
     return f"<details><summary>{e(t('sel.prediction'))}</summary>{out}</details>"

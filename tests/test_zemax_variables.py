@@ -14,7 +14,7 @@ import pytest
 
 from saos import glasscat
 from saos.protocol import ErrorCode
-from zemax_support import accepted_session
+from zemax_support import design_session
 
 pytestmark = [
     pytest.mark.zemax,
@@ -65,7 +65,7 @@ def script(daemon, job, source, name="probe", **args):
 
 
 def test_variable_kinds_on_the_accepted_lens(tmp_path, monkeypatch):
-    with accepted_session(tmp_path / "home", monkeypatch, "kinds") as (daemon, job, _):
+    with design_session(tmp_path / "home", monkeypatch, "kinds") as (daemon, job, _):
         surfaces = ok(daemon.handle({"op": "lens.surfaces", "args": {"job": job.id}}))["surfaces"]
         glass = next(s for s in surfaces if s["material"] and s["index"] > 0)  # N-BK7
 
@@ -132,7 +132,7 @@ def run(ctx):
 
 def test_parallel_matches_the_main_instance_on_the_accepted_lens(tmp_path, monkeypatch):
     """3 个 standalone worker 并发算出的 RSCE 与主实例逐个算的相同。 / Three standalone workers match the main instance one by one."""
-    with accepted_session(tmp_path / "home", monkeypatch, "parallel") as (daemon, job, _):
+    with design_session(tmp_path / "home", monkeypatch, "parallel") as (daemon, job, _):
         lens = "zos-entry.zmx"
         r0 = ok(daemon.handle({"op": "lens.surfaces", "args": {"job": job.id}}))["surfaces"][1]["radius"]
         radii = [r0 * (1 + 0.002 * k) for k in range(30)]

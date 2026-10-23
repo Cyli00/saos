@@ -138,8 +138,6 @@ def cmd_lens(args: argparse.Namespace) -> Any:
         if args.as_name:
             payload["file"] = args.as_name
         return _lens_request("lens.save", args, payload)
-    if action == "export":
-        return _lens_request("lens.export", args, {"file": args.as_name, "overwrite": args.overwrite})
     if action == "operand":
         data = [getattr(args, f"d{i}") for i in range(1, 7)]
         while data and data[-1] == 0.0:
@@ -196,8 +194,6 @@ def cmd_opt(args: argparse.Namespace) -> Any:
             raise SaosError(ErrorCode.BAD_ARGS, "opt vary needs --param and --surfaces, --param and --objects, or --config-rows")
         payload = {"job": args.job, "param": args.param, "surfaces": _surface_list(args.surfaces), "on": not args.off,
                    "mode": args.mode, "catalog": args.catalog}
-        if args.min is not None or args.max is not None:
-            payload.update(min=args.min, max=args.max)
         return client.request("opt.vary", payload, timeout=args.timeout)
     if args.action == "merit":
         payload: dict[str, Any] = {"job": args.job, "action": args.merit_action}
@@ -207,33 +203,14 @@ def cmd_opt(args: argparse.Namespace) -> Any:
             if not args.file:
                 raise SaosError(ErrorCode.BAD_ARGS, "merit add needs --file with a JSON list of operands")
             payload["rows"] = _read_json(args.file)
-        elif args.merit_action == "script":
-            if not args.script_file:
-                raise SaosError(ErrorCode.BAD_ARGS, "merit script needs the path of a Python file that defines loss(ctx)")
-            script = Path(args.script_file)
-            try:
-                payload["source"] = script.read_text(encoding="utf-8")
-            except OSError as exc:
-                raise SaosError(ErrorCode.FILE_NOT_FOUND, f"cannot read script {script}: {exc}") from exc
-            payload["name"] = "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in script.stem)[:48] or "loss"
-            payload["weight"] = args.weight
-        if args.script_file and args.merit_action != "script":
-            raise SaosError(ErrorCode.BAD_ARGS, f"merit {args.merit_action} takes no script path")
         return client.request("opt.merit", payload, timeout=args.timeout)
     if args.action == "local":
         return _send("opt.local", args, {"job": args.job, "cycles": args.cycles, "cores": args.cores, "max_seconds": args.max_seconds,
-                                         "measure": args.measure, "algorithm": args.algorithm, "device": args.device}, args.timeout)
+                                         "measure": args.measure, "algorithm": args.algorithm}, args.timeout)
     if args.action in ("hammer", "global"):
         # 运行时长已知：客户端至少等到它结束后再留 2 分钟收尾 / the run length is known: wait for it plus 2 minutes to wrap up
         payload = {"job": args.job, "cores": args.cores, "max_seconds": args.max_seconds, "measure": args.measure}
-        if getattr(args, "method", None):
-            payload["method"] = args.method
         return _send(f"opt.{args.action}", args, payload, max(args.timeout, args.max_seconds + 120))
-    if args.action == "glass":
-        payload = {"job": args.job, "surfaces": _surface_list(args.surfaces) if args.surfaces else None, "catalog": args.catalog,
-                   "neighbours": args.neighbours, "cycles": args.cycles, "max_seconds": args.max_seconds, "algorithm": args.algorithm,
-                   "measure": args.measure}
-        return _send("opt.glass", args, payload, max(args.timeout, (args.max_seconds or 0) + 120))
     raise AssertionError(args.action)
 
 
@@ -333,11 +310,6 @@ def cmd_report(args: argparse.Namespace) -> Any:
     return report.write(jobs.get_job(args.job), lang=args.lang)
 
 
-def cmd_zos(args: argparse.Namespace) -> Any:
-    return _send("zos.begin", args, {"job": args.job, "quote": args.quote, "round": args.round,
-                                     "max_rounds": args.max_rounds}, args.timeout)
-
-
 class _Parser(argparse.ArgumentParser):
     """参数错误也按统一 JSON 格式输出，方便 agent 解析。"""
 
@@ -354,13 +326,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser = _Parser(prog="saos", description="saos: tools for agents to drive Zemax OpticStudio")
     sub = parser.add_subparsers(dest="group", required=True, parser_class=_Parser)
 
-    daemon = sub.add_parser("daemon", help="daemon holding the lens: Optiland in process by default, OpticStudio when needed")
+    daemon = sub.add_parser("daemon", help="daemon holding a persistent OpticStudio session")
     dsub = daemon.add_subparsers(dest="action", required=True, parser_class=_Parser)
-    start = dsub.add_parser("start", help="start the daemon. Lenses run in Optiland 0.6.3 (float64, no licence) and no OpticStudio "
-                            "session is started until the user accepts an Optiland report (zos begin). Operations Optiland cannot "
-                            "perform are refused with a capability gap instead of being handed to OpticStudio. SAOS_BACKEND accepts "
-                            "only optiland (default) and fake. --mode extension makes the OpticStudio session of the approved stage "
-                            "connect to the user's OpticStudio window")
+    start = dsub.add_parser("start", help="start a persistent OpticStudio session; standalone by default, extension for desktop debugging")
     start.add_argument("--mode", choices=("standalone", "extension"), default="standalone")
     start.add_argument("--start-timeout", type=float, default=client.DEFAULT_START_TIMEOUT_S)
     stop = dsub.add_parser("stop", help="stop the daemon")
@@ -385,7 +353,7 @@ def build_parser() -> argparse.ArgumentParser:
     show.add_argument("--log", type=int, default=10, help="number of recent log records to show")
     verify = jsub.add_parser("verify", help="check that no evidence file written by the tools was changed or deleted (seals.jsonl)")
     verify.add_argument("job")
-    cancel = jsub.add_parser("cancel", help="ask the running computation of a job to stop at its next safe point (opt local/hammer/global/glass, zos begin, scan, scripts that call ctx.progress); works while the daemon is busy")
+    cancel = jsub.add_parser("cancel", help="ask the running computation of a job to stop at its next safe point (opt local/hammer/global, scan, scripts that call ctx.progress); works while the daemon is busy")
     cancel.add_argument("job")
     job.set_defaults(func=cmd_job)
 
@@ -424,7 +392,7 @@ def build_parser() -> argparse.ArgumentParser:
     lens_cmd("info", "system data: aperture, fields, wavelengths, …")
     lens_cmd("surfaces", "surface rows of the Lens Data Editor")
     p = lens_cmd("describe", "model description page for the user (models/NNN-<lens>/index.html): every surface, material source and index per wavelength, apertures, fields, wavelengths, plus automatic modelling checks. "
-                 "Computed by Optiland only; OpticStudio is not started. Layout pictures are not generated before the OpticStudio stage")
+                 "Computed by the active OpticStudio session")
     p.add_argument("--notes", help="path to the model notes JSON file: surfaces or objects, environment, assumptions, first_order and exploration; format below")
     p.add_argument("--lang", choices=("zh", "en"), help="page language (default: the demand lang, then SAOS_LANG, then the system language)")
     p = lens_cmd("approve", "record the user's approval of a model description; rounds need a lens whose structure matches an approved description")
@@ -440,9 +408,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--as", dest="as_name", help="save as this file name inside lenses/")
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--no-verify", action="store_true", help="skip the reload comparison")
-    p = lens_cmd("export", "export the loaded Optiland lens to a .zmx paired with its snapshot (lens save never exports)")
-    p.add_argument("--as", dest="as_name", required=True, help="file name inside lenses/")
-    p.add_argument("--overwrite", action="store_true")
     p = lens_cmd("operand", "evaluate one optimization operand")
     p.add_argument("type", help="operand name, e.g. EFFL")
     p.add_argument("--int1", type=int, default=0)
@@ -480,35 +445,21 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--param", help="radius, curvature (the same variable as radius; bounds in 1/mm), thickness, conic, par<N> "
                                    "(a Lens Data parameter column: aspheric terms, tilts, …) or material")
     q.add_argument("--mode", choices=("model", "substitute"), help="for material: model = a model glass whose nd and Vd vary (exploration, not deliverable); substitute = OpticStudio swaps real glasses (Hammer / global search)")
-    q.add_argument("--catalog", help="for --mode substitute: the catalog to substitute from (default: every catalog in use)")
+    q.add_argument("--catalog", help="for --mode substitute: the catalog to substitute from (default: SAOS_CDGM_INPROD)")
     q.add_argument("--surfaces", help="e.g. 1-16 or 1,3,5-7")
     q.add_argument("--config-rows", help="multi-configuration rows instead of surfaces (zoom spacings, focus, …), e.g. 1,3")
     q.add_argument("--configs", help="with --config-rows: the configurations (default: all), e.g. 2-3")
     q.add_argument("--objects", help="non-sequential objects instead of surfaces, e.g. 2-4; --param is x, y, z, tilt_x, tilt_y, tilt_z, par<N> or a column header")
     q.add_argument("--group", type=int, help="with --objects in a sequential lens: the NonSequential surface holding them (default: the only one)")
     q.add_argument("--off", action="store_true", help="make them fixed")
-    q.add_argument("--min", type=float, help="Optiland only: lower bound of the variable(s), in the unit of --param; the optimiser stays "
-                                             "inside it. Radius bounds need --min and --max of one sign; use --param curvature through flat")
-    q.add_argument("--max", type=float, help="Optiland only: upper bound of the variable(s)")
-    q = opt_cmd("merit", "merit function: clear / wizard / add / script / show")
-    q.add_argument("merit_action", choices=("clear", "wizard", "add", "script", "show"))
-    q.add_argument("script_file", nargs="?", help="for script: a Python file that defines loss(ctx) (Optiland only)")
+    q = opt_cmd("merit", "merit function: clear / wizard / add / show")
+    q.add_argument("merit_action", choices=("clear", "wizard", "add", "show"))
     q.add_argument("--file", help="wizard settings JSON, or the operand list JSON for add")
-    q.add_argument("--weight", type=float, default=1.0, help="for script: the weight of the loss row (default 1)")
-    q = opt_cmd("local", "run local optimization (Torch autograd first on Optiland; damped least squares or orthogonal descent in OpticStudio). "
-                "The demand and current model must be approved; missing comparisons only produce notes")
+    q = opt_cmd("local", "run OpticStudio local optimisation after demand and model approval")
     q.add_argument("--cycles", default="auto", choices=("auto", "1", "5", "10", "50"))
-    q.add_argument("--algorithm", choices=("auto", "trf", "lm", "lbfgsb", "nelder-mead", "powell", "torch-trf", "torch-lbfgs", "torch-adam", "dls", "od"),
-                   help="Optiland: auto (default) prefers torch-trf in float64 and falls back to trf only for a reported differentiability gap. "
-                        "Explicit algorithms never fall back: trf (bounded trust-region least squares), lm, lbfgsb, nelder-mead, powell (finite "
-                        "differences), torch-trf, torch-lbfgs, torch-adam (autograd over RSCE, RWCE, REAY, EFFL, TOTR, CTVA, ETVA and their boundary rows). "
-                        "OpticStudio: dls = damped least squares, od = orthogonal descent (default od for a non-sequential system, "
-                        "dls otherwise); in an Optiland session dls and od are refused (they run only in the approved OpticStudio stage), "
-                        "and in that stage the Optiland names are refused")
-    q.add_argument("--device", choices=("auto", "cpu", "cuda"), help="for the torch algorithms: auto / cpu (float64 on the CPU, default) or cuda; "
-                                                                     "the scipy ones run on the CPU")
+    q.add_argument("--algorithm", choices=("auto", "dls", "od"), help="auto selects DLS for sequential systems and orthogonal descent for non-sequential systems")
     q.add_argument("--cores", type=int, help="CPU cores for OpticStudio (default: all logical cores but 2)")
-    q.add_argument("--max-seconds", type=float, help="optimisation budget in seconds (Optiland requires finite positive values); "
+    q.add_argument("--max-seconds", type=float, help="finite positive optimisation budget in seconds; "
                         "includes measurements and review; an incomplete review returns completed=false and valid=false. Native calls may overrun")
     for name, help_text in (("hammer", "run Hammer optimisation (escapes local minima; with material --mode substitute it swaps real glasses); "
                                        "keeps the best system found. Requires that the "
@@ -518,18 +469,7 @@ def build_parser() -> argparse.ArgumentParser:
         q = opt_cmd(name, help_text)
         q.add_argument("--max-seconds", type=float, required=True, help="required: it never ends on its own; cancel after this many seconds")
         q.add_argument("--cores", type=int, help="CPU cores for OpticStudio (default: all logical cores but 2)")
-    osub.choices["global"].add_argument("--method", choices=("de", "basinhopping", "shgo"),
-                                        help="Optiland: de (differential evolution, default), basinhopping or shgo; de and shgo need "
-                                             "--min and --max on every variable. OpticStudio ignores it")
-    q = opt_cmd("glass", "Optiland: substitute in-production glasses (greedy neighbour search, re-optimising each candidate)")
-    q.add_argument("--surfaces", help="glass surfaces to substitute, e.g. 1-6 (default: every glass surface)")
-    q.add_argument("--catalog", help="in-production catalog to choose from (default SAOS_CDGM_INPROD; SAOS_NHG_INPROD also exists)")
-    q.add_argument("--neighbours", type=int, default=7, help="glasses tried per surface in each pass (default 7)")
-    q.add_argument("--cycles", default="5", choices=("auto", "1", "5", "10", "50"), help="local re-optimisation per candidate (default 5)")
-    q.add_argument("--algorithm", choices=("auto", "trf", "lm", "lbfgsb", "nelder-mead", "powell", "torch-trf", "torch-lbfgs", "torch-adam"),
-                   help="local optimiser per candidate (default auto: torch-trf, then trf for reported differentiability gaps)")
-    q.add_argument("--max-seconds", type=float, help="stop after this many seconds and keep the best combination found")
-    for name in ("local", "hammer", "global", "glass"):
+    for name in ("local", "hammer", "global"):
         q = osub.choices[name]
         q.add_argument("--measure", help="measure these demand checks before and after the run and list what got better or worse: "
                                          "comma-separated ids, hard (constants and variable ranges) or all; pick fast checks")
@@ -551,7 +491,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--job", default=None, help="job id (required for running and --show)")
     p.add_argument("--plan", help="JSON plan file: one of vars (grid), points, minimize, probes, candidates (structure exploration) or tolerance, "
                                   "plus fixed, solve, compensate, measure, operands, keep; formats and examples below")
-    p.add_argument("--workers", type=int, default=None, help="worker processes to use (default the plan's workers, else logical cores minus 2 with Optiland, 4 OpticStudio instances otherwise; count the licence then)")
+    p.add_argument("--workers", type=int, default=None, help="worker processes to use (default the plan's workers, else 4 standalone OpticStudio instances; subject to available licences)")
     p.add_argument("--detach", action="store_true", help="return at once and run the scan in the background on the worker pool; the daemon keeps "
                                                          "serving other commands meanwhile; follow it with --show")
     p.add_argument("--show", nargs="?", const="latest", default=None, metavar="NNN",
@@ -567,7 +507,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_check)
     p = sub.add_parser("round", help="record a round: save lenses/rounds/rNNN.zmx, measure the demand, append ledger.jsonl and return the stop decision with a demand brief")
     p.add_argument("--job", required=True)
-    p.add_argument("--tier", help="strategy tier(s): local, variables, materials, global, structure; omit for round 0. zos begin creates its verify baseline; subsequent rounds use its separate budget")
+    p.add_argument("--tier", help="strategy tier(s): local, variables, materials, global, structure; omit for round 0")
     p.add_argument("--note", default="", help="what this round changed")
     p.add_argument("--merit", type=float, default=None,
                    help="value of the objective you actually optimised, when you optimised outside the OpticStudio merit function; recorded instead of the lens's merit function value")
@@ -585,23 +525,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reason", required=True, help="why the rounds stop, with the evidence (e.g. scans/NNN, notes/findings.md F20)")
     p.add_argument("--quote", required=True, help="the user's own words deciding to stop, including the full text of any option they chose")
     p.set_defaults(func=cmd_stop)
-    z = sub.add_parser("zos", help="enter the user-approved OpticStudio stage")
-    zs = z.add_subparsers(dest="action", required=True)
-    p = zs.add_parser("begin", help="accept the current Optiland report, rebuild its deliverable round in OpticStudio, record a verify round and compare",
-                      description="Requires a current report, confirmed demand and model, a deliverable round without model glasses and an available OpticStudio licence. "
-                                  "Seals stages/zos.json with the user's words. Records a verify round and stages/zos-result.json without a discrepancy gate. "
-                                  "Further rounds and scans stay in OpticStudio; the round budget and comparison window restart. "
-                                  "Retry the same arguments to finish an interrupted entry without duplicating the verify round. "
-                                  "Baseline and material evidence are archived with that round; recovery reuses them. "
-                                  "The displayed report must match its sealed archive, and both stage files must be sealed before further rounds.")
-    p.add_argument("--job", required=True)
-    p.add_argument("--quote", required=True, help="the user's own words accepting the report")
-    p.add_argument("--round", type=int, help="deliverable round of the current report version (default: reported delivery)")
-    p.add_argument("--max-rounds", type=int, help="new optimisation round budget; the initial verify round is the baseline (default: demand max_rounds)")
-    p.add_argument("--timeout", type=float, default=600)
-    p.add_argument("--detach", action="store_true")
-    p.set_defaults(func=cmd_zos)
-    p = sub.add_parser("report", help="write report/index.html; after zos begin select only OpticStudio-stage rounds and include the Optiland comparison (no computation)")
+    p = sub.add_parser("report", help="write report/index.html from recorded OpticStudio measurements (no computation)")
     p.add_argument("--job", required=True)
     p.add_argument("--lang", choices=["en", "zh"], help="report language (default: demand lang, then SAOS_LANG, then the system UI language)")
     p.set_defaults(func=cmd_report)

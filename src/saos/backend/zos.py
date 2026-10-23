@@ -40,7 +40,7 @@ from saos.prescription import (
     SURFACE_APERTURES,
     UNITS,
 )
-from saos.protocol import ErrorCode, SaosError
+from saos.protocol import ErrorCode, MaterialError, SaosError
 
 log = logging.getLogger("saos.backend.zos")
 _ZOSAPI = None
@@ -638,45 +638,18 @@ class ZosBackend(Backend):
 
     def load(self, path: Path) -> None:
         path = Path(path).resolve()
-        payload = lens_files.read_companion(path)
+        lens_files.require_native(path)
         self._untranslated = []
-        if payload is not None:
-            self.rebuild_companion(payload)
-            return
         if not self.system.LoadFile(str(path), False):
             raise SaosError(ErrorCode.ZOS_LOAD_FAILED, f"OpticStudio cannot load {path}")
         self._material_cache.clear()
 
-    def rebuild_companion(self, payload: dict[str, Any]) -> None:
-        from saos.prescription import snapshot_prescription
-
-        self.build(snapshot_prescription(payload["prescription"]))
-        if payload.get("configuration", 1) != 1:
-            self.select_configuration(int(payload["configuration"]))
-        settings = payload.get("optimization") or {}
-        self._untranslated = [f"variable bounds {key}: {value}" for key, value in (settings.get("bounds") or {}).items()]
-        if settings.get("merit_script"):
-            self._untranslated.append(f"merit loss script: {settings['merit_script'].get('name')}")
-        for surface in settings.get("model_glass_variables") or []:
-            try:
-                self.vary(int(surface), "material", True, "model")
-            except SaosError as exc:
-                self._untranslated.append(f"model-glass variable surface {surface}: {exc.message}")
-        self.merit_clear()
-        # 原生评价函数从首行插入，倒序添加以保存操作数间的行号引用。
-        for index, row in reversed(list(enumerate(settings.get("merit") or [], 1))):
-            try:
-                self.merit_add([row])
-            except SaosError as exc:
-                self._untranslated.append(f"merit row {index}: {exc.message}")
-
     def save_as(self, path: Path) -> None:
         path = Path(path).resolve()
+        lens_files.require_native(path)
         self.system.SaveAs(str(path))
         if not path.is_file():
             raise SaosError(ErrorCode.ZOS_SAVE_FAILED, f"file not found after saving: {path}")
-        # OpticStudio 写出的 .zmx 已是完整镜头；留着旧伴随文件会让下次加载报不配对
-        lens_files.companion(path).unlink(missing_ok=True)
 
     def new_system(self) -> None:
         self.system.New(False)
@@ -1022,7 +995,7 @@ class ZosBackend(Backend):
             mc.AddCatalog(name)
             self._material_cache.clear()
             if not mc.IsCatalogInUse(name):
-                raise SaosError(ErrorCode.BAD_ARGS, f"cannot load glass catalog {name} from {self._glass_dir()}")
+                raise MaterialError(ErrorCode.BAD_ARGS, f"cannot load glass catalog {name} from {self._glass_dir()}")
 
     @staticmethod
     def _tilt_decenter(row) -> dict[str, Any]:
@@ -1179,7 +1152,7 @@ class ZosBackend(Backend):
             return name.upper()
         upper = name.upper()
         if upper not in self._names_in_use():
-            raise SaosError(
+            raise MaterialError(
                 ErrorCode.BAD_ARGS,
                 f"{name!r} is not in the catalogs in use",
                 {"catalogs": self._catalogs_in_use()},
@@ -1357,7 +1330,7 @@ class ZosBackend(Backend):
         self._material_cache.clear()
         missing = [c for c in wanted if c not in [str(x).upper() for x in mc.GetCatalogsInUse()]]
         if missing:
-            raise SaosError(ErrorCode.BAD_ARGS, f"cannot load glass catalogs {missing}")
+            raise MaterialError(ErrorCode.BAD_ARGS, f"cannot load glass catalogs {missing}")
         if p["coating_file"]:
             # 面的膜层名在这个文件里查，所以先于各面设定 / surface coatings are looked up in this file, so it goes first
             sd.Files.CoatingFile = pick_name([str(c) for c in sd.Files.GetCoatingFiles()], p["coating_file"], "coating_file")
@@ -1802,7 +1775,7 @@ class ZosBackend(Backend):
                 tool.NumberOfCores = int(cores)
             stopped_by, elapsed = self._run_optimizer(tool, lambda: {"merit": float(tool.CurrentMeritFunction)},
                                                       max_seconds, on_progress, should_cancel)
-            from saos.backend.optiland_budget import outcome
+            from saos.budget import outcome
             initial, final = float(tool.InitialMeritFunction), float(tool.CurrentMeritFunction)
             improved = outcome(initial, final, converged=False, stopped_by=stopped_by)["improved"]
             return {
@@ -1917,7 +1890,7 @@ class ZosBackend(Backend):
                 best = lambda: float(tool.CurrentMeritFunction(1))  # noqa: E731
             stopped_by, elapsed = self._run_optimizer(tool, lambda: {"merit": best(), "systems": int(tool.Systems)},
                                                       max_seconds, on_progress, should_cancel)
-            from saos.backend.optiland_budget import outcome
+            from saos.budget import outcome
             initial, final = float(tool.InitialMeritFunction), best()
             improved = outcome(initial, final, converged=False, stopped_by=stopped_by)["improved"]
             out = {
@@ -1950,7 +1923,7 @@ class ZosBackend(Backend):
         A failing progress callback (progress.json refused, …) is only logged and the run goes on; any other error in the
         loop first cancels the tool and waits until it has stopped, because Close does not close a running tool, which then
         holds the system and blocks every later trace and optimisation (nightvision job, scripts 021–024, 2026-10-19)."""
-        from saos.backend.optiland_budget import Budget
+        from saos.budget import Budget
         Budget(max_seconds)
         started = time.monotonic()
         stopped_by = None

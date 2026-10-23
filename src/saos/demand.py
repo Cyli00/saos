@@ -583,7 +583,7 @@ def _evidence_path(ctx, path: Path) -> str | None:
 def _error_kind(exc: Exception) -> str:
     """判定出错的类别：材料数据不可用为 material，其余为 computation。按类型判断，不看消息文字。
     The kind of a failed check: unusable material data is material, anything else computation. Decided by type, not by text."""
-    from saos.backend.optiland_materials import MaterialError
+    from saos.protocol import MaterialError
 
     return "material" if isinstance(exc, MaterialError) else "computation"
 

@@ -1,96 +1,134 @@
-"""汇总 Optiland 自带近轴、三阶和色差结果；不实现另一套像差计算。"""
+"""用 OpticStudio 的操作数和原生分析生成起点预判，不自建光学求解器。"""
 from __future__ import annotations
 
 import math
-from importlib.metadata import version
-
-import numpy as np
+import tempfile
+from pathlib import Path
 
 from saos import jobs, model_gate
-from saos.protocol import jsonable
+from saos.backend.baseline import normalized_fields
+from saos.protocol import ErrorCode, SaosError, jsonable
 
-NAMES = ("TSC", "SC", "CC", "TCC", "TAC", "AC", "TPC", "PC", "DC")
+COLUMNS = ("SPHA", "COMA", "ASTI", "FCUR", "DIST")
 CONVENTIONS = {
-    "length": "处方长度单位；库生成处方为 mm",
-    "seidel": "Optiland 原生 SI–SV；边缘近轴光线与最大视场主光线，主波长；未换算为 waves",
-    "third_order": "逐面长度量；SC=-TSC/u_image，AC=-TAC/u_image，PC=-TPC/u_image，TCC=3*CC",
-    "chromatic": "最短减最长波长；单波长沿用后端 F/C 定义，不代表实测带宽色差",
-    "petzval": "按原生纵向 PC 的符号，R=h_image^2/(2*sum(PC))；轴上场不能据此求半径",
-    "pupils": "入瞳相对首面，出瞳相对像面；光阑位置使用展开光轴坐标",
-    "zos_seid": "NOT RUN：未完成 OpticStudio SEID 的符号与归一化实测对照",
+    "length": "OpticStudio 当前镜头单位",
+    "third_order": "SPHA/COMA/ASTI/FCUR/DIST 原生操作数，单位 waves；不是未换算的 SI–SV",
+    "native_analysis": "完整三阶及色差表保存在 SeidelCoefficients 原生文本，保留 OpticStudio 的单位与表头",
+    "incidence": "RAID，度；仅统计成功到达对应面的采样光线，不代表连续最大值",
+    "pupils": "入瞳相对首面，出瞳相对像面；stop_z 是后端全局坐标，bfl 是末面近轴焦距",
 }
 
 
-def predict(backend, *, rings: int = 3, arms: int = 8) -> dict:
-    if rings < 1 or arms < 4:
-        raise ValueError("入射角采样至少需要 1 环、4 个方位")
-    backend._require()
-    optic = backend.optic
+def predict(backend, *, rings: int = 3, arms: int = 8, should_cancel=None) -> dict:
+    if (isinstance(rings, bool) or not isinstance(rings, int) or not 1 <= rings <= 20
+            or isinstance(arms, bool) or not isinstance(arms, int) or not 4 <= arms <= 64):
+        raise ValueError("入射角采样要求 1–20 环、4–64 个方位")
+    info, rows = backend.system_info(), backend.surfaces()
+    if info.get("mode") == "non_sequential":
+        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, "starting-design prediction requires a sequential system")
     desc = backend.describe_model(None)
-    out = {"backend": "optiland", "version": version("optiland"), "time": jobs.now_iso(),
+    identity = backend.identity()
+    out = {"backend": identity["backend"], "version": identity["version"], "time": jobs.now_iso(),
            "fingerprint": model_gate.digest(model_gate.fingerprint(desc)),
            "model_sha": model_gate.digest({k: v for k, v in desc.items() if k not in ("file", "layout")}),
-           "conventions": CONVENTIONS, "configuration": getattr(backend, "_configuration", 1), "errors": {}}
-    from optiland.aberrations import SeidelAberrations, ThirdOrderAberrations, ChromaticAberrations
-    from saos.backend.optiland_operands import trace_record
+           "conventions": CONVENTIONS, "configuration": backend.current_configuration(), "errors": {}}
 
-    def scalar(v):
-        return float(np.asarray(v).reshape(-1)[0])
+    def checkpoint():
+        if should_cancel is not None and should_cancel():
+            raise SaosError(ErrorCode.CANCELLED, "starting-design prediction cancelled")
 
-    f = None
+    def failed(key, exc):
+        if isinstance(exc, SaosError) and exc.code in (ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.UI_BLOCKED, ErrorCode.CANCELLED):
+            raise exc
+        out["errors"][key] = f"{type(exc).__name__}: {exc}"
+
+    def op(name, surface=0, wave=0, data=()):
+        checkpoint()
+        value = float(backend.operand(name, surface, wave, list(data)))
+        if not math.isfinite(value):
+            raise ValueError(f"{name} 未返回有限值")
+        return value
+
+    primary = backend.primary_wave()
+    first = {"stop_surface": info["stop_surface"]}
+    for key, name, wave in (("efl", "EFFL", primary), ("total_track", "TOTR", 0),
+                            ("entrance_pupil", "ENPP", 0), ("exit_pupil", "EXPP", 0),
+                            ("entrance_pupil_diameter", "EPDI", 0), ("f_number", "ISFN", 0)):
+        try:
+            first[key] = op(name, wave=wave)
+        except Exception as exc:
+            first[key] = None
+            failed(key, exc)
     try:
-        p = optic.paraxial
-        positions = np.asarray(optic.surfaces.positions).reshape(-1)
-        f = scalar(p.f2())
-        out["first_order"] = {"efl": f, "bfl": scalar(p.F2()) + float(backend._rows[-2]["thickness"]),
-                              "total_track": float(sum(abs(r.get("thickness", 0.0)) for r in backend._rows[1:-1])),
-                              "stop_surface": int(optic.surfaces.stop_index),
-                              "stop_z": float(positions[int(optic.surfaces.stop_index)]),
-                              "entrance_pupil": scalar(p.EPL()), "exit_pupil": scalar(p.XPL()),
-                              "entrance_pupil_diameter": scalar(p.EPD()), "f_number": scalar(p.FNO())}
+        _, position = backend.global_matrix(info["stop_surface"])
+        first["stop_z"] = float(position[2])
     except Exception as exc:
-        out["errors"]["first_order"] = f"{type(exc).__name__}: {exc}"
+        failed("stop_z", exc)
     try:
-        if any(r.get("decenter_tilt") or r.get("params") or str(r.get("type", "standard")).lower() != "standard" for r in backend._rows[1:-1]):
-            raise ValueError("三阶表当前仅用于同轴标准球面/圆锥面；附加面型项和偏心系统需单独核对")
-        third = ThirdOrderAberrations(optic)
-        values = third.third_order()
-        terms = {name: np.asarray(value).reshape(-1) for name, value in zip(NAMES, values)}
-        chromatic = ChromaticAberrations(optic)
-        terms.update({name: np.asarray(getattr(chromatic, name)()).reshape(-1) for name in ("TAchC", "LchC", "TchC")})
-        out["third_order"] = {"surfaces": [{"surface": i + 1, **{k: float(v[i]) for k, v in terms.items()}}
-                                            for i in range(len(terms["TSC"]))],
-                              "totals": {k: float(v.sum()) for k, v in terms.items()}}
-        per_surface = [np.asarray(third._sum_seidels(*(terms[k][i:i+1] for k in ("TSC", "CC", "TAC", "TPC", "DC")))).reshape(-1).tolist()
-                       for i in range(len(terms["TSC"]))]
-        out["seidel"] = {"columns": ["SI", "SII", "SIII", "SIV", "SV"], "surfaces": per_surface,
-                         "totals": np.asarray(SeidelAberrations(optic).seidels()).reshape(-1).tolist()}
-        pc, height = float(terms["PC"].sum()), scalar(third._hp)
-        radius = height * height / (2 * pc) if pc != 0 and height != 0 else None
+        # 在最后一个实体面，用后端近轴高度与斜率求相对该面的焦点距离。
+        surface = len(rows) - 2
+        height = op("PARY", surface, primary, (0, 0, 0, 1))
+        slope = op("PATY", surface, primary, (0, 0, 0, 1))
+        if not slope:
+            raise ValueError("近轴出射光线平行，没有有限后焦距")
+        first["bfl"] = -height / slope
+    except Exception as exc:
+        failed("bfl", exc)
+    out["first_order"] = first
+    centered = all(str(row.get("type", "standard")).lower() == "standard" and not row.get("tilt_decenter")
+                   for row in desc.get("surfaces", [])[1:-1])
+    try:
+        if not centered:
+            raise ValueError("该面型或偏心系统不使用同轴球面/圆锥面 Petzval 预判；请读原生分析")
+        curvature = op("PETC", wave=primary)
+        radius = 1.0 / curvature if curvature else None
+        f = first.get("efl")
         out["petzval"] = {"radius": radius, "radius_over_efl": radius / f if radius is not None and f else None,
-                          "reason": None if radius is not None else "轴上场或零曲率；不报告有限半径"}
+                          "reason": None if radius is not None else "Petzval 曲率为零，无有限半径"}
     except Exception as exc:
-        out["errors"]["aberrations"] = f"{type(exc).__name__}: {exc}"
-    angles = [[] for _ in backend._rows]
-    failures = attempted = 0
+        failed("petzval", exc)
+    try:
+        if not centered:
+            raise ValueError("该面型或偏心系统不使用同轴球面/圆锥面三阶预判；请读原生分析")
+        # 逐面操作数与总和都由 OpticStudio 计算，不沿用另一后端的符号换算。
+        values = [{"surface": i, **{name: op(name, i, primary) for name in COLUMNS}} for i in range(1, len(rows) - 1)]
+        out["third_order"] = {"columns": list(COLUMNS), "units": "waves", "surfaces": values,
+                              "totals": {name: op(name, 0, primary) for name in COLUMNS}}
+    except Exception as exc:
+        failed("third_order", exc)
+    try:
+        checkpoint()
+        with tempfile.TemporaryDirectory(prefix="saos-seidel-") as folder:
+            path = Path(folder) / "seidel.txt"
+            data = backend.analysis("SeidelCoefficients", {"Wavelength": primary}, path)
+            if not path.is_file():
+                raise ValueError("OpticStudio 未写出 SeidelCoefficients 原生文本")
+            from saos.backend.zos import _read_text_export
+            out["native_analysis"] = {"type": "SeidelCoefficients", "wavelength": primary,
+                                      "text": _read_text_export(path), "messages": data.get("messages", [])}
+    except Exception as exc:
+        failed("native_analysis", exc)
     pupil = [(0.0, 0.0)] + [(r / rings * math.cos(a * 2 * math.pi / arms), r / rings * math.sin(a * 2 * math.pi / arms))
                            for r in range(1, rings + 1) for a in range(arms)]
-    for wave in range(1, len(backend._effective["wavelengths"]["um"]) + 1):
-        for hx, hy in backend._normalized_fields():
-            for px, py in pupil:
-                attempted += 1
-                try:
-                    records = trace_record(backend, wave, hx, hy, px, py, len(angles) - 1)
-                    valid = len(records) == len(angles) and records[-1]["intensity"] > 0
-                    failures += not valid
-                    for i, record in enumerate(records[1:], 1):
-                        if record["intensity"] > 0 and math.isfinite(record["aoi"]):
-                            angles[i].append(record["aoi"])
-                except Exception as exc:
-                    failures += 1
-                    out["errors"].setdefault("incidence", f"{type(exc).__name__}: {exc}")
-    out["incidence"] = {"sampling": {"rings": rings, "arms": arms, "fields": "all configured", "waves": "all configured"},
-                        "attempted": attempted, "invalid": failures, "continuous_maximum_verified": False,
-                        "surfaces": [{"surface": i, "max_deg": max(a) if a else None, "valid_samples": len(a)}
-                                     for i, a in enumerate(angles) if i > 0]}
+    fields = normalized_fields(info)
+    sample_count = len(info["wavelengths"]) * len(fields) * len(pupil)
+    if sample_count * max(1, len(rows) - 1) > 100000:
+        raise SaosError(ErrorCode.BAD_ARGS, "prediction exceeds 100000 ray-surface samples; reduce rings/arms or system sampling")
+    rays = [(wave, hx, hy, px, py) for wave in range(1, len(info["wavelengths"]) + 1)
+            for hx, hy in fields for px, py in pupil]
+    incidence = {"sampling": {"rings": rings, "arms": arms, "fields": "all configured", "waves": "all configured"},
+                 "attempted": len(rays), "invalid": None, "continuous_maximum_verified": False, "surfaces": []}
+    for surface in range(1, len(rows)):
+        checkpoint()
+        try:
+            traced = backend.trace_batch(rays, surface)
+            angles = [op("RAID", surface, int(ray[0]), ray[1:]) for ray, valid in zip(rays, traced.ok) if valid]
+            incidence["surfaces"].append({"surface": surface, "max_deg": max(angles) if angles else None,
+                                          "valid_samples": len(angles)})
+            if surface == len(rows) - 1:
+                incidence["invalid"] = len(rays) - int(sum(traced.ok))
+        except Exception as exc:
+            failed(f"incidence.{surface}", exc)
+            incidence["surfaces"].append({"surface": surface, "max_deg": None, "valid_samples": 0})
+    out["incidence"] = incidence
     return jsonable(out)

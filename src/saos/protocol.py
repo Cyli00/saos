@@ -22,7 +22,6 @@ REPLACE_WAIT_S = 0.05
 
 class ErrorCode:
     BACKEND_UNSUPPORTED = "BACKEND_UNSUPPORTED"
-    OPTILAND_ERROR = "OPTILAND_ERROR"
     LENS_COMPANION_MISMATCH = "LENS_COMPANION_MISMATCH"
     DAEMON_NOT_RUNNING = "DAEMON_NOT_RUNNING"
     DAEMON_ALREADY_RUNNING = "DAEMON_ALREADY_RUNNING"
@@ -142,3 +141,7 @@ def decode(raw: bytes) -> dict[str, Any]:
     if not isinstance(message, dict):
         raise SaosError(ErrorCode.PROTOCOL_ERROR, "messages must be JSON objects")
     return message
+
+
+class MaterialError(SaosError):
+    """材料目录缺失或材料数据不可用。"""

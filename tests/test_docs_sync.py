@@ -95,8 +95,7 @@ def test_the_diagram_names_every_workflow_step_command():
 
     boxes = " ".join(_diagram_boxes())
     step_commands = {"interview": "saos job create", "demand_confirm": "saos demand confirm", "modeling": "saos lens describe",
-                     "model_approve": "saos lens approve", "design": "saos round", "deliver": "saos report",
-                     "zos": "saos zos begin", "final_report": "saos report"}
+                     "model_approve": "saos lens approve", "design": "saos round", "deliver": "saos report"}
     assert set(step_commands) == set(stage.STEPS)
     assert [c for c in step_commands.values() if c not in boxes] == []
 

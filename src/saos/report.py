@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import json
 import math
+from datetime import datetime
 from html import escape
 from typing import Any
 
-from saos import demand, i18n, jobs, ledger, stages
+from saos import demand, i18n, jobs, ledger
 from saos.protocol import ErrorCode, SaosError, write_json
 
 # 每条文本为 (中文, 英文)，带 {name} 的按 str.format 填参数
@@ -35,12 +36,6 @@ TEXT: dict[str, tuple[str, str]] = {
     "tier.baseline": ("初始", "Start"),
     "tier.rebase": ("新判定重测", "Re-measured with new checks"),
     "tier.verify": ("OpticStudio 首轮复测", "Initial OpticStudio measurement"),
-    "stage.title": ("Optiland 与 OpticStudio 对比", "Optiland and OpticStudio comparison"),
-    "stage.accepted": ("用户认可第 {n} 轮：{quote}。Optiland 阶段结论：{status}。OpticStudio 阶段上限：{cap} 轮。", "The user accepted round {n}: {quote}. Optiland conclusion: {status}. OpticStudio round budget: {cap}."),
-    "stage.columns": ("项目|Optiland|OpticStudio|差值|相对差值", "Item|Optiland|OpticStudio|Difference|Relative difference"),
-    "stage.baseline": ("基准量", "Baseline quantities"),
-    "stage.materials": ("材料数据变化与未翻译设置", "Material changes and untranslated settings"),
-    "stage.note": ("差值为 OpticStudio − Optiland，相对差值除以 Optiland 绝对值；零基准或无法取值时留空。两端差别不设通过线，交付采用 OpticStudio 数值。", "Difference is OpticStudio minus Optiland, divided by the absolute Optiland value for the relative difference; undefined for zero or unavailable references. Differences have no pass threshold; delivery uses OpticStudio values."),
     "tier.local": ("局部优化", "Local optimisation"),
     "tier.variables": ("放开变量", "More variables"),
     "tier.materials": ("换材料", "Materials"),
@@ -81,7 +76,7 @@ TEXT: dict[str, tuple[str, str]] = {
     "title": ("设计报告", "Design report"),
     "timing.title": ("流程耗时", "Workflow timing"),
     "timing.model": ("需求确认至首次模型确认", "Demand confirmation to first model approval"),
-    "timing.report": ("需求确认至报告认可", "Demand confirmation to report acceptance"),
+    "timing.report": ("需求确认至首次报告生成", "Demand confirmation to first report"),
     "timing.pending": ("未发生或缺少时间戳", "Not reached or timestamp missing"),
     "byline": ("saos 设计报告 · 任务 {job} · 生成于 {time}", "saos design report · job {job} · generated {time}"),
     "deliver": ("<b>交付镜头</b>：{lens}（第 {n} 轮，目标差距 G = {g}）", "<b>Delivered lens</b>: {lens} (round {n}, shortfall G = {g})"),
@@ -91,8 +86,7 @@ TEXT: dict[str, tuple[str, str]] = {
     "no_valid": ("<b>没有有效的设计</b>：所有轮次的目标差距都是 ∞，至少有一项测量的前提不成立（例如没有实焦点、零件交叠、光线到不了像面）。下面列出最后一轮 {lens}（第 {n} 轮）供诊断，它不是可用的设计。",
                  "<b>No valid design</b>: every round has an infinite shortfall; at least one measurement's precondition fails (no real focus, overlapping parts, rays missing the image). The last round {lens} (round {n}) is listed for diagnosis only; it is not a usable design."),
     "judgement": ("<b>终止判断</b>：{text}", "<b>Stop decision</b>: {text}"),
-    "backend.optiland": ("<b>计算后端</b>：本报告的数值由 Optiland {version} 计算，尚未经 OpticStudio 验证。用户认可这一结果后，再在 OpticStudio 中验证并继续优化，最终交付以 OpticStudio 的数值为准。",
-                         "<b>Backend</b>: the numbers in this report were computed by Optiland {version} and have not been verified in OpticStudio. Once the user accepts this result, it is verified and optimised further in OpticStudio, and the final delivery takes the OpticStudio numbers."),
+    "backend.fake": ("<b>测试数据</b>：假后端结果，不是光学实测。", "<b>Test data</b>: fake backend output, not optical measurements."),
     "backend.zos": ("<b>计算后端</b>：OpticStudio {version}", "<b>Backend</b>: OpticStudio {version}"),
     "h.demand": ("需求", "Demand"),
     "h.summary": ("需求访谈总结", "Interview summary"),
@@ -109,7 +103,6 @@ TEXT: dict[str, tuple[str, str]] = {
     "h.materials": ("交付镜头的材料（第 {n} 轮）", "Materials of the delivered lens (round {n})"),
     "th.materials": ("面|材料|来源|各波长折射率", "Surface|Material|Source|Index per wavelength"),
     "mat.model": ("模型玻璃 nd {nd}，Vd {vd}（不是真实材料）", "model glass nd {nd}, Vd {vd} (not a real material)"),
-    "mat.model_optiland": ("；模型玻璃为 Optiland 近似（Abbe 材料），色散与 OpticStudio 的模型玻璃不同", "; the model glass is an Optiland approximation (Abbe material) whose dispersion differs from OpticStudio's"),
     "mat.catalog": ("目录 {cats}", "catalog {cats}"),
     "mat.status": ("，{status}", ", {status}"),
     "mat.obsolete": ("，Obsolete（停产，通常买不到）", ", Obsolete (discontinued, usually unavailable)"),
@@ -312,9 +305,7 @@ def judgement(decision: dict[str, Any], stop: dict[str, Any], t: Tr) -> str:
 
 def build(job: jobs.Job) -> dict[str, Any]:
     d = demand.load_job(job.root)
-    stages.require_ready(job.root)
-    entry = stages.read(job.root)
-    d = {**d, "stop": stages.stop(job.root, d["stop"])} if entry else d
+    jobs.require_zos_history(job.root)
     # 报告只引用完好的证据：封存过的文件被改动或删除时拒绝生成
     # a report cites intact evidence only: refuse when a sealed file was changed or deleted
     problems = job.verify_seals()
@@ -327,9 +318,6 @@ def build(job: jobs.Job) -> dict[str, Any]:
     if not rounds:
         raise SaosError(ErrorCode.BAD_ARGS, f"job {job.id} has no recorded rounds; run saos round first")
     current = (demand.compute_digest(stored), demand.method_digest(demand.prepare_scripts(job.root, d)))
-    rounds = stages.rounds(job.root, rounds)
-    if not rounds:
-        raise SaosError(ErrorCode.BAD_ARGS, "no completed round exists in the current stage")
     if ledger.version(rounds[-1]) != current:
         raise SaosError(ErrorCode.SPEC_CHANGED, "no round matches the current demand and check scripts; record a new round before reporting")
     decision = ledger.decide(rounds, d["stop"], ledger.stop_for(job.root, current[0], stored), ledger.ruled_out_for(job.root, current[0], stored))
@@ -355,8 +343,8 @@ def build(job: jobs.Job) -> dict[str, Any]:
     # which backend measured the shown round; records from before Optiland have no backend and come from OpticStudio
     env = evaluation.get("environment") or {}
     backend = {"name": env.get("backend") or "zos", "version": env.get("backend_version") or env.get("opticstudio")}
-    if entry and backend["name"] != "zos":
-        raise SaosError(ErrorCode.BAD_ARGS, "an OpticStudio-stage report cannot deliver numbers from another backend")
+    if backend["name"] not in ("zos", "fake"):
+        raise SaosError(ErrorCode.BAD_ARGS, "a report requires OpticStudio measurements; rebuild legacy lenses in a new job and measure again")
     # 文字部分（总结、待确认问题）取当前文件；三类条目取这一轮实际判定时的版本，两者内容哈希相同
     # the wording (summary, open questions) comes from the current file; the sections from the judged version, which hashes the same
     shown = {**evaluation["demand"], "summary": d["summary"], "open_questions": d.get("open_questions") or [], "lang": d.get("lang"), "stop": d["stop"]}
@@ -364,23 +352,7 @@ def build(job: jobs.Job) -> dict[str, Any]:
 
     return {"milestones": milestones.elapsed(job), "demand": shown, "confirmed": demand.confirmation_for(job.root, demand.digest(stored), stored), "rounds": rounds, "decision": decision,
             "deliver": deliver, "items": evaluation["items"], "blocked": not ledger.deliverable(deliver),
-            "tolerance": latest_tolerance(job, deliver), "backend": backend, "stage_entry": entry,
-            "stage_comparison": json.loads((job.root / stages.RESULT).read_text(encoding="utf-8")) if entry else None}
-
-
-def stage_section(data: dict[str, Any], t: Tr) -> str:
-    entry, comparison = data.get("stage_entry"), data.get("stage_comparison")
-    if not entry or not comparison:
-        return ""
-    def table(rows):
-        body = "".join(f'<tr><td>{e(r["item"])}</td>' + "".join(f'<td class="num">{fmt(r.get(k))}</td>'
-                       for k in ("optiland", "zos", "delta", "relative")) + '</tr>' for r in rows)
-        return f'<div class="wrap"><table><thead><tr>{header_row(t("stage.columns"))}</tr></thead><tbody>{body}</tbody></table></div>'
-    text = t("stage.accepted", n=entry["source_round"], quote=e(entry["quote"]), status=e(t("status." + entry["optiland_conclusion"])), cap=entry["max_rounds"])
-    details = {k: comparison.get(k) for k in ("materials", "material_data", "untranslated", "baseline_errors")}
-    return (f'<h2>{t("stage.title")}</h2><p>{text}</p><p>{t("stage.note")}</p>' + table(comparison["items"])
-            + f'<h3>{t("stage.baseline")}</h3>' + table(comparison["baseline"])
-            + f'<details><summary>{t("stage.materials")}</summary><pre>{e(json.dumps(details, ensure_ascii=False, indent=2))}</pre></details>')
+            "tolerance": latest_tolerance(job, deliver), "backend": backend}
 
 
 def milestones_section(data: dict, t: Tr) -> str:
@@ -389,7 +361,7 @@ def milestones_section(data: dict, t: Tr) -> str:
         value = values.get(key)
         return f"{value:.3f} s" if value is not None else t("timing.pending")
     return (f"<h2>{t('timing.title')}</h2><p>{t('timing.model')}: {duration('to_first_model_approval_s')}<br>"
-            f"{t('timing.report')}: {duration('to_report_acceptance_s')}</p>")
+            f"{t('timing.report')}: {duration('to_first_report_s')}</p>")
 
 
 def latest_tolerance(job: jobs.Job, deliver: dict[str, Any]) -> dict[str, Any] | None:
@@ -551,8 +523,6 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
     for m in deliver.get("materials") or []:
         if m["kind"] == "model":
             name, source = "MODEL", t("mat.model", nd=fmt(m.get("nd")), vd=fmt(m.get("vd")))
-            if m.get("approximation"):
-                source += t("mat.model_optiland")
         else:
             name, source = m.get("name") or "", t("mat.catalog", cats=", ".join(m.get("catalogs") or []))
             if m.get("status"):
@@ -576,9 +546,9 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
 <p>{t('summary.' + status)}</p>
 <div class="card">{t(headline(status, deliver, data.get('blocked')), lens=lens_link, n=deliver['round'], g=fmt(deliver['shortfall']))}
 <br>{t('judgement', text=e(judgement(decision, h['stop'], t)))}{progress}
-<br>{t('backend.' + ('optiland' if data['backend']['name'] == 'optiland' else 'zos'), version=e(data['backend']['version'] or ''))}</div>
+<br>{t('backend.' + data['backend']['name'], version=e(data['backend']['version'] or ''))}</div>
 {blocked}
-{stage_section(data, t)}
+
 {milestones_section(data, t)}
 <h2>{t('h.materials', n=deliver['round'])}</h2>{materials}
 <h2>{t('h.demand')}</h2>{demand_html}
@@ -599,6 +569,11 @@ def write(job: jobs.Job, lang: str | None = None) -> dict[str, Any]:
     chosen = i18n.resolve(lang, data["demand"].get("lang"))
     folder = job.root / "report"
     folder.mkdir(exist_ok=True)
+    generated_at = jobs.now_iso()
+    milestone = data["milestones"]
+    start = milestone.get("demand_confirmed_at_epoch_s")
+    if milestone.get("to_first_report_s") is None and start is not None:
+        milestone["to_first_report_s"] = max(0.0, datetime.fromisoformat(generated_at).timestamp() - start)
     html = render(job, data, chosen)
     # 每次生成都留一份编号副本并封存；index.html 始终是最新一份
     # every generation is kept as a numbered, sealed copy; index.html is always the latest
@@ -636,8 +611,8 @@ def write(job: jobs.Job, lang: str | None = None) -> dict[str, Any]:
     }
     history = ledger.load(job.root / ledger.LEDGER_FILE, demand.load_job(job.root))
     metadata = {**result, "demand_sha": ledger.version(history[-1])[0], "method_sha": ledger.version(history[-1])[1],
-                "last_round": history[-1]["round"], "stage": "zos" if data["stage_entry"] else "exploration"}
+                "last_round": history[-1]["round"], "stage": "zos", "time": generated_at}
     write_json(archived.with_suffix(".json"), metadata)
     job.seal(archived.with_suffix(".json"))
-    write_json(job.root / stages.REPORT, metadata)
+    write_json(job.root / "report/latest.json", metadata)
     return result

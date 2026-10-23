@@ -87,7 +87,7 @@ def _aperture_fingerprint(aperture: dict[str, Any]) -> dict[str, Any]:
 
 
 def _break_fingerprint(surface: dict[str, Any]) -> dict[str, Any]:
-    # 参数列号跨后端一致；显示列名在 OpticStudio 中是标题，在 Optiland 中是 par<N>。
+    # 显示列名和 par<N> 都归一到 ZOS 参数列号。
     columns = {int(p["par"]): _num(p["value"]) for p in surface.get("params") or [] if p.get("par") is not None}
     return {str(n): columns.get(n, 0.0) for n in sorted(set(range(1, 7)) | set(columns))}
 
@@ -286,7 +286,7 @@ def materials(desc: dict[str, Any]) -> list[dict[str, Any]]:
             item.update({"name": src.get("name"), "catalogs": src.get("catalogs"), "status": src.get("status")} if src["kind"] == "catalog"
                         else {"nd": src.get("nd"), "vd": src.get("vd"), "dpgf": src.get("dpgf")})
             if src.get("approximation"):
-                # Optiland 阶段的模型玻璃是 Abbe 近似 / an Optiland-stage model glass is an Abbe approximation
+                # 历史材料记录保留原近似声明，不据此生成新的实测结论。
                 item["approximation"] = src["approximation"]
             out.append(item)
     for op in (desc.get("configurations") or {}).get("operands") or []:
@@ -364,7 +364,6 @@ def approve(job: jobs.Job, model: str, quote: str, rebuild_reason: str = "") -> 
 def approvals(job: jobs.Job, *, problems: list | None = None) -> list[dict[str, Any]]:
     root = job.root / "models"
     out = []
-    from saos import stages
 
     seals = job.root / jobs.SEALS_FILE
     recorded = set()
@@ -386,7 +385,7 @@ def approvals(job: jobs.Job, *, problems: list | None = None) -> list[dict[str, 
                       and relative not in recorded and model_relative not in recorded)
             if not legacy:
                 _verify_description(job, model_path, model)
-                if not stages.sealed(job.root, relative):
+                if not jobs.sealed(job.root, relative):
                     raise SaosError(ErrorCode.EVIDENCE_TAMPERED, "model approval is unsealed or changed", {"path": relative})
             if digest(model["fingerprint"]) != model["fingerprint_sha"] or record["fingerprint_sha"] != model["fingerprint_sha"]:
                 raise SaosError(ErrorCode.EVIDENCE_TAMPERED, "approval and description fingerprints differ", {"path": relative})
@@ -409,9 +408,8 @@ def approvals(job: jobs.Job, *, problems: list | None = None) -> list[dict[str, 
 
 
 def _verify_description(job: jobs.Job, path: Path, data: dict[str, Any]) -> None:
-    from saos import stages
 
-    if not stages.sealed(job.root, path.relative_to(job.root).as_posix()):
+    if not jobs.sealed(job.root, path.relative_to(job.root).as_posix()):
         raise SaosError(ErrorCode.EVIDENCE_TAMPERED, "model description is unsealed or changed; describe it again", {"path": path.relative_to(job.root).as_posix()})
     if "shown" in data or data.get("approval_schema") == 2:
         if not data.get("shown_sha") or digest(data.get("shown")) != data["shown_sha"]:

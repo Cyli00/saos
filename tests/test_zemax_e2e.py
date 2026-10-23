@@ -1,15 +1,4 @@
-"""第 2 步的验收流程，在本机真实 OpticStudio 2024 R1 上运行。
-
-默认跳过。运行方法：SAOS_RUN_ZEMAX=1 uv run pytest -m zemax -s
-
-迁移说明（A3）：旧版通过 CLI 执行 `daemon start` 并以 SAOS_BACKEND=zos 直接启动，并导入 Double Gauss 样例。
-该入口已按设计拒绝（OpticStudio 只能经 zos begin 启动），现在从经用户认可的 OpticStudio 会话开始：
-- 镜头输入改为该会话写出的 zos-entry.zmx（经 lens.import 复制到另一名字）；
-- 样例专属的断言（13 个面、样例的三条建模警告）改为对两片玻璃样品的断言，并在下方注明；
-- `daemon start/stop/status` 的 CLI 断言改为 shutdown 对未保存镜头的拒绝，以及夹具结束时的残留进程检查。
-
-连续执行命令 → 加载镜头副本 → 读取并修改参数 → 保存并重新加载核对 → 正常退出，同时检查错误返回和任务隔离。
-"""
+"""真实 ZOS standalone 命令回归。仅由用户显式运行。"""
 
 from __future__ import annotations
 
@@ -22,8 +11,8 @@ import pytest
 
 from saos import jobs
 from saos.protocol import ErrorCode
-from test_optiland_flow import call
-from zemax_support import NOTES, accepted_session
+from zemax_support import call
+from zemax_support import NOTES, design_session
 
 pytestmark = [
     pytest.mark.zemax,
@@ -46,7 +35,7 @@ def sha(path: Path) -> str:
 
 
 def test_accepted_lens_io_errors_isolation_scripts_and_analyses(saos_home, monkeypatch):
-    with accepted_session(saos_home, monkeypatch, "e2e-a") as (daemon, job_a, _):
+    with design_session(saos_home, monkeypatch, "e2e-a") as (daemon, job_a, _):
         entry = job_a.root / "lenses" / "zos-entry.zmx"
         assert entry.is_file()
         entry_hash = sha(entry)
@@ -99,9 +88,8 @@ def test_accepted_lens_io_errors_isolation_scripts_and_analyses(saos_home, monke
         # 保存并重新加载核对
         saved = ok(call(daemon, "lens.save", job=job_a.id, file="r001.zmx"))
         assert saved["verified"] is True and saved["surfaces_checked"] == len(surfaces)
-        # job_b 没有进入 OpticStudio 阶段，它的 .zmx（没有伴随快照）只能由 OpticStudio 打开，Optiland 不读它：这是按设计的拒绝
-        # job_b never entered the OpticStudio stage; its .zmx has no companion, so only OpticStudio can open it and Optiland refuses it
-        refused(call(daemon, "lens.load", job=job_b.id, file="b.zmx"), ErrorCode.BACKEND_UNSUPPORTED)
+        # 同一 ZOS 会话可切换到另一任务的原生镜头。
+        ok(call(daemon, "lens.load", job=job_b.id, file="b.zmx"))
         ok(call(daemon, "lens.load", job=job_a.id, file="r001.zmx"))
         reloaded = ok(call(daemon, "lens.surfaces", job=job_a.id))["surfaces"]
         assert reloaded[1]["radius"] == pytest.approx(new_r1, rel=1e-12)
@@ -142,4 +130,4 @@ def run(ctx):
         assert sha(entry) == entry_hash
 
         log_ops = [json.loads(line)["op"] for line in (job_a.root / "log.jsonl").read_text(encoding="utf-8").splitlines()]
-        assert "lens.save" in log_ops and "zos.begin" in log_ops
+        assert "lens.save" in log_ops and "lens.build" in log_ops

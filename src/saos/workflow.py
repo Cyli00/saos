@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from saos import demand, jobs, ledger, lens_files, model_gate, stages
+from saos import demand, jobs, ledger, lens_files, model_gate
 from saos.demand import TIERS
 from saos.protocol import ErrorCode, SaosError, jsonable, write_json
 
@@ -52,6 +52,7 @@ def preflight(root: Path) -> tuple[dict[str, Any], str, str]:
     Returns the demand, its compute-layer hash (the version rounds, plans and comparisons use) and a hash of the confirming
     words. Confirmation is checked on the confirmation layer (a changed source needs confirming again); the version is the
     compute layer (changing only the basis leaves the numerical evidence valid)."""
+    jobs.require_zos_history(root)
     d = demand.load_job(root)
     confirmed = demand.confirmation_for(root, demand.digest(d), d)
     if confirmed is None:
@@ -181,9 +182,8 @@ def _changes(a: Any, b: Any, path: str) -> list[str]:
 def _set_aside(ctx, target) -> None:
     """上一次失败的尝试留下、ledger 里没有的归档镜头挪到 rounds/orphaned/，不覆盖。
     An archive left by a failed attempt (not in the ledger) is moved to rounds/orphaned/ instead of being overwritten."""
-    from saos.lens_files import companion
-
-    if not target.exists() and not companion(target).exists():
+    lens_files.require_native(target)
+    if not target.exists():
         return
     folder = target.parent / "orphaned"
     folder.mkdir(exist_ok=True)
@@ -216,20 +216,11 @@ def export_viz(ctx, evidence_dir: str) -> dict[str, Any]:
             "errors": data.get("errors") or ({"viz": data["error"]} if not data["ok"] else {})}
 
 
-def record_round(ctx, tier: str | None = None, note: str = "", merit: float | None = None, viz: bool = True,
-                 *, verify_of: int | None = None) -> dict[str, Any]:
+def record_round(ctx, tier: str | None = None, note: str = "", merit: float | None = None, viz: bool = True) -> dict[str, Any]:
     if ctx.lens is None:
         raise SaosError(ErrorCode.NO_LENS_LOADED, f"job {ctx.job.id} has no lens loaded")
     h, sha, confirmation = preflight(ctx.job.root)
-    entry = stages.read(ctx.job.root)
-    stop_policy = stages.stop(ctx.job.root, h["stop"])
-    if entry:
-        if ctx.backend.system_info().get("backend", "zos") != "zos":
-            raise SaosError(ErrorCode.BAD_ARGS, "this job must remain in OpticStudio after zos begin")
-    if verify_of is None:
-        stages.require_ready(ctx.job.root)
-    elif not entry or verify_of != entry["source_round"]:
-        raise SaosError(ErrorCode.BAD_ARGS, "a verification round must refer to the sealed OpticStudio entry")
+    stop_policy = h["stop"]
     # 结构核对只读数据、不画布局图 / the structure check reads data only, no layout pictures
     desc, lens_sha = lens_state(ctx)
     approved = model_gate.require_approved(ctx.job, desc)
@@ -238,14 +229,10 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
     path = ctx.path(ledger.LEDGER_FILE)
     all_history = ledger.load(path, h)
     number = len(all_history)
-    history = stages.rounds(ctx.job.root, all_history)
+    history = all_history
     ruled = ledger.ruled_out_for(ctx.job.root, sha, h)
     best = None
-    if verify_of is not None:
-        if history:
-            raise SaosError(ErrorCode.DUPLICATE_ROUND, "the OpticStudio entry round has already been recorded")
-        tiers = ["verify"]
-    elif not history:
+    if not history:
         tiers = ["baseline"]
     else:
         # 一轮可以同时用几个层级，例如 "variables,materials" / a round may use several tiers, e.g. "variables,materials"
@@ -292,7 +279,6 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
         raise SaosError(ErrorCode.LENS_MODIFIED_BY_CHECK, "a check changed the lens while measuring; make the checks read-only (work on a copy or restore the lens), then record again",
                         {"changed": changed[:30], "evaluation": evaluation["evidence_dir"]})
     clash = parts_clash(ctx)
-    verification_evidence = stages.measurement_evidence(ctx.backend, entry) if verify_of is not None else None
     # 存一份本轮的归档镜头，然后回到原来的工作文件，避免之后的 lens save 改写归档
     # archive this round's lens, then switch back to the working file so a later lens save cannot rewrite the archive
     working = ctx.lens
@@ -311,9 +297,7 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
                             {"status": status, "evaluation": rebase["evaluation"]})
     record = {
         "round": number,
-        "stage": "zos" if entry else "exploration",
-        **({"verify_of": verify_of} if verify_of is not None else {}),
-        **({"verification_evidence": verification_evidence} if verification_evidence is not None else {}),
+        "stage": "zos",
         # tier 留第一个层级，兼容旧记录；tiers 是本轮用到的全部层级 / tier keeps the first for older readers; tiers lists them all
         "tier": tiers[0],
         "tiers": tiers,
@@ -349,8 +333,6 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
         "coatings": model_gate.coatings(desc),
         # 环境面和外购件（建模说明中声明）不受模型玻璃限制 / environment and bought-in surfaces (declared in the approved model) are exempt
         "model_glass": [i for i in model_gate.model_glass_surfaces(desc) if i not in approved["environment"]],
-        # 这一轮的模型玻璃由 Optiland 近似计算（Plan 2）/ this round's model glasses were approximated by Optiland
-        **({"model_glass_approximation": "optiland"} if any(m.get("approximation") for m in model_gate.materials(desc)) else {}),
         "environment": approved["environment"],
         "time": jobs.now_iso(),
     }

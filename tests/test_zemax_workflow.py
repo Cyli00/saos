@@ -1,11 +1,4 @@
-"""通用工作流在 OpticStudio 阶段的真实回归：认可之后，在 OpticStudio 里改镜头 → 局部优化 → 记轮次 → 报告只选 ZOS 轮次。
-
-迁移说明（A3）：旧版从 SAOS_BACKEND=zos 直接启动守护进程并导入 Cooke 样例。该入口已按设计拒绝（OpticStudio 只能经
-zos begin 进入）。现在从 Optiland 搭建的两片样品开始，经用户认可进入 OpticStudio；保留原来的 EFFL 不超 1 % 与光斑下降断言。
-旧版的第二段（无法再优化 → exhausted，含 Hammer 与全局搜索）未迁移，见计划第 13 节。
-
-默认跳过。运行：SAOS_RUN_ZEMAX=1 uv run pytest tests/test_zemax_workflow.py -s
-"""
+"""真实 ZOS 工作流回归：建模确认、局部优化、轮次与报告。仅由用户运行。"""
 
 from __future__ import annotations
 
@@ -14,7 +7,7 @@ import os
 import pytest
 
 from saos import ledger, report
-from zemax_support import accepted_session
+from zemax_support import design_session
 
 pytestmark = [
     pytest.mark.zemax,
@@ -28,8 +21,8 @@ def ok(reply):
 
 
 def test_accepted_design_is_improved_in_opticstudio_and_reported(tmp_path, monkeypatch):
-    with accepted_session(tmp_path / "home", monkeypatch, "workflow") as (daemon, job, entry):
-        assert entry["source_round"] == 0
+    with design_session(tmp_path / "home", monkeypatch, "workflow") as (daemon, job, entry):
+        assert entry["round"] == 0
         f0 = ok(daemon.handle({"op": "lens.operand", "args": {"job": job.id, "type": "EFFL", "int2": 2}}))["value"]
         spot0 = ok(daemon.handle({"op": "lens.analysis", "args": {"job": job.id, "type": "StandardSpot"}}))["spot"]["rms_radius"][0][0]
 
@@ -42,10 +35,10 @@ def test_accepted_design_is_improved_in_opticstudio_and_reported(tmp_path, monke
         ok(daemon.handle({"op": "opt.local", "args": {"job": job.id, "algorithm": "dls"}}))
         decision = ok(daemon.handle({"op": "round.record", "args": {"job": job.id, "tier": "local", "note": "radii + DLS in OpticStudio"}}))["decision"]
 
-        # OpticStudio 阶段的轮次都有 verify 基线：第一轮 verify_of 指向认可的轮次 / every ZOS-stage round follows the verify baseline
+        # 第零轮就是 ZOS 基线，不再追加跨后端复测轮。
         rows = ledger.load(job.root / ledger.LEDGER_FILE)
         zos_rows = [r for r in rows if r.get("stage") == "zos"]
-        assert zos_rows[0]["verify_of"] == entry["source_round"] and zos_rows[0]["tier"] == "verify"
+        assert zos_rows[0]["round"] == 0 and zos_rows[0]["tier"] == "baseline"
         assert zos_rows[-1]["round"] == rows[-1]["round"] and rows[-1]["stage"] == "zos"
 
         # EFFL 保持在 1 % 之内；光斑 RMS 从验证基线下降 / EFFL held within 1 %; spot RMS falls from the verified baseline

@@ -231,7 +231,7 @@ def _shown_fixture():
     selection = {"mode": "free", "chosen": {**rows_choice[0], "candidate": "a", "scan": "scans/001",
                  "link": "../../scans/001/index.html"}, "matches": ["a"], "rows": rows_choice}
     return {"selection": selection,
-            "requirements": {"backend": "optiland", "version": "0.5", "error": None, "rows": rows},
+            "requirements": {"backend": "zos", "version": "24.1.0", "error": None, "rows": rows},
             "validity": {"numeric": {"applicable": True, "warnings": {"count": 2, "first": "RuntimeWarning: x"}},
                          "unknown": [{"id": "err", "reason": "check_error", "detail": "boom"}], "materials": materials},
             "budget": BUDGET}
@@ -315,7 +315,7 @@ def test_requirement_status_has_met_unmet_and_unknown():
                           {"id": "cost", "description": "成本", "check": {"operand": {"type": "COST"}}, "origin": "agent", "minimize": True,
                            "scale": 1.0, "source": "agent assumption: 经验"}],
            "summary": "x"}
-    measured = {"backend": "optiland", "version": "0.5", "error": None,
+    measured = {"backend": "zos", "version": "24.1.0", "error": None,
                 "values": {"cap": 100.0, "radius": 20.0, "spot": 7.0, "cost": 3.0}, "errors": {"radius": "bad read"}, "invalid": []}
     rows = {r["id"]: r for r in model_report.requirement_rows(doc, measured)}
     assert rows["cap"]["status"] == "met" and rows["cap"]["bound"] == {"max": 150.0}

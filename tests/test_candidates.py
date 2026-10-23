@@ -11,7 +11,7 @@ import yaml
 
 from saos import candidates, demand, jobs, parallel
 from saos.backend.fake import FakeBackend
-from saos.backend.optiland_materials import MaterialError
+from saos.protocol import MaterialError
 from saos.cli import build_parser
 from saos.daemon import Daemon
 from saos.protocol import ErrorCode, SaosError
@@ -196,7 +196,7 @@ def test_material_and_computation_failures_are_not_evaluated(explore, monkeypatc
 
     def load(self, path):
         if path.name == "m.zmx":
-            raise MaterialError(ErrorCode.BACKEND_UNSUPPORTED, "glass F2 has no exact sourced dispersion definition", {"backend": "optiland"})
+            raise MaterialError(ErrorCode.BACKEND_UNSUPPORTED, "glass F2 has no exact sourced dispersion definition", {"backend": "zos"})
         return real_load(self, path)
 
     monkeypatch.setattr(FakeBackend, "load", load)
@@ -269,7 +269,7 @@ def test_a_material_error_inside_a_check_is_filed_as_material(explore, monkeypat
 
     def operand(self, name, int1, int2, data):
         if name.upper() == "MATERIAL":
-            raise MaterialError(ErrorCode.BACKEND_UNSUPPORTED, "glass F2 has no sourced dispersion", {"backend": "optiland"})
+            raise MaterialError(ErrorCode.BACKEND_UNSUPPORTED, "glass F2 has no sourced dispersion", {"backend": "zos"})
         return real_operand(self, name, int1, int2, data)
 
     monkeypatch.setattr(FakeBackend, "operand", operand)
@@ -402,7 +402,7 @@ def test_prepare_material_error_stays_material(explore):
     _, job = explore
     write_demand(job)
     (job.root / "prepare.py").write_text(
-        "from saos.backend.optiland_materials import MaterialError\n"
+        "from saos.protocol import MaterialError\n"
         "from saos.protocol import ErrorCode\n"
         "def run(w):\n    raise MaterialError(ErrorCode.BAD_ARGS, 'missing glass')\n", encoding="utf-8")
     rows = judge(job, [cand("a", "explore/a.zmx")], stages=[{"local": {"max_seconds": 1}}],

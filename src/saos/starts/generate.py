@@ -114,8 +114,8 @@ def generate(job: jobs.Job, bindings: dict, *, short_seconds: float, prepare: st
     folder = parent / f"{jobs.next_archive_number(parent):03d}"
     folder.mkdir()
     if backend_factory is None:
-        from saos.backend.optiland import OptilandBackend
-        backend_factory = OptilandBackend
+        from saos.backend import make_backend
+        backend_factory = lambda: make_backend("standalone")
     backend = backend_factory()
     candidates, failures = [], []
     try:
@@ -148,7 +148,7 @@ def generate(job: jobs.Job, bindings: dict, *, short_seconds: float, prepare: st
                 backend.build(scaled)
                 from saos.starts.prediction import predict
                 phase = "prediction"
-                prediction = predict(backend)
+                prediction = predict(backend, should_cancel=job.cancel_requested)
                 phase = "artifacts"
                 path = folder / f"{entry['id']}.json"
                 write_json(path, scaled)
@@ -158,8 +158,8 @@ def generate(job: jobs.Job, bindings: dict, *, short_seconds: float, prepare: st
                                                   "prescription_sha": jobs.sha256_file(entry_path(root, entry["id"]) / "prescription.json")},
                                    "constraints": {"tightest": entry["tightest"], "pressure": entry["pressure"], "extrapolation": entry["extrapolation"]}, "prediction": prediction})
             except Exception as exc:
-                from saos.backend.optiland_materials import MaterialError
-                if phase == "artifacts":
+                from saos.protocol import MaterialError
+                if phase == "artifacts" or (isinstance(exc, SaosError) and exc.code in (ErrorCode.CANCELLED, ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.ZOS_LICENSE, ErrorCode.UI_BLOCKED)):
                     raise
                 verdict = ("library" if phase.startswith("library_") else "material" if isinstance(exc, MaterialError)
                            else "configuration" if isinstance(exc, SaosError) and exc.code in (ErrorCode.BAD_ARGS, ErrorCode.BACKEND_UNSUPPORTED)

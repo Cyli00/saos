@@ -200,8 +200,7 @@ class Job:
             )
         if path.suffix.lower() != LENS_SUFFIX:
             raise SaosError(ErrorCode.BAD_ARGS, f"lens files must be {LENS_SUFFIX}: {name!r}")
-        # 原生快照可以单独存在（Optiland 写不出 .zmx 时），所以快照也算镜头存在
-        if must_exist and not (path.is_file() or path.with_suffix(".optiland.json").is_file()):
+        if must_exist and not path.is_file():
             raise SaosError(ErrorCode.FILE_NOT_FOUND, f"job {self.id} has no lens file {name!r}")
         return path
 
@@ -306,3 +305,28 @@ def list_jobs() -> list[dict[str, Any]]:
             state = json.loads(state_file.read_text(encoding="utf-8"))
             result.append({k: state.get(k) for k in ("id", "status", "created_at", "current_lens")})
     return result
+
+
+def sealed(root: Path, relative: str) -> bool:
+    path, recorded = root / SEALS_FILE, None
+    if not path.is_file() or not (root / relative).is_file():
+        return False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            row = json.loads(line)
+            if row.get("path") == relative:
+                recorded = row.get("sha256")
+    return recorded is not None and recorded == sha256_file(root / relative)
+
+
+def require_zos_history(root: Path) -> None:
+    """旧双后端任务只留作历史，不把旧结论接入新比较窗口。"""
+    legacy = (root / "stages" / "zos.json").is_file()
+    path = root / "ledger.jsonl"
+    if path.is_file() and not legacy:
+        with path.open(encoding="utf-8") as stream:
+            legacy = any(json.loads(line).get("stage") == "exploration" for line in stream if line.strip())
+    if legacy:
+        raise SaosError(ErrorCode.BAD_ARGS,
+                        "this is a legacy hybrid job; keep its evidence unchanged, create a new job, "
+                        "import an OpticStudio .zmx or rebuild from the original prescription, then confirm and measure again")

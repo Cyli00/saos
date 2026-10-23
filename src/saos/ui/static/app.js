@@ -9,8 +9,7 @@ const POLL_MS = 1500;
 const TEXT = {
   zh: {
     interview: "访谈与可行性判断", demand_confirm: "确认需求单", modeling: "起型、探索与建模", model_approve: "确认建模说明", design: "自主设计", deliver: "交付报告",
-    zos: "OpticStudio 复测与优化", final_report: "OpticStudio 最终报告",
-    zos_accept: "用户认可报告后进入 · saos zos begin", zos_pending: "阶段记录未完成，可续跑", zos_complete: "复测与对比已封存，继续自主设计", back_zos: "继续优化", back_reject: "调整设计",
+    back_reject: "调整设计", legacy_job: "历史任务：请新建任务并重测",
     no_demand: "访谈中，尚无需求单", invalid_demand: "需求单未通过校验", first: "等待用户确认", reconfirm: "需求已改动，待重新确认",
     waiting: "等你确认", blocked: "待回答", active: "进行中", running: "运行中",
     rounds_n: (n) => `第 ${n} 轮`, no_rounds: "尚未记录轮次",
@@ -31,9 +30,6 @@ const TEXT = {
     viz_failed: "这一轮的可视化导出失败：", spot_foot: (ref) => `点：批量光线追迹，相对主波长主光线，未计被拦光线。RMS / GEO：OpticStudio Standard Spot（参考 ${ref}，全部波长），单位 µm。Standard Spot 每个波长追的光线数与波长权重成正比，权重小于 1 的波长常漏掉边缘光线，所以 GEO 可能小于图中最远的点。`,
     mtf_foot: "曲线：OpticStudio FFT MTF 导出。", mtf_partial: "全部视场一起算不出，改为逐个视场算：", tangential: "子午 T", sagittal: "弧矢 S", diff: "衍射极限",
     layout_foot: "几何与光线坐标：ZOS-API（GetGlobalMatrix、GetSag、批量光线追迹）。",
-    layout_foot_opt: "几何与光线坐标：Optiland 0.6.3（面坐标系、矢高、批量光线追迹，float64）。",
-    spot_foot_opt: (ref) => `点：Optiland 批量光线追迹，相对主波长主光线，未计被拦光线。RMS / GEO：saos 的 Optiland 点列分析（参考 ${ref}，六角采样，每个波长光线数相同），单位 µm。`,
-    mtf_foot_opt: "曲线：Optiland FFT MTF，主波长（多波长 MTF 尚未接入）。",
     model_evidence: "模型确认记录提示：",
     redescribe: "结构已变：重新描述并确认",
     modeling_sub: "起点预判 · 初筛 · 自动微分优先", approval_sub: "方向 · 取舍 · 未知项", design_sub: "自动微分优先 · 到期复核 · round",
@@ -56,13 +52,12 @@ const TEXT = {
     tab_fan: "光线扇图", tab_field: "场曲 / 畸变", tab_starts: "起点",
     gap: (name, b) => `这一轮的 ${b || "后端"} 导出里没有${name}。缺口如实显示，界面不另行计算。`,
     fan_t: "子午 ey(py)", fan_s: "弧矢 ex(px)", pupil: "归一化光瞳",
-    fan_foot_opt: "Optiland 批量光线追迹：子午扇 (0, py) 的 Δy、弧矢扇 (px, 0) 的 Δx，相对主波长主光线，被拦光线不画；各视场共用纵轴范围。",
-    curv: "场曲（离像面距离）", dist: "畸变 %", field_axis: "视场", field_foot_opt: "Optiland FieldCurvature（近轴邻近光线求子午、弧矢焦点）与 Distortion（f·tanθ 参考，近轴）原样导出；实线子午，虚线弧矢。",
+    curv: "场曲（离像面距离）", dist: "畸变 %", field_axis: "视场",
     starts_none: "还没有 starts.generate 的记录。生成起点后，这里列出来源、缩放、超范围项、一阶与三阶预判和初筛结果。",
     st_form: "形式", st_source: "来源", st_scale: "缩放", st_tight: "最吃紧", st_extra: "超出来源示例", st_efl: "EFL", st_bfl: "BFL", st_fno: "f/#",
-    st_petz: "Petzval R/f", st_seidel: "Seidel 合计 SI–SV", st_aoi: "最大入射角", st_excluded: "未入选的形式", st_noteval: "未评估（材料/计算）",
+    st_petz: "Petzval R/f", st_seidel: "三阶像差合计（waves）", st_aoi: "最大入射角", st_excluded: "未入选的形式", st_noteval: "未评估（材料/计算）",
     st_screen: "零优化初筛", st_short: (s) => `同预算短优化 · ${s} s`, st_running: "运行中", st_verdict: { valid: "有效", invalid: "预算内无效", material: "未评估：材料", computation: "未评估：计算" },
-    st_g: "G 起点 → 终点", st_warn: "数值警告", st_page: "比较页", st_foot: "只读 explore/starts 与 scans 中已有文件；预判由 Optiland 的一阶、三阶和色差分析给出，不是优化结论。",
+    st_g: "G 起点 → 终点", st_warn: "数值警告", st_page: "比较页", st_foot: "只读 explore/starts 与 scans 中已有文件；预判由 OpticStudio 的操作数和原生分析给出，不是优化结论。",
     hover_row: "指向表格一行，布局中高亮对应的面",
     tab_metrics: "指标", metrics_none: "还没有记录轮次；记下轮次后，这里按轮显示所选需求条目的测量值。",
     metric_missing: "需求单里已没有这一条", metric_bound: "界限", metric_no_value: "无有效值",
@@ -70,8 +65,7 @@ const TEXT = {
   },
   en: {
     interview: "Interview & feasibility", demand_confirm: "Confirm demand", modeling: "Start designs & model", model_approve: "Approve model", design: "Autonomous design", deliver: "Delivery report",
-    zos: "OpticStudio measure & optimise", final_report: "Final OpticStudio report",
-    zos_accept: "Accept report · saos zos begin", zos_pending: "Stage records incomplete; resume", zos_complete: "Measurement and comparison sealed", back_zos: "optimise further", back_reject: "revise design",
+    back_reject: "revise design", legacy_job: "Legacy job: create a new job and remeasure",
     no_demand: "interviewing, no demand yet", invalid_demand: "demand fails validation", first: "waiting for the user", reconfirm: "demand changed, confirm again",
     waiting: "your turn", blocked: "question", active: "in progress", running: "running",
     rounds_n: (n) => `round ${n}`, no_rounds: "no rounds yet",
@@ -92,9 +86,6 @@ const TEXT = {
     viz_failed: "The visual export of this round failed: ", spot_foot: (ref) => `Points: batch ray trace relative to the primary chief ray, vignetted rays left out. RMS / GEO: OpticStudio Standard Spot (reference ${ref}, all wavelengths), in µm. Standard Spot traces rays per wavelength in proportion to its weight, so wavelengths weighted below 1 often lose their rim rays and GEO can be smaller than the farthest point drawn.`,
     mtf_foot: "Curves: OpticStudio FFT MTF export.", mtf_partial: "Not computable for all fields at once, so computed field by field: ", tangential: "Tangential", sagittal: "Sagittal", diff: "Diff. limit",
     layout_foot: "Geometry and rays: ZOS-API (GetGlobalMatrix, GetSag, batch ray trace).",
-    layout_foot_opt: "Geometry and rays: Optiland 0.6.3 (surface frames, sag, batch ray trace, float64).",
-    spot_foot_opt: (ref) => `Points: Optiland batch ray trace relative to the primary chief ray, vignetted rays left out. RMS / GEO: saos's Optiland spot analysis (reference ${ref}, hexapolar sampling, the same rays for every wavelength), in µm.`,
-    mtf_foot_opt: "Curves: Optiland FFT MTF at the primary wavelength (polychromatic MTF not connected yet).",
     model_evidence: "Model approval evidence: ",
     redescribe: "Structure changed: describe and approve",
     modeling_sub: "Predict · screen · prefer autograd", approval_sub: "Direction · tradeoffs", design_sub: "Prefer autograd · review on expiry · round",
@@ -117,13 +108,12 @@ const TEXT = {
     tab_fan: "Ray Fan", tab_field: "Field Curv. / Distortion", tab_starts: "Starts",
     gap: (name, b) => `This round's ${b || "backend"} export has no ${name}. The gap is shown as is; the window computes nothing itself.`,
     fan_t: "Tangential ey(py)", fan_s: "Sagittal ex(px)", pupil: "Normalised pupil",
-    fan_foot_opt: "Optiland batch ray trace: Δy over the tangential fan (0, py) and Δx over the sagittal fan (px, 0), relative to the primary chief ray; vignetted rays are not drawn. All fields share one vertical range.",
-    curv: "Field curvature (distance from image)", dist: "Distortion %", field_axis: "Field", field_foot_opt: "Optiland FieldCurvature (tangential and sagittal foci from parabasal rays) and Distortion (f·tanθ reference, paraxial), exported as is; solid tangential, dashed sagittal.",
+    curv: "Field curvature (distance from image)", dist: "Distortion %", field_axis: "Field",
     starts_none: "No starts.generate record yet. After starts are generated, this lists sources, scaling, exceeded ranges, first- and third-order predictions and the screening.",
     st_form: "Form", st_source: "Source", st_scale: "Scale", st_tight: "Tightest", st_extra: "Outside the source example", st_efl: "EFL", st_bfl: "BFL", st_fno: "f/#",
-    st_petz: "Petzval R/f", st_seidel: "Seidel totals SI–SV", st_aoi: "Max incidence", st_excluded: "Forms not selected", st_noteval: "Not evaluated (material/computation)",
+    st_petz: "Petzval R/f", st_seidel: "Third-order totals (waves)", st_aoi: "Max incidence", st_excluded: "Forms not selected", st_noteval: "Not evaluated (material/computation)",
     st_screen: "Zero-optimisation screening", st_short: (s) => `Equal short budget · ${s} s`, st_running: "running", st_verdict: { valid: "valid", invalid: "invalid within budget", material: "not evaluated: material", computation: "not evaluated: computation" },
-    st_g: "G start → end", st_warn: "Numeric warnings", st_page: "Comparison page", st_foot: "Reads existing files in explore/starts and scans only; predictions come from Optiland's first-order, third-order and chromatic analyses, not from optimisation.",
+    st_g: "G start → end", st_warn: "Numeric warnings", st_page: "Comparison page", st_foot: "Reads existing files in explore/starts and scans only; predictions come from OpticStudio operands and native analyses, not from optimisation.",
     hover_row: "Point at a row to highlight its surface in the layout",
     tab_metrics: "Metrics", metrics_none: "No rounds yet; once rounds are recorded, this shows the chosen demand items' measured values per round.",
     metric_missing: "no longer in the demand", metric_bound: "Bound", metric_no_value: "no valid value",
@@ -203,14 +193,12 @@ const NODES = [
   { id: "model_approve", y: 280, h: 46, gate: true },
   { id: "design", y: 362, h: 64 },
   { id: "deliver", y: 462, h: 56 },
-  { id: "zos", y: 554, h: 64 },
-  { id: "final_report", y: 654, h: 56 },
 ];
 const NX = 20, NW = 226;
 
-// 当前数据来自 Optiland 时换用对应的图注 / footers for data computed by Optiland
+// 图注与当前语言保持一致。
 function foot(key, ...args) {
-  return t(viz && viz.system && viz.system.backend === "optiland" ? key + "_opt" : key, ...args);
+  return t(key, ...args);
 }
 
 function nodeSub(step) {
@@ -231,12 +219,12 @@ function nodeSub(step) {
   if (step.id === "model_approve") return typeof d === "string" ? d : t("approval_sub");
   if (step.id === "design") {
     if (!d) return t("design_sub");
+    if (d.legacy) return t("legacy_job");
     const last = d.last;
     if (!last) return t("no_rounds");
     return `${t("select_round", last.round)} · G ${fmtG(last.shortfall)} · ${last.tiers.join("+")}`;
   }
-  if (step.id === "zos") return d ? t(d.state) : "saos zos begin";
-  if (["deliver", "final_report"].includes(step.id)) return d ? `${t("st_" + d)} · ${step.status === "done" ? t("report_ready") : t("report_todo")}` : t("deliver_cmd");
+  if (step.id === "deliver") return d ? `${t("st_" + d)} · ${step.status === "done" ? t("report_ready") : t("report_todo")}` : t("deliver_cmd");
   return "";
 }
 
@@ -303,7 +291,6 @@ function renderFlow() {
   back("design", "demand_confirm", t("back_demand"), 40);
   back("modeling", "demand_confirm", t("back_reach"), 26, -12);
   back("model_approve", "modeling", t("back_model"), 12);
-  back("zos", "design", t("back_zos"), 54);
   back("deliver", "design", t("back_reject"), 68, -12);
   // 节点
   nodes.forEach((n, i) => {

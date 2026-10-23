@@ -1,4 +1,4 @@
-"""基准量：一阶量、像面前间隔、各视场主光线落点、通光率与 RMS 光斑半径。只由 OpticStudio 阶段的复测与对比使用。"""
+"""基准量：一阶量、像面前间隔、各视场主光线落点、通光率与 RMS 光斑半径。由 ZOS 实测产生，供诊断与预判复用。"""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def normalized_fields(info: dict[str, Any]) -> list[tuple[float, float]]:
 
 
 def baseline(backend) -> dict[str, Any]:
-    """两端用同一套调用取基准量：一阶量、像面前间隔、各视场主波长的主光线落点、通光率与 RMS 光斑半径（主光线参考）。"""
+    """用后端接口取基准量：一阶量、像面前间隔、各视场主波长的主光线落点、通光率与 RMS 光斑半径（主光线参考）。"""
     info = backend.system_info()
     primary = backend.primary_wave()
     image = len(backend.surfaces()) - 1

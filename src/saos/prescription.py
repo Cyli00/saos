@@ -1080,7 +1080,7 @@ Surfaces and image
   material: catalog name, MIRROR, or {"model": {"nd": 1.5, "vd": 60, "dpgf": 0}}.
   EvenAspheric: par2 is the fourth-order term; par3 and "6th Order Term"
   both mean the sixth-order term. OddAsphere par1..par8 mean orders 1..8.
-  Unknown headers remain available for ZOS column lookup; Optiland rejects
+  Unknown headers remain available for ZOS column lookup; the backend rejects
   unsupported headers explicitly. New inputs reject duplicate aliases.
   Hash-verified snapshots merge equal aliases in memory only; conflicting
   values require a new, unambiguous prescription copy.

@@ -11,9 +11,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from saos import demand, jobs, milestones, model_gate, stages, starts
+from saos import demand, jobs, milestones, model_gate, starts
 from saos.backend.fake import FakeBackend
-from saos.backend.optiland_materials import MaterialError
+from saos.protocol import MaterialError
 from saos.daemon import Daemon
 from saos.protocol import ErrorCode, SaosError
 from saos.ui import stage
@@ -238,7 +238,7 @@ def test_r3_milestones_ignore_unparseable_times(saos_home):
     _write_model(job, 3, desc(), time="2026-10-21T00:02:00.500000+00:00", sequence=3)
     result = milestones.elapsed(job)
     assert result["to_first_model_approval_s"] == 60.0
-    assert result["to_report_acceptance_s"] is None
+    assert result["to_first_report_s"] is None
 
 
 def _library(root: Path, entry_id="x", *, prescription_data=None, **entry_overrides):
@@ -369,7 +369,7 @@ def test_r9_zero_candidates_are_archived_and_numbered(saos_home, tmp_path):
     for out in (first, second):
         folder = job.root / out["folder"]
         assert sorted(p.name for p in folder.iterdir()) == ["generated.json"]
-        assert stages.sealed(job.root, f"{out['folder']}/generated.json")
+        assert jobs.sealed(job.root, f"{out['folder']}/generated.json")
 
 
 def test_r11_prepare_is_a_required_keyword(saos_home):

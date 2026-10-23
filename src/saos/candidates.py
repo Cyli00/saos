@@ -81,15 +81,12 @@ def validate(root: Path, plan: dict[str, Any], items: dict[str, dict[str, Any]],
             rel = str(c["lens"])
             path = jobs.inside(root, rel)
             if path.suffix.lower() != jobs.LENS_SUFFIX or not lens_files.exists(path):
-                raise _bad(f"{c['id']}: lens must be a .zmx or Optiland snapshot in the job, as a job-relative path (got {rel!r})")
-            # 比较的是结构：有快照时用快照的处方，否则用文件字节；名称、注释这些文件内容不影响比较
-            # compare structures: the snapshot's prescription when there is one, else the file bytes; names and comments do not count
-            payload = lens_files.read_companion(path)
-            content = (json.dumps(payload["prescription"], sort_keys=True, ensure_ascii=False, default=str) if payload is not None
-                       else path.read_bytes().hex())
+                raise _bad(f"{c['id']}: lens must be an OpticStudio .zmx in the job, as a job-relative path (got {rel!r})")
+            lens_files.require_native(path)
+            content = path.read_bytes().hex()
         else:
-            content = json.dumps(_read_prescription(jobs.inside(root, str(c["prescription"])), c["id"]), sort_keys=True, ensure_ascii=False,
-                                 default=str)
+            content = json.dumps(_read_prescription(jobs.inside(root, str(c["prescription"])), c["id"]), sort_keys=True,
+                                 ensure_ascii=False, default=str)
         # 相同输入的重复运行不增加比较信息。
         twin = next((other for other, text in contents.items() if text == content), None)
         if twin is not None:
@@ -109,12 +106,10 @@ def validate(root: Path, plan: dict[str, Any], items: dict[str, dict[str, Any]],
         if kind == "local" and str(spec.get("cycles", "auto")) not in CYCLES:
             raise _bad(f"local stage: cycles must be one of {CYCLES}")
         if kind == "local":
-            from saos.backend.optiland_opt import ALGORITHMS, TORCH_ALGORITHMS, ZOS_ALGORITHMS
-
-            if spec.get("algorithm") is not None and spec["algorithm"] not in ("auto", *ALGORITHMS, *TORCH_ALGORITHMS, *ZOS_ALGORITHMS):
-                raise _bad("local stage: unknown algorithm")
-            if spec.get("device") is not None and spec["device"] not in ("auto", "cpu", "cuda"):
-                raise _bad("local stage: device must be auto, cpu or cuda")
+            if spec.get("algorithm") not in (None, "auto", "dls", "od"):
+                raise _bad("local stage: algorithm must be auto, dls or od")
+            if "device" in spec:
+                raise _bad("local stage: device is not supported by OpticStudio")
     prepare = plan.get("prepare")
     if prepare is not None and not (isinstance(prepare, str) and jobs.inside(root, prepare).is_file()):
         raise _bad("prepare: a job-relative path of a script defining run(w)")
@@ -169,17 +164,16 @@ def snapshot(root: Path, plan: dict[str, Any], folder: Path) -> list[dict[str, A
 def unchanged_since_start(job: jobs.Job, folder: Path) -> bool:
     """计划和候选副本在开始前已封存，之后没有改过（structure.json 是 worker 写的，不在其内）。
     The plan and the candidate copies were sealed before the run and are unchanged since (structure.json is written by the workers)."""
-    from saos import stages
 
     plan_file = folder / "plan.json"
-    if not stages.sealed(job.root, plan_file.relative_to(job.root).as_posix()):
+    if not jobs.sealed(job.root, plan_file.relative_to(job.root).as_posix()):
         return False
     plan = json.loads(plan_file.read_text(encoding="utf-8"))
     paths = plan.get("input_files")
     files = ([jobs.inside(job.root, p) for p in paths] if paths is not None else
              [p for p in (folder / "candidates").rglob("*") if p.is_file() and p.name != STRUCTURE_FILE])
     files += list((folder / "candidates").glob(f"*/{STRUCTURE_FILE}"))
-    return all(stages.sealed(job.root, p.relative_to(job.root).as_posix()) for p in files)
+    return all(jobs.sealed(job.root, p.relative_to(job.root).as_posix()) for p in files)
 
 
 # ---------- worker 侧 / worker side ----------
@@ -283,9 +277,7 @@ def _obsolete(w) -> list[dict[str, Any]] | None:
 def _run_stage(w, kind: str, spec: dict[str, Any]) -> dict[str, Any]:
     cores = int(w.args.get("cores") or 1)
     if kind == "local":
-        options = {key: spec[key] for key in ("algorithm", "device") if spec.get(key) is not None}
-        if "device" in options and w.backend.identity().get("backend") != "optiland":
-            raise _bad("local stage: device applies only to the Optiland backend")
+        options = {"algorithm": spec["algorithm"]} if spec.get("algorithm") else {}
         res = w.backend.optimize(str(spec.get("cycles", "auto")), cores, max_seconds=float(spec["max_seconds"]),
                                  should_cancel=w.cancel_requested, **options)
     else:
@@ -322,9 +314,9 @@ def _evaluate(w, item: dict[str, Any], row: dict[str, Any], temp: Path) -> None:
         try:
             row["prepare"] = jsonable(_script_run(w, plan["prepare"])(w))
         except Exception as exc:
-            from saos.backend.optiland_materials import MaterialError
+            from saos.protocol import MaterialError
 
-            if isinstance(exc, MaterialError) or (isinstance(exc, SaosError) and exc.code in (ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.UI_BLOCKED)):
+            if isinstance(exc, MaterialError) or (isinstance(exc, SaosError) and exc.code in (ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.UI_BLOCKED, ErrorCode.CANCELLED)):
                 raise
             raise SaosError(ErrorCode.BAD_ARGS, f"prepare {plan['prepare']} 执行失败：{type(exc).__name__}: {exc}",
                             {"candidate_setup": True, "phase": "prepare", "cause_code": getattr(exc, "code", None)}) from exc
@@ -335,12 +327,14 @@ def _evaluate(w, item: dict[str, Any], row: dict[str, Any], temp: Path) -> None:
     if (plan.get("stages") or plan.get("require_merit")) and not merit_rows:
         raise SaosError(ErrorCode.BAD_ARGS, "候选没有评价函数；prepare 必须设置变量和评价函数", {"candidate_setup": True})
     row["setup"] = {"source": "prepare" if plan.get("prepare") else "candidate", "merit_rows": merit_rows}
-    if w.backend.identity().get("backend") == "optiland":
+    if w.backend.identity().get("backend") == "zos":
         from saos.starts.prediction import predict
 
         try:
-            row["prediction"] = predict(w.backend)
+            row["prediction"] = predict(w.backend, should_cancel=w.cancel_requested)
         except Exception as exc:
+            if isinstance(exc, SaosError) and exc.code in (ErrorCode.CANCELLED, ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.UI_BLOCKED):
+                raise
             row["prediction"] = {"errors": {"prediction": f"{type(exc).__name__}: {exc}"}}
     start = _state(w, plan)
     row["start"] = start
@@ -383,7 +377,7 @@ def _evaluate(w, item: dict[str, Any], row: dict[str, Any], temp: Path) -> None:
 
 def _failed(row: dict[str, Any], exc: Exception) -> None:
     """区分候选配置、材料与计算失败，配置错误交给扫描入口返回。"""
-    from saos.backend.optiland_materials import MaterialError
+    from saos.protocol import MaterialError
 
     row["error"] = f"{type(exc).__name__}: {exc}"[:300]
     row["valid"] = False
@@ -412,7 +406,7 @@ def candidate(w, item: dict[str, Any]) -> dict[str, Any]:
             try:
                 _evaluate(w, item, row, temp)
             except Exception as exc:  # noqa: BLE001 - 一个候选的失败记为结论，不让 worker 退出；连接和界面阻塞交给后台进程
-                if isinstance(exc, SaosError) and exc.code in (ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.UI_BLOCKED):
+                if isinstance(exc, SaosError) and exc.code in (ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.UI_BLOCKED, ErrorCode.CANCELLED):
                     raise
                 _failed(row, exc)
     finally:
