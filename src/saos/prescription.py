@@ -1219,7 +1219,7 @@ Non-sequential fields and constraints
     origin, weighting energy by the scatter distribution. size must enclose
     the whole target: for a +/-2 mm square detector (half diagonal 2.83 mm),
     size 3 or 5 agreed with no importance sampling within about 2 standard
-    errors with 200-400x more hits; size 2 read 17% low (experiments/nsc_probe).
+    errors with 200-400x more hits; size 2 read 17% low (historical probe).
   source (sources only): polarization ("random" or {"jx", "jy", "x_phase",
     "y_phase"}), initial_phase, coherence_length, reverse_rays, pre_propagation,
     sampling (random, sobol), bulk_scatter (many, once, never), array

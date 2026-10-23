@@ -1,4 +1,4 @@
-"""初始结构库：条目的存储、指标、基准规格推导、查询与优化基准分组。
+"""初始结构库：条目的存储、指标、基准规格推导与查询。
 
     <SAOS_LIBRARY>/
         entries/<id>/
@@ -12,7 +12,6 @@
             benchmark.yaml      基准规格（原结构在它下面 G = 0；受控扰动后的验收口径）
             bench_accept.json   基准规格下的验收结果（应为 G = 0）
         candidates.json         检索到的候选及处理结论
-        benchmarks.json         优化基准案例与调参组 / 验证组划分
 """
 
 from __future__ import annotations

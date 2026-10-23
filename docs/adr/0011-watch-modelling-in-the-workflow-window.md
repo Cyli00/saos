@@ -7,7 +7,7 @@ status: accepted
 用户决定（2026-10-17）：要求建模之前能看到结构，是因为过去出现过本不该交叠的镜组互相穿插、结构形态判断错误。只要流程图窗口能实时显示当前镜头的布局（2D/3D，非轴对称只有 3D）和 Lens Data（平时折叠），整个流程都可以在后台跑，不必用 Interactive Extension。agent 有时埋头干活忘了打开窗口，所以由工具保证窗口开着，用户关掉了也重开。
 
 - 后台进程在每条改动镜头的命令（lens load/set/build、opt local、exec、round）之后，把布局几何、布局光线、Lens Data 和交叠检查写进任务的 `view.json`；脚本可用 `ctx.show()` 中途推送。界面布局页默认跟着它。
-- 交叠检查（`saos.geometry`）只用 ZOS-API 的面变换和矢高做坐标比较：材料分界面在口径内相交，或一片镜片的表面落进另一片的玻璃里。结果在界面上列出并描红，也写进建模说明的自动检查。
+- 交叠检查（`saos.geometry`）只用计算后端给出的面变换和矢高做坐标比较（最初经 ZOS-API，2026-10-20 起 Optiland 也提供）：材料分界面在口径内相交，或一片镜片的表面落进另一片的玻璃里。结果在界面上列出并描红，也写进建模说明的自动检查。
 - lens、exec、opt、scan、check、round 这些带任务的命令执行前，这个任务的窗口 6 s 内没有轮询过就重新打开（20 s 内不重复；最小化的窗口按 90 s 算），焦点留在用户原来的窗口。
 - 建模阶段不再拒绝 standalone（取消 `EXTENSION_REQUIRED`），`lens describe` / `lens approve` 在任何模式下都能用；extension 模式保留为可选。
 

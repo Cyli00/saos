@@ -1,5 +1,5 @@
-"""ZOS-API 常用操作的通用函数，省去每个任务重写同一批封装（ADR-0008：数值都由 OpticStudio 计算，这里只做调用和统计）。
-Reusable ZOS-API helpers, so that jobs stop rewriting the same wrappers (ADR-0008: OpticStudio computes every number;
+"""ZOS-API 常用操作的通用函数，省去每个任务重写同一批封装（ADR-0012：数值都由计算后端算，这里只做调用和统计）。
+Reusable ZOS-API helpers, so that jobs stop rewriting the same wrappers (ADR-0012: the backend computes every number;
 this module only calls it and does bookkeeping and statistics on what it returns).
 
 exec 脚本的 ctx、ctx.map 的 worker 上下文和判定脚本的 ctx 都带同名方法（ctx.set(...)、ctx.spot(...)），也可以直接调用

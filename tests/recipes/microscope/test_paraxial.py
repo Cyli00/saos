@@ -29,7 +29,7 @@ def test_plano_convex_orientation():
 
 def test_paraxial_check_agrees_with_the_recorded_opticstudio_reproduction():
     """近轴预筛与 OpticStudio 的复现记录一致（2026-10-15 核对 25 个收录条目：EFL 相对差 ≤ 5.4e-4，工作距离 ≤ 0.0134 mm）。
-    差距来自复现时用的是匹配到的真实目录玻璃；比 library check 的 1% 判据小一个数量级，所以保留这段自写近轴计算（ADR-0008 的例外）。
+    差距来自复现时用的是匹配到的真实目录玻璃；比 library check 的 1% 判据小一个数量级，所以保留这段自写近轴计算（ADR-0012 的例外）。
     The paraxial pre-check agrees with the recorded OpticStudio reproductions of all admitted entries."""
     import json
 

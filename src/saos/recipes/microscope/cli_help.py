@@ -3,8 +3,9 @@
 GROUPS = {
     "microscope": """Microscope objective recipe: adaptation, reproduction, acceptance and library.
 adapt and library check/add/list/query are local; repro/accept/perturb/library
-verify run through scripts in the daemon. Recipe specifications and extraction
-schemas: skills/recipes/microscope/ and docs/recipes/microscope/library.md.
+verify run through scripts in the daemon. Recipe: .agents/skills/saos/references/
+recipes/microscope.md; specification: docs/recipes/microscope/optical-spec-and-
+acceptance.md; extraction schemas: docs/recipes/microscope/library.md.
 The core demand/model approval gates and rounds still govern delivery.
 """,
     "microscope library": """Manage the microscope starting-design library.
@@ -29,7 +30,8 @@ COMMANDS = {
     "microscope accept": (
         "Evaluate the saved objective against a recipe optical specification.",
         "--spec is a job-relative YAML spec such as sources/spec.yaml or\n"
-        "  spec/benchmark.yaml. Format: skills/recipes/microscope/. Creates eval/\n"
+        "  spec/benchmark.yaml. Format: docs/recipes/microscope/optical-spec-and-\n"
+        "  acceptance.md (section 2). Creates eval/\n"
         "  results and acceptance models; focus_trace records wavelength, thickness,\n"
         "  failed on-axis rays, c4 and fitting residual at each trial. An incomplete\n"
         "  evaluation returns verdict invalid, spec_shortfall inf and invalid reasons\n"

@@ -123,7 +123,7 @@
         <mxCell id="e10" value="同意（原话）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.75;entryX=0;entryY=0.75;jumpStyle=arc;" parent="1" source="u2" target="t2" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="a4" value="&lt;b&gt;有匹配的配方就读&lt;/b&gt;&lt;br&gt;skills/recipes/&amp;lt;system&amp;gt;/SKILL.md（经验，不是规则）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+        <mxCell id="a4" value="&lt;b&gt;有匹配的配方就读&lt;/b&gt;&lt;br&gt;references/recipes/&amp;lt;system&amp;gt;.md（经验，不是规则）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="805.0" width="320" height="60" as="geometry" />
         </mxCell>
         <mxCell id="e11" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=1;entryY=0.5;" parent="1" source="t2" target="a4" edge="1">

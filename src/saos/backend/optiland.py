@@ -862,7 +862,7 @@ class OptilandBackend(OpticalState, Backend):
         self.file = path
 
     def set_aiming(self, mode: str) -> None:
-        """改光线瞄准方式（paraxial/iterative/robust），供双端对齐在瞄准偏差时切换。"""
+        """改光线瞄准方式（paraxial/iterative/robust）。"""
         if mode not in ("paraxial", "iterative", "robust"):
             raise SaosError(ErrorCode.BAD_ARGS, f"unknown ray aiming {mode!r}")
         before = self._aiming

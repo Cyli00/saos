@@ -1,7 +1,7 @@
-"""结构交叠检查：面与面相交、镜片之间相互穿插。只用 ZOS-API 给出的面变换（GetGlobalMatrix）和面形（GetSag），
+"""结构交叠检查：面与面相交、镜片之间相互穿插。只用计算后端给出的面变换（global_matrix）和面形（矢高），
 这里只做坐标变换和比较，不涉及光学计算。
 Interference check: surfaces crossing each other and lenses interpenetrating. Uses only the surface transforms
-(GetGlobalMatrix) and shapes (GetSag) from ZOS-API; this module does coordinate transforms and comparisons, no optics.
+(global_matrix) and shapes (sags) from the backend; this module does coordinate transforms and comparisons, no optics.
 
 每个面在自身局部坐标里按极坐标网格取矢高：RINGS 圈（含边缘）× SPOKES 条辐线，加中心点。网格半径取面孔径的外接圆，
 只有落在孔径里的点参与比较；没有显式孔径（矩形、圆形、椭圆）的面按半口径的圆处理。

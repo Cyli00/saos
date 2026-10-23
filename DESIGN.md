@@ -3,8 +3,8 @@
 saos（simulate any optical system）给 agent 提供以 **Optiland** 为默认计算后端、**Zemax OpticStudio**（2024 R1 Premium + ZOS-API）为最终验证与深化标准的光学设计与仿真工具。支持序列、非序列与多重结构系统，从用户需求出发完成建模、仿真、优化并交付有实测依据的报告。
 
 相关文档按需查阅，不必在每次改代码前通读：
-- 任务执行工作流：`skills/saos/SKILL.md`
-- 需求单模板与权重/无效值约定：`skills/saos/demand.example.yaml`
+- 任务执行工作流：`.agents/skills/saos/SKILL.md`（入口，按阶段路由到 `references/`）
+- 需求单模板与权重/无效值约定：`.agents/skills/saos/demand.example.yaml`
 - 命令参数与输入输出格式：`uv run saos --help` 及各子命令 `--help`（英文 `--help` 是唯一详细说明，不另维护易漂移的中文命令速览）
 - 历史决策与分阶段计划：`docs/adr/`、[docs/plans/](./docs/plans/README.md)
 
@@ -86,7 +86,7 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 | **OpticStudio 验证** | OpticStudio Verification | 用户认可 Optiland 报告后，在 OpticStudio 中按快照处方重建、用同一判定复测比对并继续优化的阶段（*勿称：双端校验、终验*） |
 | **诊断量** | Diagnostic | 随报告输出、帮助解释结果但不决定是否达标的光学量，如 Strehl 比（*勿称：附加指标*） |
 | **隐式运行 / 显性调试** | Headless Run / Explicit Debugging | 默认无界面运行 vs 通过 Interactive Extension 连接用户桌面 OpticStudio 窗口调试（*勿称：后台模式 / 窗口模式*） |
-| **配方** | Recipe (`skills/recipes/<系统>/`) | 针对特定光学系统按需加载的子技能与配套工具库，从真实任务中提炼（*勿称：模板、插件*） |
+| **配方** | Recipe (`.agents/skills/saos/references/recipes/<系统>.md`) | 针对一类光学系统、由入口技能在建模阶段路由过去的参考文档与配套工具库，从真实任务中提炼（*勿称：模板、插件、子技能*） |
 
 ### 显微物镜配方专用术语
 
@@ -103,18 +103,17 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 
 | 位置 | 放什么 |
 |---|---|
-| 根目录 | 只有 `README.md`、`DESIGN.md`、`TODO.md`、`AGENTS.md`、`pyproject.toml`、`uv.lock`、`.gitignore`，以及 `.claude/skills/saos`（指向 `skills/saos` 的链接）；`ref`（联接到 zea 参考资料）和 `work/` 不入库 |
+| 根目录 | 只有 `README.md`、`DESIGN.md`、`TODO.md`、`AGENTS.md`、`pyproject.toml`、`uv.lock`、`.gitignore`，以及 `.agents/`（技能源文件）和 `.claude/skills/saos`（指向 `.agents/skills/saos` 的链接）；`ref`（联接到 zea 参考资料）和 `work/` 不入库 |
 | `src/saos/` | 核心工具代码。不依赖任何配方，仅 `cli.py` 注册配方命令 |
 | `src/saos/recipes/<配方>/` | 配方配套代码 |
-| `skills/saos/`、`skills/recipes/<配方>/` | 入口技能与按《配方编写规范》（`skills/recipes/README.md`）编写的配方子技能 |
+| `.agents/skills/saos/` | 光学设计工作流技能：`SKILL.md` 入口（定位阶段、各阶段关卡与出口）、`references/` 按阶段的细节、`references/recipes/<配方>.md` 按《配方编写规范》（`references/recipes/README.md`）编写的配方 |
 | `docs/` | 跨任务文档：`workflow.drawio`（工作流图）、`adr/NNNN-*.md`、`plans/*.md` |
-| `docs/recipes/<配方>/` | 配方的文档与历史对照记录 |
+| `docs/recipes/<配方>/` | 配方的中文长篇说明：规格与验收口径、入库流程、上收比对记录 |
 | `library/<库>/` | 跨任务共享参考数据（均含 `README.md` 说明来源与用法）：`materials/`、`glasscat/`、`thermal/`、`mechanics/`、`coatings/`、`starts/`、`microscope/` |
 | `tests/`、`tests/recipes/<配方>/` | 核心工具测试与配方测试 |
-| `experiments/<名称>/` | 不属于 saos 包的独立实验代码（均含 `README.md`） |
 
 镜头文件（`.zmx`、`.optiland.json`、`.ZDA`）只出现在 `library/`、测试夹具或 `work/` 中；日志和临时文件不入库（临时文件放系统临时目录）。具体设计任务的一切产物均放进该任务目录，不进仓库。
 
 ## 任务目录
 
-运行产物放在 `work/<实例>/`（不入版本控制），下设 `daemon/` 和 `jobs/`。任务目录 `work/<实例>/jobs/<任务>/` 中，Agent 自写内容只放在 `sources/`、`checks/`、`notes/`、`explore/<主题>/`（须含 `README.md`）和工作镜头中，其余文件由工具写入并记录封存哈希（`seals.jsonl`）；各步骤文件清单见 `skills/saos/SKILL.md` 的 "Where files go"。
+运行产物放在 `work/<实例>/`（不入版本控制），下设 `daemon/` 和 `jobs/`。任务目录 `work/<实例>/jobs/<任务>/` 中，Agent 自写内容只放在 `sources/`、`checks/`、`notes/`、`explore/<主题>/`（须含 `README.md`）和工作镜头中，其余文件由工具写入并记录封存哈希（`seals.jsonl`）；文件清单见 `.agents/skills/saos/references/files.md`。

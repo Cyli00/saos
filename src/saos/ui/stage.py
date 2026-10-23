@@ -1,7 +1,7 @@
 """从任务目录推出工作流走到了哪一步，只读文件，不连接后台进程。
 Work out where a job stands in the workflow from its files only; never talks to the daemon.
 
-步骤（DESIGN.md「工作方式」）/ steps:
+步骤（与 .agents/skills/saos/SKILL.md 的阶段对应）/ steps:
     interview → demand_confirm（停顿）→ modeling（起型、结构探索、建模）→ model_approve（停顿）→ design → deliver
 每一步的状态 / status per step: done, active, waiting（等用户）, blocked（有 blocking 问题）, pending。
 """

@@ -1,6 +1,6 @@
-"""搜索的控制逻辑：网格、一维求根、无导数寻优。每次评估仍由调用方经 ZOS-API 完成（ADR-0008），这里只决定下一个点。
+"""搜索的控制逻辑：网格、一维求根、无导数寻优。每次评估仍由调用方经计算后端完成（ADR-0012），这里只决定下一个点。
 Search control logic: grids, 1-D root finding, derivative-free minimisation. Every evaluation is still the caller's
-ZOS-API call (ADR-0008); this module only decides where to evaluate next.
+backend call (ADR-0012); this module only decides where to evaluate next.
 
 评估函数返回 None、inf 或 NaN 表示这个点无效（零件交叠、没有实焦点……）：求根时跳过，寻优时当作很差的点。
 An evaluation returning None, inf or NaN marks an invalid point (overlapping parts, no real focus, …): root finding

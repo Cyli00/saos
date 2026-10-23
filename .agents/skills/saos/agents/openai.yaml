@@ -1,0 +1,4 @@
+interface:
+  display_name: "saos optical design"
+  short_description: "Take an optical need to a measured, delivered lens"
+  default_prompt: "Use $saos to take this optical design need through the saos workflow, starting from where the job stands."

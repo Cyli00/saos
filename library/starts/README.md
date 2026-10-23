@@ -65,7 +65,7 @@ def run(ctx):
 - 三阶表当前限同轴标准球面/圆锥面。附加非球面项、偏心等明确写出缺口，仍可保留其他部分。预判不阻断初筛或模型确认。
 - OpticStudio SEID 符号与归一化实测对照：NOT RUN。不得据当前代码宣称两端一致。
 
-上收前后对照与预先登记的数值容差见 [上收记录](../../docs/recipes/microscope/starts-extraction.md)。
+上收前后对照与预先登记的数值容差记录见 Git 历史；当前版本的验收缺口见[整合计划](../../docs/plans/integration-workflow.md)。
 
 ## 静态审查修复后的输入与历史兼容
 

@@ -1,4 +1,4 @@
-"""G01–G03 的实施用例；容差见 docs/recipes/microscope/starts-extraction.md。"""
+"""G01–G03 的实施用例：起点缩放、像差预判与同预算初筛。"""
 from __future__ import annotations
 
 import copy

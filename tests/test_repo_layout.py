@@ -19,7 +19,8 @@ from saos import jobs as jobs_mod
 ROOT = Path(__file__).resolve().parents[1]
 
 ROOT_FILES = {"README.md", "DESIGN.md", "TODO.md", "AGENTS.md", "pyproject.toml", "uv.lock", ".gitignore"}
-ROOT_DIRS = {"src", "skills", "docs", "library", "tests", "experiments", ".claude"}
+ROOT_DIRS = {"src", "docs", "library", "tests", ".agents", ".claude"}
+RECIPES = ROOT / ".agents" / "skills" / "saos" / "references" / "recipes"
 JUNK = re.compile(r"\.(log|tmp|bak|orig|zda|pyc)$|(^|/)(~\$|\.~)|\.zmx$", re.I)
 
 INSTANCE_ENTRIES = {"daemon", "jobs"}
@@ -40,7 +41,7 @@ def repo_files() -> list[PurePosixPath]:
 
 
 def recipes() -> set[str]:
-    return {p.name for p in (ROOT / "skills" / "recipes").iterdir() if p.is_dir()}
+    return {p.stem for p in RECIPES.glob("*.md") if p.name != "README.md"}
 
 
 def test_root_holds_only_the_listed_entries():
@@ -69,8 +70,8 @@ def test_docs_are_cross_job_or_per_recipe():
     assert bad == [], f"docs/ holds workflow.drawio, adr/NNNN-*.md, plans/**/*.md and recipes/<recipe>/ only: {bad}"
 
 
-@pytest.mark.parametrize("top", ["library", "experiments"])
-def test_every_library_and_experiment_has_a_readme(top):
+@pytest.mark.parametrize("top", ["library"])
+def test_every_library_has_a_readme(top):
     files = [p for p in repo_files() if p.parts[0] == top]
     loose = [str(p) for p in files if len(p.parts) == 2 and p.name != "README.md"]
     assert loose == [], f"{top}/ has loose files; put them in a subdirectory: {loose}"
@@ -94,8 +95,10 @@ def test_recipe_parts_match_a_recipe_skill():
     bad = [str(p) for p in repo_files()
            if (p.parts[:3] == ("src", "saos", "recipes") and len(p.parts) > 4 and p.parts[3] not in known)
            or (p.parts[:2] == ("tests", "recipes") and len(p.parts) > 3 and p.parts[2] not in known)]
-    assert bad == [], f"recipe code and tests need skills/recipes/<recipe>/SKILL.md: {bad}"
-    assert all((ROOT / "skills" / "recipes" / r / "SKILL.md").is_file() for r in known)
+    assert bad == [], f"recipe code and tests need .agents/skills/saos/references/recipes/<recipe>.md: {bad}"
+    entry = (ROOT / ".agents" / "skills" / "saos" / "SKILL.md").read_text(encoding="utf-8")
+    unlisted = sorted(r for r in known if f"references/recipes/{r}.md" not in entry)
+    assert unlisted == [], f"the skill entry must route to every recipe: {unlisted}"
 
 
 def test_local_work_tree_follows_the_job_layout():

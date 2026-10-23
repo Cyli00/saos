@@ -1,5 +1,5 @@
-"""并发评估：几个 standalone OpticStudio 实例同时调用 ZOS-API（ADR-0008）。
-Concurrent evaluation: several standalone OpticStudio instances call ZOS-API at the same time (ADR-0008).
+"""并发评估：几个 standalone OpticStudio 实例同时调用 ZOS-API（OpticStudio 阶段，ADR-0012）。
+Concurrent evaluation: several standalone OpticStudio instances call ZOS-API at the same time (OpticStudio stage, ADR-0012).
 
 在 saos exec 脚本里 / in a saos exec script:
 
