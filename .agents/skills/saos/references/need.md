@@ -25,6 +25,10 @@ Write each estimate out so the user can follow it: the formula, its inputs with 
 
 Give each `must` a verdict, reachable, marginal or not reachable, with the deciding argument. For marginal or not reachable, offer alternatives that change the deciding bound, not a list of variables to try.
 
+Treat every `minimize` / `maximize` objective the same way: find which `must`s cap it and estimate how far it can go under them. An objective the user ranks first usually trades against several pass lines at once, and that trade is the design's central decision. Without a written estimate, the AR-glasses job's "focal length as long as possible" slid from 16 mm to 8 mm over three starting forms, and nobody decided it.
+
+Write the verdicts, the estimates and the backend checks behind them to `explore/feasibility/README.md`. The user sees them at the gate; when the user waived the walk-through, the file and a `ui notify` summary are the only record, and model notes and round decisions refer to it.
+
 ## Write the demand
 
 Copy [demand.example.yaml](../demand.example.yaml) to `sources/demand.yaml`. Its header states the accepted fields, bounds, weights and what needs reconfirmation.
@@ -33,6 +37,13 @@ Copy [demand.example.yaml](../demand.example.yaml) to `sources/demand.yaml`. Its
 - Every limit names its `source`: the user, a datasheet, a paper, a textbook table, or `agent assumption: <why>`.
 - An unknown real-world fact is an open question, never a variable. A question whose answer could change the demand gets `blocking: true`.
 - Keep it short: no verbatim conversation, no literature details, no restated workflow rules. `summary` says in a few sentences why the design exists and what is agreed and open.
+
+Read the user's requirements as written:
+
+- A sentence that says how to compute a quantity defines that item's check. It is not another pass line unless the text says so; when both readings are plausible, show both and let the user choose.
+- An agent `must` may state validity (a real image, parts that do not intersect, the image field covered) or a sourced manufacturing limit. One that removes a design means the user's own limits allow (forbidding vignetting when the user only set a relative illumination floor) is a weak-basis limit to show, whatever its source line says.
+- A reading stricter or looser than the field's common one (every wavelength instead of the primary, a different reference for distortion, which parts count toward a mass) is your assumption. Say so in the item's description and walk it like a weak-basis limit.
+- Two or more directional objectives need an exchange rate, which their `scale` and `weight` set. That rate is the user's decision: unless they stated it, keep it in `open_questions` and tell them which design it favours.
 - The demand carries the hard limits; surface settings in the lens do not, because only the demand is judged.
 
 ## Write checks that measure the real quantity
@@ -43,11 +54,14 @@ Checks live in `checks/` with every helper module or data file they use; recipe 
 - Measure an extreme over the field or spectrum (chief ray angle, relative illumination, transmission) with `ctx.cra`, `ctx.field_profile` or `ctx.wave_profile`. They sample densely, refine around the extreme and report its location and coverage. When `coverage.ok` is false, sample finer or return `inf`, never the coarse value: an edge-only CRA missed 19.88° in mid field, and five wavelengths missed a transmission dip, on the nightvision job.
 - State the preconditions (parts do not intersect, the image is real, enough rays arrive, the quantity covers the whole beam and not only the surviving rays) and return `inf` when one fails; a number from an invalid state is worse than no number. Return `inf` when the design gives no valid value; raise only when the check itself cannot run.
 - Keep checks read-only: work on a copy, or restore the lens (`ctx.kept`, `ctx.restored`, `ctx.configuration`). A round refuses a check that changed the lens (`LENS_MODIFIED_BY_CHECK`); last-digit rounding by OpticStudio (relative 1e-12) does not count.
-- Keep checks fast where you can. Every item reports `duration_s` in `saos check`; slow items cost every evaluation of a search that uses them.
+- Keep checks fast where you can. Every item reports `duration_s` in `saos check`; slow items cost every evaluation of a search that uses them. Run `saos check` once on the first model and read the durations before you optimise.
+- Prefer the backend's own analyses. When a check composes a result itself (a polychromatic MTF from per-wavelength PSFs, an illumination integral), compare it once with the closest built-in analysis on the same lens and note the difference in the check. Know how it differs from what OpticStudio will report: final numbers come from OpticStudio, and an unexamined difference surfaces only at the end.
 
 ## Confirm and set up the window
 
 Show the demand in plain language with the feasibility verdicts. Go through every limit that `uv run saos demand show --job J` lists under `weak_basis` one by one and get explicit approval of its content. Record the user's words with `uv run saos demand confirm --job J --quote "..."`; the tools keep the full demand text the user saw.
+
+If the user told you to proceed without confirmations, record that quote, and still send the verdicts, the directional-objective estimates, every weak-basis limit and every interpretation of yours in one `ui notify` message, and append them to `sources/interview.md`. The user can then object while the design is still cheap to change.
 
 `demand confirm` opens the workflow window (result field `ui`). Then choose its tabs and plotted metrics for this kind of system with `uv run saos ui open --job J --tabs ... --metrics ...`, remembered for the job:
 
@@ -57,4 +71,4 @@ Show the demand in plain language with the feasibility verdicts. Go through ever
 
 Rounds export only the chosen spot, fan, field and MTF plots, so leave one out only when the user does not need it. `--reset` restores the default tabs; `ui open --job J` reopens a closed window.
 
-Changing a value, range, check, weight, unit, origin, source or stop rule later needs a new confirmation; changing a description, the summary or the questions does not.
+Changing a value, range, check, weight, unit, origin, source or stop rule later needs a new confirmation; changing a description, the summary or the questions does not. An edit to a check script that changes what an item covers (which parts count toward a mass, which surfaces toward a margin) is a demand change even when the YAML only changes in its description; fixing a check to follow the rules above (returning `inf` on a failed precondition) is not.

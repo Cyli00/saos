@@ -37,6 +37,8 @@ When you optimise outside the lens's merit function (your own `exec` loop), reco
 
 Record a round when you have a design worth judging: after an optimisation run, a material substitution or a structural change, not after every tweak. Trials go through `saos check` (measures without recording; `--only <id>,...` measures just the affected items, never achieved) or `explore/`. After two optimisations or fifteen scripts without a round, `opt`, `exec` and `scan` results carry a `since_round` reminder; a long history with an empty ledger leaves the stop rule nothing to judge.
 
+Your own loops (a multi-start, a batch least-squares script, a `ctx.map` search) count toward that reminder like `opt` runs. When it appears, either record the best lens so far or say in your next message why it is not yet worth judging. Leave the plots on: spot, fan, field and MTF plots exist only for recorded rounds, so `--no-viz` is for a failing or very slow export, and you say so in the note. On the AR-glasses job, half an hour of optimisation followed a baseline recorded with `--no-viz`, and the user saw no plot and no shortfall the whole time.
+
 `uv run saos round --job J --tier <tier>[,<tier>...] --note "<what you did>"` names every tier the round used. Tiers, low to high: `local`, `variables`, `materials`, `global`, `structure`. The ladder records what was tried; it is not an order. When evidence says a tier cannot help, `uv run saos rule-out --job J --tier <tier> --reason "<evidence, e.g. scans/NNN>"` instead of spending a round on it; this holds until the next clear gain.
 
 Read the decision (`achieved`, `exhausted`, `limit`, `continue` with `next_tier`) and compare rounds by shortfall, never by merit. A round whose parts cross carries `parts_clash` and is never achieved or deliverable. Each round exports `evaluations/NNN/viz.json` for the workflow window; a failed export is reported under `viz` and does not affect the round.
@@ -52,3 +54,5 @@ Before a run you expect to take more than about ten minutes, or any `global` or 
 Accuracy follows reachability. Convergence and sampling audits earn their time once the design is close to its pass lines; while it misses by a multiple, sample just finely enough that the verdict cannot flip.
 
 If the structure must change beyond the approved description, describe the new model and get it approved before recording rounds on it.
+
+Before you leave an approved structure, leave evidence of why in the ledger or `scans/`: its best round with the gaps, and a diagnosis or `rule-out` showing what caps them. A first-order or probe result is enough when it settles the question. The new candidates go through the screening in [model.md](model.md) with that best round as the reference. The user hears the gaps, the cap and what the new form gives up before it is built, even under an autonomy grant.

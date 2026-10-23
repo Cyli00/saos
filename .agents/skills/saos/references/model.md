@@ -24,9 +24,13 @@ In a job script:
 - `saos.starts.screen(ctx, generated, workers=...)` runs all candidates without optimisation before the shared short stage. Generated files live in `explore/starts/NNN/`.
 - `saos.starts.scale_prescription(data, K)` scales your own prescription.
 
+Scale every start to the demand and the feasibility estimate, not to wherever its source happened to sit. A start scaled to a smaller target because it is easier there changes a directional objective, which is the user's trade (see the skill entry).
+
 ## Screen candidates on equal terms
 
 Screen every candidate without optimisation first (`stages: []` in a `candidates` plan of `saos scan`), then run every candidate with the same short stage budget, checks, sampling and prepare script.
+
+The unoptimised pass only shows whether a start traces and fits together; choosing on it is not screening. On the AR-glasses job, a form picked because it alone traced cleanly absorbed half an hour of optimisation before being dropped. Compare candidates after the short stage by shortfall, and list each one's directional objectives next to the feasibility estimate.
 
 - The verdict per candidate is valid, invalid within budget, or not evaluated because of a material or computation failure; material failures stay distinct from connection and UI failures, which propagate.
 - Equal fingerprints count once. Keep budget-limited candidates and record `RuntimeWarning` counts; zero warnings does not establish validity, because check scripts can suppress them.

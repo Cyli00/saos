@@ -28,6 +28,8 @@ Many independent evaluations (a scan, multi-starts, a sensitivity table) run con
 
 `uv run saos exec SCRIPT --job J` runs `def run(ctx)` inside the daemon and archives the copy and result in `scripts/`. Python may hold control logic (scans, multi-starts, sequencing, bookkeeping) as long as every optical evaluation goes through `ctx`. Reach for built-ins first; scripts you write cost more time than the runs they drive.
 
+Change the lens only through `ctx` (`set`, `kept`, `load`, `save_as`), never through underscore members of `ctx.backend` or the optimiser internals: writing there skips the step gate, the review and the unsaved-lens bookkeeping. If a built-in optimiser is too slow, read its `phases` in `log.jsonl` and tell the user which phase dominates, since that is a saos issue worth fixing. Then search through public routes (`saos.search.minimize`, a `minimize` scan plan, `ctx.map`) rather than a hand-made finite-difference loop, which was rarely faster when tried.
+
 What `ctx` (and a worker `w`) already provides:
 
 - **Parameters:** `get`, `values`, `set` with keys `"<surface index or comment>.<radius|curvature|thickness|conic|semi_diameter|material|comment|par<N>>"`, `aperture`, `field.<n>.x|y`, `wave.<n>`, `config.<configuration>.<row>`. A value a solve overrides raises `VALUE_NOT_APPLIED`.

@@ -17,6 +17,7 @@ Run commands from the repository root as `uv run saos ...`. Every command prints
 - **One definition per number.** Optimisation targets, script objectives and first-order estimates use the demand checks' definition, or are compared with them on the same lens before you draw a conclusion.
 - **No silent relaxing.** A goal that cannot be met is reported with its gap. Changing a constant, range, pass line or check condition goes back to the user for a new confirmation.
 - **Sourced materials in delivery.** Model glasses are for exploration only.
+- **Autonomy is not a waiver.** When the user tells you to proceed without confirming, their words may stand as the quote at the gates they cover (never beyond the scope they named), but the work each gate shows still gets done, written down and announced with `ui notify`: feasibility verdicts, weak-basis limits, the model page, and any trade of an objective they named. Read their requirements as written; with nobody checking your interpretations, an added restriction or a quietly surrendered objective goes unnoticed until the end.
 - **Reports for the user are HTML.** Internal notes, the demand YAML and raw JSON keep their own formats.
 - **Never resubmit running work.** `BUSY` or a client timeout means the daemon is still computing; follow it with `job show` or cancel it.
 
@@ -41,7 +42,7 @@ Once per session, before other work, run `uv run saos daemon status` and ask in 
 Establish what the user needs, as conditions and measurable acceptance criteria with a source for every limit, and whether the structure can reach each `must`.
 
 - Interview in prepared rounds, each question with your recommended answer, and keep the user's words verbatim in `sources/interview.md`.
-- Before showing the demand, reason from physics whether the structure can reach every `must` (invariants, diffraction, apertures, degrees of freedom, how each part is made) and check the deciding number on a minimal backend model. Give each `must` a verdict: reachable, marginal or not reachable.
+- Before showing the demand, reason from physics whether the structure can reach every `must` (invariants, diffraction, apertures, degrees of freedom, how each part is made) and check the deciding number on a minimal backend model. Give each `must` a verdict: reachable, marginal or not reachable. For each `minimize` / `maximize` objective, estimate how far the `must`s let it go. Write both to `explore/feasibility/README.md`; later stages compare against them.
 - Write `sources/demand.yaml` ([format](demand.example.yaml)) and its check scripts in `checks/`.
 
 **Gate:** walk the user through the demand, its feasibility verdicts and every `weak_basis` limit from `demand show`, then record their words with `uv run saos demand confirm --job J --quote "..."`. Set up the workflow window for this kind of system (`ui open --tabs --metrics`).
@@ -64,7 +65,7 @@ Read [model.md](references/model.md) for starts, screening, materials, notes and
 
 Establish, round by round, how close the approved structure gets to the demand, until the round decision is `achieved`, `exhausted`, `limit` or the user stops.
 
-- Optimise on smooth proxies and judge with the demand checks; `saos check --only` for trials, `saos round --tier ... --note ...` when a design is worth judging.
+- Optimise on smooth proxies and judge with the demand checks; `saos check --only` for trials, `saos round --tier ... --note ...` when a design is worth judging. Your own script loops are optimisation runs too, and rounds keep their plots: the ledger and its plots are all the user sees of this stage.
 - Compare rounds by shortfall, never by merit value. Rule out tiers your evidence says cannot help (`saos rule-out`) instead of spending rounds on them.
 - Before a run longer than about ten minutes, or any `global` or `structure` attempt, tell the user each failing `must`'s gap, the mechanism expected to close it and the expected gain. When a `must` misses by a multiple or a cap is already visible, diagnose instead of optimising.
 - Run anything that may outlast your command time limit with `--detach`.
@@ -103,6 +104,8 @@ Ask the user, with the evidence, its impact and your recommended options, as soo
 - feasibility or first-order analysis says the structure cannot reach the objectives, or a `must` misses by a multiple of its pass line;
 - the results give no reason to keep the current strategy (the round `brief` sets `review` when rounds stall or before escalating to `global` or `structure`);
 - the structure must change in a way the user has not seen.
+
+A candidate or structure that meets the `must`s by giving up a clear share of a directional objective the user named, compared with the feasibility estimate or the approved model, is a trade for the user to see: notify them with the numbers before building on it, and ask unless they granted autonomy over that choice.
 
 Run `uv run saos ui notify --job J --message "..."` before you stop to ask. A question whose answer could change the demand goes into `open_questions` with `blocking: true`; rounds and optimisers refuse to run until it is answered, while diagnostic scripts still may. Otherwise keep working without asking.
 
