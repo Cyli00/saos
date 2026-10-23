@@ -1,7 +1,6 @@
 # TODO
 
 - 显性调试断开、重连的工具回归测试：连接、窗口规则、刷新、截图、阻塞对话框检测已有真实回归（`tests/test_zemax_explicit.py`，连续 4 次通过，每次约 49 s）；用户在窗口中途关闭 OpticStudio、断开后重连还没有回归测试。
-- 两个配方的验收都只能在 OpticStudio 阶段运行：光纤测量库 `saos.recipes.fiber.side_view` 经 `ctx.system` 直接读 ZOS-API，在 Optiland 阶段返回 BAD_ARGS；显微物镜验收用到 Optiland 不支持的 `OSCD`、`DISG`、`MTFN`、`STRH`。用这两个配方的任务在认可前只能自写 Optiland 判定，或与用户约定 Optiland 报告不评哪几项（见两份配方的 Backend status）。待把可移植的项目改到 `ctx` 通用接口上。
 - 并发评估已有 `ctx.map` 和 `saos scan`（ADR-0009，许可证上限 8 个实例）。暂缓：一个显性调试实例加多个隐式运行实例时的调度，以及与 CPU 线程数配套的每实例优化线程分配。等真实任务需要时再做。
 - 没有显式孔径的非圆零件（例如只写了半口径的切边镜片）仍按圆处理，可能漏报或误报。柱面管壁按孔径画成一圈，看不出管子的长度。
 - 用户恢复目录 `Documents/Zemax/Autosave/Recovered` 中的 `fiber-air.*`（2026-10-14 00:29）会让每个新启动的 OpticStudio 弹出自动保存恢复提示；saos 遇到时返回 UI_BLOCKED。是否清理由用户决定。

@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by ADR-0013
 ---
 
 # Optiland 做默认计算后端，OpticStudio 在用户认可结果后验证并继续优化

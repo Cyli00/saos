@@ -1,8 +1,8 @@
 # saos
 
-saos（simulate any optical system）让 AI agent 替你做光学设计。你用自己的话说清要什么（可以不懂光学），agent 通过访谈把它整理成需求单，选结构、建模，在 Optiland 上一轮轮优化；你认可结果后，再到 Zemax OpticStudio 里复测并继续优化，最后交给你一份镜头文件和一份 HTML 报告，报告里的每个数值都有实测依据，达不到的目标写明差多少。
+saos（simulate any optical system）让 AI agent 替你做光学设计。你用自己的话说清要什么（可以不懂光学），agent 通过访谈把它整理成需求单，选结构、建模，在 Zemax OpticStudio 中一轮轮优化、诊断和实测，最后交给你一份镜头文件和一份 HTML 报告，报告里的每个数值都有实测依据，达不到的目标写明差多少。
 
-目标范围是 OpticStudio 2024 R1 Premium 能建模的系统：序列、非序列和多重结构。Optiland 阶段表达不了的功能（例如部分非序列特性），agent 会直接告诉你这是能力缺口，不会悄悄换成别的办法。
+目标范围是 OpticStudio 2024 R1 Premium 能建模的系统：序列、非序列和多重结构。工具尚未接入的功能会明确报告能力缺口。
 
 ## 安装
 
@@ -13,7 +13,7 @@ saos（simulate any optical system）让 AI agent 替你做光学设计。你用
 | Windows | 目前只支持 Windows（OpticStudio 和 ZOS-API 只有 Windows 版） |
 | [uv](https://docs.astral.sh/uv/) | 管理 Python 3.12 和依赖，所有命令都通过 `uv run` 执行 |
 | 支持技能的编程 agent | Claude Code、Cursor、Codex 等；agent 负责全部设计工作 |
-| Ansys Zemax OpticStudio 2024 R1.00 Premium | 只在最后的 OpticStudio 阶段需要；没有它也能走完 Optiland 阶段，但交付数值不会经过 OpticStudio 验证 |
+| Ansys Zemax OpticStudio 2024 R1.00 Premium | 从建模开始需要，使用可用的 ZOS-API 许可 |
 | Chrome（可选） | 流程窗口优先用 Chrome 应用窗口打开，没有时用系统默认浏览器 |
 
 ### 步骤
@@ -25,7 +25,7 @@ saos（simulate any optical system）让 AI agent 替你做光学设计。你用
    cd saos
    ```
 
-2. 安装依赖。第一次会下载 PyTorch 等较大的包，需要几分钟。Optiland 固定为 0.6.3，其他版本后台进程会拒绝启动。
+2. 安装依赖。Python 固定在 3.12，OpticStudio 固定在 2024 R1.00；不再依赖 Optiland 或 PyTorch。
 
    ```bash
    uv sync
@@ -43,7 +43,7 @@ saos（simulate any optical system）让 AI agent 替你做光学设计。你用
 
 ### 开始一个设计
 
-1. 启动后台进程。它在内存里持有当前镜头，所有计算命令都转发给它；认可前只用进程内的 Optiland，不会打开 OpticStudio。agent 发现它没启动时也会提醒你或自己启动。
+1. 启动后台进程。它在内存里持有当前镜头，所有计算命令都转发给它；启动即建立 ZOS standalone 会话。agent 发现它没启动时也会提醒你或自己启动。
 
    ```bash
    uv run saos daemon start
@@ -51,15 +51,14 @@ saos（simulate any optical system）让 AI agent 替你做光学设计。你用
 
 2. 在仓库根目录打开 agent，直接描述你的需求，例如“设计一个 20 倍、NA 0.4 的显微物镜”或“给成像光纤做一个侧视探头”。agent 会按 saos 技能的流程工作，包括新建任务目录。
 
-### 你要做的四个决定
+### 你要做的三个决定
 
-agent 自己决定结构、变量、优化算法和实验，只在下面四处停下来等你。你的原话会逐字记录在任务里，所以回答时把选择说清楚。
+agent 自己决定结构、变量、优化算法和实验，只在下面三处停下来等你。你的原话会逐字记录在任务里，所以回答时把选择说清楚。
 
 | 时机 | 你看到什么 | 你决定什么 |
 |---|---|---|
 | 确认需求 | 访谈中每个问题都附 agent 的推荐答案；访谈结束后给出需求单，以及每个硬性目标“能达到 / 勉强 / 达不到”的判断和依据薄弱的数值 | 需求单是否就是你要的 |
 | 确认模型 | 一份建模说明页面：选了什么结构、为什么、每个面是什么实物、材料来源、一阶分析和优化预算 | 是否按这个结构开始优化 |
-| 认可 Optiland 结果 | Optiland 阶段的报告，注明数值尚未经 OpticStudio 验证 | 认可后进入 OpticStudio 阶段；不认可就回去继续优化 |
 | 停止 | 任何时候 | 根据已有证据结束任务，报告会写明原因和你的原话 |
 
 除此之外，遇到需求自相矛盾、测量口径有歧义、结构明显达不到目标、优化不再有进展或需要改变你没见过的结构时，agent 也会带着证据和建议方案来问你。
@@ -97,14 +96,14 @@ uv run saos daemon stop          # 有未保存的修改时需要 --discard
 
 ## 注意事项
 
-- **数值以 OpticStudio 为准**：Optiland 阶段的报告是给你判断要不要进 OpticStudio 的，最终交付以 OpticStudio 阶段的实测为准。两端数值不同时，报告列出差别。
-- **OpticStudio 许可证**：同时最多 8 个 OpticStudio 实例，包括你自己打开的窗口。认可前不占许可证；OpticStudio 阶段的并发计算默认用 4 个。
+- **数值以 OpticStudio 为准**：从可行性、初筛到最终报告均使用同一后端；不再经过跨后端重建与对比。
+- **OpticStudio 许可证**：同时最多 8 个 OpticStudio 实例，包括你自己打开的窗口。daemon 启动即占一个许可；并发计算默认使用 4 个常驻 worker，起点生成另用一个独占会话。
 - **OpticStudio 弹出对话框会卡住计算**：例如自动保存恢复提示，saos 遇到时返回 `UI_BLOCKED`，需要你手动关掉。`Documents/Zemax/Autosave/Recovered` 里的旧恢复文件会让每个新实例都弹提示。
 - **长任务在后台跑**：命令超时不代表计算失败，不要让 agent 重新提交同一项计算。要中断用 `uv run saos job cancel <任务>`，已完成的部分会保留。
 - **不要手改工具写入的文件**：任务目录里工具写入的文件记录了哈希，改动或删除后 `saos report` 会拒绝生成报告（`uv run saos job verify <任务>` 列出问题）。你可以自由看，也可以往 `sources/` 里放资料。
-- **想在 OpticStudio 窗口里看**：用 `uv run saos daemon start --mode extension` 启动，OpticStudio 阶段会连接你已打开的 OpticStudio 窗口（saos 自动打开窗口里的 Interactive Extension；有多个窗口时用 `SAOS_UI_PID` 指定）。实时刷新会明显拖慢计算，平时看流程窗口就够了。
-- **电脑资源**：长时间计算默认留出 2 个逻辑核并以低于正常的优先级运行；装了 CUDA 版 PyTorch 时，可设 `SAOS_DEVICE=cuda` 让自动微分优化用 GPU。
-- **专用配方的局限**：显微物镜和光纤侧视探头有现成配方，但它们的完整验收目前只能在 OpticStudio 阶段运行。Optiland 阶段 agent 会告诉你报告评不了哪几项。
+- **想在 OpticStudio 窗口里看**：用 `uv run saos daemon start --mode extension` 启动，启动时连接你已打开的 OpticStudio 窗口（saos 自动打开窗口里的 Interactive Extension；有多个窗口时用 `SAOS_UI_PID` 指定）。实时刷新会明显拖慢计算，平时看流程窗口就够了。
+- **电脑资源**：长时间计算默认留出 2 个逻辑核并以低于正常的优先级运行。
+- **专用配方**：显微物镜和光纤侧视探头的既有 ZOS-API 测量库可从任务开始使用；具体模型的未验证范围仍见配方说明。
 
 ### 常用环境变量
 
@@ -114,9 +113,16 @@ uv run saos daemon stop          # 有未保存的修改时需要 --discard
 | `SAOS_LANG` | `zh` / `en`，面向人的输出（报告、流程窗口）的默认语言 |
 | `SAOS_UI=0` | 不自动打开流程窗口 |
 | `SAOS_OPTICSTUDIO_DIR` | OpticStudio 安装目录 |
-| `SAOS_DEVICE` | `auto` / `cpu` / `cuda`，自动微分优化用的设备 |
 
 完整列表见 `uv run saos --help`。
+
+## 从旧 Optiland 分支迁移
+
+代码在 `feat/zos-standalone` 延续当前工作流，旧实验保留于 `archive/optiland-hybrid`。旧任务文件不自动改写；含双后端阶段记录或探索轮次的任务不能继续计算。
+
+新建任务后，按原始 JSON 处方用 `lens build` 重建，或者导入经 OpticStudio 另存、没有 `.optiland.json` 伴随文件的 `.zmx`。重新确认需求和模型，再记录 ZOS 基线；旧数值不能继承。不要删除伴随文件来冒充已迁移的镜头。
+
+`zos begin`、`lens export`、`opt glass`、`opt merit script`、Torch/SciPy 局部算法选项、`--device` 和逐变量 `--min/--max` 已移除。玻璃替换使用 Hammer/Global 的 material substitute 求解，边界通过原生评价函数操作数表达；通用 `saos.search` 外层搜索仍保留。里程碑由报告认可耗时改为当前需求版本的首次报告生成耗时（`to_first_report_s`）。
 
 ## 文档
 

@@ -9,7 +9,7 @@ Prepare a whole round before you ask anything: every question you can ask now, n
 - With an ask-user tool, ask through it. Your recommendation is the first option and says so; the other options are the realistic alternatives; a value the user must type goes into the free-text answer. When a round exceeds one call's limits, ask in consecutive calls with the marked questions first and do no other work between them.
 - Without one, write a numbered list in which each item is a `Question:` line followed by an `Advice:` line (your recommended answer and its reason in one sentence), worded so "yes" accepts the advice.
 
-Append every round to `sources/interview.md`: the questions, the options or advice shown, and the user's answers verbatim (the full text of the chosen option and anything typed). Whenever a quote records a choice (`demand confirm`, `lens approve`, `zos begin`, `stop`), it contains the full text of the options shown and the one chosen, not just "c".
+Append every round to `sources/interview.md`: the questions, the options or advice shown, and the user's answers verbatim (the full text of the chosen option and anything typed). Whenever a quote records a choice (`demand confirm`, `lens approve`, `stop`), it contains the full text of the options shown and the one chosen, not just "c".
 
 Material and bought-in part searches that should end in one sourced table go to the `optic-material-explorer` agent when it is available: give it the hard limits, the columns you need and a download folder under `sources/`.
 

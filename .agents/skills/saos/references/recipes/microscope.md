@@ -8,7 +8,7 @@ Code: `saos.recipes.microscope`; commands: `uv run saos microscope --help`. The 
 
 ## Backend status
 
-The acceptance evaluation uses the operands `OSCD`, `DISG`, `MTFN` and `STRH`, which the Optiland backend does not provide. Until that changes, the full acceptance runs only in OpticStudio. In the Optiland stage, write demand checks from supported operands and analyses for the items you need there (focal length, NA, working distance, RMS wavefront, axial and lateral colour), and keep the full acceptance for the OpticStudio stage. Tell the user which items the Optiland report cannot judge.
+This recipe uses ZOS-API from the start of the task. Its existing measurement library can be used directly; no backend transition is required.
 
 ## Stage 1: questions for the demand
 
@@ -54,9 +54,9 @@ In OpticStudio, this policy recovered all 65 perturbed benchmark tasks, most in 
 - Merit: RMS wavefront to centroid (6 rings × 6 arms), EFL, and structural limits `CTGT`, `MNCG`, `MNEG`, `MNCA`, `MNEA`, `OPLT`, `MXSD`.
 - When items fail, add `AXCL`, `LACL`, `OSCD`, `FCGS`/`FCGT` and raise the weight of the failing ones ×3 per round, up to ×3⁵.
 
-These are OpticStudio operands; in Optiland, build the equivalent merit from supported operands and a `loss` script.
+Use these native OpticStudio operands in the merit function.
 
 ## Evidence
 
 - Verified in OpticStudio under the former zea workflow: reproduction of all 25 library entries (paraxial pre-screen agreed with them within 5.4e-4 in EFL and 0.0134 mm in working distance), a minimal design loop, and the 65 benchmark tasks. Records are in Git history; the benchmark tool was removed on 2026-10-17.
-- Not verified: any run on the Optiland backend; any job of the current saos workflow; acceptance used as a demand check.
+- Not verified: any job of the current saos workflow; acceptance used as a demand check.

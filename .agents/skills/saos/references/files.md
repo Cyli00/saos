@@ -24,13 +24,12 @@ Use commands to create or update these; find paths in command results and `job s
 | Location | Content |
 |---|---|
 | `job.json`, `log.jsonl`, `progress.json`, `view.json` | job state, every command and result, running progress, the current lens for the workflow window |
-| `confirmations.jsonl`, `models/NNN-<lens>/` (with `approval.json`), `stages/zos.json` | the user's approvals with their words: demand, model, Optiland report acceptance |
+| `confirmations.jsonl`, `models/NNN-<lens>/` (with `approval.json`) | the user's approvals with their words: demand and model |
 | `evaluations/NNN/` | every check or round: snapshot, `support/` copy of `checks/`, exports, authoritative `result.json`, `viz.json` |
 | `ledger.jsonl`, `lenses/rounds/rNNN.*` | per round: shortfall, tiers, materials, lens hash, approved model, evaluation; the archived round lens (`lens save` refuses it) |
 | `ruled_out.jsonl`, `stops.jsonl` | ruled-out tiers with evidence; the user's decisions to stop |
 | `scripts/`, `analyses/`, `parallel/NNN/`, `scans/NNN/`, `runs/` | `exec` copies and results, analysis exports, `ctx.map` and scan plans and results, detached run requests and responses |
 | `lenses/scans/NNN/`, `lenses/global/NNN/`, `lenses/hammer/NNN/`, `lenses/captures/`, `lenses/rounds/orphaned/` | lenses ready for `lens load`; window content saved before replacement; archives of failed attempts |
-| `stages/zos-result.json` | verify round, item/baseline/material differences, untranslated settings |
 | `report/` | every generated report and its metadata; `index.html` and `latest.json` are the latest |
 | `screens/` | screenshots |
 | `seals.jsonl` | hashes of sealed files |

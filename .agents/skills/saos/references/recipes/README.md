@@ -19,7 +19,7 @@ Lift a **draft** earlier when code repeats: as soon as a second job copies a hel
 Write a section only when a job taught you something verified for it.
 
 1. **Scope** (required): which systems it covers and which not (conjugates, apertures, spectral range, size).
-2. **Backend status** (required): which checks and helpers run in Optiland, which only in OpticStudio, and what to do in the Optiland stage meanwhile.
+2. **Backend status** (required): which ZOS checks and helpers are available, their verified scope, and any remaining capability gaps.
 3. **Stage 1: questions and checks**: what to ask in the interview with recommended defaults and the source of each; the usual goals and how to measure them (operand or analysis and its settings, units, cost).
 4. **Stage 2: starting forms and modelling**: where to get a start and how to adapt it to the user's scale; layout conventions, solves, apertures, pitfalls.
 5. **Stage 3: optimisation**: variables and merit constructions that worked, with the backend they ran on.

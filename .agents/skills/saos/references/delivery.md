@@ -24,12 +24,12 @@ Without such a need, skip it and offer it when you hand over the report.
 `uv run saos report --job J` writes `report/index.html` in the user's language: status, the delivered lens, its materials, and for each unmet goal how far it is off. The delivered lens is the achieved round with the smallest shortfall, else the smallest shortfall among deliverable rounds. With no valid round it says so instead of naming a best lens. The report includes the latest tolerance scan and says whether it ran on the delivered lens.
 
 - The JSON result names a lens in `deliver` only when it is deliverable (`deliverable`, `headline`). Otherwise `deliver` is null and the round shown for diagnosis is under `diagnostic`: never pass it on as the delivery.
-- When `backend` is `optiland` (`opticstudio_verified` false), the page says the numbers are Optiland's and not yet verified in OpticStudio; tell the user so.
+- Only OpticStudio measurements are delivery evidence; fake backend output is tool-test data.
 - Regenerate an outdated report before asking for acceptance. The displayed report must match its sealed HTML and metadata.
 
-## Acceptance into OpticStudio
+## Responding to the report
 
-Verifying and optimising further in OpticStudio comes only after the user accepts this report. Record their words with `uv run saos zos begin --job J --quote "<their words>" [--round N] [--max-rounds K]`. The selected round must be deliverable under the current demand and checks and contain no model glasses. If the user rejects the report, continue designing in Optiland within the current demand and stop rules, or record their decision to stop; do not enter OpticStudio. What happens next: [opticstudio.md](opticstudio.md).
+All design rounds already use OpticStudio. There is no backend handoff and no budget reset after reporting. If the user requests changes, continue within the current demand and stop rules; changed requirements or structure go back through their approval gates.
 
 ## Stopping
 

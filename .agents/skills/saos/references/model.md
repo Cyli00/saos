@@ -1,12 +1,12 @@
 # Choose and approve the model
 
-The outcome of this stage is an approved model description: a structure chosen for stated reasons, built in Optiland with sourced materials, whose fingerprint the round gate will compare against.
+The outcome of this stage is an approved model description: a structure chosen for stated reasons, built in OpticStudio with sourced materials, whose fingerprint the round gate will compare against.
 
-## Build in Optiland
+## Build in OpticStudio
 
-Before the user accepts the Optiland report, all modelling and design happens in Optiland. Optics Optiland cannot represent are explicit capability gaps; report them, and do not start OpticStudio to fill them.
+All modelling and design uses the persistent ZOS session. Report unavailable features explicitly; do not substitute another backend.
 
-- Build or import through `lens build`, `lens load` and `lens save`. Commands take a logical `.zmx` name (`lens build --as start.zmx`); the backend stores `start.optiland.json` as the authoritative snapshot, and `lens export` writes a `.zmx` only on request.
+- Build or import through `lens build`, `lens load` and `lens save`. Commands use native `.zmx` files (`lens build --as start.zmx`), saved directly by OpticStudio. Legacy Optiland snapshots are refused; rebuild from the original prescription in a new job and measure again.
 - Keep sourced materials and mechanical semi-diameters (`lens set --param mech_semi_diameter`) in the model; the interference check uses the parts' outer edges.
 - Give surfaces what the model needs with `lens set`; hard limits belong in the demand.
 

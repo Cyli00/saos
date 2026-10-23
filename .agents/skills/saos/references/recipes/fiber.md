@@ -8,12 +8,7 @@ Not covered: the proximal side (beam splitter, relay, camera), volume scattering
 
 ## Backend status
 
-`saos.recipes.fiber.side_view` reads the lens through the ZOS-API (`ctx.system`), so none of its checks run in the Optiland stage: they fail with `BAD_ARGS`. Until the library is ported, choose before confirming the demand:
-
-- write Optiland checks for the items the exploration needs (spot, working distance, focus shift, pass rate through `ctx.spot`, `ctx.trace` and operands), and use this library only after `zos begin`; or
-- tell the user the Optiland report cannot judge these items, and agree how acceptance will work.
-
-Either way, the Huygens PSF items (`psf_*`, `ee80`) exist only in OpticStudio.
+This recipe uses ZOS-API from the start of the task. Its existing measurement library can be used directly; no backend transition is required.
 
 ## Stage 1: questions for the demand
 
@@ -76,4 +71,4 @@ def run(ctx):
 
 - 2026-10-17: the library reproduced the `fiber-printed-relay` helpers (version 6) on real OpticStudio, all 20 checks.
 - 2026-10-19: after moving statistics to `saos.kit`, 16 real lenses × 20 checks matched the previous library: 261 of 320 bit-identical, the rest within 1.4e-13 relative, every `inf` unchanged.
-- Not verified: the Optiland backend (the library cannot run there), any delivered design, the GRIN variant, non-sequential models.
+- Not verified: any delivered design, the GRIN variant, non-sequential models.

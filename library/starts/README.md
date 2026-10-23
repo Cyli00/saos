@@ -25,7 +25,7 @@ Petzval、远摄的原始英寸尺寸按 25.4 转成 mm。远摄网页画廊与 
 
 ## 格式与用法
 
-沿用显微物镜库的 `entries/<id>/entry.json` 元数据与 `prescription.json` 处方布局。`metrics` 保存来源给出的标称量，`applicability` 保存选库范围，`source` 保存书目页码或专利号、URL 和转录说明，`notes` 保留假设。生成时先保留原处方几何并设置需求的波长、视场和 f/#，通过 Optiland 测参考 EFL，再缩放至需求焦距；生成记录保存实测参考焦距、比例及条目/处方摘要。
+沿用显微物镜库的 `entries/<id>/entry.json` 元数据与 `prescription.json` 处方布局。`metrics` 保存来源给出的标称量，`applicability` 保存选库范围，`source` 保存书目页码或专利号、URL 和转录说明，`notes` 保留假设。生成时先保留原处方几何并设置需求的波长、视场和 f/#，通过 ZOS 测参考 EFL，再缩放至需求焦距；生成记录保存实测参考焦距、比例及条目/处方摘要。
 
 从脚本调用库函数，不增加独立 CLI：
 
@@ -55,22 +55,16 @@ def run(ctx):
 
 ## 预判约定
 
-`starts.predict` 调用 Optiland 的 `SeidelAberrations`、`ThirdOrderAberrations`、`ChromaticAberrations`，没有另写像差计算。表格保存一阶量、各面及合计 SI–SV、横向/纵向三阶像差及一阶色差、Petzval 半径/EFL、各面采样最大入射角。
+`starts.predict` 通过现有 ZOS 操作数和批量追迹取一阶量、三阶像差、Petzval 半径/EFL 与采样入射角。SPHA、COMA、ASTI、FCUR、DIST 展示为 OpticStudio 原生操作数（waves），不再沿用 Optiland SI–SV 的符号或单位。完整三阶与色差信息保存在 SeidelCoefficients 原生文本中。
 
-- 近轴/三阶量沿用处方长度单位，SI–SV 不转换成 waves。三阶量采用主波长、边缘近轴光线与最大视场主光线。
-- 原生关系为 SC=−TSC/u_image、AC=−TAC/u_image、PC=−TPC/u_image、TCC=3CC。Petzval 半径按 R=h_image²/(2ΣPC) 的纵向移焦符号换算；轴上场或零曲率不报告有限半径。
-- 色差采用配置中的最短减最长波长；单波长时后端退回 F/C 参考，页面不将它描述为实际工作带宽。
-- 入瞳位置相对首面，出瞳相对像面；光阑位置使用展开光轴坐标。总光路长取物理面到像面的间隔绝对值之和。
-- 默认入射角采样为当前配置的每个视场、每个波长，3 环×8 方位加主光线，即每场每波长 25 条。失效数量单列；最大值只覆盖这些采样，不宣称是连续孔径最大值。
-- 三阶表当前限同轴标准球面/圆锥面。附加非球面项、偏心等明确写出缺口，仍可保留其他部分。预判不阻断初筛或模型确认。
-- OpticStudio SEID 符号与归一化实测对照：NOT RUN。不得据当前代码宣称两端一致。
+入射角通过 RAID 取得，只统计成功到达对应面的采样光线；同时记录像面无效光线数，不声称连续最大值已验证。三阶量是近轴预判，不能替代真实像质判定。
 
-上收前后对照与预先登记的数值容差记录见 Git 历史；当前版本的验收缺口见[整合计划](../../docs/plans/integration-workflow.md)。
+本次后端接线未做 ZOS 实测；条目的文献来源和旧复现记录保持历史含义，不能据此宣称新生成链已经通过。测试由用户统一安排。
 
 ## 静态审查修复后的输入与历史兼容
 
 生成记录的未评估类别区分 library（读取、规范化、缩放库处方失败）、configuration（建模参数或能力配置）、material（材料数据）、computation（实际计算）；同时记录 phase、code 和原异常。库元数据本身无法查询时在生成前返回 BAD_ARGS，details.kind=library。prepare 编译或执行错误为配置错误，scan 返回 BAD_ARGS 与候选、脚本、原始错误；材料错误仍归 material，连接中断和 UI 阻塞继续上抛。
 
-[Ansys Odd Asphere 帮助](https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v26103/en/OpticStudio_User_Guide/OpticStudio_Help/topics/Odd_Asphere.html)列出参数 1–8 对应幂次 1–8；它不等于 2024 R1 界面列标题已核验。规范化保留未知表头供 ZOS 查列；Optiland 对未登记表头明确报能力缺口，缩放仍拒绝未知量纲。新输入重复别名报错；哈希校验后的旧快照只在内存副本合并同值别名，冲突值报 BAD_ARGS 并指出面号，需另建无歧义的处方副本，不改写存档。
+[Ansys Odd Asphere 帮助](https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v26103/en/OpticStudio_User_Guide/OpticStudio_Help/topics/Odd_Asphere.html)列出参数 1–8 对应幂次 1–8；它不等于 2024 R1 界面列标题已核验。规范化保留未知表头供 ZOS 查列，缩放仍拒绝未知量纲。新输入重复别名报错；哈希校验后的旧快照只在内存副本合并同值别名，冲突值报 BAD_ARGS 并指出面号，需另建无歧义的处方副本，不改写存档。
 
 无候选的生成仍保存并封存 generated.json，保留排除/未评估记录并递增编号，不改变该归档规则；零候选不启动后端。

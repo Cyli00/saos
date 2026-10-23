@@ -10,26 +10,21 @@ The outcome of this stage is a ledger of rounds judged against the demand and a 
 - A merit value the backend cannot compute (for example 9e+09 when rays fail by total internal reflection) is a diagnosis signal: find the cause before going on.
 - When a search must use the demand's own measurement (`ctx.measure(ids)`, a scan's `measure`, a `minimize` plan), give it only the items its variables act on and that take well under a second. Leave slow items (a Huygens PSF series takes seconds) to `saos check --only` and the round. A Nelder–Mead on the full shortfall of the fibre probe (18 variables, one-hour budget) stopped unconverged after 48 evaluations.
 
-Tools: `opt vary --param radius|curvature|thickness|conic|par<N>|material [--min X --max X]`, `opt merit wizard|add|script|show`. `opt merit script loss.py` adds `def loss(ctx)` as one more merit row, a non-negative residual driven to 0, for example a demand check through `ctx.measure`.
+Tools: `opt vary --param radius|curvature|thickness|conic|par<N>|material`, `opt merit wizard|add|show`. Bounds belong in Zemax boundary operands, such as CTGT/CTLT/ETGT; there are no per-variable --min/--max flags.
 
-## Optimisers in Optiland
+## Optimisers in OpticStudio
 
-`saos opt local` runs in process without a licence. Give it `--max-seconds`.
-
-- `--algorithm auto` (default) prefers `torch-trf` on CPU float64 and falls back to `trf` only for an identified differentiability gap. Explicit choices never fall back. Script bugs, numerical failures, cancellation and timeout never trigger a retry; a fallback consumes the remaining budget.
-- Torch algorithms (`torch-trf`, `torch-lbfgs`, `torch-adam`) use autograd when the merit holds only RSCE, RWCE, REAY, EFFL, TOTR, CTVA, ETVA and their boundary rows. A torch loss script returns a scalar Tensor connected to the variables through `ctx.backend.torch_operand(...)`. Real-ray autograd needs centred, unfolded systems with angle or object-height fields; other geometries report a capability gap.
-- SciPy alternatives: `trf` (keeps `--min/--max` bounds), `lm`, `lbfgsb`, derivative-free `nelder-mead` and `powell`.
-- Every trial passes a step gate: no part interference and at least 95 % valid rays in every field and wavelength. Unsafe steps are halved up to 12 times; only accepted points become the retained best. The torch path also adds continuous hinge losses for TIR, intersection domain and aperture violations; those guarded intersections are never measured results.
-- `opt global --max-seconds S [--method de|basinhopping|shgo]` searches with SciPy (`de` and `shgo` need `--min/--max` on every variable) and keeps its ten best systems free of interference in `lenses/global/NNN/`. It refuses to run next to existing `GLOPT_*` lenses; `lens save --as` one elsewhere before searching again from it.
-- `opt glass [--surfaces R] [--catalog C]` substitutes glasses from an in-production catalog (default `SAOS_CDGM_INPROD`) by a greedy neighbour search that re-optimises each candidate.
-- `opt vary --param material --mode model` varies nd/Vd as a model glass; it must become a real glass before the OpticStudio stage.
+- `opt local --algorithm auto|dls|od --max-seconds S` uses Zemax local optimisation. Auto selects DLS for sequential systems and OD for non-sequential systems.
+- `opt hammer --max-seconds S` and `opt global --max-seconds S` use native search tools. Global results go to `lenses/global/NNN/`; do not run next to existing `GLOPT_*` files.
+- Use `opt vary --param material --mode substitute --catalog C` for glass substitution in Hammer/Global. Default catalog: SAOS_CDGM_INPROD. Model glasses are for exploration and must become sourced real glasses before delivery.
+- External `saos.search` root/minimize loops can still call ZOS measurements; they do not provide autograd through the native solver.
 
 Read the result, not just the merit:
 
-- `requested_algorithm`, `algorithm` and `fallback` say what actually ran; `inner_loop` says whether it edited the live lens or rebuilt it each step (slower).
-- `improved` and `converged` are separate; `succeeded` needs both, an admissible saved point and no interruption. `stopped_by` is null, timeout or cancel. An unfinished review returns `completed: false, valid: false`: finish the checks before recording a round.
-- `review` holds the interference check after the run and, with `--measure <ids>|hard|all`, the demand checks before and after. Pass `--measure` with the fast checks the merit stands in for. A run that lowered the merit but made `worse` non-empty or `valid` false is no progress.
-- If an optimiser fails mid-run, the lens is marked unsaved: `lens save --as` keeps what it reached, `lens load --discard` drops it.
+- `algorithm` records the native local algorithm. `solver_succeeded`, `improved` and `stopped_by` have distinct meanings; `converged` is unknown when the native API does not establish it.
+- Measurements and review share the command budget. Cancellation waits for native calls to return. An unfinished review is `completed: false, valid: false`; finish the checks before recording a round.
+- `review` includes interference and, with `--measure <ids>|hard|all`, before/after demand checks. A lower merit with worse checks is not evidence of progress.
+- A failed run leaves the lens marked unsaved: save under a new name to retain it, or load a saved lens with `--discard`.
 
 When you optimise outside the lens's merit function (your own `exec` loop), record the value you optimised with `saos round --merit <value>`.
 

@@ -4,7 +4,7 @@ How to run work that takes time, in parallel or through your own scripts, withou
 
 ## Long runs
 
-- **Detach anything that may outlast your command time limit.** `exec`, `opt local|hammer|global|glass`, `check`, `round` and `zos begin` take `--detach`: the command returns `runs/NNN-<op>.json` at once, and a detached process writes the full response there (`status` `running`, `done` or `failed`). `uv run saos job show J` lists recent runs next to the progress.
+- **Detach anything that may outlast your command time limit.** `exec`, `opt local|hammer|global`, `check` and `round` take `--detach`: the command returns `runs/NNN-<op>.json` at once, and a detached process writes the full response there (`status` `running`, `done` or `failed`). `uv run saos job show J` lists recent runs next to the progress.
 - **Scans detach differently.** `saos scan --detach` runs on the worker pool from a snapshot of the saved lens while the daemon keeps serving other commands. Follow it with `uv run saos scan --job J --show [NNN]`, which reads files and works while the daemon is busy. A second scan or `ctx.map` meanwhile gets `POOL_BUSY`; `daemon stop` waits for it (`BUSY`).
 - **Never resend running work.** One daemon request runs at a time; any other request fails at once with `BUSY`, naming the running operation. A client timeout only stops waiting; the daemon keeps computing (`still_running`). Wait, read `job show`, or `saos job cancel J`. A 250.6 s computation once looked failed to a 240 s client and was nearly submitted again.
 - **Keep runs visible and stoppable.** Long operations write the job's `progress.json` (a detached scan writes `scans/NNN/progress.json`), readable through `job show` while the daemon is busy. In a long script, call `ctx.progress(stage, **numbers)` at checkpoints; it returns True after `saos job cancel`, and the script should stop at a safe point and keep what it has (`ctx.cancel_requested()` checks without reporting). A failure to write `progress.json` is retried, then only logged.
@@ -22,7 +22,7 @@ Many independent evaluations (a scan, multi-starts, a sensitivity table) run con
 
 - `saos scan --plan` covers grids, point lists, `minimize`, `probes`, `candidates` and `tolerance` plans, measures every point with the demand checks, ranks by shortfall and keeps the best lenses in `lenses/scans/NNN/`. Prefer a plan to a script.
 - In a script, put the per-point work in a function and run `ctx.map("fn", items, workers=N)` (`"explore/x.py:fn"` for a function in another job file). It runs as `fn(w, item)` in a worker that reloads a copy of the saved lens before every item. Results and the script copy go to `parallel/NNN/`.
-- Optiland workers use no licences and default to the CPU count minus two. After `zos begin`, workers are standalone OpticStudio instances, default four, and count against the licence (see [opticstudio.md](opticstudio.md)). Workers stay warm between calls and close after 10 idle minutes; `ctx.pool_close()` frees them at once.
+- Workers are standalone OpticStudio instances, default four, and count against the licence (see [opticstudio.md](opticstudio.md)). Workers stay warm between calls and close after 10 idle minutes; `ctx.pool_close()` frees them at once.
 
 ## Scripts
 

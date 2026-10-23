@@ -1,19 +1,19 @@
 ---
 name: saos
-description: Run the saos optical design workflow, taking a user's optical need through an agreed demand, an approved model, Optiland design rounds and OpticStudio verification to a delivered lens with a measured HTML report. Use for designing, simulating or debugging an optical system in this repository. Not for changing saos itself (src/, tests/, CLI, docs); use normal repository work for that.
+description: Run the saos optical design workflow, taking a user's optical need through an agreed demand, an approved model, OpticStudio design rounds to a delivered lens with a measured HTML report. Use for designing, simulating or debugging an optical system in this repository. Not for changing saos itself (src/, tests/, CLI, docs); use normal repository work for that.
 ---
 
 # saos optical design workflow
 
-Deliver a lens the user can build and an HTML report whose numbers were measured by the saos backends, with every unmet goal stated with its gap. A conclusion that the need cannot be met, backed by evidence and the user's decision to stop, is also a valid outcome.
+Deliver a lens the user can build and an HTML report whose numbers were measured by the OpticStudio backend, with every unmet goal stated with its gap. A conclusion that the need cannot be met, backed by evidence and the user's decision to stop, is also a valid outcome.
 
-You are the designer: models, starting forms, variables, merit functions, algorithms and experiments are your judgement. The user owns four decisions: the need, the model, acceptance of the Optiland result and stopping. The tools record each as a gate with the user's own words; this skill gives no permission to infer or bypass one.
+You are the designer: models, starting forms, variables, merit functions, algorithms and experiments are your judgement. The user owns three decisions: the need, the model and stopping. The tools record each as a gate with the user's own words; this skill gives no permission to infer or bypass one.
 
 Run commands from the repository root as `uv run saos ...`. Every command prints one JSON object; `uv run saos <command> --help` documents arguments, results and error codes. `DESIGN.md` defines the terms.
 
 ## Rules in every stage
 
-- **Measured evidence.** Every optical number you deliver or decide on comes from Optiland or OpticStudio through saos (operand, ray trace, analysis, check). Hand estimates guide reasoning and are labelled as estimates; never write your own ray tracer, paraxial or aberration calculator or surrogate (ADR-0012). Label each result with its backend; final delivery uses OpticStudio numbers.
+- **Measured evidence.** Every optical number you deliver or decide on comes from OpticStudio through saos (operand, ray trace, analysis, check). Hand estimates guide reasoning and are labelled as estimates; never write your own ray tracer, paraxial or aberration calculator or surrogate (ADR-0013). Label each result with its backend; final delivery uses OpticStudio numbers.
 - **One definition per number.** Optimisation targets, script objectives and first-order estimates use the demand checks' definition, or are compared with them on the same lens before you draw a conclusion.
 - **No silent relaxing.** A goal that cannot be met is reported with its gap. Changing a constant, range, pass line or check condition goes back to the user for a new confirmation.
 - **Sourced materials in delivery.** Model glasses are for exploration only.
@@ -30,8 +30,7 @@ For a new need, create the job (`uv run saos job create --name <name>`) and star
 | `interview`, `demand_confirm` | 1. Agree the need |
 | `modeling`, `model_approve` | 2. Choose and approve the model |
 | `design` | 3. Design in rounds |
-| `deliver`, or `zos` whose step detail has `state: zos_accept` | 4. Get the Optiland result accepted |
-| `zos` with `state: zos_pending`, `final_report` | 5. Finish in OpticStudio |
+| `deliver` | 4. Deliver the measured design |
 
 A step with status `blocked` has a blocking open question (`workflow.blocking`): get it answered before optimising or recording rounds. `progress` and `runs` show work still running; never start it again. Reread the demand with `uv run saos demand show --job J` before continuing.
 
@@ -51,7 +50,7 @@ Read [need.md](references/need.md) for the interview format, feasibility reasoni
 
 ## 2. Choose and approve the model
 
-Establish a starting form chosen for reasons the user can follow, built in Optiland with sourced materials and described surface by surface.
+Establish a starting form chosen for reasons the user can follow, built in OpticStudio with sourced materials and described surface by surface.
 
 - If a recipe matches the system, read it: [microscope objectives](references/recipes/microscope.md), [side-viewing fibre probes](references/recipes/fiber.md). Recipes are experience, not rules.
 - For a free structure, generate starts from the library and from patents, predict them first-order and third-order, then screen every candidate under the same budget before you choose. For a prescribed structure, state the user's reason and your feasibility verdict.
@@ -74,26 +73,13 @@ Establish, round by round, how close the approved structure gets to the demand, 
 
 Read [rounds.md](references/rounds.md) for optimisers, merit construction and recording rounds, [diagnosis.md](references/diagnosis.md) when progress stalls or a round brief sets `review`, and [computing.md](references/computing.md) for long runs, workers and the script API.
 
-## 4. Get the Optiland result accepted
+## 4. Deliver the measured design
 
-Establish whether the user accepts the Optiland result as the design to verify in OpticStudio.
+- Run `uv run saos report --job J` for the current OpticStudio rounds. Deliver only the lens named in `deliver`; a `diagnostic` round is not a delivery.
+- State every unmet goal with its measured gap, material limitations and tolerance status. A report does not reset the round budget.
+- If the user wants changes, continue within the demand and stop rules, or return to demand/model confirmation when those change. Only the user decides to stop.
 
-- Run a tolerance scan first when the demand or the user cares about manufacturing and assembly; otherwise offer one.
-- `uv run saos report --job J` writes the report. Deliver only the lens named in `deliver`; a `diagnostic` round is not a delivery. Tell the user these are Optiland numbers, not yet verified in OpticStudio.
-
-**Gate:** the user's explicit acceptance of this report, recorded by `uv run saos zos begin --job J --quote "..."`. Acceptance is never inferred from the demand or model approval. If they reject it, return to stage 3 within the current demand, or record their decision to stop.
-
-Read [delivery.md](references/delivery.md) for the report, tolerance scans and stopping.
-
-## 5. Finish in OpticStudio
-
-Establish the final OpticStudio measurements of the accepted design, improved there if needed, and deliver them.
-
-- `zos begin` rebuilds the accepted round, records a verify round and lists the settings it could not translate (`untranslated`); recreate those before optimising.
-- Continue with OpticStudio optimisers and rounds; the round budget and comparison window restart at the verify baseline, and the design tiers and stop rules stay the same.
-- Regenerate the report once the round decision is final.
-
-Read [opticstudio.md](references/opticstudio.md) for the stage entry, OpticStudio optimisers, glass catalogs, licences and on-screen debugging.
+Read [delivery.md](references/delivery.md) for reporting and stopping, and [opticstudio.md](references/opticstudio.md) for sessions, licences and debugging.
 
 ## Stop and ask
 
@@ -130,6 +116,6 @@ Give the user the report path, the delivered lens file and what is still open.
 - Stalled progress and probe scans: [diagnosis.md](references/diagnosis.md)
 - Long runs, cancellation, workers and the script API: [computing.md](references/computing.md)
 - Report, tolerance scans and stopping: [delivery.md](references/delivery.md)
-- OpticStudio stage and on-screen debugging: [opticstudio.md](references/opticstudio.md)
+- OpticStudio sessions and on-screen debugging: [opticstudio.md](references/opticstudio.md)
 - Job directory contents: [files.md](references/files.md)
 - System families: [microscope objectives](references/recipes/microscope.md), [side-viewing fibre probes](references/recipes/fiber.md); writing a new recipe: [recipes/README.md](references/recipes/README.md)
