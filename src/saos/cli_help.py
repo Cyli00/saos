@@ -62,9 +62,10 @@ Help
 """
 
 GROUPS = {
-    "daemon": """Control the per-instance daemon holding the OpticStudio connection.
-Start defaults to standalone. Extension attaches to a user window and leaves it
-open on exit. Jobs and daemon state use SAOS_INSTANCE (or SAOS_HOME).
+    "daemon": """Control the per-instance daemon holding the lens: Optiland in process until
+zos begin, an OpticStudio connection after it. Start defaults to standalone; with
+extension the OpticStudio stage attaches to a user window and leaves it open on
+exit. Jobs and daemon state use SAOS_INSTANCE (or SAOS_HOME).
 """,
     "job": """Manage local job directories without contacting OpticStudio.
 Jobs live in work/<instance>/jobs/<job>. show, cancel and verify read/write job
@@ -92,7 +93,7 @@ material changes require saving before worker scans; model glass is exploratory
 and cannot be delivered. Optimization keeps the best reached system in memory.
 """,
     "demand": """Validate and confirm sources/demand.yaml locally, without OpticStudio.
-Format: skills/saos/demand.example.yaml; shortfall and stop rules: saos round --help.
+Format: .agents/skills/saos/demand.example.yaml; shortfall and stop rules: saos round --help.
 Each bound needs a source; confirmation records the user's actual approval and
 content hash. Constants, variables, objectives (except their descriptions) and stop define
 the version; rewording a description, the summary, questions or language does not
@@ -110,12 +111,13 @@ always opens it. Gate windows restore/raise without taking keyboard focus.
 
 COMMANDS = {
     "daemon start": (
-        "Start the daemon and wait for an OpticStudio connection (2024 R1 Premium).",
-        "standalone creates a private instance. extension uses UI Automation to open/reuse\n"
-        "  Interactive Extension, disable Auto Close on Disconnect and read its instance.\n"
+        "Start the daemon with lenses in Optiland 0.6.3; OpticStudio (2024 R1 Premium) connects only after zos begin.",
+        "In the OpticStudio stage, standalone creates a private instance. extension uses\n"
+        "  UI Automation to open/reuse Interactive Extension, disable Auto Close on\n"
+        "  Disconnect and read its instance.\n"
         "  It refuses a window connected elsewhere; use SAOS_UI_PID for multiple windows.\n"
         "  Startup errors include details.log_tail. Background logs: daemon/daemon.log;\n"
-        "  startup creates no console window. Typical cold instance startup: 6-8 s.",
+        "  startup creates no console window. Typical cold OpticStudio instance startup: 6-8 s.",
         "DAEMON_ALREADY_RUNNING, DAEMON_START_FAILED, DAEMON_TIMEOUT, UI_BLOCKED, ZOS_LICENSE, ZOS_VERSION_MISMATCH, ZOS_ERROR"),
     "daemon stop": (
         "Stop this daemon; wait for it and its private OpticStudio process to exit.",
@@ -139,8 +141,12 @@ COMMANDS = {
     "job list": ("List this instance's jobs locally.", "Returns jobs with their recorded state; no optical files are changed.", "BAD_ARGS"),
     "job show": (
         "Read a job's state and running computation progress from local files.",
-        "Returns job, path, state, lenses, log_tail (--log count), progress,\n"
+        "Returns job, path, state, workflow, lenses, log_tail (--log count), progress,\n"
         "  cancel_requested and the last 5 detached runs. Works while the daemon is busy.\n"
+        "  workflow has current (interview, demand_confirm, modeling, model_approve,\n"
+        "  design, deliver, zos or final_report), steps with status done/active/\n"
+        "  waiting/blocked/pending and detail, blocking open questions and the round\n"
+        "  decision; it is what the workflow window shows.\n"
         "  A quiet log is not proof of a stalled computation; use progress and runs.", "JOB_NOT_FOUND"),
     "job verify": (
         "Check hashes of sealed evidence files against seals.jsonl locally.",
@@ -290,7 +296,7 @@ COMMANDS.update({
         "  objectives, open_questions, summary, notes, lang, stop. Check method: operand,\n"
         "  analysis or script. Bounds use finite max/min or equals+tol; directional\n"
         "  goals use minimize/maximize with scale (maximize also ideal), not must.max=0.\n"
-        "  Legacy harness.yaml is not converted. Format: skills/saos/demand.example.yaml.", "BAD_ARGS, FILE_NOT_FOUND, JOB_NOT_FOUND"),
+        "  Legacy harness.yaml is not converted. Format: .agents/skills/saos/demand.example.yaml.", "BAD_ARGS, FILE_NOT_FOUND, JOB_NOT_FOUND"),
     "demand confirm": (
         "Record the user's approval of the exact current demand version.",
         "Every limit requires source. --quote must contain the user's approval.\n"

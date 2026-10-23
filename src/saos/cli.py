@@ -67,12 +67,17 @@ def cmd_job(args: argparse.Namespace) -> Any:
     if args.action == "list":
         return {"jobs": jobs.list_jobs()}
     if args.action == "show":
+        from saos.ui import stage
+
         job = jobs.get_job(args.job)
         lines = job.log_file.read_text(encoding="utf-8").splitlines() if job.log_file.is_file() else []
+        snapshot = stage.snapshot(job)
         return {
             "job": job.id,
             "path": str(job.root),
             "state": job.read_state(),
+            # 工作流走到哪一步，与流程窗口同源 / where the job stands in the workflow, as the workflow window shows it
+            "workflow": {k: snapshot[k] for k in ("current", "steps", "blocking", "decision")},
             "lenses": sorted(p.relative_to(job.lenses_dir).as_posix() for p in lens_files.all_lenses(job.lenses_dir)),
             "log_tail": [json.loads(line) for line in lines[-args.log:]] if args.log > 0 else [],
             # 直接读文件，后台进程正忙时也能看 / read from the file, so it works while the daemon is busy
