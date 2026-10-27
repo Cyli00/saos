@@ -656,6 +656,11 @@ class ZosBackend(Backend):
         返回同一镜头的 describe_model(None) 与 OpticStudio 实际使用的玻璃目录，用于逐项核对。
         Save a copy of the current lens, unsaved changes included, for rtc; the system's file name and saved state
         stay as they are. Returns describe_model(None) and the glass folder OpticStudio uses, for the item-by-item check."""
+        self.export_native(path)
+        return {**self.describe_model(None), "glass_dir": str(self._glass_dir())}
+
+    def export_native(self, path: Path) -> None:
+        """导出当前镜头的完整副本，保留主会话的文件名和未保存状态。"""
         path = Path(path).resolve()
         copy = self.system.CopySystem()
         try:
@@ -664,7 +669,6 @@ class ZosBackend(Backend):
             copy.Close(False)
         if not path.is_file():
             raise SaosError(ErrorCode.ZOS_SAVE_FAILED, f"file not found after saving a copy: {path}")
-        return {**self.describe_model(None), "glass_dir": str(self._glass_dir())}
 
     def new_system(self) -> None:
         self.system.New(False)
