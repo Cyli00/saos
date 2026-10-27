@@ -1162,6 +1162,39 @@ class ZosBackend(Backend):
             )
         return self._surface_dict(surf, index)
 
+    def insert_surface(self, index: int, surface_type: str = "Standard") -> str:
+        lde = self.system.LDE
+        if isinstance(index, bool) or not isinstance(index, int) or not 1 <= index < lde.NumberOfSurfaces:
+            raise SaosError(ErrorCode.BAD_ARGS, f"a new surface goes at 1–{lde.NumberOfSurfaces - 1} (before the image), got {index!r}")
+        lde.InsertNewSurfaceAt(index)
+        return self.change_surface_type(index, surface_type)
+
+    def change_surface_type(self, index: int, surface_type: str) -> str:
+        zosapi = _load_zosapi(self.root)
+        lde = self.system.LDE
+        if isinstance(index, bool) or not isinstance(index, int) or not 1 <= index < lde.NumberOfSurfaces - 1:
+            raise SaosError(ErrorCode.BAD_ARGS, f"only surfaces 1–{lde.NumberOfSurfaces - 2} can change type, got {index!r}")
+        row = lde.GetSurfaceAt(index)
+        kind = enum_member(zosapi.Editors.LDE.SurfaceType, "Standard", str(surface_type), f"surface {index} type")
+        if not row.ChangeType(row.GetSurfaceTypeSettings(kind)):
+            raise SaosError(ErrorCode.BAD_ARGS, f"surface {index}: OpticStudio refused surface type {surface_type}")
+        return str(row.Type)
+
+    def set_solve(self, index: int, param: str, solve: dict[str, Any]) -> dict[str, Any]:
+        """一个单元格的求解：fixed、variable、pickup、marginal_ray_height、f_number，写后回读。/ Set one cell's solve and read it back."""
+        zosapi = _load_zosapi(self.root)
+        row = self._row(index)
+        label = f"surface {index} {param}"
+        if solve["type"] == "fixed":
+            cell = type_param_cell(zosapi, row, label, param) if is_par(param) else getattr(row, f"{param.capitalize()}Cell")
+            cell.MakeSolveFixed()
+            if str(cell.GetSolveData().Type) != "Fixed":
+                raise SaosError(ErrorCode.BAD_ARGS, f"{label}: the fixed solve did not take")
+        else:
+            self._set_solve(zosapi, row, solve, param, label)
+            cell = type_param_cell(zosapi, row, label, param) if is_par(param) else getattr(row, f"{param.capitalize()}Cell")
+        return self._solve_dict(cell.GetSolveData())
+
     def _catalogs_in_use(self) -> list[str]:
         return [str(c) for c in self.system.SystemData.MaterialCatalogs.GetCatalogsInUse() if str(c)]
 
