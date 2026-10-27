@@ -139,6 +139,69 @@ def param_cells(zosapi, row) -> dict[int, Any]:
     return {n: c for n in range(1, 255) if (c := _usable_cell(zosapi, row, n)) is not None}
 
 
+# 评价函数文件（.MF；2024 R1 写出 VERS 231205，UTF-16）每行：类型 Int1 Int2 Param3–Param8 Target Weight，最后一列是上次计算的
+# 当前值（没算过为 0，载入后清零），核对时不比较。
+# 按 17 位有效数字写入时载入后数值不变；SaveMeritFunction 只写 13 位，所以回读按相对 1e-12 比较。
+# A .MF row: type Int1 Int2 Param3–Param8 Target Weight and the last computed value (0 until computed, cleared on load,
+# never compared). Values written with 17 significant
+# digits load unchanged; SaveMeritFunction writes 13, so the read-back compares to a relative 1e-12.
+MF_FIELDS = ("int1", "int2", "param3", "param4", "param5", "param6", "param7", "param8", "target", "weight")
+
+
+def _read_mf(path: Path) -> tuple[str, list[str]]:
+    lines = path.read_text(encoding="utf-16").splitlines()
+    if not lines or not lines[0].startswith("VERS"):
+        raise SaosError(ErrorCode.ZOS_ERROR, f"unexpected merit function file header in {path.name}: {lines[:1]}")
+    return lines[0], [line for line in lines[1:] if line.strip()]
+
+
+def _write_mf(path: Path, header: str, rows: list[str]) -> None:
+    path.write_bytes(("\r\n".join([header, *rows]) + "\r\n").encode("utf-16"))
+
+
+def _mf_values(spec: dict[str, Any]) -> list[float]:
+    return [*spec["params"], *[0] * (8 - len(spec["params"])), spec["target"], spec["weight"]]
+
+
+def _mf_line(spec: dict[str, Any], row: int) -> str:
+    values = _mf_values(spec)
+    for name, value in zip(MF_FIELDS[:2], values):
+        if float(value) != int(value):
+            raise SaosError(ErrorCode.BAD_ARGS, f"merit row {row} ({spec['type']}): {name} must be an integer, got {value}")
+    return f"{spec['type']} {int(values[0])} {int(values[1])} " + " ".join(format(float(v), ".17E") for v in [*values[2:], 0.0])
+
+
+def _mf_key(line: str) -> list[str]:
+    """一行除当前值以外的内容；BLNK 的注释整行比较。/ A row without its computed value; a BLNK comment compares whole."""
+    fields = line.split()
+    return fields if fields[0].upper() == "BLNK" else fields[:1 + len(MF_FIELDS)]
+
+
+def _mf_problems(got: list[str], body: list[str], specs: list[dict[str, Any]], position: int,
+                 used: dict[str, list[bool]] | None = None) -> list[str]:
+    """载入后的评价函数与预期的差别：原有行必须原样保留；新行比较该操作数用到的参数列与 Target、Weight，没用到的列填了非零值算错。
+    How the loaded merit function differs from the intended one: rows already there stay as they were; new rows compare the
+    columns their operand uses plus Target and Weight, and a non-zero value in an unused column is an error."""
+    n = len(specs)
+    if len(got) != len(body) + n:
+        return [f"{len(body) + n} rows expected after loading, {len(got)} found"]
+    kept = [_mf_key(line) for line in got[:position] + got[position + n:]]
+    problems = [] if kept == [_mf_key(line) for line in body] else ["rows outside the new block changed"]
+    for k, spec in enumerate(specs):
+        row, fields = position + 1 + k, got[position + k].split()
+        if fields[0].upper() != spec["type"] or len(fields) < 1 + len(MF_FIELDS):
+            problems.append(f"row {row}: {spec['type']} became {got[position + k][:40]!r}")
+            continue
+        active = (used or {}).get(spec["type"], [True] * 8) + [True, True]
+        for name, on, actual, wanted in zip(MF_FIELDS, active, map(float, fields[1:]), _mf_values(spec)):
+            if not on:
+                if wanted != 0:
+                    problems.append(f"row {row} {spec['type']} has no {name}; got {wanted}")
+            elif not (actual == wanted or math.isclose(actual, wanted, rel_tol=1e-12, abs_tol=0.0)):
+                problems.append(f"row {row} {spec['type']} {name}: {wanted} became {actual}")
+    return problems
+
+
 def type_param_cell(zosapi, row, label: str, key: str, cells: dict[int, Any] | None = None):
     """面型参数单元格：par<N> 按列号，其余按 Lens Data 的列标题（不分大小写）；没有这一列或列标为 unused 时报错并列出该面型的参数。
     cells 是 param_cells 的结果，按标题查不到时重扫一次（写了项数之后会多出列）。
@@ -1764,27 +1827,58 @@ class ZosBackend(Backend):
         return int(self.system.MFE.NumberOfOperands)
 
     def merit_add(self, rows: list[dict[str, Any]]) -> int:
+        self.merit_append(rows)
+        return int(self.system.MFE.NumberOfOperands)
+
+    def merit_append(self, rows: list[dict[str, Any]]) -> list[int]:
+        """按输入顺序把一批行插在第一个 DMFS 之前（没有 DMFS 时接在末尾），返回新行的行号；向导从 DMFS 起重建时不会覆盖它们。
+        经 .MF 文件整批载入：1501 行逐行 AddOperand 约 9.8 s，整批（含两次存盘与核对）约 65 ms（2024 R1，2026-10-27 实测）。载入后另存
+        回读逐项核对；OpticStudio 悄悄改掉的值（越界的波长号、整数列里的小数等）算失败，并恢复原来的评价函数。
+        Insert a batch of rows, in order, before the first DMFS (at the end without one) and return their row numbers.
+        Loaded through one .MF file (1501 rows: 9.8 s row by row, about 65 ms as a batch with the check) and checked by
+        saving it back; a value OpticStudio silently changed fails and restores the previous merit function."""
+        from saos.ctx.rows import compile_rows
+
         zosapi = _load_zosapi(self.root)
         mfe = self.system.MFE
-        columns = zosapi.Editors.MFE.MeritColumn
-        params = [columns.Param1, columns.Param2, columns.Param3, columns.Param4, columns.Param5, columns.Param6, columns.Param7, columns.Param8]
-        for spec in rows:
-            op_type = getattr(zosapi.Editors.MFE.MeritOperandType, str(spec["type"]).upper(), None)
-            if op_type is None:
-                raise SaosError(ErrorCode.BAD_ARGS, f"unknown operand {spec['type']!r}")
-            # 新行插在开头，避免被默认评价函数（从 DMFS 起）重建时覆盖
-            row = mfe.InsertNewOperandAt(1)
-            row.ChangeType(op_type)
-            values = [spec.get("int1", 0), spec.get("int2", 0), *spec.get("data", [])]
-            for col, value in zip(params, values):
-                cell = row.GetOperandCell(col)
-                if str(cell.DataType) == "Integer":
-                    cell.IntegerValue = int(value)
-                elif str(cell.DataType) == "Double":
-                    cell.DoubleValue = float(value)
-            row.Target = float(spec.get("target", 0.0))
-            row.Weight = float(spec.get("weight", 1.0))
-        return int(mfe.NumberOfOperands)
+        with tempfile.TemporaryDirectory(prefix="saos-mf-") as folder:
+            original = Path(folder) / "original.MF"
+            mfe.SaveMeritFunction(str(original))
+            header, body = _read_mf(original)
+            if len(body) != int(mfe.NumberOfOperands):
+                raise SaosError(ErrorCode.ZOS_ERROR, f"merit function file lists {len(body)} rows, the editor has {int(mfe.NumberOfOperands)}")
+            position = next((i for i, line in enumerate(body) if line.split()[0].upper() == "DMFS"), len(body))
+            try:
+                specs = compile_rows(rows, position + 1)
+            except ValueError as exc:
+                raise SaosError(ErrorCode.BAD_ARGS, f"merit rows: {exc}") from exc
+            unknown = sorted({s["type"] for s in specs if getattr(zosapi.Editors.MFE.MeritOperandType, s["type"], None) is None})
+            if unknown:
+                raise SaosError(ErrorCode.BAD_ARGS, f"unknown merit operands {unknown}")
+            added = [_mf_line(s, position + 1 + k) for k, s in enumerate(specs)]
+            batch = Path(folder) / "batch.MF"
+            _write_mf(batch, header, [*body[:position], *added, *body[position:]])
+            try:
+                mfe.LoadMeritFunction(str(batch))
+                check = Path(folder) / "check.MF"
+                mfe.SaveMeritFunction(str(check))
+                # 每种操作数实际用到哪些参数列（列标题非空）；没用到的列 OpticStudio 存盘时可能写别的值（ABSO 的 Int2 写成 1）
+                # the parameter columns each operand type uses (non-empty header); unused ones may be saved as anything
+                columns = [getattr(zosapi.Editors.MFE.MeritColumn, f"Param{n}") for n in range(1, 9)]
+                used = {}
+                for k, s in enumerate(specs):
+                    if s["type"] not in used:
+                        row = mfe.GetOperandAt(position + 1 + k)
+                        used[s["type"]] = [bool(str(row.GetOperandCell(c).Header).strip()) for c in columns]
+                problems = _mf_problems(_read_mf(check)[1], body, specs, position, used)
+            except Exception:
+                mfe.LoadMeritFunction(str(original))
+                raise
+            if problems:
+                mfe.LoadMeritFunction(str(original))
+                raise SaosError(ErrorCode.BAD_ARGS, "OpticStudio did not take these merit rows as given; the merit function is unchanged: "
+                                + "; ".join(problems[:10]), {"problems": problems[:100]})
+        return list(range(position + 1, position + 1 + len(specs)))
 
     def merit_clear(self) -> None:
         self.system.MFE.DeleteAllRows()
