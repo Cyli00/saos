@@ -391,6 +391,9 @@ EXEC_HELP_EPILOG = """Input: a Python script defining run(ctx)
 
 Context and file operations
   ctx.system: PrimarySystem; ctx.zosapi: ZOSAPI namespace; ctx.backend: backend.
+  Editing: ctx.merit_add(rows) (ordered, before DMFS, id/ref rows; saos.ctx.rows
+    builds thickness, sag-gap and NA-proxy rows), ctx.solve(key, kind, ...),
+    ctx.insert_surface(i, type, **values), ctx.change_surface_type(ref, type).
   ctx.job, ctx.args, ctx.lens (Path or None), ctx.dirty.
   ctx.path(rel): path contained in the job; ctx.mark_dirty(): record edits.
   ctx.load(name), ctx.save_as(name, overwrite=False): names relative to lenses/.

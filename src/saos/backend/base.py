@@ -190,6 +190,22 @@ class Backend(ABC):
         catalog is the name substitute_catalog resolved, used as given; empty means every catalog in use."""
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support vary")
 
+    def merit_append(self, rows: list[dict[str, Any]]) -> list[int]:
+        """按输入顺序把评价函数行插在第一个 DMFS 之前（没有时接在末尾），返回新行号；行格式见 saos.ctx.rows.compile_rows。
+        Insert merit rows, in order, before the first DMFS (at the end without one); returns their row numbers."""
+        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} has no merit function")
+
+    def insert_surface(self, index: int, surface_type: str = "Standard") -> str:
+        """在 index 处插入一个面（像面之前），返回面型。/ Insert a surface at index (before the image); returns its type."""
+        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} cannot insert surfaces")
+
+    def change_surface_type(self, index: int, surface_type: str) -> str:
+        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} cannot change surface types")
+
+    def set_solve(self, index: int, param: str, solve: dict[str, Any]) -> dict[str, Any]:
+        """设一个单元格的求解（fixed、variable、pickup、marginal_ray_height、f_number），返回回读的求解。"""
+        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} cannot set solves")
+
     def vary_config(self, rows: list[int], configs: list[int] | None, on: bool) -> dict[str, str]:
         """把多重结构的格设为变量或固定；configs 为空时是全部结构。返回 {"<行>.<结构>": 求解类型}。
         Make multi-configuration cells variable or fixed; configs empty means every configuration."""

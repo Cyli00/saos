@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any
 from saos import jobs
 from saos.kit import KitMethods
 from saos.lens_files import companion
-from saos.protocol import ErrorCode, SaosError, jsonable, write_json
+from saos.protocol import ErrorCode, SaosError, finite, jsonable, write_json
 
 if TYPE_CHECKING:
     from saos.daemon import Daemon
@@ -24,6 +24,11 @@ if TYPE_CHECKING:
 SCRIPTS_DIR = "scripts"
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$")
 TRACEBACK_CHARS = 4000
+# ctx.solve 的求解及其参数默认值；None 表示必须给出 / ctx.solve kinds and parameter defaults; None means required
+SOLVE_PARAMETERS: dict[str, dict[str, Any]] = {
+    "fixed": {}, "variable": {}, "pickup": {"surface": None, "scale": 1.0, "offset": 0.0},
+    "marginal_ray_height": {"height": 0.0, "zone": 0.0}, "f_number": {"value": None}}
+REQUIRED_SOLVE_PARAMETERS = {kind: {k for k, v in d.items() if v is None} for kind, d in SOLVE_PARAMETERS.items()}
 
 
 class ScriptContext(KitMethods):
@@ -56,6 +61,66 @@ class ScriptContext(KitMethods):
         from saos import fast
 
         return fast.from_context(self, freeze_solves)
+
+    def _editing(self, what: str) -> None:
+        if self.in_check:
+            raise SaosError(ErrorCode.BAD_ARGS, f"check scripts are read-only: {what} is not available in a check")
+
+    def merit_add(self, rows: list[dict[str, Any]]) -> list[int]:
+        """按输入顺序把评价函数行插在第一个 DMFS 之前（没有时接在末尾），返回新行号。行写 type、params（或 int1/int2/data）、
+        target、weight；id 与 {"ref": id} 引用同批前序行，行号在插入位置上解析。saos.ctx.rows 生成常用约束。
+        Insert merit rows, in order, before the first DMFS (at the end without one); returns their row numbers. id and
+        {"ref": id} refer to earlier rows of the same batch, resolved at the insertion point."""
+        self._editing("merit_add")
+        added = self.backend.merit_append(rows)
+        self.mark_dirty()
+        return added
+
+    def solve(self, key: str, kind: str, **parameters: Any) -> dict[str, Any]:
+        """设一个面参数单元格的求解：fixed、variable、pickup(surface, scale=1, offset=0)、
+        marginal_ray_height(height=0, zone=0)（厚度）、f_number(value)（半径）。返回回读的求解。
+        Set the solve of one surface cell; returns the solve read back."""
+        from saos import kit
+        from saos.backend.base import PAR_RE
+
+        self._editing("solve")
+        what, ref, param = kit.parse_key(key)
+        if what != "surface" or not (param in ("radius", "thickness", "conic") or PAR_RE.match(param)):
+            raise SaosError(ErrorCode.BAD_ARGS, f"solves are set on <surface>.radius|thickness|conic|par<N>, got {key!r}")
+        allowed = SOLVE_PARAMETERS.get(kind)
+        if allowed is None or set(parameters) - set(allowed) or not REQUIRED_SOLVE_PARAMETERS.get(kind, set()) <= set(parameters):
+            raise SaosError(ErrorCode.BAD_ARGS, f"solve kinds and their parameters: {SOLVE_PARAMETERS}; "
+                                                f"required: {REQUIRED_SOLVE_PARAMETERS}; got {kind!r} {sorted(parameters)}")
+        solve = {"type": kind, **allowed, **parameters}
+        for name, value in solve.items():
+            if name in ("type", "surface"):
+                continue
+            if finite(value) is None:
+                raise SaosError(ErrorCode.BAD_ARGS, f"solve {kind}: {name} must be a finite number, got {value!r}")
+        if kind == "pickup":
+            solve["surface"] = kit.surface(self, solve["surface"])
+        out = self.backend.set_solve(kit.surface(self, ref), param, solve)
+        self.mark_dirty()
+        return out
+
+    def insert_surface(self, index: int, surface_type: str = "Standard", **values: Any) -> dict[str, Any]:
+        """在 index 处（像面之前）插入一个面，换成 surface_type，再按 ctx.set 写 values（radius=…、thickness=…、par2=…）。
+        Insert a surface at index (before the image), give it surface_type and set values as ctx.set would."""
+        self._editing("insert_surface")
+        kind = self.backend.insert_surface(index, surface_type)
+        self.mark_dirty()
+        if values:
+            self.set({f"{index}.{k}": v for k, v in values.items()})
+        return {"index": index, "type": kind}
+
+    def change_surface_type(self, ref: int | str, surface_type: str) -> str:
+        """改面型（OpticStudio 的 SurfaceType 名，不分大小写，如 EvenAspheric）；返回改后的面型。"""
+        from saos import kit
+
+        self._editing("change_surface_type")
+        kind = self.backend.change_surface_type(kit.surface(self, ref), surface_type)
+        self.mark_dirty()
+        return kind
 
     def measure(self, ids: list[str] | None = None) -> dict[str, Any]:
         """按需求单的判定测当前镜头（与 check、round 同一套定义），不存证据、不记录；返回 values、shortfall（只含所测各项）、

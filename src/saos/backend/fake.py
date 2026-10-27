@@ -137,6 +137,43 @@ class FakeBackend(Backend):
             surface[param] = "" if value is None else str(value)
         return copy.deepcopy(surface)
 
+    def merit_append(self, rows: list[dict[str, Any]]) -> list[int]:
+        from saos.ctx.rows import compile_rows
+
+        merit = self._require().setdefault("merit", [])
+        position = next((i for i, r in enumerate(merit) if r["type"] == "DMFS"), len(merit))
+        try:
+            specs = compile_rows(rows, position + 1)
+        except ValueError as exc:
+            raise SaosError(ErrorCode.BAD_ARGS, f"merit rows: {exc}") from exc
+        merit[position:position] = specs
+        return list(range(position + 1, position + 1 + len(specs)))
+
+    def insert_surface(self, index: int, surface_type: str = "Standard") -> str:
+        surfaces = self._require()["surfaces"]
+        if isinstance(index, bool) or not isinstance(index, int) or not 1 <= index < len(surfaces):
+            raise SaosError(ErrorCode.BAD_ARGS, f"a new surface goes at 1–{len(surfaces) - 1}, got {index!r}")
+        surfaces.insert(index, fake_surface(index))
+        for i, s in enumerate(surfaces):
+            s["index"] = i
+        return self.change_surface_type(index, surface_type)
+
+    def change_surface_type(self, index: int, surface_type: str) -> str:
+        surfaces = self._require()["surfaces"]
+        if isinstance(index, bool) or not isinstance(index, int) or not 1 <= index < len(surfaces) - 1:
+            raise SaosError(ErrorCode.BAD_ARGS, f"only surfaces 1–{len(surfaces) - 2} can change type, got {index!r}")
+        surfaces[index]["type"] = str(surface_type)
+        return surfaces[index]["type"]
+
+    def set_solve(self, index: int, param: str, solve: dict[str, Any]) -> dict[str, Any]:
+        surfaces = self._require()["surfaces"]
+        if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < len(surfaces):
+            raise SaosError(ErrorCode.BAD_ARGS, f"surface {index!r} out of range")
+        name = {"fixed": "Fixed", "variable": "Variable", "pickup": "SurfacePickup", "marginal_ray_height": "MarginalRayHeight",
+                "f_number": "FNumber"}[solve["type"]]
+        surfaces[index]["solves"][param] = name
+        return {"type": name}
+
     def vary(self, surface: int, param: str, on: bool, mode: str | None = None, catalog: str | None = None) -> str:
         lens = self._require()
         if param not in ("radius", "thickness", "conic", "material") and not is_par(param):
