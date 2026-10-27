@@ -133,3 +133,12 @@ def test_context_load_captures_unsaved_window_content(daemon, loaded, monkeypatc
     assert (loaded.lenses_dir / "captures/001-unsaved.zmx").is_file()
     archived = json.loads(next((loaded.root / "scripts").glob("*.json")).read_text(encoding="utf-8"))
     assert archived["captured"] == ["captures/001-unsaved.zmx"]
+
+
+def test_exec_api_hints_are_advisory_and_archived(daemon, loaded):
+    source = 'def run(ctx):\n    return 42\n    radius = ctx.system.LDE.GetSurfaceAt(3).Radius\n'
+    result = run(daemon, loaded, source)['result']
+    assert result['result'] == 42
+    assert result['hints'][0]['suggestion'] == 'ctx.get("3.radius")'
+    record = json.loads((loaded.root / result['script']).with_suffix('.json').read_text(encoding='utf-8'))
+    assert record['hints'] == result['hints']

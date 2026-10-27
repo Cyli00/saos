@@ -197,10 +197,15 @@ def next_copy(job: jobs.Job, name: str) -> Path:
 
 
 def execute(daemon: Daemon, job: jobs.Job, name: str, source: str, args: dict[str, Any]) -> dict[str, Any]:
+    from saos.ctx.hints import direct_api_hints
+
     copy = next_copy(job, name)
     copy.write_text(source, encoding="utf-8")
     rel = copy.relative_to(job.root).as_posix()
     record: dict[str, Any] = {"script": rel, "args": args}
+    hints = direct_api_hints(source)
+    if hints:
+        record["hints"] = hints
     started = time.perf_counter()
     try:
         namespace: dict[str, Any] = {"__name__": f"saos_script_{copy.stem.replace('-', '_')}", "__file__": str(copy)}
@@ -216,6 +221,8 @@ def execute(daemon: Daemon, job: jobs.Job, name: str, source: str, args: dict[st
             raise SaosError(ErrorCode.BAD_ARGS, f"run(ctx) must return JSON-serializable data: {exc}") from exc
         record.update(ok=True, result=result)
         out = {"script": rel, "result": result}
+        if hints:
+            out["hints"] = hints
         if ctx.captured:
             record["captured"] = out["captured"] = ctx.captured
         return out
