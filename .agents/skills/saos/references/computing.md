@@ -76,3 +76,32 @@ A reduced model (paraxial surfaces, a coarse grid, one field) states which const
 ## Reading large files
 
 Read a large file by section (find the headings, read the part you need), and read a helper library only when you are about to use or change it.
+
+## Editing the lens from a script
+
+Merit rows, solves and new surfaces have `ctx` methods; reach for `ctx.system` only for what they do not cover.
+
+- `ctx.merit_add(rows)` inserts rows in the given order before the first `DMFS` (at the end without one) and returns their row numbers. A row has `type`, `params` (or `int1`/`int2`/`data`), `target` and `weight`; `id` and `{"ref": id}` refer to an earlier row of the same batch, so references stay right wherever the batch lands. The batch loads as one merit file and is read back: 1501 rows take about 65 ms instead of 9.8 s row by row, and a value OpticStudio would silently change (a wavelength number beyond the system's, a fraction in an integer column) refuses the batch and leaves the merit function as it was. Rows after the insertion point move down.
+- `saos.ctx.rows` builds common constraints: `thickness_bounds(s, minimum=, maximum=)` (CTGT/CTLT); `sag_gap(front, front + 1, [(x, y), ...], minimum=)`, the gap front thickness + back sag − front sag at each point (TTHI, SSAG, DIFF, SUMM, OPGT; it follows a varying thickness, holds only at the given points and only for adjacent coaxial surfaces); `na_proxy(surface, wave, index=, target=, minimum=)`, the RAGA/RAGB direction cosine of the axial marginal ray scaled by a fixed index, a proxy and not the NA check.
+- Design-rule constraints (the set DeepLens regularises, written as native operands so DLS and Hammer keep them; every threshold is yours to source, none is a default): `clearances(first, last, glass_center=(min, max), glass_edge=, air_center=, air_edge=)` (MNCG/MXCG, MNEG/MXEG at the semi-diameter, MNCA/MXCA, MNEA/MXEA; each reads its target while met, so only a violation counts); `total_track(minimum=, maximum=)` (TOTR); `distortion(wave, [hy, ...], maximum=, reference_field=1)` (DISG in percent at each sampled field, both signs; field 1 must be on axis, otherwise pass the on-axis field number); `chief_ray_angle(image, wave, [hy, ...], maximum=)` (RAID of the chief ray at the image, degrees); `ray_bend([surfaces], wave, [(hx, hy, px, py), ...], maximum=)` (|RAID − RAED| per refracting surface, degrees). They constrain the sampled points only; the demand checks still judge.
+- `ctx.solve("5.thickness", "marginal_ray_height", height=0, zone=0)` sets one cell's solve and returns it read back: `fixed`, `variable`, `pickup(surface, scale=1, offset=0)`, `marginal_ray_height` on thicknesses, `f_number(value)` on radii.
+- `ctx.insert_surface(3, "EvenAspheric", radius=-40, thickness=2)` inserts before the image and sets the values as `ctx.set` does; `ctx.change_surface_type(3, "Standard")` changes a type (OpticStudio `SurfaceType` names, any case).
+
+A new surface or type changes the structure, which the round gate compares with the approved model. Check scripts cannot call these methods.
+
+```python
+from saos.ctx import rows
+
+
+def run(ctx):
+    ctx.solve("4.thickness", "marginal_ray_height")
+    added = ctx.merit_add([
+        {"id": "efl", "type": "EFFL", "params": [0, 1], "target": 50, "weight": 1},
+        {"type": "OPGT", "params": [{"ref": "efl"}], "target": 45, "weight": 10},
+        *rows.thickness_bounds(1, minimum=3, maximum=7),
+        *rows.sag_gap(1, 2, [(r, 0) for r in (0, 2, 4, 6)], minimum=0.5, weight=100),
+    ])
+    return {"rows": added}
+```
+
+`exec` adds `hints` to its result and archive when a script reads or writes a surface through `ctx.system.LDE.GetSurfaceAt(n)` that `ctx.get` / `ctx.set` already covers. The check reads only the top level of `run` with constant surface numbers; it never refuses a script.
