@@ -40,7 +40,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from saos import i18n, jobs
-from saos.protocol import ErrorCode, SaosError, write_json
+from saos.protocol import ErrorCode, SaosError, read_jsonl, write_json
 
 if TYPE_CHECKING:
     from saos.scripting import ScriptContext
@@ -500,10 +500,7 @@ def shortfall(item: dict[str, Any], value: float | None) -> float:
 # ---------- 确认记录 / confirmations ----------
 
 def confirmations(root: Path) -> list[dict[str, Any]]:
-    path = root / CONFIRMATIONS_FILE
-    if not path.is_file():
-        return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return read_jsonl(root / CONFIRMATIONS_FILE)
 
 
 def confirmation_for(root: Path, sha: str, demand: dict[str, Any] | None = None) -> dict[str, Any] | None:

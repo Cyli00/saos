@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import numbers
 import os
 import tempfile
 import time
@@ -127,6 +128,22 @@ def read_json(path: Path | str) -> Any:
         return json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
         raise SaosError(ErrorCode.BAD_ARGS, f"cannot read JSON file {path}: {exc}") from exc
+
+
+def read_jsonl(path: Path) -> list[Any]:
+    """逐行 JSON 文件的全部记录，文件不存在时为空。/ Every record of a JSON-lines file; empty when the file does not exist."""
+    if not path.is_file():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def finite(value: Any) -> float | None:
+    """有限实数（含 numpy 数值）转成 float；None、布尔、非有限值、复数和文字都算读不出，返回 None。
+    A finite real number (numpy included) as float; None, bools, non-finite values, complex numbers and text give None."""
+    if isinstance(value, bool) or not isinstance(value, numbers.Real):
+        return None
+    value = float(value)
+    return value if math.isfinite(value) else None
 
 
 def encode(message: dict[str, Any]) -> bytes:

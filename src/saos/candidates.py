@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from saos import demand, geometry, i18n, jobs, lens_files, model_gate, prescription
-from saos.protocol import ErrorCode, SaosError, jsonable, write_json
+from saos.protocol import ErrorCode, SaosError, finite, jsonable, write_json
 
 MIN_CANDIDATES = 1
 MAX_CANDIDATES = 12
@@ -195,10 +195,6 @@ def _state(w, plan: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _finite(x: Any) -> bool:
-    return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x)
-
-
 def _problems(state: dict[str, Any]) -> list[str]:
     """候选无效的原因；空表示有效。G 为无穷大只因为有无效值时，原因已由 invalid 说明，不再重复。
     Why a candidate is invalid; empty when it is valid. An infinite G that only comes from invalid values is already
@@ -215,7 +211,7 @@ def _problems(state: dict[str, Any]) -> list[str]:
         out.append(f"no valid value: {', '.join(state['invalid'])}")
     if state.get("errors"):
         out.append(f"checks failed: {', '.join(sorted(state['errors']))}")
-    if not _finite(state.get("shortfall")) and not state.get("invalid"):
+    if finite(state.get("shortfall")) is None and not state.get("invalid"):
         out.append("no finite shortfall")
     return out
 
@@ -225,7 +221,7 @@ def _verdict(row: dict[str, Any], state: dict[str, Any]) -> str:
     if "material" in (state.get("error_kinds") or {}).values():
         return "material"
     clash = state.get("interference") or {}
-    if clash.get("error") or state.get("errors") or (not _finite(state.get("shortfall")) and not state.get("invalid")):
+    if clash.get("error") or state.get("errors") or (finite(state.get("shortfall")) is None and not state.get("invalid")):
         return "computation"
     if not row.get("problems"):
         return "valid"

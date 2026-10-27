@@ -65,7 +65,7 @@ import threading
 from typing import Any
 
 from saos import candidates, demand, jobs, kit, search
-from saos.protocol import ErrorCode, SaosError, write_json
+from saos.protocol import ErrorCode, SaosError, finite, write_json
 
 log = logging.getLogger(__name__)
 
@@ -418,14 +418,14 @@ def _tolerance_result(plan: dict[str, Any], checked: dict[str, dict[str, Any]], 
     def scale(k: str) -> float:
         item = checked[k]
         if item.get("goal") is None:
-            return abs(_finite(base.get(k)) or 0.0) or 1.0
+            return abs(finite(base.get(k)) or 0.0) or 1.0
         return float(item.get("scale", demand._default_scale(item["goal"]) or 1.0))
 
     def passes(k: str, v: Any) -> bool | None:
         goal = checked[k].get("goal")
         if goal is None:
             return None
-        v = _finite(v)
+        v = finite(v)
         return v is not None and demand.excess(goal, v) <= demand.BOUND_TOLERANCE * scale(k)
 
     sens: dict[str, dict[str, Any]] = {}
@@ -438,7 +438,7 @@ def _tolerance_result(plan: dict[str, Any], checked: dict[str, dict[str, Any]], 
         ref = model_base if _is_glass_key(key) and model_row is not None else base
         if ref is model_base:
             entry["baseline"] = "nominal_model_glass"
-        change = {k: (None if _finite(values.get(k)) is None or _finite(ref.get(k)) is None else values[k] - ref[k]) for k in measure}
+        change = {k: (None if finite(values.get(k)) is None or finite(ref.get(k)) is None else values[k] - ref[k]) for k in measure}
         entry["sides"][r["side"]] = {"deviation": r["deviation"], "values": values, "change": change,
                                      "failing": [k for k in measure if passes(k, values.get(k)) is False]}
     for entry in sens.values():
@@ -453,9 +453,9 @@ def _tolerance_result(plan: dict[str, Any], checked: dict[str, dict[str, Any]], 
         valid = [r for r in samples if not r.get("invalid") and not r.get("error")]
         stats = {}
         for k in measure:
-            vals = [v for v in (_finite((r.get("values") or {}).get(k)) for r in valid) if v is not None]
+            vals = [v for v in (finite((r.get("values") or {}).get(k)) for r in valid) if v is not None]
             flags = [passes(k, (r.get("values") or {}).get(k)) for r in samples]
-            stats[k] = {"n": len(vals), "nominal": _finite(base.get(k)),
+            stats[k] = {"n": len(vals), "nominal": finite(base.get(k)),
                         "mean": sum(vals) / len(vals) if vals else None,
                         "std": math.sqrt(sum((v - sum(vals) / len(vals)) ** 2 for v in vals) / (len(vals) - 1)) if len(vals) > 1 else None,
                         "min": min(vals) if vals else None, "max": max(vals) if vals else None,
@@ -469,7 +469,7 @@ def _tolerance_result(plan: dict[str, Any], checked: dict[str, dict[str, Any]], 
     out = {"nominal": {"values": base, "failing": [k for k in measure if passes(k, base.get(k)) is False]},
            "sensitivity": ranking, "monte_carlo": mc}
     if model_row is not None:
-        out["model_glass_offset"] = {k: (None if _finite(model_base.get(k)) is None or _finite(base.get(k)) is None else model_base[k] - base[k])
+        out["model_glass_offset"] = {k: (None if finite(model_base.get(k)) is None or finite(base.get(k)) is None else model_base[k] - base[k])
                                      for k in measure}
     return out
 
@@ -523,10 +523,6 @@ def _probe_items(ctx, plan: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
-def _finite(value: Any) -> float | None:
-    return float(value) if isinstance(value, (int, float)) and math.isfinite(value) else None
-
-
 def _direction(change: float | None, scale: float) -> str | None:
     if change is None:
         return None
@@ -542,7 +538,7 @@ def _probe_result(plan: dict[str, Any], scales: dict[str, float | None], rows: l
     by = {(r.get("probe"), r.get("side")): r for r in rows}
     baseline = by[("base", None)]
     base_values = baseline.get("values") or {}
-    if _finite(base_values.get(target)) is None:
+    if finite(base_values.get(target)) is None:
         # 前提不成立（例如没有实焦点、零件交叠）时，扰动出的变化没有意义；先确认可行性
         # without a valid baseline value (no real focus, overlapping parts) changes mean nothing: establish feasibility first
         return {"target": target, "baseline": baseline, "probes": [], "ranking": [],
@@ -556,8 +552,8 @@ def _probe_result(plan: dict[str, Any], scales: dict[str, float | None], rows: l
         observed, effect, one_sided = {}, {}, {}
         for k in plan["measure"]:
             # inf、NaN 与缺失一样算没有有效值 / inf and NaN count as no valid value, like a missing one
-            lo, hi = (_finite((row[side].get("values") or {}).get(k)) for side in ("minus", "plus"))
-            b = _finite(base_values.get(k))
+            lo, hi = (finite((row[side].get("values") or {}).get(k)) for side in ("minus", "plus"))
+            b = finite(base_values.get(k))
             scale = scales.get(k) or (abs(b) if b else None) or 1.0
             if lo is not None and hi is not None:
                 change = (hi - lo) / 2

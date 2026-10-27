@@ -33,6 +33,9 @@ def parse_numeric(param: str, value: Any) -> float:
         return math.inf
     if isinstance(value, str) and value.strip().lower() in ("-inf", "-infinity"):
         return -math.inf
+    if isinstance(value, bool):
+        # float(True) 是 1.0，会把写错的参数悄悄当成数值 / float(True) is 1.0 and would pass a mistaken argument as a number
+        raise SaosError(ErrorCode.BAD_ARGS, f"{param} needs a number, got {value!r}")
     try:
         number = float(value)
     except (TypeError, ValueError) as exc:

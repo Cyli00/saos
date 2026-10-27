@@ -9,8 +9,7 @@ from saos import demand, model_gate
 
 def elapsed(job) -> dict:
     d = demand.load_job(job.root)
-    path = job.root / "confirmations.jsonl"
-    records = [json.loads(s) for s in path.read_text(encoding="utf-8").splitlines() if s.strip()] if path.is_file() else []
+    records = demand.confirmations(job.root)
 
     def timestamp(value):
         try:

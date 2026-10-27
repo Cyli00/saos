@@ -52,7 +52,7 @@ from typing import Any
 
 from saos import jobs
 from saos.demand import TIERS, as_current
-from saos.protocol import ErrorCode, SaosError, jsonable
+from saos.protocol import ErrorCode, SaosError, jsonable, read_jsonl
 
 LEDGER_FILE = "ledger.jsonl"
 STOPS_FILE = "stops.jsonl"
@@ -65,9 +65,7 @@ def load(path: Path, demand: dict[str, Any] | None = None) -> list[dict[str, Any
     """读取 ledger。给出 demand 时，升级前写下的轮次版本（旧公式哈希）在内存里换成这一版需求的计算层哈希，文件不改。
     Read the ledger. Given demand, round versions written before the upgrade are swapped in memory for this demand's
     compute-layer hash; the file is not touched."""
-    if not path.is_file():
-        return []
-    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows = read_jsonl(path)
     for r in rows:
         r["shortfall"] = float(r["shortfall"])
         if demand is not None:
@@ -89,10 +87,7 @@ def append(path: Path, record: dict[str, Any]) -> None:
 
 
 def stops(root: Path) -> list[dict[str, Any]]:
-    path = root / STOPS_FILE
-    if not path.is_file():
-        return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return read_jsonl(root / STOPS_FILE)
 
 
 def stop_for(root: Path, demand_sha: str, demand: dict[str, Any] | None = None) -> dict[str, Any] | None:
@@ -121,11 +116,7 @@ def tiers_of(record: dict[str, Any]) -> list[str]:
 
 
 def ruled_out_for(root: Path, demand_sha: str, demand: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    path = root / RULED_OUT_FILE
-    if not path.is_file():
-        return []
-    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-    return [r for r in rows if _current(r.get("demand_sha"), demand, root) == demand_sha]
+    return [r for r in read_jsonl(root / RULED_OUT_FILE) if _current(r.get("demand_sha"), demand, root) == demand_sha]
 
 
 def record_rule_out(root: Path, demand_sha: str, tiers: list[str], reason: str, demand: dict[str, Any] | None = None) -> dict[str, Any]:
