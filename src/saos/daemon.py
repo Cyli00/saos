@@ -1041,6 +1041,7 @@ def serve(mode: str, token: str = "") -> int:
         return 1
 
     config.daemon_authkey_file().write_bytes(authkey)
+    registry_entry = _register(mode)
     daemon = Daemon(backend, zos_info, mode)
     if mode == "extension":
         try:
@@ -1079,5 +1080,21 @@ def serve(mode: str, token: str = "") -> int:
         listener.close()
         config.daemon_state_file().unlink(missing_ok=True)
         config.daemon_authkey_file().unlink(missing_ok=True)
+        if registry_entry is not None:
+            registry_entry.unlink(missing_ok=True)
         log.info(_t("已退出", "stopped"))
     return 0
+
+
+def _register(mode: str) -> Path | None:
+    """在本机登记目录写一条 <pid>.json（SAOS_HOME、模式、启动时间），让 daemon list/stop --all 能找到它。
+    写不进去只记日志：登记只服务清理，不影响 daemon 本身。"""
+    entry = config.daemon_registry_dir() / f"{os.getpid()}.json"
+    try:
+        entry.parent.mkdir(parents=True, exist_ok=True)
+        write_json(entry, {"pid": os.getpid(), "home": str(config.saos_home()), "mode": mode,
+                           "started_at": datetime.now().astimezone().isoformat(timespec="seconds")})
+    except OSError as exc:
+        log.warning(_t("写入本机 daemon 登记失败：%s", "registering the daemon machine-wide failed: %s"), exc)
+        return None
+    return entry

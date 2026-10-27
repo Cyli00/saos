@@ -9,7 +9,9 @@ import secrets
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from multiprocessing.connection import Client
+from pathlib import Path
 from typing import Any
 
 from saos import config
@@ -228,6 +230,93 @@ def instance_daemons() -> list[dict[str, Any]]:
     return found
 
 
+def all_daemons() -> list[dict[str, Any]]:
+    """本机所有 daemon：work/ 下各实例的状态文件，加上本机登记目录里 work/ 之外的（例如测试用临时 SAOS_HOME）。
+    只读文件、不连管道；alive 为假的是进程已不在、文件残留的条目。
+    Every daemon on the machine: the instances under work/ plus registered ones elsewhere. Files only."""
+    found = instance_daemons()
+    for item in found:
+        item["home"] = str((config.WORK_ROOT / item["instance"]).resolve())
+    known = {item["home"].lower() for item in found}
+    current = str(config.saos_home()).lower()
+    registry = config.daemon_registry_dir()
+    for entry in sorted(registry.glob("*.json")) if registry.is_dir() else []:
+        try:
+            data = json.loads(entry.read_text(encoding="utf-8"))
+            home, pid = str(data["home"]), int(data["pid"])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if home.lower() in known:
+            continue
+        known.add(home.lower())
+        try:
+            # 进程号可能已被别的进程复用：只有该实例的状态文件也指向同一进程才算在跑
+            same = int(json.loads((Path(home) / "daemon" / "state.json").read_text(encoding="utf-8")).get("pid", 0)) == pid
+        except (OSError, ValueError, TypeError):
+            same = False
+        found.append({"instance": None, "home": home, "current": home.lower() == current, "pid": pid, "alive": same and pid_alive(pid),
+                      "mode": data.get("mode"), "started_at": data.get("started_at"),
+                      "running_jobs": [{k: r[k] for k in ("op", "detail", "started", "stage", "job")} for r in running_ops(pid, Path(home))]})
+    return found
+
+
+@contextmanager
+def _at_home(home: str):
+    """在本进程里临时把 SAOS_HOME 指向另一个实例，复用按 SAOS_HOME 求路径的 stop/read_state。CLI 单线程调用。"""
+    before = os.environ.get("SAOS_HOME")
+    os.environ["SAOS_HOME"] = home
+    try:
+        yield
+    finally:
+        if before is None:
+            os.environ.pop("SAOS_HOME", None)
+        else:
+            os.environ["SAOS_HOME"] = before
+
+
+def _clear_registry(pid: int) -> None:
+    (config.daemon_registry_dir() / f"{pid}.json").unlink(missing_ok=True)
+
+
+def stop_all(discard: bool = False, force: bool = False) -> dict[str, Any]:
+    """逐个停止本机所有 daemon（与 daemon stop 同样的规则：未保存修改要 discard，分离扫描要先结束，force 才强杀），
+    并清掉进程已不在的状态文件与登记。有一个停不下来就报错，details 里是每个实例的结果。
+    Stop every daemon on the machine one by one, under the same rules as daemon stop, and clear leftovers of dead ones."""
+    stopped, stale, failed = [], [], []
+    for item in all_daemons():
+        label = {"instance": item["instance"], "home": item["home"], "pid": item["pid"]}
+        with _at_home(item["home"]):
+            if not item["alive"]:
+                _clear_stale_state()
+                _clear_registry(item["pid"])
+                stale.append(label)
+                continue
+            try:
+                result = stop(discard=discard, force=False)
+            except SaosError as exc:
+                if exc.code == ErrorCode.DAEMON_NOT_RUNNING:
+                    # 管道连不上：状态文件是残留，进程号多半已被别的进程复用，不能去强杀它
+                    _clear_stale_state()
+                    _clear_registry(item["pid"])
+                    stale.append(label)
+                    continue
+                if not force:
+                    failed.append({**label, "error": exc.to_dict()})
+                    continue
+                try:
+                    result = stop(discard=discard, force=True)
+                except SaosError as again:
+                    failed.append({**label, "error": again.to_dict()})
+                    continue
+        _clear_registry(item["pid"])
+        stopped.append({**label, "forced": result.get("forced", False)})
+    summary = {"stopped": stopped, "stale_removed": stale, "failed": failed}
+    if failed:
+        first = failed[0]["error"]
+        raise SaosError(first["code"], f"{len(failed)} of {len(failed) + len(stopped)} running daemons did not stop: {first['message']}", summary)
+    return summary
+
+
 # ---- 分离运行：命令立即返回，结果写进任务的 runs/ / detached runs: the command returns at once, the result goes to the job's runs/ ----
 
 RUNS_DIR = "runs"
@@ -327,7 +416,7 @@ def environment() -> dict[str, Any]:
                     "free": max(0, config.LICENSED_INSTANCES - len(opticstudio))},
         "windows": [{"pid": w["pid"], "title": w["title"]} for w in windows],
         "extension": native_ui.extension_readiness(windows),
-        "instances": instance_daemons(),
+        "instances": all_daemons(),
     }
 
 
@@ -373,6 +462,7 @@ def stop(discard: bool = False, force: bool = False) -> dict[str, Any]:
             raise
         _kill_tree(pid)
         _clear_stale_state()
+        _clear_registry(pid)
         return {"stopped": True, "pid": pid, "forced": True, "reason": exc.to_dict()}
 
     deadline = time.monotonic() + STOP_WAIT_S
@@ -385,6 +475,7 @@ def stop(discard: bool = False, force: bool = False) -> dict[str, Any]:
             if pid_alive(p):
                 _kill_tree(p)
         _clear_stale_state()
+        _clear_registry(pid)
         return {"stopped": True, "pid": pid, "forced": True, "reason": "exit timed out", "opticstudio_pids": opticstudio}
     raise SaosError(
         ErrorCode.DAEMON_TIMEOUT,

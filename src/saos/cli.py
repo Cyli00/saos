@@ -52,7 +52,12 @@ def cmd_daemon(args: argparse.Namespace) -> Any:
     if args.action == "start":
         return client.start(args.mode, timeout=args.start_timeout)
     if args.action == "stop":
+        if args.all:
+            return client.stop_all(discard=args.discard, force=args.force)
         return client.stop(discard=args.discard, force=args.force)
+    if args.action == "list":
+        found = client.all_daemons()
+        return {"daemons": found if args.all else [d for d in found if d["current"]]}
     if args.action == "status":
         if args.no_env:
             return client.status()
@@ -334,6 +339,10 @@ def build_parser() -> argparse.ArgumentParser:
     stop = dsub.add_parser("stop", help="stop the daemon")
     stop.add_argument("--discard", action="store_true", help="discard unsaved changes")
     stop.add_argument("--force", action="store_true", help="kill the process if it does not exit normally")
+    stop.add_argument("--all", action="store_true", help="stop every daemon on the machine (all instances under work/ and registered ones elsewhere) "
+                      "and clear leftover state files of dead ones")
+    lst = dsub.add_parser("list", help="list daemons from their state files without contacting them (works while they are busy)")
+    lst.add_argument("--all", action="store_true", help="every daemon on the machine, not only this instance's")
     status = dsub.add_parser("status", help="show this instance's daemon and, once per session, the machine: daemons of every instance "
                              "and their running jobs, OpticStudio processes against the licence, visible windows, whether extension mode can start")
     status.add_argument("--no-env", action="store_true", help="only this instance's daemon")
@@ -562,7 +571,7 @@ def _emit(message: dict[str, Any]) -> None:
 def _gate(args: argparse.Namespace, job: jobs.Job) -> bool:
     """需要用户看的节点：记一轮、建模说明、待确认的需求单。用户关掉的窗口在这些地方重新打开。
     Points where the user has to look: a round, a model description, a demand awaiting confirmation."""
-    if args.func in (cmd_round, cmd_zos) or (args.func is cmd_lens and args.action == "describe"):
+    if args.func is cmd_round or (args.func is cmd_lens and args.action == "describe"):
         return True
     if args.func is cmd_demand and args.action == "show":
         from saos import demand
@@ -582,7 +591,7 @@ def _ensure_window(args: argparse.Namespace) -> dict[str, Any] | None:
     if not getattr(args, "job", None):
         return None
     showing_demand = args.func is cmd_demand and args.action == "show"
-    if args.func not in (cmd_lens, cmd_exec, cmd_opt, cmd_scan, cmd_check, cmd_round, cmd_zos) and not showing_demand:
+    if args.func not in (cmd_lens, cmd_exec, cmd_opt, cmd_scan, cmd_check, cmd_round) and not showing_demand:
         return None
     if args.func is cmd_scan and args.show is not None:
         return None

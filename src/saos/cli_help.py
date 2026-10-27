@@ -81,10 +81,10 @@ the local workflow window shows modelling in either mode.
     "demand": """Validate and confirm sources/demand.yaml locally, without OpticStudio.
 Format: .agents/skills/saos/demand.example.yaml; shortfall and stop rules: saos round --help.
 Each bound needs a source; confirmation records the user's actual approval and
-content hash. Constants, variables, objectives (except their descriptions) and stop define
-the version; rewording a description, the summary, questions or language does not
-require reconfirmation, and changing a source needs confirming again while the
-measured numbers stay comparable.
+content hash. Constants, variables, objectives (except their descriptions), structure
+and stop define the version; rewording a description, the summary, questions or
+language does not require reconfirmation. Changing only sources or the structure
+reason needs confirming again while the measured numbers stay comparable.
 """,
     "ui": """Show the user's workflow, current lens and archived round visualizations.
 The local service listens only on 127.0.0.1 and reads job files. Optical controls
@@ -101,8 +101,17 @@ COMMANDS = {
         "Stop this daemon; wait for it and its private OpticStudio process to exit.",
         "Unsaved agent edits require --discard. A detached scan must finish or be\n"
         "  cancelled first. --force kills a process that cannot exit normally. An attached\n"
-        "  user window remains open; its extension dialog can be reused on reconnect.",
+        "  user window remains open; its extension dialog can be reused on reconnect.\n"
+        "  --all stops every daemon on the machine one by one under the same rules (each\n"
+        "  holds an OpticStudio licence until it exits) and clears state files left by dead\n"
+        "  ones; details list stopped, stale_removed and failed per instance.",
         "UNSAVED_CHANGES, BUSY, DAEMON_TIMEOUT"),
+    "daemon list": (
+        "List daemons from their state files, without contacting them.",
+        "Each row: instance (None outside work/), home, pid, alive, mode, started_at and\n"
+        "  running jobs. Works while a daemon is busy. --all lists every daemon on the\n"
+        "  machine: instances under work/ and ones registered elsewhere (test homes).",
+        "BAD_ARGS"),
     "daemon status": (
         "Inspect this instance and, once per session, the machine's optical environment.",
         "Returns connection/current lens plus environment: all instance daemons and\n"
@@ -357,11 +366,11 @@ for _name, _purpose, _details in (
      "Requires --max-seconds. The ten best systems are archived under lenses/global/NNN/."),
 ):
     COMMANDS[f"opt {_name}"] = (
-        _purpose, _details + "
-The command budget includes initial measurements and final review. "
+        _purpose, _details + "\n"
+        "The command budget includes initial measurements and final review. "
         "Native calls must return before cancellation can complete. An unfinished review is marked invalid. "
-        "Use --detach for long work. Solver status, merit improvement and stop reason are recorded separately.
-" + OPTIMIZATION,
+        "Use --detach for long work. Solver status, merit improvement and stop reason are recorded separately.\n"
+        + OPTIMIZATION,
         "DEMAND_NOT_CONFIRMED, MODEL_NOT_APPROVED, DEMAND_BLOCKED, BAD_ARGS, ZOS_ERROR",
     )
 

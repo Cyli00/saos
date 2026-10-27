@@ -62,6 +62,16 @@ def daemon_log_file() -> Path:
     return daemon_dir() / "daemon.log"
 
 
+def daemon_registry_dir() -> Path:
+    """本机所有 daemon 的登记目录（与 SAOS_HOME 无关）：启动时写一条，退出时删除，daemon list/stop --all 据此找到
+    work/ 之外（例如测试用临时 SAOS_HOME）启动的 daemon。SAOS_DAEMON_REGISTRY 可改位置。
+    The machine-wide registry of daemons, independent of SAOS_HOME."""
+    explicit = os.environ.get("SAOS_DAEMON_REGISTRY")
+    if explicit:
+        return Path(explicit)
+    return Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "saos" / "daemons"
+
+
 def pipe_address() -> str:
     # 不同 SAOS_HOME 使用不同管道名，测试和正式环境的后台进程互不干扰
     digest = hashlib.sha1(str(saos_home()).lower().encode("utf-8")).hexdigest()[:12]
