@@ -23,7 +23,7 @@ def ok(reply):
 def test_accepted_design_is_improved_in_opticstudio_and_reported(tmp_path, monkeypatch):
     with design_session(tmp_path / "home", monkeypatch, "workflow") as (daemon, job, entry):
         assert entry["round"] == 0
-        f0 = ok(daemon.handle({"op": "lens.operand", "args": {"job": job.id, "type": "EFFL", "int2": 2}}))["value"]
+        f0 = ok(daemon.handle({"op": "lens.operand", "args": {"job": job.id, "type": "EFFL", "int2": 1}}))["value"]
         spot0 = ok(daemon.handle({"op": "lens.analysis", "args": {"job": job.id, "type": "StandardSpot"}}))["spot"]["rms_radius"][0][0]
 
         # 放开全部曲率，RMS 光斑为评价函数并约束焦距，在 OpticStudio 中做阻尼最小二乘 / radii free, RMS spot merit held to f0
@@ -31,7 +31,7 @@ def test_accepted_design_is_improved_in_opticstudio_and_reported(tmp_path, monke
         ok(daemon.handle({"op": "opt.merit", "args": {"job": job.id, "action": "wizard",
                                                        "settings": {"type": "RMS", "data": "Spot Radius", "reference": "Centroid"}}}))
         ok(daemon.handle({"op": "opt.merit", "args": {"job": job.id, "action": "add",
-                                                       "rows": [{"type": "EFFL", "int2": 2, "target": f0, "weight": 10}]}}))
+                                                       "rows": [{"type": "EFFL", "int2": 1, "target": f0, "weight": 10}]}}))
         ok(daemon.handle({"op": "opt.local", "args": {"job": job.id, "algorithm": "dls"}}))
         decision = ok(daemon.handle({"op": "round.record", "args": {"job": job.id, "tier": "local", "note": "radii + DLS in OpticStudio"}}))["decision"]
 
@@ -42,7 +42,7 @@ def test_accepted_design_is_improved_in_opticstudio_and_reported(tmp_path, monke
         assert zos_rows[-1]["round"] == rows[-1]["round"] and rows[-1]["stage"] == "zos"
 
         # EFFL 保持在 1 % 之内；光斑 RMS 从验证基线下降 / EFFL held within 1 %; spot RMS falls from the verified baseline
-        effl = ok(daemon.handle({"op": "lens.operand", "args": {"job": job.id, "type": "EFFL", "int2": 2}}))["value"]
+        effl = ok(daemon.handle({"op": "lens.operand", "args": {"job": job.id, "type": "EFFL", "int2": 1}}))["value"]
         assert effl == pytest.approx(f0, rel=0.01)
         spot = ok(daemon.handle({"op": "lens.analysis", "args": {"job": job.id, "type": "StandardSpot"}}))["spot"]["rms_radius"][0][0]
         assert spot < spot0 and decision["status"] in ("achieved", "continue")
