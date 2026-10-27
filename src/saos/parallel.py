@@ -86,6 +86,7 @@ class WorkerContext(KitMethods):
         self.worker = index
         self.args = args or {}
         self.cache: dict[Any, Any] = {} if cache is None else cache
+        self.in_check = False
 
     @property
     def system(self):
@@ -106,7 +107,15 @@ class WorkerContext(KitMethods):
         return jobs.inside(self.job_root, rel)
 
     def child(self, args: dict[str, Any], cache: dict[Any, Any] | None = None) -> WorkerContext:
-        return WorkerContext(self.backend, self.job_root, self.base, self.worker, args, self.cache if cache is None else cache)
+        ctx = WorkerContext(self.backend, self.job_root, self.base, self.worker, args, self.cache if cache is None else cache)
+        ctx.in_check = True
+        return ctx
+
+    def fast(self, freeze_solves: bool = False):
+        """这个 worker 当前镜头的 rtc 内存副本（saos.fast）。/ An rtc copy of this worker's current lens."""
+        from saos import fast
+
+        return fast.from_context(self, freeze_solves)
 
     def measure(self, ids: list[str] | None = None) -> dict[str, Any]:
         """按需求单的判定测当前状态（与 check、round 同一套定义），不存证据。/ Measure with the demand's checks, no evidence kept."""

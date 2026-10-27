@@ -41,10 +41,21 @@ class ScriptContext(KitMethods):
         self.cache: dict[Any, Any] = {} if cache is None else cache
         # 本次执行的脚本副本，ctx.map("fn", …) 在 worker 里从这里找函数 / the running script copy; ctx.map("fn", …) finds fn here
         self.script = script
+        # 判定用的上下文不给 rtc 副本（ADR-0014）/ check contexts get no rtc copy
+        self.in_check = False
 
     def child(self, args: dict[str, Any], cache: dict[Any, Any] | None = None) -> ScriptContext:
         """给判定脚本用的上下文：同一个任务和后台进程，默认共享 cache。/ A context for a check script; shares the cache by default."""
-        return ScriptContext(self._daemon, self.job, args, self.cache if cache is None else cache, self.script)
+        ctx = ScriptContext(self._daemon, self.job, args, self.cache if cache is None else cache, self.script)
+        ctx.in_check = True
+        return ctx
+
+    def fast(self, freeze_solves: bool = False):
+        """当前镜头（含未保存修改）的 rtc 内存副本，用于高频追迹的探索（saos.fast，ADR-0014）。
+        An rtc in-memory copy of the current lens for high-rate exploratory tracing (saos.fast)."""
+        from saos import fast
+
+        return fast.from_context(self, freeze_solves)
 
     def measure(self, ids: list[str] | None = None) -> dict[str, Any]:
         """按需求单的判定测当前镜头（与 check、round 同一套定义），不存证据、不记录；返回 values、shortfall（只含所测各项）、

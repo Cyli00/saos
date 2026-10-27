@@ -9,7 +9,7 @@ ctx.spot(...)); kit.<function>(ctx, ...) works as well.
 参数键 / parameter keys:
     "<面>.<参数>"   面是序号（"3"、"-1" 为像面）或 Lens Data 的注释（"lens1 back"）；
                     参数：radius、curvature（1/R，0 为平面）、thickness、conic、semi_diameter、mech_semi_diameter（零件外缘）、
-                    material、comment、par<N>
+                    material、comment、nd、vd、dpgf、par<N>
     "aperture"      系统孔径值 / the system aperture value
     "field.<n>.x"、"field.<n>.y"、"wave.<n>"   第 n 个视场坐标、第 n 个波长（µm）/ field n coordinates, wavelength n (µm)
     "config.<c>.<r>" 多重结构第 r 行在结构 c 的值（变焦间隔、温度等）/ multi-configuration row r in configuration c
@@ -40,9 +40,9 @@ from typing import Any, Callable, Iterable, Iterator
 import numpy as np
 
 from saos.backend.base import PAR_RE
-from saos.protocol import ErrorCode, SaosError
+from saos.protocol import ErrorCode, SaosError, finite
 
-PARAMS = ("radius", "curvature", "thickness", "conic", "semi_diameter", "mech_semi_diameter", "material", "comment", "nd", "vd")
+PARAMS = ("radius", "curvature", "thickness", "conic", "semi_diameter", "mech_semi_diameter", "material", "comment", "nd", "vd", "dpgf")
 _ROW_ATTRS = {"radius": "Radius", "thickness": "Thickness", "conic": "Conic", "semi_diameter": "SemiDiameter",
               "mech_semi_diameter": "MechanicalSemiDiameter"}
 _INT_RE = re.compile(r"^-?\d+$")
@@ -226,21 +226,42 @@ def _glass(sysm, cell, material: str, label: str) -> dict[str, float]:
     return {"nd": float(found[0]), "vd": float(found[1]), "dpgf": 0.0}
 
 
+def _material_value(cell, material) -> str | dict[str, float]:
+    """材料参数的读数：模型玻璃为 {nd, vd, dpgf}（可原样写回 material），其余为牌号文字。
+    The material value: {nd, vd, dpgf} for a model glass (writable back as material), else the name."""
+    solve = cell.GetSolveData()
+    if str(solve.Type) == "MaterialModel":
+        d = solve._S_MaterialModel
+        return {"nd": float(d.IndexNd), "vd": float(d.AbbeVd), "dpgf": float(d.dPgF)}
+    return str(material)
+
+
 def _set_glass(ctx, sysm, cell, material: str, param: str, value: Any, label: str) -> None:
-    """改 nd 或 vd：把材料换成模型玻璃（另一项和 ΔPgF 取当前值），用于折射率、阿贝数公差。目录玻璃的部分色散因此近似为模型玻璃的。
-    Set nd or vd by turning the material into a model glass (keeping the other value and ΔPgF): for index and Abbe tolerances.
-    A catalog glass's partial dispersion becomes the model glass's approximation."""
+    """改 nd、vd 或 dpgf：把材料换成模型玻璃（其余两项取当前值；目录玻璃的 ΔPgF 记 0），用于折射率、阿贝数公差。
+    Set nd, vd or dpgf by turning the material into a model glass (the other two keep their current values; a catalog
+    glass's ΔPgF counts as 0): for index and Abbe tolerances."""
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise SaosError(ErrorCode.BAD_ARGS, f"{label}.{param} needs a number, got {value!r}")
     now = _glass(sysm, cell, material, label)
     now[param] = float(value)
+    _set_model_material(ctx, cell, now, label)
+
+
+def _set_model_material(ctx, cell, value: dict, label: str) -> None:
+    if not {"nd", "vd"} <= value.keys() or value.keys() - {"nd", "vd", "dpgf"}:
+        raise SaosError(ErrorCode.BAD_ARGS, f"{label}: model material needs nd/vd and optional dpgf")
+    values = {"nd": value["nd"], "vd": value["vd"], "dpgf": value.get("dpgf", 0.0)}
+    if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in values.values()) or values["nd"] <= 0:
+        raise SaosError(ErrorCode.BAD_ARGS, f"{label}: model material needs finite numbers and nd > 0")
     solve = cell.CreateSolveType(zosapi(ctx).Editors.SolveType.MaterialModel)
-    d = solve._S_MaterialModel
-    d.IndexNd, d.AbbeVd, d.dPgF = now["nd"], now["vd"], now["dpgf"]
+    data = solve._S_MaterialModel
+    data.IndexNd, data.AbbeVd, data.dPgF = values["nd"], values["vd"], values["dpgf"]
     cell.SetSolveData(solve)
     got = cell.GetSolveData()._S_MaterialModel
-    if abs(float(getattr(got, "IndexNd" if param == "nd" else "AbbeVd")) - float(value)) > 1e-9 * max(1.0, abs(float(value))):
-        raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"{label}.{param} did not take {value}")
+    for name, attr in (("nd", "IndexNd"), ("vd", "AbbeVd"), ("dpgf", "dPgF")):
+        actual = float(getattr(got, attr))
+        if not math.isfinite(actual) or abs(actual - values[name]) > 1e-9 * max(1.0, abs(values[name])):
+            raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"{label}: model material {name} did not take {values[name]}")
 
 
 def _face(o, number: int, n: int):
@@ -299,9 +320,11 @@ def _get_object(ctx, sysm, ref: Any, param: str) -> Any:
         return _get_face(o, number, int(m.group(1)), m.group(2).lower())
     if param in _OBJECT_ATTRS:
         return float(getattr(o, _OBJECT_ATTRS[param]))
-    if param in ("material", "comment"):
-        return str(getattr(o, param.capitalize()))
-    if param in ("nd", "vd"):
+    if param == "material":
+        return _material_value(o.MaterialCell, o.Material)
+    if param == "comment":
+        return str(o.Comment)
+    if param in ("nd", "vd", "dpgf"):
         return _glass(sysm, o.MaterialCell, str(o.Material), f"object {number}")[param]
     if param == "mean_path":
         return float(_vp_settings(o, param).MeanPath)
@@ -327,10 +350,13 @@ def _set_object(ctx, sysm, ref: Any, param: str, value: Any) -> None:
         o.Comment = "" if value is None else str(value)
         return
     if param == "material":
+        if isinstance(value, dict):
+            _set_model_material(ctx, o.MaterialCell, value, f"object {number}")
+            return
         name = str(value).strip().upper()
         o.Material = name if name in ("", "ABSORB") else ctx.backend._check_material(name)
         return
-    if param in ("nd", "vd"):
+    if param in ("nd", "vd", "dpgf"):
         _set_glass(ctx, sysm, o.MaterialCell, str(o.Material), param, value, f"object {number}")
         return
     if param in _OBJECT_ATTRS or param == "mean_path" or param.startswith("vp."):
@@ -375,9 +401,11 @@ def _get_zos(ctx, sysm, kind: str, ref: Any, param: str, names: dict[str, int]) 
         return 0.0 if r == 0 or math.isinf(r) else 1.0 / r
     if PAR_RE.match(param):
         return float(_par_cell(ctx, row, param, index).DoubleValue)
-    if param in ("material", "comment"):
-        return str(getattr(row, param.capitalize()))
-    if param in ("nd", "vd"):
+    if param == "material":
+        return _material_value(row.MaterialCell, row.Material)
+    if param == "comment":
+        return str(row.Comment)
+    if param in ("nd", "vd", "dpgf"):
         return _glass(sysm, row.MaterialCell, str(row.Material), f"surface {index}")[param]
     return float(getattr(row, _ROW_ATTRS[param]))
 
@@ -410,13 +438,16 @@ def _set_zos(ctx, sysm, kind: str, ref: Any, param: str, value: Any, names: dict
     index = surface(ctx, ref, names)
     row = sysm.LDE.GetSurfaceAt(index)
     if param == "material":
+        if isinstance(value, dict):
+            _set_model_material(ctx, row.MaterialCell, value, f"surface {index}")
+            return
         # 材料走后端的目录校验 / materials go through the backend's catalog check
         ctx.backend.set_surface(index, "material", value)
         return
     if param == "comment":
         row.Comment = "" if value is None else str(value)
         return
-    if param in ("nd", "vd"):
+    if param in ("nd", "vd", "dpgf"):
         _set_glass(ctx, sysm, row.MaterialCell, str(row.Material), param, value, f"surface {index}")
         return
     target = float(value)
@@ -669,7 +700,7 @@ def pupil(n: int = 21) -> list[tuple[float, float]]:
 def trace(ctx, rays: Iterable[Iterable[float]], to: int | str | None = None) -> Rays:
     """归一化坐标的批量实际光线追迹。rays：(wave, hx, hy, px, py) 的序列；to：目标面，默认像面。
     Batch real-ray trace in normalised coordinates. rays: (wave, hx, hy, px, py) rows; to: target surface, default the image."""
-    arr = np.asarray(list(rays), dtype=float).reshape(-1, 5)
+    arr = np.asarray(rays if isinstance(rays, (np.ndarray, list, tuple)) else list(rays), dtype=float).reshape(-1, 5)
     target = _count(ctx) - 1 if to is None else surface(ctx, to)
     return ctx.backend.trace_batch(arr, target)
 
@@ -724,22 +755,22 @@ def spot(ctx, fields: Iterable[Iterable[float]] = ((0.0, 0.0),), wave: int | Ite
     fields = [tuple(float(v) for v in f) for f in fields]
     waves = [primary_wave(ctx)] if wave is None else [int(wave)] if isinstance(wave, (int, np.integer)) else [int(w) for w in wave]
     grid_pts = pupil(grid)
-    rays, rows = [], []
-    for hx, hy in fields:
-        for w in waves:
-            rays.append((w, hx, hy, 0.0, 0.0))
-            rays.extend((w, hx, hy, px, py) for px, py in grid_pts)
-            rows.append({"field": [hx, hy], "wave": w})
+    # 每个视场×波长一段：先主光线，再光瞳网格
+    block = np.zeros((len(grid_pts) + 1, 5))
+    block[1:, 3:] = grid_pts
+    per = len(block)
+    rows = [{"field": [hx, hy], "wave": w} for hx, hy in fields for w in waves]
+    rays = np.tile(block, (len(rows), 1))
+    rays[:, 0] = np.repeat([r["wave"] for r in rows], per)
+    rays[:, 1] = np.repeat([r["field"][0] for r in rows], per)
+    rays[:, 2] = np.repeat([r["field"][1] for r in rows], per)
     result = trace(ctx, rays, to)
-    per = len(grid_pts) + 1
     ok = result.ok
     for k, row in enumerate(rows):
         start = k * per
         chief_ok = bool(ok[start])
         row["chief"] = [float(result.x[start]), float(result.y[start])] if chief_ok else None
-        mask = np.zeros(len(ok), bool)
-        mask[start + 1:start + per] = True
-        sub = result.select(mask & ok)
+        sub = result.select(start + 1 + np.flatnonzero(ok[start + 1:start + per]))
         arrived = len(sub.x)
         row.update(launched=len(grid_pts), arrived=arrived, pass_rate=100.0 * arrived / len(grid_pts), valid=arrived >= min_rays)
         if arrived >= min_rays:
@@ -772,14 +803,6 @@ def spot(ctx, fields: Iterable[Iterable[float]] = ((0.0, 0.0),), wave: int | Ite
 
 # profile 一次最多等距取的点数 / the most equally spaced points one profile takes
 PROFILE_MAX_N = 10001
-
-
-def _number(v: Any) -> float | None:
-    """有限实数原样，其他（None、非有限、复数、文字）算读不出。/ A finite real number, else None (unreadable)."""
-    if isinstance(v, bool) or not isinstance(v, (int, float, np.integer, np.floating)):
-        return None
-    v = float(v)
-    return v if math.isfinite(v) else None
 
 
 def profile(evaluate: Callable[[list[float]], Iterable[float | None]], lo: float, hi: float, n: int = 33, *, find: str = "max",
@@ -815,7 +838,7 @@ def profile(evaluate: Callable[[list[float]], Iterable[float | None]], lo: float
         if len(values) != len(xs):
             raise SaosError(ErrorCode.BAD_ARGS, f"evaluate returned {len(values)} values for {len(xs)} points")
         for x, v in zip(xs, values):
-            samples[x] = _number(v)
+            samples[x] = finite(v)
 
     def best() -> tuple[float, float] | None:
         valid = [(x, v) for x, v in samples.items() if v is not None]

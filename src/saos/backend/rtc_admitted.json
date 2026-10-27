@@ -1,0 +1,10 @@
+{
+  "tolerance": 1e-8,
+  "note": "rtc 副本里可直接使用的材料计算路径（键见 rtc.material.Medium.path）。只收与 OpticStudio 对过账的路径：INDX 逐点差 ≤ tolerance，或标明为间接的追迹证据。新增条目用 uv run python -m saos.rtc_golden --admit <summary.json> 从采集结果写入，不手工添加。不在表里的路径，只有建立副本时 OpticStudio 对同一材料、同一波长的 INDX 与 rtc 一致才可用。",
+  "paths": {
+    "air": "定义：同一系统环境下空气相对折射率恒为 1",
+    "catalog:1:fixed": "间接（追迹层面）：WATER2（MISC2，公式 1）位于 rtc 三件 golden 镜头的光路中，OpticStudio 24.1 批量追迹位置差 ≤ 1.1e-11 mm（ADR-0014，2026-10-26）；尚无 INDX 逐点记录",
+    "catalog:2:fixed": "OpticStudio 24.1：N-BK7 n(0.55)（rtc ORACLE.md §7.2）；双胶合 N-BK7/N-SF2 建立副本时 F/d/C 三波长 INDX 差 ≤ 1e-8（ADR-0014，2026-10-26）",
+    "model:fixed": "OpticStudio 24.1：rtc fixtures/golden/modelglass 21 组 (nd, Vd)、dPgF = 0、210 个 INDX 点，最大差 4.4e-15（2026-10-27 复核）"
+  }
+}

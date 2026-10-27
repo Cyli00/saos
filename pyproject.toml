@@ -7,8 +7,13 @@ dependencies = [
     "numpy>=2",
     "pythonnet==3.0.5",
     "pyyaml>=6.0.3",
+    "rtc",
     "scipy>=1.13",
 ]
+
+[tool.uv.sources]
+# rtc（ray tracing core）与 saos 并列存放；编辑安装，保证 saos 跑的就是 rtc 回归（tools/compare_golden.py）验证过的那份代码
+rtc = { path = "../rtc", editable = true }
 
 [project.scripts]
 saos = "saos.cli:main"
