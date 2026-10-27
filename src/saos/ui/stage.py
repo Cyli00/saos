@@ -9,18 +9,13 @@ Work out where a job stands in the workflow from its files only; never talks to 
 from __future__ import annotations
 
 import json
-import math
 from typing import Any
 
 from saos import client, demand, i18n, jobs, ledger, model_gate
-from saos.protocol import ErrorCode, SaosError
+from saos.protocol import ErrorCode, SaosError, finite
 
 STEPS = ("interview", "demand_confirm", "modeling", "model_approve", "design", "deliver")
 FINAL = ("achieved", "exhausted", "limit", "stopped")
-
-
-def _num(x: Any) -> float | None:
-    return x if isinstance(x, (int, float)) and math.isfinite(x) else None
 
 
 def _daemon() -> dict[str, Any]:
@@ -121,12 +116,12 @@ def rounds_of(job: jobs.Job, metrics: list[str] | None = None) -> list[dict[str,
     for r in ledger.load(job.root / ledger.LEDGER_FILE, current_demand):
         evaluation = r.get("evaluation") or ""
         folder = evaluation.rsplit("/", 1)[0] if evaluation else ""
-        out.append({"round": r["round"], "tiers": ledger.tiers_of(r), "note": r.get("note", ""), "shortfall": _num(r["shortfall"]),
+        out.append({"round": r["round"], "tiers": ledger.tiers_of(r), "note": r.get("note", ""), "shortfall": finite(r["shortfall"]),
                     "achieved": bool(r.get("achieved")), "deliverable": ledger.deliverable(r), "time": r.get("time"),
                     "demand_sha": ledger.version(r)[0], "viz": bool(folder) and (job.root / folder / "viz.json").is_file()})
         if metrics:
             values = r.get("values") or {}
-            out[-1]["values"] = {k: _num(values.get(k)) for k in metrics}
+            out[-1]["values"] = {k: finite(values.get(k)) for k in metrics}
     return out
 
 
@@ -141,6 +136,33 @@ def metric_items(d: dict[str, Any], metrics: list[str]) -> list[dict[str, Any]]:
         out.append({"id": k, "section": section, "missing": section is None, "description": e.get("description"), "unit": e.get("unit"),
                     "bound": bound, "direction": "minimize" if e.get("minimize") is not None else "maximize" if e.get("maximize") is not None else None})
     return out
+
+
+def _report_current(root) -> bool:
+    """报告是否比它依据的记录新：轮次、停止、排除层级，以及报告引用的最近一次完成的公差扫描。只记停止或排除时 ledger 不变，
+    所以只比 ledger 会把过时的报告当成已交付。
+    Whether the report is newer than what it is built from: rounds, stops, ruled-out tiers and the latest finished
+    tolerance scan it cites. A stop or a rule-out leaves the ledger untouched, so comparing with the ledger alone would
+    take a stale report for a delivery."""
+    report = root / "report" / "index.html"
+    if not report.is_file():
+        return False
+    inputs = [root / name for name in (ledger.LEDGER_FILE, ledger.STOPS_FILE, ledger.RULED_OUT_FILE)]
+    scans = root / "scans"
+    # 与 report.latest_tolerance 选同一次扫描 / the same scan report.latest_tolerance picks
+    for folder in sorted((p for p in scans.iterdir() if p.is_dir()), key=lambda p: p.name, reverse=True) if scans.is_dir() else ():
+        result = folder / "result.json"
+        try:
+            if not result.is_file() or "tolerance" not in json.loads((folder / "plan.json").read_text(encoding="utf-8")):
+                continue
+            data = json.loads(result.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if data.get("mode") == "tolerance" and not data.get("cancelled"):
+            inputs.append(result)
+            break
+    made = report.stat().st_mtime
+    return all(made >= p.stat().st_mtime for p in inputs if p.is_file())
 
 
 def snapshot(job: jobs.Job) -> dict[str, Any]:
@@ -251,18 +273,12 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
             decision = None
             if in_version:
                 decision = ledger.decide(rows, d["stop"], ledger.stop_for(root, csha, d), ledger.ruled_out_for(root, csha, d))
-                out["decision"] = {k: _num(v) if isinstance(v, float) else v for k, v in decision.items() if k != "stopped"}
+                out["decision"] = {k: finite(v) if isinstance(v, float) else v for k, v in decision.items() if k != "stopped"}
             detail["design"] = {"rounds": len(in_version), "last": out["rounds"][-1] if in_version else None}
             if decision is not None and decision["status"] in FINAL:
                 status["design"] = "done"
-                report = root / "report" / "index.html"
-                ledger_file = root / ledger.LEDGER_FILE
-                if report.is_file() and report.stat().st_mtime >= ledger_file.stat().st_mtime:
-                    status["deliver"] = "done"
-                    current = "deliver"
-                else:
-                    status["deliver"] = "active"
-                    current = "deliver"
+                status["deliver"] = "done" if _report_current(root) else "active"
+                current = "deliver"
                 detail["deliver"] = decision["status"]
             else:
                 status["design"] = "active"

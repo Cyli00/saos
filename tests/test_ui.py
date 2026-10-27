@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 import urllib.error
 import urllib.request
@@ -10,7 +11,7 @@ import urllib.request
 import pytest
 import yaml
 
-from saos import demand, jobs, report
+from saos import demand, jobs, ledger, report
 from saos.backend.fake import FakeBackend
 from saos.daemon import Daemon
 from saos.ui import section, server, stage
@@ -79,6 +80,12 @@ def test_stage_follows_the_workflow_files(flow):
     report.write(job, lang="zh")
     assert steps(job)[1]["deliver"] == "done"
     assert not job.verify_seals()
+    # 报告之后记下的停止不改 ledger，报告也算过时 / a stop recorded after the report leaves the ledger alone but still makes the report stale
+    d = demand.load_job(job.root)
+    ledger.record_stop(job.root, demand.compute_digest(d), "达成后仍按用户决定停止", "停吧", d)
+    later = (job.root / "report" / "index.html").stat().st_mtime + 10
+    os.utime(job.root / ledger.STOPS_FILE, (later, later))
+    assert steps(job)[1]["deliver"] == "active"
 
 
 def test_blocking_question_marks_the_current_step(flow):
