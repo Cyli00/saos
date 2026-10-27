@@ -7,15 +7,16 @@ Everything about a job lives in `work/<instance>/jobs/<job>/`; the instance dire
 | Location | Content | Changes |
 |---|---|---|
 | `sources/interview.md` | each interview round: questions, recommendations, the user's words | append only |
-| `sources/demand.yaml` | the demand ([format](../demand.example.yaml)) | values, ranges, checks, weights, units, origins, sources or stop rule need a new confirmation |
+| `sources/demand.yaml` | the demand ([format](../demand.example.yaml)) | the changes its header lists need a new confirmation |
 | `sources/materials.yaml` | the source of every material (format in `saos.materials_record`) | append or correct sources |
 | `sources/` (other) | datasheets, papers, downloads | free |
 | `checks/` | check scripts and every helper or data file they use; checks depend on nothing else | any change starts a new comparison window |
 | `notes/model-NNN.json` | model notes for `lens describe` | sealed once used |
 | `notes/*.html` | reports for the user (design, exploration, verification) | free |
 | `notes/*.md` | internal working notes, never delivered | free |
+| `notes/*.json` (other) | input files passed to commands (merit lists, operand lists, settings) | free |
 | `explore/<topic>/` with `README.md` | code, intermediate lenses and logs run outside `saos exec`; the README states purpose, outcome and whether it is superseded | free |
-| working lenses | through `lens build`, `lens load`, `lens save`, `lens export` | free |
+| working lenses | through `lens import`, `lens build`, `lens load`, `lens save` | free |
 
 ## What the tools write
 
@@ -23,7 +24,7 @@ Use commands to create or update these; find paths in command results and `job s
 
 | Location | Content |
 |---|---|
-| `job.json`, `log.jsonl`, `progress.json`, `view.json` | job state, every command and result, running progress, the current lens for the workflow window |
+| `job.json`, `log.jsonl`, `progress.json`, `view.json` | job state, every command with its arguments and success or error (not its result), running progress, the current lens for the workflow window |
 | `confirmations.jsonl`, `models/NNN-<lens>/` (with `approval.json`) | the user's approvals with their words: demand and model |
 | `evaluations/NNN/` | every check or round: snapshot, `support/` copy of `checks/`, exports, authoritative `result.json`, `viz.json` |
 | `ledger.jsonl`, `lenses/rounds/rNNN.*` | per round: shortfall, tiers, materials, lens hash, approved model, evaluation; the archived round lens (`lens save` refuses it) |

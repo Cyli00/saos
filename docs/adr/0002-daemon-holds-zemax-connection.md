@@ -10,4 +10,4 @@
 
 ## Consequences
 
-2026-10-20 起后台进程默认在进程内持有 Optiland 镜头（ADR-0012），启动不再连接 OpticStudio；OpticStudio 只在用户认可 Optiland 报告、`saos zos begin` 进入 OpticStudio 阶段后才连接。常驻进程、命令行只转发的决定不变：Optiland 导入（连带 torch）也要约 5 s，同样不能每条命令重来。
+每个运行实例一个后台进程，启动即建立 standalone 会话并占用一份许可；进程不随会话或流程图窗口关闭而退出，`saos daemon list --all` / `stop --all` 跨实例列出和停止。

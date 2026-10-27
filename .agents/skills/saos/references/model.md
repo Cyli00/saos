@@ -4,15 +4,13 @@ The outcome of this stage is an approved model description: a structure chosen f
 
 ## Build in OpticStudio
 
-All modelling and design uses the persistent ZOS session. Report unavailable features explicitly; do not substitute another backend.
+Models are built, saved and judged in the persistent ZOS session; the rtc copy only explores a model already there ([computing.md](computing.md#the-rtc-copy)). Report unavailable features explicitly; do not substitute another backend.
 
-- Build or import through `lens build`, `lens load` and `lens save`. Commands use native `.zmx` files (`lens build --as start.zmx`), saved directly by OpticStudio. Legacy Optiland snapshots are refused; rebuild from the original prescription in a new job and measure again.
+- Build or import through `lens build`, `lens load` and `lens save`. Commands use native `.zmx` files (`lens build --as start.zmx`), saved directly by OpticStudio.
 - Keep sourced materials and mechanical semi-diameters (`lens set --param mech_semi_diameter`) in the model; the interference check uses the parts' outer edges.
 - Give surfaces what the model needs with `lens set`; hard limits belong in the demand.
 
 ## Choose a starting form
-
-If a recipe matches the system (see the list in the skill entry), read it first.
 
 For a free structure, generate starts from sourced library designs scaled to the demand. Use the most demanding field, f-number and spectral requirements to choose forms, and inspect first-order and third-order predictions before investing in optimisation. There is no candidate quota; a clearly suitable form may be used directly, with the reason in the model notes. For a prescribed structure, show the user's reason and your feasibility verdict.
 
@@ -50,8 +48,8 @@ Write `notes/model-NNN.json` (format: `uv run saos lens describe --help`): what 
 
 The approved structure is what `saos round` compares against:
 
-- **Structure (needs a new approval):** surface types, the class of medium (air, glass, mirror), aperture types, the stop, a flat Fresnel substrate or a tilted surface, and the system settings (fields and wavelengths may gain points at the end). Check conditions are part of the model too: the number of configurations, each multi-configuration row's operand and parameters, TEMP and PRES, environment temperature and pressure, apodization, polarization, the coating file and afocal units.
+- **Structure (needs a new approval):** surface types, the class of medium (air, glass, mirror), aperture types, the stop, a flat Fresnel substrate or a tilted surface, and the system settings (system aperture type and value, telecentricity, ray aiming; fields and wavelengths may gain points at the end). In a non-sequential system: each object's type, reference object, Inside Of and medium class, and sources and detectors in full except their ray counts. Check conditions are part of the model too: the number of configurations, each multi-configuration row's operand and parameters, TEMP and PRES, environment temperature and pressure, apodization, polarization, the coating file and afocal units.
 - **Yours to change:** radii, thicknesses, conics, polynomial terms, tilt angles, aperture sizes, other multi-configuration values (zoom spacings and the like), glass choice and the coatings of surfaces this design makes. Glasses and coatings are recorded with every round.
-- **Environment surfaces** are locked further: material, coating, radius, conic, apertures and tilts.
+- **Environment surfaces** are locked further: material, coating, radius, conic, apertures and tilts; environment objects also their parameters, position and volume physics.
 
 Approving a structure that differs under the round comparison (beyond appended field or wavelength samples), or a changed environment declaration, needs `--rebuild-reason`. An intact earlier approval of the current structure remains usable even if a later description is unapproved. Damaged approval records are skipped and their paths shown; pre-seal records stay readable as `legacy_unsealed` and must never be given manufactured seals.

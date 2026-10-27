@@ -14,10 +14,11 @@ Tools: `opt vary --param radius|curvature|thickness|conic|par<N>|material`, `opt
 
 ## Optimisers in OpticStudio
 
-- `opt local --algorithm auto|dls|od --max-seconds S` uses Zemax local optimisation. Auto selects DLS for sequential systems and OD for non-sequential systems.
-- `opt hammer --max-seconds S` and `opt global --max-seconds S` use native search tools. Global results go to `lenses/global/NNN/`; do not run next to existing `GLOPT_*` files.
-- Use `opt vary --param material --mode substitute --catalog C` for glass substitution in Hammer/Global. Default catalog: SAOS_CDGM_INPROD. Model glasses are for exploration and must become sourced real glasses before delivery.
-- External `saos.search` root/minimize loops can still call ZOS measurements; they do not provide autograd through the native solver.
+- `opt local --algorithm auto|dls|od --max-seconds S` uses Zemax local optimisation. Auto selects DLS for sequential systems and orthogonal descent for non-sequential systems.
+- `opt hammer --max-seconds S` and `opt global --max-seconds S` run the native search tools until the budget, then cancel and leave the best system in the editor. Global search moves its ten best to `lenses/global/NNN/` (do not run next to existing `GLOPT_*` files); Hammer leftovers go to `lenses/hammer/NNN/`.
+- Glass substitution (`opt vary --param material --mode substitute`) happens only in Hammer or global search, within one catalog per surface. Without `--catalog` it uses `SAOS_CDGM_INPROD` (CDGM Standard or Preferred glasses; `SAOS_NHG_INPROD` is the same for New Huaguang), and the result names the catalog. `outside_catalog` lists surfaces whose current glass is not in it; pass `--catalog` per surface where the maker must stay.
+- Read `materials_changed`. A maker's full catalog often yields discontinued glasses (9 of 12 substitutions on the Cooke sample in SCHOTT were Obsolete); replace an `Obsolete` glass with one in production or ask the user before delivering it.
+- Your own `saos.search` loops on a ray-quantity objective run on the rtc copy ([computing.md](computing.md#choose-where-a-loop-runs)); a loop on OpticStudio measurements is slower and gets no gradient from the native solver.
 
 Read the result, not just the merit:
 

@@ -71,4 +71,4 @@ If the user told you to proceed without confirmations, record that quote, and st
 
 Rounds export only the chosen spot, fan, field and MTF plots, so leave one out only when the user does not need it. `--reset` restores the default tabs; `ui open --job J` reopens a closed window.
 
-Changing a value, range, check, weight, unit, origin, source or stop rule later needs a new confirmation; changing a description, the summary or the questions does not. An edit to a check script that changes what an item covers (which parts count toward a mass, which surfaces toward a margin) is a demand change even when the YAML only changes in its description; fixing a check to follow the rules above (returning `inf` on a failed precondition) is not.
+Which later changes need a new confirmation is stated in the format header. An edit to a check script that changes what an item covers (which parts count toward a mass, which surfaces toward a margin) is a demand change even when the YAML only changes in its description; fixing a check to follow the rules above (returning `inf` on a failed precondition) is not.

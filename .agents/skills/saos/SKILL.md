@@ -13,13 +13,14 @@ Run commands from the repository root as `uv run saos ...`. Every command prints
 
 ## Rules in every stage
 
-- **Measured evidence.** Every optical number you deliver or decide on comes from OpticStudio through saos (operand, ray trace, analysis, check). Hand estimates guide reasoning and are labelled as estimates; never write your own ray tracer, paraxial or aberration calculator or surrogate (ADR-0013). Label each result with its backend; final delivery uses OpticStudio numbers.
+- **Measured evidence.** Every optical number you deliver or decide on comes from OpticStudio through saos (operand, ray trace, analysis, check). Hand estimates guide reasoning and are labelled as estimates; never write your own ray tracer, paraxial or aberration calculator or surrogate (ADR-0013). The rtc copy (`ctx.fast()`) is the one other tracer: its numbers steer loops, never decisions. Label each result with its backend; final delivery uses OpticStudio numbers.
 - **One definition per number.** Optimisation targets, script objectives and first-order estimates use the demand checks' definition, or are compared with them on the same lens before you draw a conclusion.
-- **No silent relaxing.** A goal that cannot be met is reported with its gap. Changing a constant, range, pass line or check condition goes back to the user for a new confirmation.
+- **No silent relaxing.** A goal that cannot be met is reported with its gap. Changing what the demand judges (a constant, range, pass line, check; the full list is in the [format](demand.example.yaml) header) goes back to the user for a new confirmation.
 - **Sourced materials in delivery.** Model glasses are for exploration only.
 - **Autonomy is not a waiver.** When the user tells you to proceed without confirming, their words may stand as the quote at the gates they cover (never beyond the scope they named), but the work each gate shows still gets done, written down and announced with `ui notify`: feasibility verdicts, weak-basis limits, the model page, and any trade of an objective they named. Read their requirements as written; with nobody checking your interpretations, an added restriction or a quietly surrendered objective goes unnoticed until the end.
 - **Reports for the user are HTML.** Internal notes, the demand YAML and raw JSON keep their own formats.
-- **Never resubmit running work.** `BUSY` or a client timeout means the daemon is still computing; follow it with `job show` or cancel it.
+- **Detach long work and never resubmit it.** Run anything that may outlast your command time limit with `--detach`. `BUSY` or a client timeout means the daemon is still computing; follow it with `job show` or cancel it.
+- **Nothing lands in the repository.** Commands run from the repository root, so never redirect output or write files with relative paths there. Input files you pass to commands (merit lists, operand lists, settings JSON) go in the job's `notes/`; command output you keep for later parsing goes to the system temporary directory (`$TEMP`). [files.md](references/files.md) lists what belongs where in a job.
 
 ## Find where the job stands
 
@@ -34,7 +35,7 @@ For a new need, create the job (`uv run saos job create --name <name>`) and star
 
 A step with status `blocked` has a blocking open question (`workflow.blocking`): get it answered before optimising or recording rounds. `progress` and `runs` show work still running; never start it again. Reread the demand with `uv run saos demand show --job J` before continuing.
 
-Once per session, before other work, run `uv run saos daemon status` and ask in your first reply for anything missing: the daemon and which job it holds, another session using it, free OpticStudio licences, a visible window for extension mode. Do not work around a missing precondition silently.
+Once per session, before other work, run `uv run saos daemon status` and ask in your first reply for anything missing: the daemon and which job it holds, another session using it, free OpticStudio licences, a visible window for extension mode. Do not work around a missing precondition silently. [opticstudio.md](references/opticstudio.md) covers sessions, licences and on-screen debugging.
 
 ## 1. Agree the need
 
@@ -52,7 +53,7 @@ Read [need.md](references/need.md) for the interview format, feasibility reasoni
 
 Establish a starting form chosen for reasons the user can follow, built in OpticStudio with sourced materials and described surface by surface.
 
-- If a recipe matches the system, read it: [microscope objectives](references/recipes/microscope.md), [side-viewing fibre probes](references/recipes/fiber.md). Recipes are experience, not rules.
+- If a recipe matches the system, read it: [microscope objectives](references/recipes/microscope.md), [side-viewing fibre probes](references/recipes/fiber.md). Recipes are experience, not rules; [recipes/README.md](references/recipes/README.md) says how to write one.
 - For a free structure, generate starts from the library and from patents, predict them first-order and third-order, then screen every candidate under the same budget before you choose. For a prescribed structure, state the user's reason and your feasibility verdict.
 - Record material sources in `sources/materials.yaml`, write model notes, and run `uv run saos lens describe --job J --notes <notes.json>`.
 
@@ -64,22 +65,22 @@ Read [model.md](references/model.md) for starts, screening, materials, notes and
 
 Establish, round by round, how close the approved structure gets to the demand, until the round decision is `achieved`, `exhausted`, `limit` or the user stops.
 
+- Run your own loops on ray quantities (scans of a few variables, multi-starts, sensitivities, refocusing) on the rtc copy when it builds, and push the result to OpticStudio before you judge it; loops that need operands, analyses or checks use the worker pool ([computing.md](references/computing.md#choose-where-a-loop-runs)).
 - Optimise on smooth proxies and judge with the demand checks; `saos check --only` for trials, `saos round --tier ... --note ...` when a design is worth judging. Your own script loops are optimisation runs too, and rounds keep their plots: the ledger and its plots are all the user sees of this stage.
 - Compare rounds by shortfall, never by merit value. Rule out tiers your evidence says cannot help (`saos rule-out`) instead of spending rounds on them.
-- Before a run longer than about ten minutes, or any `global` or `structure` attempt, tell the user each failing `must`'s gap, the mechanism expected to close it and the expected gain. When a `must` misses by a multiple or a cap is already visible, diagnose instead of optimising.
-- Run anything that may outlast your command time limit with `--detach`.
+- Before a run longer than about ten minutes, or any `global` or `structure` attempt, tell the user the gaps and what you expect to close them ([rounds.md](references/rounds.md#gate-expensive-runs-on-the-gap)). When a `must` misses by a multiple or a cap is already visible, diagnose instead of optimising.
 
 **Exit:** a final round decision. Leaving the approved structure sends you back to stage 2.
 
-Read [rounds.md](references/rounds.md) for optimisers, merit construction and recording rounds, [diagnosis.md](references/diagnosis.md) when progress stalls or a round brief sets `review`, and [computing.md](references/computing.md) for long runs, workers and the script API.
+Read [rounds.md](references/rounds.md) for optimisers, glass substitution, merit construction and recording rounds, [diagnosis.md](references/diagnosis.md) when progress stalls or a round brief sets `review`, and [computing.md](references/computing.md) for long runs, the rtc copy, workers and the script API.
 
 ## 4. Deliver the measured design
 
 - Run `uv run saos report --job J` for the current OpticStudio rounds. Deliver only the lens named in `deliver`; a `diagnostic` round is not a delivery.
-- State every unmet goal with its measured gap, material limitations and tolerance status. A report does not reset the round budget.
+- State every unmet goal with its measured gap, material limitations and tolerance status.
 - If the user wants changes, continue within the demand and stop rules, or return to demand/model confirmation when those change. Only the user decides to stop.
 
-Read [delivery.md](references/delivery.md) for reporting and stopping, and [opticstudio.md](references/opticstudio.md) for sessions, licences and debugging.
+Read [delivery.md](references/delivery.md) for tolerance scans, the report and stopping.
 
 ## Stop and ask
 
@@ -107,15 +108,3 @@ Before handing over, check that:
 - open questions and assumptions the user has not confirmed are listed.
 
 Give the user the report path, the delivered lens file and what is still open.
-
-## Read only the relevant guide
-
-- Interview, feasibility, demand and checks: [need.md](references/need.md)
-- Starting forms, screening, materials and model approval: [model.md](references/model.md)
-- Optimisers, merit functions and rounds: [rounds.md](references/rounds.md)
-- Stalled progress and probe scans: [diagnosis.md](references/diagnosis.md)
-- Long runs, cancellation, workers and the script API: [computing.md](references/computing.md)
-- Report, tolerance scans and stopping: [delivery.md](references/delivery.md)
-- OpticStudio sessions and on-screen debugging: [opticstudio.md](references/opticstudio.md)
-- Job directory contents: [files.md](references/files.md)
-- System families: [microscope objectives](references/recipes/microscope.md), [side-viewing fibre probes](references/recipes/fiber.md); writing a new recipe: [recipes/README.md](references/recipes/README.md)

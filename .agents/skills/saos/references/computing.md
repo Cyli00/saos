@@ -16,19 +16,48 @@ How to run work that takes time, in parallel or through your own scripts, withou
 
 Leave two logical cores to the user (the optimisers do by default) and start your own long processes at below-normal priority. Times and numbers in notes and messages come from tool output (results, logs, `job show`), never from memory; label an estimate as one.
 
-## Parallel work
+## Choose where a loop runs
 
-Many independent evaluations (a scan, multi-starts, a sensitivity table) run concurrently on the worker pool:
+A loop of many evaluations (a scan of a few variables, multi-starts, a sensitivity table, a refocus per point) runs in one of two places:
 
-- `saos scan --plan` covers grids, point lists, `minimize`, `probes`, `candidates` and `tolerance` plans, measures every point with the demand checks, ranks by shortfall and keeps the best lenses in `lenses/scans/NNN/`. Prefer a plan to a script.
-- In a script, put the per-point work in a function and run `ctx.map("fn", items, workers=N)` (`"explore/x.py:fn"` for a function in another job file). It runs as `fn(w, item)` in a worker that reloads a copy of the saved lens before every item. Results and the script copy go to `parallel/NNN/`.
-- Workers are standalone OpticStudio instances, default four, and count against the licence (see [opticstudio.md](opticstudio.md)). Workers stay warm between calls and close after 10 idle minutes; `ctx.pool_close()` frees them at once.
+- **The rtc copy** (`ctx.fast()`, next section) when the objective is a ray quantity (ray positions and angles, spot statistics, chief ray angle, pass rate) and the copy builds for this lens. It costs no licence and no worker start.
+- **The worker pool** when the loop needs operands, analyses or the demand checks, or the copy refuses the lens. `saos scan --plan` covers grids, point lists, `minimize`, `probes`, `candidates` and `tolerance` plans, measures every point with the demand checks, ranks by shortfall and keeps the best lenses in `lenses/scans/NNN/`; prefer a plan to a script. In a script, `ctx.map("fn", items, workers=N)` runs `fn(w, item)` in a worker that reloads a copy of the saved lens before every item (`"explore/x.py:fn"` for a function in another job file); results and the script copy go to `parallel/NNN/`. Workers are standalone OpticStudio instances, default four, and count against the licence (see [opticstudio.md](opticstudio.md)); they close after 10 idle minutes, or at once with `ctx.pool_close()`.
+
+## The rtc copy
+
+`fast = ctx.fast()` (also `w.fast()` in a worker) is an in-memory copy of the current lens, unsaved changes included, traced by rtc in float64 (ADR-0014 holds the design and the measured agreement and speed). It has the kit methods `set`, `get`, `values`, `kept`, `trace`, `spot`, `cra`, `field_profile` and `configuration`, running the same kit code as `ctx`; operands, analyses, `measure` and checks are not there, and check scripts cannot call `ctx.fast()`. rtc traces with a compiled kernel: the first trace after rtc's code changes compiles it (about 6 s, once), later processes load it from cache (about 1 s on the first trace).
+
+```python
+from saos import search
+
+def run(ctx):
+    fast = ctx.fast(freeze_solves=True)
+    steps = {"2.radius": 0.5, "3.radius": 1.0, "3.thickness": 0.2}
+
+    def worst_rms(x):
+        fast.set(x)
+        rows = fast.spot([(0, 0), (0, 0.7), (0, 1)], wave=[1, 2, 3], grid=15, refocus=True)
+        values = [r.get("rms_radius_best") for r in rows]
+        return None if None in values else max(values)
+
+    found = search.minimize(worst_rms, fast.values(steps), steps, max_seconds=60, should_stop=ctx.cancel_requested)
+    fast.set(found["best"])
+    fast.push(ctx)
+    return {"built": fast.agreement, "rtc": found["best_f"], "opticstudio": ctx.measure(["spot"])}
+```
+
+- **It is checked against OpticStudio when it is built.** `ctx.fast()` first compares every parameter and the index of every medium at every wavelength, then traces the chief ray and a 5×5 pupil at every field and wavelength on both sides; a ray usable on one side only, or a difference beyond 1e-6 mm or 1e-7 in direction, raises `VERIFY_FAILED`. `fast.agreement` keeps that comparison. `fast.compare(ctx, fields, wave, grid)` repeats it for other rays while both sides hold the same parameters (after `push`).
+- **What it cannot reproduce, it refuses.** Apertures other than EPD, mirrors, coordinate breaks and tilts/decenters, diffractive and Fresnel surfaces, a finite object distance, paraxial aiming, non-angle fields, field vignetting factors, live multi-configuration operands other than THIC, and surface apertures other than circular/floating raise `BACKEND_UNSUPPORTED`. Materials follow an admission table (`src/saos/backend/rtc_admitted.json`): a dispersion formula and environment path is usable only once it has matched OpticStudio INDX, and otherwise only for the material and wavelengths whose INDX matched when the copy was built. Today that admits air, Schott (formula 1) and Sellmeier 1 (formula 2) catalog glasses with Adjust Index off or at their reference temperature and 1 atm, and model glasses with ΔPgF 0 in the same conditions; anything else (another formula, a thermal or pressure correction, a model glass with ΔPgF) is refused until `saos.rtc_golden` records it (see `docs/plans/rtc-material-integration.md`). A material change or a new wavelength is checked at every active wavelength before it is applied; a refused change leaves the copy as it was. A glass name missing from the lens's catalogs and an invalid nd/vd are `BAD_ARGS`. On a refusal, move that step to the worker pool; never substitute an approximate number.
+- **Solves stay at their saved values.** Pickups, marginal ray height and F-number solves are not recomputed. While the lens has one, changes are refused; `ctx.fast(freeze_solves=True)` keeps their saved values (fine for a focus solve when the objective refocuses, as above), `fast.held` lists them, and writing a held cell raises `VALUE_NOT_APPLIED`.
+- **Results go back through `push`.** `fast.push(ctx)` writes every parameter changed through `fast.set` to the OpticStudio lens; OpticStudio then re-solves, and `ctx.measure`, `saos check` or `saos round` judge it. A number from the copy is labelled `rtc` wherever you write it and never stands in for a measurement.
+
+Material keys are `material`, `nd`, `vd` and `dpgf`. Writing `nd`, `vd` or `dpgf` of a catalog glass turns it into a model glass (ΔPgF 0 for a catalog glass, as on OpticStudio); `with fast.kept(["1.material"]): ...` restores the catalog glass itself. A model glass reads back as `{"nd", "vd", "dpgf"}` on both `ctx` and the copy and can be written back as it is; `fast.push(ctx)` writes nd/vd/dpgf changes of a surface as that whole dictionary, so OpticStudio cannot fill in a value of its own.
 
 ## Scripts
 
 `uv run saos exec SCRIPT --job J` runs `def run(ctx)` inside the daemon and archives the copy and result in `scripts/`. Python may hold control logic (scans, multi-starts, sequencing, bookkeeping) as long as every optical evaluation goes through `ctx`. Reach for built-ins first; scripts you write cost more time than the runs they drive.
 
-Change the lens only through `ctx` (`set`, `kept`, `load`, `save_as`), never through underscore members of `ctx.backend` or the optimiser internals: writing there skips the step gate, the review and the unsaved-lens bookkeeping. If a built-in optimiser is too slow, read its `phases` in `log.jsonl` and tell the user which phase dominates, since that is a saos issue worth fixing. Then search through public routes (`saos.search.minimize`, a `minimize` scan plan, `ctx.map`) rather than a hand-made finite-difference loop, which was rarely faster when tried.
+Change the lens only through `ctx` (`set`, `kept`, `load`, `save_as`), never through underscore members of `ctx.backend` or the optimiser internals: writing there skips the step gate, the review and the unsaved-lens bookkeeping. If a built-in optimiser is too slow, read its `phases` in `log.jsonl` and tell the user which phase dominates, since that is a saos issue worth fixing. Then search through public routes (`saos.search.minimize` on the rtc copy, a `minimize` scan plan, `ctx.map`) rather than a hand-made finite-difference loop, which was rarely faster when tried.
 
 What `ctx` (and a worker `w`) already provides:
 

@@ -25,7 +25,7 @@ saos（simulate any optical system）让 AI agent 替你做光学设计。你用
    cd saos
    ```
 
-2. 安装依赖。Python 固定在 3.12，OpticStudio 固定在 2024 R1.00；不再依赖 Optiland 或 PyTorch。
+2. 安装依赖。Python 固定在 3.12，OpticStudio 固定在 2024 R1.00；不再依赖 Optiland 或 PyTorch。脚本的 rtc（ray tracing core）快速副本（ADR-0014）以路径依赖引用并列存放的 `../rtc` 仓库，先把它克隆到 saos 旁边。
 
    ```bash
    uv sync
@@ -63,7 +63,7 @@ agent 自己决定结构、变量、优化算法和实验，只在下面三处�
 
 除此之外，遇到需求自相矛盾、测量口径有歧义、结构明显达不到目标、优化不再有进展或需要改变你没见过的结构时，agent 也会带着证据和建议方案来问你。
 
-改动需求（数值、范围、判定方法、权重）或改变已确认的结构，都要重新确认；agent 不会为了达标偷偷放宽需求。
+改动需求的实质内容（数值、范围、判定方法、权重、单位、依据、终止规则等）或改变已确认的结构，都要重新确认；agent 不会为了达标偷偷放宽需求。
 
 ### 看进度
 
@@ -92,6 +92,8 @@ agent 自己决定结构、变量、优化算法和实验，只在下面三处�
 
 ```bash
 uv run saos daemon stop          # 有未保存的修改时需要 --discard
+uv run saos daemon list --all    # 本机所有实例的 daemon（每个都占一份 OpticStudio 许可）
+uv run saos daemon stop --all    # 逐个停止它们，并清掉已退出进程留下的状态文件
 ```
 
 ## 注意事项

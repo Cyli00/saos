@@ -2,10 +2,11 @@
 # ids: [A-Za-z][A-Za-z0-9_]*, unique across sections.
 #
 # Every limit needs a source: user | a datasheet, paper or textbook table | "agent assumption: <why>".
-# Only constants, variables and objectives are judged and versioned: anything that affects the design
-# or its acceptance belongs there, never only in summary. Changing a value, range, check, weight, unit,
-# origin, source or stop needs a new confirmation; changing a description, the summary, the questions
-# or lang does not, and keeps earlier rounds comparable.
+# Only constants, variables and objectives are judged: anything that affects the design or its
+# acceptance belongs there, never only in summary. Changing any field of their entries except
+# description (value, range, check, bound, weight, scale, unit, origin, source...), structure or stop
+# needs a new confirmation; a description, the summary, the questions or lang do not. Earlier rounds
+# stay comparable when only descriptions, sources or the structure reason changed.
 # Bounds: {max: v} or {min: v} (min <= max), or {equals: v, tol: t} (t > 0). scale normalises a gap:
 # default tol for equals, else |bound|; required when the bound is 0 and on minimize/maximize without
 # must. ideal is the best reachable value: default 0 for minimize, required for maximize.

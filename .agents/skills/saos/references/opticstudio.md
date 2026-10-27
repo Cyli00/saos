@@ -1,19 +1,10 @@
 # OpticStudio sessions and on-screen debugging
 
-The daemon holds one ZOS standalone session from startup. All modelling, screening, rounds and delivery use this backend; no report acceptance or backend-switch command is needed. Demand and model approval still precede deep optimisation.
-
-## Working in OpticStudio
-
-- `opt local` uses DLS or orthogonal descent (the default for non-sequential systems).
-- `opt hammer --max-seconds S` and `opt global --max-seconds S` never end on their own; they cancel at the budget and leave the best system in the editor. Global search moves its ten best to `lenses/global/NNN/`; Hammer leftovers go to `lenses/hammer/NNN/`.
-- Glass substitution (`opt vary --param material --mode substitute`) happens only in Hammer or global search, within one catalog per surface. Without `--catalog` it uses `SAOS_CDGM_INPROD` (CDGM Standard or Preferred glasses; `SAOS_NHG_INPROD` is the same for New Huaguang), and the result names the catalog. `outside_catalog` lists surfaces whose current glass is not in it; pass `--catalog` per surface where the maker must stay.
-- Read `materials_changed`. A maker's full catalog often yields discontinued glasses (9 of 12 substitutions on the Cooke sample in SCHOTT were Obsolete); replace an `Obsolete` glass with one in production or ask the user before delivering it.
-
-Regenerate the report once the round decision is final.
+The daemon holds one ZOS standalone session from startup; modelling, screening, rounds and delivery all use it. Optimisers and glass substitution are in [rounds.md](rounds.md#optimisers-in-opticstudio).
 
 ## Licences and workers
 
-The licence allows 8 OpticStudio instances at a time, the user's open windows and this daemon included. Count them with `uv run saos daemon status` before choosing `workers`; a refused worker is reported as unavailable. Workers default to four; a cold start costs about 6–8 s per instance (measured 2026-10-17), so start a pool only for work that outlasts the start-up or will be repeated.
+The licence allows 8 OpticStudio instances at a time, the user's open windows and this daemon included. Count them with `uv run saos daemon status` before choosing `workers`; a refused worker is reported as unavailable. Workers default to four; a cold start costs about 6–8 s per instance (measured 2026-10-17), so start a pool only for work that outlasts the start-up or will be repeated. A daemon does not exit by itself when a session or its UI closes, and each one holds a licence: `uv run saos daemon list --all` shows every daemon on the machine; stop the ones of finished work with `saos daemon stop` in their instance, or all of them with `saos daemon stop --all` once the user agrees.
 
 ## On-screen debugging (extension mode)
 
