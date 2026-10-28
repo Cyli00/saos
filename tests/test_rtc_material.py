@@ -73,6 +73,10 @@ SURF 3
 """
 
 
+# 拒绝机制的测试用固定的小准入表，不随 rtc_admitted.json 扩充而变
+NARROW = frozenset({"air", "catalog:1:fixed", "catalog:2:fixed", "model:fixed"})
+
+
 @pytest.fixture
 def lens_path(tmp_path):
     (tmp_path / "TEST.AGF").write_text(AGF, encoding="utf-8")
@@ -175,8 +179,9 @@ def test_surfaces_report_model_material_as_text(fast):
     assert fast.backend.surfaces()[1]["material"] == "MODEL 1.6 50 0"
 
 
-def test_strict_copy_refuses_unadmitted_paths_without_opticstudio_evidence(lens_path):
+def test_strict_copy_refuses_unadmitted_paths_without_opticstudio_evidence(lens_path, monkeypatch):
     # 夹具环境下的 catalog:2:thermal 不在准入表里，也没有 OpticStudio INDX 可确认
+    monkeypatch.setattr(rtc_backend, "admitted_paths", lambda: NARROW)
     with pytest.raises(SaosError) as exc:
         RtcBackend(lens_path, glass_dir=lens_path.parent)
     assert exc.value.code == ErrorCode.BACKEND_UNSUPPORTED and "catalog:2:thermal" in exc.value.message
@@ -185,6 +190,7 @@ def test_strict_copy_refuses_unadmitted_paths_without_opticstudio_evidence(lens_
 def test_strict_copy_uses_indx_confirmation_but_refuses_unconfirmed_swaps(fast, lens_path, monkeypatch):
     model = _description(fast.backend)
     monkeypatch.undo()
+    monkeypatch.setattr(rtc_backend, "admitted_paths", lambda: NARROW)
     strict = FastLens(RtcBackend(lens_path, model, glass_dir=lens_path.parent))
     assert all(n > 1 for n in (strict.backend._system(w).items[0].n_after for w in (1, 2, 3)))
     with pytest.raises(SaosError) as exc:

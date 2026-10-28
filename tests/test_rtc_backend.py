@@ -122,14 +122,17 @@ def test_settings_rtc_cannot_reproduce_are_refused(recorded, tmp_path):
         assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED and word in err.value.message, (new, err.value.message)
 
 
-def test_swaps_follow_the_material_admission_table(tmp_path):
+def test_swaps_follow_the_material_admission_table(tmp_path, monkeypatch):
+    # 用固定的小准入表测拒绝机制，不随 rtc_admitted.json 扩充而变
+    monkeypatch.setattr("saos.backend.rtc.admitted_paths",
+                        lambda: frozenset({"air", "catalog:1:fixed", "catalog:2:fixed", "model:fixed"}))
     fast = FastLens(RtcBackend(_zmx_text(tmp_path, "GCAT SCHOTT", "GCAT SCHOTT OHARA SAOS_CDGM_INPROD")))
     fast.set({"3.material": "N-SF5"})
     # OHARA 的 25 °C 参考玻璃在 Adjust Index 关闭时走 catalog:2:fixed，已准入
     fast.set({"1.material": "S-BSL7"})
     assert fast.get("1.material") == "S-BSL7"
     assert all(np.isfinite(fast.backend._system(w).items[0].n_after) for w in (1, 2, 3))
-    # Herzberger（公式 3）还没有 OpticStudio INDX 证据：拒绝，副本不变
+    # Herzberger（公式 3）不在这张准入表里：拒绝，副本不变
     with pytest.raises(SaosError) as err:
         fast.set({"1.material": "HWS1"})
     assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED and "catalog:3:fixed" in err.value.message
