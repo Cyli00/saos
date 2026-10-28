@@ -35,7 +35,7 @@ For a new need, create the job (`uv run saos job create --name <name>`) and star
 
 A step with status `blocked` has a blocking open question (`workflow.blocking`): get it answered before optimising or recording rounds. `progress` and `runs` show work still running; never start it again. Reread the demand with `uv run saos demand show --job J` before continuing.
 
-Once per session, before other work, run `uv run saos daemon status` and ask in your first reply for anything missing: the daemon and which job it holds, another session using it, free OpticStudio licences, a visible window for extension mode. Do not work around a missing precondition silently. [opticstudio.md](references/opticstudio.md) covers sessions, licences and on-screen debugging.
+Once per session, before other work, run `uv run saos daemon status` and ask in your first reply for anything missing: the daemon and which job it holds, another session using it, free OpticStudio licences, a visible window for extension mode. Do not work around a missing precondition silently. Each daemon holds a licence and none exits by itself: `uv run saos daemon list --all` shows them all, and `daemon stop --all` stops other sessions' work, so it needs the user's agreement. [opticstudio.md](references/opticstudio.md) covers sessions, licences and on-screen debugging.
 
 ## 1. Agree the need
 
@@ -54,7 +54,7 @@ Read [need.md](references/need.md) for the interview format, feasibility reasoni
 Establish a starting form chosen for reasons the user can follow, built in OpticStudio with sourced materials and described surface by surface.
 
 - If a recipe matches the system, read it: [microscope objectives](references/recipes/microscope.md), [side-viewing fibre probes](references/recipes/fiber.md). Recipes are experience, not rules; [recipes/README.md](references/recipes/README.md) says how to write one.
-- For a free structure, generate starts from the library and from patents, predict them first-order and third-order, then screen every candidate under the same budget before you choose. For a prescribed structure, state the user's reason and your feasibility verdict.
+- For a free structure, generate starts from the library and from patents, predict them first-order and third-order, then screen every candidate under the same budget before you choose. Search the 2456 patent examples by field, f-number, band, element count and power signs (`saos.starts.patents.search`) rather than recalling forms from memory; they enter the same screening through `starts.generate(..., patents=[...])`. For a prescribed structure, state the user's reason and your feasibility verdict.
 - Record material sources in `sources/materials.yaml`, write model notes, and run `uv run saos lens describe --job J --notes <notes.json>`.
 
 **Gate:** show the description page (choice, requirements, validity, budget) and record the user's approval with `uv run saos lens approve --job J --model models/NNN-<lens> --quote "..."`. Rounds refuse a lens whose structure matches no approved description; a structural change later needs a new description and approval.
@@ -66,6 +66,7 @@ Read [model.md](references/model.md) for starts, screening, materials, notes and
 Establish, round by round, how close the approved structure gets to the demand, until the round decision is `achieved`, `exhausted`, `limit` or the user stops.
 
 - Run your own loops on ray quantities (scans of a few variables, multi-starts, sensitivities, refocusing) on the rtc copy when it builds, and push the result to OpticStudio before you judge it; loops that need operands, analyses or checks use the worker pool ([computing.md](references/computing.md#choose-where-a-loop-runs)).
+- Edit the lens from scripts through `ctx`: `ctx.set`, `ctx.merit_add` (one checked batch, with design-rule constraints from `saos.ctx.rows`), `ctx.solve`, `ctx.insert_surface`. Write ZOS-API calls only for what these lack, and act on the `hints` that `exec` returns ([computing.md](references/computing.md#editing-the-lens-from-a-script)).
 - Optimise on smooth proxies and judge with the demand checks; `saos check --only` for trials, `saos round --tier ... --note ...` when a design is worth judging. Your own script loops are optimisation runs too, and rounds keep their plots: the ledger and its plots are all the user sees of this stage.
 - Compare rounds by shortfall, never by merit value. Rule out tiers your evidence says cannot help (`saos rule-out`) instead of spending rounds on them.
 - Before a run longer than about ten minutes, or any `global` or `structure` attempt, tell the user the gaps and what you expect to close them ([rounds.md](references/rounds.md#gate-expensive-runs-on-the-gap)). When a `must` misses by a multiple or a cap is already visible, diagnose instead of optimising.
@@ -76,7 +77,7 @@ Read [rounds.md](references/rounds.md) for optimisers, glass substitution, merit
 
 ## 4. Deliver the measured design
 
-- Run `uv run saos report --job J` for the current OpticStudio rounds. Deliver only the lens named in `deliver`; a `diagnostic` round is not a delivery.
+- Run `uv run saos report --job J` for the current OpticStudio rounds. Deliver only the lens named in `deliver`; a `diagnostic` round is not a delivery. A later round, stop, rule-out or tolerance scan makes the report stale, and the workflow shows delivery as unfinished until you run it again.
 - State every unmet goal with its measured gap, material limitations and tolerance status.
 - If the user wants changes, continue within the demand and stop rules, or return to demand/model confirmation when those change. Only the user decides to stop.
 
