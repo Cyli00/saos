@@ -20,6 +20,7 @@ In a job script:
 - If strict selection finds nothing, `allow_extrapolation=True` permits exploratory starts outside the example field, f-number or band. Every exceeded condition is kept in the plan and model page; it never changes the demand, source limits or material range checks. Different conjugates stay excluded.
 - `prepare` is required: generated prescriptions have no merit function, so the prepare script sets variables and merit. An empty value is `BAD_ARGS`; a script that fails or leaves the merit empty is a configuration error before screening.
 - `saos.starts.screen(ctx, generated, workers=...)` runs all candidates without optimisation before the shared short stage. Generated files live in `explore/starts/NNN/`.
+- `saos.starts.patents.search(half_field_deg=..., f_number=..., wavelengths_um=..., elements=(lo, hi), ...)` searches 2456 patent examples (`library/patents/README.md` lists filters, tags and conversion rules). Pass the chosen ids to `generate(..., patents=[...])`; zoom lenses are taken one position at a time (`or01401-p2`), and `_SPECIAL` or private glasses need an explicit `materials` mapping, never a substitute. `patents.prescription(id)` gives the prescription alone.
 - `saos.starts.scale_prescription(data, K)` scales your own prescription.
 
 Scale every start to the demand and the feasibility estimate, not to wherever its source happened to sit. A start scaled to a smaller target because it is easier there changes a directional objective, which is the user's trade (see the skill entry).

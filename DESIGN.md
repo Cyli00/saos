@@ -34,7 +34,7 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 - **从建模到交付使用同一后端**：需求可行性、起点生成、初筛、优化、判定均使用 ZOS（ADR-0013）。例外：脚本的探索循环可用 rtc 内存副本（`ctx.fast()`，ADR-0014），其数值不作证据。daemon 启动即占用许可，worker 按需启动并复用；用户窗口、daemon、worker 和起点生成的独占会话均计入许可。许可不足时报告失败，不切换计算后端。
 - **ZOS 原生镜头权威保存**：`.zmx` 由 OpticStudio 保存，包含当前处方、求解与评价函数；JSON 处方只是建模输入。带 `.optiland.json` 的旧文件不可加载或覆盖，旧双后端任务不追加新计算证据。迁移时新建任务，按原处方重建或导入另存的 ZOS 原生镜头，重新确认与实测；不继承旧指标。
   - **脚本编辑只经公开 ZOS-API**：`ctx.merit_add`、`ctx.solve`、`ctx.insert_surface`、`ctx.change_surface_type` 直接改当前镜头；评价函数行经 `.MF` 文件整批载入并另存回读核对（1501 行由逐行 9.8 s 降到约 65 ms，2026-10-27 实测）。不调用 OpticStudio 未公开的内部组件（如 `ZemaxEngine.dll`）：接口无文档、随版本变化，且绕开许可计数。
-- **起点从已有设计生成，不设候选配额**：结构未由用户指定时，由 `saos.starts` 从起点库按需求缩放生成并给出一阶与三阶像差预判，以相同短期预算初筛；明显合适的形式可直接选用并在确认页写明理由，无需凑候选数量。
+- **起点从已有设计生成，不设候选配额**：结构未由用户指定时，由 `saos.starts` 从起点库或专利库（`library/patents`，按规格检索）按需求缩放生成并给出一阶与三阶像差预判，以相同短期预算初筛；明显合适的形式可直接选用并在确认页写明理由，无需凑候选数量。
 - **关卡只留在昂贵处，封存仅用于发现意外**：硬关卡仅设在深度优化前（需求与模型确认）；工具写入文件后记录哈希（`seals.jsonl`）以检测意外篡改或删除（见 `saos job verify --help`），缺失或过期的对比记录只作警告显示，不为防 Agent 规避流程叠加上锁机制。
 - **目标方向与终止规则**：
   - 越小/越大越好的目标用 `minimize` / `maximize`，按离理想值的距离计入目标差距（Shortfall），达标后继续改进；不要把“越小越好”写成 `≤ 0` 这种永远达不到的达标线。
@@ -105,10 +105,10 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 | `.agents/skills/saos/` | 光学设计工作流技能：`SKILL.md` 入口（定位阶段、各阶段关卡与出口）、`references/` 按阶段的细节、`references/recipes/<配方>.md` 按《配方编写规范》（`references/recipes/README.md`）编写的配方 |
 | `docs/` | 跨任务文档：`workflow.drawio`（工作流图）、`adr/NNNN-*.md`、`plans/*.md` |
 | `docs/recipes/<配方>/` | 配方的中文长篇说明：规格与验收口径、入库流程、上收比对记录 |
-| `library/<库>/` | 跨任务共享参考数据（均含 `README.md` 说明来源与用法）：`materials/`、`glasscat/`、`thermal/`、`mechanics/`、`coatings/`、`starts/`、`microscope/` |
+| `library/<库>/` | 跨任务共享参考数据（均含 `README.md` 说明来源与用法）：`materials/`、`glasscat/`、`thermal/`、`mechanics/`、`coatings/`、`starts/`、`patents/`、`microscope/` |
 | `tests/`、`tests/recipes/<配方>/` | 核心工具测试与配方测试 |
 
-镜头文件（`.zmx`、`.optiland.json`、`.ZDA`）只出现在 `library/`、测试夹具或 `work/` 中；日志和临时文件不入库（临时文件放系统临时目录）。具体设计任务的一切产物均放进该任务目录，不进仓库。
+镜头文件（`.zmx`、`.optiland.json`、`.ZDA`、`.seq`）只出现在 `library/`、测试夹具或 `work/` 中；日志和临时文件不入库（临时文件放系统临时目录）。具体设计任务的一切产物均放进该任务目录，不进仓库。
 
 ## 任务目录
 

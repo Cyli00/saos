@@ -51,12 +51,15 @@ def requirements(d: dict, bindings: dict) -> dict:
     return {"values": values, "items": evidence}
 
 
-def query(targets: dict, *, root: Path | None = None, conjugate: str = "infinite", allow_extrapolation: bool = False) -> tuple[list[dict], list[dict]]:
+def query(targets: dict, *, root: Path | None = None, conjugate: str = "infinite", allow_extrapolation: bool = False,
+          available: list[dict] | None = None) -> tuple[list[dict], list[dict]]:
+    """available 不给时读起点库全部条目；给出时只筛这些条目（专利库候选由 patents.start_entries 生成）。"""
     if not isinstance(allow_extrapolation, bool) or conjugate not in ("finite", "infinite"):
         raise SaosError(ErrorCode.BAD_ARGS, "allow_extrapolation 必须为布尔值，conjugate 必须为 finite 或 infinite")
     selected, excluded = [], []
     try:
-        available = entries(root or library_root())
+        if available is None:
+            available = entries(root or library_root())
         for entry in available:
             app = entry["applicability"]
             entry_path(root or library_root(), entry["id"])
@@ -97,7 +100,9 @@ def query(targets: dict, *, root: Path | None = None, conjugate: str = "infinite
 
 
 def generate(job: jobs.Job, bindings: dict, *, short_seconds: float, prepare: str,
-             root: Path | None = None, conjugate: str = "infinite", allow_extrapolation: bool = False, backend_factory=None) -> dict[str, Any]:
+             root: Path | None = None, conjugate: str = "infinite", allow_extrapolation: bool = False, backend_factory=None,
+             patents: list | None = None, patents_root: Path | None = None) -> dict[str, Any]:
+    """patents 给出时候选改为这些专利库条目（ID 或 {id, materials, allow_unrecognized}，先用 patents.search 挑选），不读起点库。"""
     if isinstance(short_seconds, bool) or not isinstance(short_seconds, (int, float)) or not math.isfinite(short_seconds) or short_seconds <= 0:
         raise SaosError(ErrorCode.BAD_ARGS, "短优化预算必须为有限正秒数")
     if not isinstance(prepare, str) or not prepare.strip():
@@ -108,7 +113,12 @@ def generate(job: jobs.Job, bindings: dict, *, short_seconds: float, prepare: st
     constraints = requirements(d, bindings)
     targets = constraints["values"]
     root = root or library_root()
-    choices, excluded = query(targets, root=root, conjugate=conjugate, allow_extrapolation=allow_extrapolation)
+    available, excluded_first = (None, [])
+    if patents is not None:
+        from saos.starts import patents as patent_library
+        available, excluded_first = patent_library.start_entries(patents, patents_root)
+    choices, excluded = query(targets, root=root, conjugate=conjugate, allow_extrapolation=allow_extrapolation, available=available)
+    excluded = excluded_first + excluded
     parent = job.root / "explore" / "starts"
     parent.mkdir(parents=True, exist_ok=True)
     folder = parent / f"{jobs.next_archive_number(parent):03d}"
@@ -124,7 +134,15 @@ def generate(job: jobs.Job, bindings: dict, *, short_seconds: float, prepare: st
         for entry in choices:
             phase = "library_read"
             try:
-                data = read_json(entry_path(root, entry["id"]) / "prescription.json")
+                if "patent" in entry:
+                    from saos.starts import patents as patent_library
+                    converted = patent_library.prescription(entry["id"], root=patents_root, **entry["patent"])
+                    data, hashes = converted["prescription"], {"seq_sha": converted["provenance"]["sha256"]}
+                    entry = {**entry, "source": {**entry["source"], **converted["provenance"]}}
+                else:
+                    data = read_json(entry_path(root, entry["id"]) / "prescription.json")
+                    hashes = {"entry_sha": jobs.sha256_file(entry_path(root, entry["id"]) / "entry.json"),
+                              "prescription_sha": jobs.sha256_file(entry_path(root, entry["id"]) / "prescription.json")}
                 if not isinstance(data, dict):
                     raise SaosError(ErrorCode.BAD_ARGS, "库处方必须为对象")
                 reference = copy.deepcopy(data)
@@ -154,8 +172,7 @@ def generate(job: jobs.Job, bindings: dict, *, short_seconds: float, prepare: st
                 write_json(path, scaled)
                 candidates.append({"id": entry["id"], "prescription": path.relative_to(job.root).as_posix(), "form": entry["form"],
                                    "provenance": {**entry["source"], "version": entry["version"], "validation": entry["status"], "reference_efl": reference_efl,
-                                                  "scale": factor, "reference_wavelengths": reference["wavelengths"], "notes": entry.get("notes"), "entry_sha": jobs.sha256_file(entry_path(root, entry["id"]) / "entry.json"),
-                                                  "prescription_sha": jobs.sha256_file(entry_path(root, entry["id"]) / "prescription.json")},
+                                                  "scale": factor, "reference_wavelengths": reference["wavelengths"], "notes": entry.get("notes"), **hashes},
                                    "constraints": {"tightest": entry["tightest"], "pressure": entry["pressure"], "extrapolation": entry["extrapolation"]}, "prediction": prediction})
             except Exception as exc:
                 from saos.protocol import MaterialError
