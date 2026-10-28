@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import math
+from pathlib import Path
 
 import pytest
 
@@ -45,11 +46,19 @@ def test_normalize_defaults_and_materials():
         {"wavelengths": {"um": [0.5], "primary": 2}},
         {"surfaces": []},
         {"ray_aiming": "maybe"},
+        {"environment": {"temperature": 25}},
+        {"environment": {"pressure": 0.5, "adjust_index": False}},
     ],
 )
 def test_normalize_rejects(change):
     with pytest.raises(SaosError):
         prescription.normalize(minimal(**change))
+
+
+def test_environment_values_need_index_adjustment():
+    env = prescription.normalize(minimal(environment={"temperature": 25, "pressure": 0.5, "adjust_index": True}))["environment"]
+    assert env == {"temperature": 25.0, "pressure": 0.5, "adjust_index": True}
+    assert prescription.normalize(minimal())["environment"] == {"temperature": 20.0, "pressure": 1.0, "adjust_index": False}
 
 
 def test_two_stops_rejected():
@@ -105,3 +114,23 @@ def test_snapshot_prescription_does_not_change_file_bytes(tmp_path):
     before = jobs.sha256_file(path)
     snapshot_prescription(json.loads(path.read_text(encoding="utf-8")))
     assert jobs.sha256_file(path) == before
+
+
+MIXED = Path(__file__).parent / "fixtures" / "cases" / "mixed.json"
+
+
+def test_mixed_case_rejects_a_thickness_on_the_nsc_group_surface():
+    p = json.loads(MIXED.read_text(encoding="utf-8"))
+    assert "thickness" not in prescription.normalize(copy.deepcopy(p))["surfaces"][2]
+    p["surfaces"][2]["thickness"] = 15.5
+    with pytest.raises(SaosError, match="Exit Loc") as err:
+        prescription.normalize(p)
+    assert err.value.code == ErrorCode.BAD_ARGS
+
+
+def test_mixed_case_requires_the_exit_port_semi_diameter():
+    p = json.loads(MIXED.read_text(encoding="utf-8"))
+    p.pop("image")
+    with pytest.raises(SaosError, match="exit port") as err:
+        prescription.normalize(p)
+    assert err.value.code == ErrorCode.BAD_ARGS

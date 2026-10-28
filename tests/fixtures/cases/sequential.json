@@ -1,0 +1,15 @@
+{
+  "title": "sequential cemented doublet (test case)",
+  "aperture": {"type": "entrance_pupil_diameter", "value": 10},
+  "fields": {"type": "angle", "y": [0, 3, 5]},
+  "wavelengths": {"um": [0.4861, 0.5876, 0.6563], "weights": [1, 1, 1], "primary": 2},
+  "catalogs": ["SCHOTT"],
+  "ray_aiming": "off",
+  "object": {"thickness": "inf"},
+  "surfaces": [
+    {"radius": 61.5, "thickness": 4.0, "material": "N-BK7", "stop": true, "comment": "crown front"},
+    {"radius": -44.0, "thickness": 2.0, "material": "N-SF5", "comment": "cement"},
+    {"radius": -130.0, "thickness": 95.0, "comment": "flint back",
+     "solves": {"thickness": {"type": "marginal_ray_height", "height": 0}}}
+  ]
+}

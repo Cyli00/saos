@@ -1,0 +1,20 @@
+{
+  "title": "mixed mode singlet with a glass plate in an NSC group (test case)",
+  "aperture": {"type": "entrance_pupil_diameter", "value": 10},
+  "fields": {"type": "angle", "y": [0, 3]},
+  "wavelengths": {"um": [0.5876], "weights": [1], "primary": 1},
+  "catalogs": ["SCHOTT"],
+  "ray_aiming": "off",
+  "object": {"thickness": "inf"},
+  "surfaces": [
+    {"radius": 51.68, "thickness": 4.0, "material": "N-BK7", "stop": true, "comment": "singlet front"},
+    {"radius": -51.68, "thickness": 20.0, "comment": "singlet back"},
+    {"type": "NonSequential", "comment": "plate group",
+     "params": {"Exit Loc Z": 31.03},
+     "objects": [
+       {"type": "RectangularVolume", "comment": "plate", "position": [0, 0, 5], "material": "N-BK7",
+        "params": {"X1 Half Width": 8, "Y1 Half Width": 8, "Z Length": 5, "X2 Half Width": 8, "Y2 Half Width": 8}}
+     ]}
+  ],
+  "image": {"semi_diameter": 6}
+}

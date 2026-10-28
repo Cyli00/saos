@@ -55,7 +55,7 @@ def doublet(stop_behind: bool) -> dict:
 FIELDS = [(0.0, 0.0), (0.0, 0.5), (0.0, 1.0), (0.3, -0.7)]
 
 
-@pytest.mark.parametrize("temperature,pressure,adjust", [(-40.0, 0.0, True), (60.0, .5, True), (25.0, 1.0, False)])
+@pytest.mark.parametrize("temperature,pressure,adjust", [(-40.0, 0.0, True), (60.0, .5, True), (20.0, 1.0, False)])
 def test_recovered_material_changes_match_application_indx(zos, temperature, pressure, adjust):
     model = doublet(False)
     model["catalogs"] = ["SCHOTT", "OHARA"]

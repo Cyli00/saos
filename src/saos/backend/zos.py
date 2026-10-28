@@ -1506,13 +1506,16 @@ class ZosBackend(Backend):
                 columns = zosapi.Editors.LDE.SurfaceColumn
                 row.GetSurfaceCell(columns.Par1).DoubleValue = s["focal_length"]
                 row.GetSurfaceCell(columns.Par2).IntegerValue = s["opd_mode"]
-            for key, attr in (("radius", "Radius"), ("conic", "Conic")):
-                if key in s:
-                    setattr(row, attr, s[key])
             if s.get("material"):
                 self._set_material(row, s["material"], label)
-            if "thickness" in s:
-                row.Thickness = s["thickness"]
+            # 面型不用的列会静默丢掉写入（如非序列组面的厚度回读为 inf），逐项回读
+            # a column the surface type does not use drops the write silently (an NSC group's thickness reads inf), so read back
+            for key, attr in (("radius", "Radius"), ("conic", "Conic"), ("thickness", "Thickness")):
+                if key in s:
+                    setattr(row, attr, s[key])
+                    if not same_number(float(getattr(row, attr)), s[key]):
+                        raise SaosError(ErrorCode.BAD_ARGS, f"{label}: {key} did not take {s[key]} (now {float(getattr(row, attr))}); "
+                                                            f"{row.TypeName} may not use it")
             row.Comment = s["comment"]
             cells = None
             for key, value in (s.get("params") or {}).items():

@@ -1,0 +1,86 @@
+{
+ "source": "OpticStudio 24.1.0 ZOS-API standalone, saos lens build + saos exec, 2026-10-28",
+ "measured_with": {
+  "sequential/mixed": "ctx.op: EFFL(0,0), TOTR, RSCE(3 rings, polychromatic) at Hy 0 and 1, REAY of the marginal ray (Py 1) at the image, AXCL(1,3) for sequential; ctx.spot(fields=((0,0),(0,1)), grid=11)",
+  "non_sequential": "ctx.nsc_trace(split=False, scatter=False, seed=1) with Sobol sampling, then ctx.detector('detector'); two runs gave identical power and hits"
+ },
+ "cases": {
+  "sequential": {
+   "EFFL": 100.32230750990449,
+   "TOTR": 103.50674204580584,
+   "RSCE_axis": 0.0012197931358376834,
+   "RSCE_edge": 0.03709917638709604,
+   "REAY_marginal": -0.0004978618333817408,
+   "AXCL": 0.029725220465068636,
+   "spot": [
+    {
+     "field": [
+      0.0,
+      0.0
+     ],
+     "pass_rate": 100.0,
+     "chief": [
+      0.0,
+      0.0
+     ],
+     "rms_radius": 0.0002878848295905652,
+     "geo_radius": 0.000497861833381771
+    },
+    {
+     "field": [
+      0.0,
+      1.0
+     ],
+     "pass_rate": 100.0,
+     "chief": [
+      0.0,
+      8.77525204345842
+     ],
+     "rms_radius": 0.03891445106080415,
+     "geo_radius": 0.06986542844506971
+    }
+   ]
+  },
+  "non_sequential": {
+   "detector_power_w": 0.9167076275837194,
+   "detector_hits": 20000,
+   "total_energy_w": 1.0,
+   "dead_ray_errors": 0.0
+  },
+  "mixed": {
+   "EFFL": 50.668243731641645,
+   "TOTR": 24.0,
+   "RSCE_axis": 0.03788839833212699,
+   "RSCE_edge": 0.05071081407813916,
+   "REAY_marginal": -0.07638445796829485,
+   "spot": [
+    {
+     "field": [
+      0.0,
+      0.0
+     ],
+     "pass_rate": 100.0,
+     "chief": [
+      0.0,
+      0.0
+     ],
+     "rms_radius": 0.04061992417782169,
+     "geo_radius": 0.07638445796829509
+    },
+    {
+     "field": [
+      0.0,
+      1.0
+     ],
+     "pass_rate": 100.0,
+     "chief": [
+      0.0,
+      2.654624453415308
+     ],
+     "rms_radius": 0.053699492663847284,
+     "geo_radius": 0.12908457585748812
+    }
+   ]
+  }
+ }
+}

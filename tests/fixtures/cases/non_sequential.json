@@ -1,0 +1,16 @@
+{
+  "mode": "non_sequential",
+  "title": "non-sequential point source, singlet and detector (test case)",
+  "wavelengths": {"um": [0.5876], "weights": [1], "primary": 1},
+  "catalogs": ["SCHOTT"],
+  "objects": [
+    {"type": "SourcePoint", "comment": "source",
+     "params": {"# Layout Rays": 20, "# Analysis Rays": 20000, "Power(Watts)": 1, "Cone Angle": 5},
+     "source": {"sampling": "sobol"}},
+    {"type": "StandardLens", "comment": "singlet", "position": [0, 0, 50], "material": "N-BK7",
+     "params": {"Radius 1": 51.68, "Clear 1": 6, "Edge 1": 6, "Thickness": 4,
+                "Radius 2": -51.68, "Clear 2": 6, "Edge 2": 6}},
+    {"type": "DetectorRectangle", "comment": "detector", "position": [0, 0, 80],
+     "params": {"X Half Width": 10, "Y Half Width": 10, "# X Pixels": 50, "# Y Pixels": 50}}
+  ]
+}

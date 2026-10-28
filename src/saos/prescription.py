@@ -364,7 +364,13 @@ def _surface(s: Any, name: str, image: bool = False) -> dict[str, Any]:
         raise _bad(f"{name}: the image surface cannot be paraxial")
     item: dict[str, Any] = {"type": kind, "comment": str(s.get("comment", ""))}
     if not image:
-        item["thickness"] = _finite(s.get("thickness", 0.0), f"{name}.thickness")
+        # 非序列组面没有厚度（2024 R1 回读为 inf，写入被忽略），出口位置由 Exit Loc X/Y/Z 决定
+        # an NSC group surface has no thickness (2024 R1 reads inf and ignores writes); Exit Loc X/Y/Z places the exit
+        if kind.lower() == "nonsequential":
+            if "thickness" in s:
+                raise _bad(f"{name}: a NonSequential surface has no thickness; place the exit with params Exit Loc X/Y/Z")
+        else:
+            item["thickness"] = _finite(s.get("thickness", 0.0), f"{name}.thickness")
         item["stop"] = _flag(s.get("stop", False), f"{name}.stop")
     if kind != "paraxial" and ("focal_length" in s or "opd_mode" in s):
         raise _bad(f"{name}: focal_length and opd_mode belong to paraxial surfaces; give other types' parameters in params")
@@ -949,6 +955,11 @@ def normalize(p: dict[str, Any]) -> dict[str, Any]:
     environment = {"temperature": _finite(env.get("temperature", 20.0), "environment.temperature"),
                    "pressure": _size(env.get("pressure", 1.0), "environment.pressure"),
                    "adjust_index": _flag(env.get("adjust_index", False), "environment.adjust_index")}
+    # 修正关闭时 OpticStudio 不接受温度、压力的写入（2026-10-28 实测），它们也不影响折射率
+    if not environment["adjust_index"] and (environment["temperature"] != 20.0 or environment["pressure"] != 1.0):
+        raise _bad("environment: temperature and pressure other than 20 C, 1 atm need adjust_index true; OpticStudio keeps "
+                   "neither while index adjustment is off, and then uses each catalog's data at its own reference temperature "
+                   "(25 C for OHARA and HOYA), so leave them at 20 C, 1 atm or set adjust_index true")
 
     obj = _dict(p.get("object"), "object")
     _known(obj, {"thickness", "material", "comment"}, "object")
@@ -983,6 +994,16 @@ def normalize(p: dict[str, Any]) -> dict[str, Any]:
     if a_kind == "float_by_stop" and not (stops and "semi_diameter" in surfaces[stops[0] - 1]):
         raise _bad("aperture.type float_by_stop: mark the stop surface and give it a semi_diameter, which sets the aperture")
     image = _surface(p["image"], "image", image=True) if p.get("image") is not None else None
+    # 非序列组后面一面是出口端口：OpticStudio 把它的半口径固定成自己算的值（2024 R1 实测 Automatic 设不上），
+    # 端口外的光线被终止，所以端口尺寸必须由处方给出
+    # the surface after an NSC group is its exit port; OpticStudio fixes its semi-diameter to a value of its own
+    # (Automatic does not take in 2024 R1) and terminates rays outside it, so the prescription must size the port
+    for k, s in enumerate(surfaces, start=1):
+        if s["type"].lower() == "nonsequential":
+            port, label = (surfaces[k], f"surfaces[{k + 1}]") if k < len(surfaces) else (image, "image")
+            if port is None or "semi_diameter" not in port:
+                raise _bad(f"surfaces[{k}] is a NonSequential group: give {label} a semi_diameter, the exit port size "
+                           "(OpticStudio fixes it and drops rays outside it)")
     last = len(surfaces) + 1
     for k, s in [*enumerate(surfaces, start=1), (last, image or {})]:
         for column, solve in (s.get("solves") or {}).items():
@@ -1065,7 +1086,8 @@ System fields
   ray_aiming: off, paraxial, real.
   Rejected combinations: infinite object with object_na, object_cone_angle or
     object_height; telecentric_object with infinite object, angular fields or
-    entrance_pupil_diameter; TEMP/PRES configurations without adjust_index true.
+    entrance_pupil_diameter; TEMP/PRES configurations, or a temperature or
+    pressure other than 20 C, 1 atm, without adjust_index true.
     Aperture, field type and telecentric settings are read back after building;
     OpticStudio changing them is BAD_ARGS.
 
@@ -1137,7 +1159,10 @@ Configurations and optional system settings
   Mixed mode: a surface of type NonSequential may carry "objects" (written as
     in the non-sequential prescription below; object numbers start at 1 within
     the group). Its parameters use column headers: Exit Loc X/Y/Z, Exit Tilt
-    X/Y/Z, Order, Reverse Rays, Back Propagation Distance. The build selects
+    X/Y/Z, Order, Reverse Rays, Back Propagation Distance. The group surface
+    has no thickness: Exit Loc Z places the next surface. That next surface
+    (or image) is the exit port and needs semi_diameter: OpticStudio fixes the
+    port size and drops rays outside it. The build selects
     the group with NCE.SetActiveSurface; objects survive saving and sequential
     rays pass through the group (2024 R1). A sequential prescription also takes
     nsc, source_units and analysis_units. The workflow window's sequential
