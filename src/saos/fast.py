@@ -50,9 +50,10 @@ class FastLens(KitMethods):
 
     def push(self, ctx, keys: Iterable[str] | None = None) -> dict[str, Any]:
         """把副本里的参数写回 OpticStudio（ctx.set），返回写入的值。默认写回 set 改过的全部参数。
-        之后在 OpticStudio 上实测：ctx.measure()、saos check 或 saos round。
+        之后先在 OpticStudio 上局部优化收尾，再用 saos check 或 saos round 判定；收尾前 check / round 的结果会带提醒。
         Write the copy's parameters to OpticStudio through ctx.set and return them; by default every parameter changed
-        through set. Then measure on OpticStudio: ctx.measure(), saos check or saos round."""
+        through set. Then close with an OpticStudio local optimisation before saos check or saos round judge the lens;
+        until then their results carry a reminder."""
         names = []
         for key in (list(self.changed) if keys is None else list(keys)):
             kind, ref, param = parse_key(key)
@@ -63,6 +64,9 @@ class FastLens(KitMethods):
         values = self.values(names)
         if values:
             ctx.set(values)
+            note = getattr(ctx, "_note_rtc", None)  # worker 上下文没有轮次，不记 / worker contexts record no rounds
+            if note is not None:
+                note(True)
         return values
 
     def compare(self, ctx, fields: Iterable[Iterable[float]] = ((0.0, 0.0),), wave: int | Iterable[int] | None = None,

@@ -259,7 +259,9 @@ COMMANDS.update({
         "  --only lists comma-separated check ids; a partial result is never achieved.\n"
         "  Writes a snapshot and evidence to evaluations/NNN/; evidence_file points to\n"
         "  the complete result. Each item includes duration_s. A check changing the lens\n"
-        "  cannot be accepted as read-only evidence.", "BAD_ARGS, NO_LENS_LOADED, JOB_MISMATCH, FILE_NOT_FOUND"),
+        "  cannot be accepted as read-only evidence. warnings flags rtc results pushed\n"
+        "  with fast.push and not yet closed by an OpticStudio optimisation.",
+        "BAD_ARGS, NO_LENS_LOADED, JOB_MISMATCH, FILE_NOT_FOUND"),
     "round": (
         "Record a measured round for a confirmed demand and approved lens structure.",
         "Requires no blocking questions and a nonterminal demand version. --tier is\n"
@@ -267,7 +269,9 @@ COMMANDS.update({
         "  --merit records a finite external objective instead of the lens merit.\n"
         "  Saves lenses/rounds/rNNN.zmx only after checks prove the lens unchanged;\n"
         "  evaluations/NNN/result.json is authoritative and ledger.jsonl commits the\n"
-        "  round. Returns record, evaluation, stop decision, untried tiers and brief.\n"
+        "  round. Returns record, evaluation, stop decision, untried tiers and brief;\n"
+        "  warnings flags rtc results pushed with fast.push and not yet closed by an\n"
+        "  OpticStudio optimisation (the round is still recorded).\n"
         "  record.achieved governs delivery: evaluation.achieved alone ignores model\n"
         "  glass, hard conditions and parts_clash. Clashing parts cannot be delivered;\n"
         "  failed interference evaluation prevents recording. Checks must be read-only\n"
@@ -394,6 +398,12 @@ Context and file operations
   Editing: ctx.merit_add(rows) (ordered, before DMFS, id/ref rows; saos.ctx.rows
     builds thickness, sag-gap and NA-proxy rows), ctx.solve(key, kind, ...),
     ctx.insert_surface(i, type, **values), ctx.change_surface_type(ref, type).
+  Experts (sequential, one configuration): ctx.GlassExpert(surfaces | "model",
+    catalogs=..., partial="working"|"gF").run() / .candidates(s);
+    ctx.AsphereExpert(surfaces, terms=4, engine="opticstudio"|"rtc").rank() /
+    .run(nas); engine="rtc" ranks by ray errors in an rtc copy, acceptance stays
+    on the MFE. They keep the lens in memory only: save with ctx.save_as(name);
+    asphere run changes structure.
   ctx.job, ctx.args, ctx.lens (Path or None), ctx.dirty.
   ctx.path(rel): path contained in the job; ctx.mark_dirty(): record edits.
   ctx.load(name), ctx.save_as(name, overwrite=False): names relative to lenses/.

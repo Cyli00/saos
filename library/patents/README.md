@@ -48,6 +48,8 @@ converted = patents.prescription("or01022")  # {"prescription": lens build 处�
 - `search` 把需求与每个原例比较：原例的半视场不小于需求、f/# 不大于需求、波段覆盖需求，才算覆盖需求。覆盖的条目按"最吃紧的一项最接近需求"排序，再按片数少的优先。可以加的筛选条件：`conjugate`、`elements=(下限, 上限)`、`zoom`、`aspheric`、`reflective`、`ttl_over_efl_max`、`bfl_over_efl_min`、`signs`（正则，例如 `^\+-\+$` 为三片式）、`country`。`allow_extrapolation=True` 时，未覆盖需求的条目也列出来，排在后面，超出的项写在 `extrapolation` 里。
 - 进入同预算初筛：`starts.generate(ctx.job, bindings, short_seconds=…, prepare=…, patents=["or01022", {"id": "or00123", "materials": {"CAFL_SPECIAL": "CAF2"}}])`。处理方式与通用起点库相同：设需求的波长、视场和 f/#，测参考焦距，缩放，预判，生成扫描计划。以下条目会进排除表，并写明原因：物高视场、无焦、没有近轴数据的条目，以及没有指定位置的变焦条目。
 
+- 换成在产玻璃：玻璃代码转成的是模型玻璃，不可交付。选定起点后在 `exec` 脚本里用 `ctx.GlassExpert("model")` 把所有模型玻璃面换成在产牌号（默认 `SAOS_CDGM_INPROD`），用法见技能 `references/rounds.md`。
+
 ## 转换规则（`saos.starts.seq.to_prescription`）
 
 只转换认识的命令；不认识的命令列在 `unrecognized` 里，并拒绝转换（`allow_unrecognized=True` 时跳过这些命令）。材料不会被替换：

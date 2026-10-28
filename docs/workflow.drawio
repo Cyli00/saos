@@ -230,14 +230,14 @@
         <mxCell id="u5" value="&lt;b&gt;停下来问用户&lt;/b&gt;&lt;br&gt;证据 · 影响 · 建议选项&lt;br&gt;用户选：改需求 / 停止 / 继续" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="85" y="1850.0" width="240" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="a14" value="&lt;b&gt;按诊断选择优化手段&lt;/b&gt;&lt;br&gt;局部：Zemax DLS / 正交下降&lt;br&gt;搜索：Hammer / Global；在产玻璃替换&lt;br&gt;外层：Brent / Nelder–Mead / Powell 调用 ZOS&lt;br&gt;&lt;br&gt;测量与复核共用预算；取消等待原生调用返回&lt;br&gt;优化器成功不等于实测达标，复核未完成则补测&lt;br&gt;不以评价函数代替通光与结构有效性判定" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="490" y="2170.0" width="320" height="180" as="geometry" />
+        <mxCell id="a14" value="&lt;b&gt;按诊断选择优化手段&lt;/b&gt;&lt;br&gt;局部：Zemax DLS / 正交下降&lt;br&gt;搜索：Hammer / Global；在产玻璃替换&lt;br&gt;外层：Brent / Nelder–Mead / Powell 调用 ZOS&lt;br&gt;光线量的扫描 / 多起点 / 专家排名可在 rtc 副本里跑，数值只引导&lt;br&gt;rtc 结果 push 回 OpticStudio 后先 opt local 收尾，再判定&lt;br&gt;&lt;br&gt;测量与复核共用预算；取消等待原生调用返回&lt;br&gt;优化器成功不等于实测达标，复核未完成则补测&lt;br&gt;不以评价函数代替通光与结构有效性判定" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="2170.0" width="320" height="220" as="geometry" />
         </mxCell>
-        <mxCell id="t8" value="&lt;b&gt;saos opt vary / merit / local / glass / hammer / global&lt;/b&gt;&lt;br&gt;saos lens analysis · saos exec（kit / ctx.measure）&lt;br&gt;saos scan / ctx.map：常驻 worker 池按任务阶段选后端&lt;br&gt;scan --detach：后台线程，主实例仍可用；--show 看进度&lt;br&gt;opt / exec / check / round --detach：runs/ 下保存结果&lt;br&gt;review：交叠检查、--measure 前后对比与 valid&lt;br&gt;progress.json：saos job show / saos job cancel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
-          <mxGeometry x="980" y="2170" width="400" height="180" as="geometry" />
+        <mxCell id="t8" value="&lt;b&gt;saos opt vary / merit / local / glass / hammer / global&lt;/b&gt;&lt;br&gt;saos lens analysis · saos exec（kit / ctx.measure）&lt;br&gt;ctx.fast()：rtc 内存副本，fast.push 写回 OpticStudio&lt;br&gt;saos scan / ctx.map：常驻 worker 池按任务阶段选后端&lt;br&gt;scan --detach：后台线程，主实例仍可用；--show 看进度&lt;br&gt;opt / exec / check / round --detach：runs/ 下保存结果&lt;br&gt;review：交叠检查、--measure 前后对比与 valid&lt;br&gt;progress.json：saos job show / saos job cancel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+          <mxGeometry x="980" y="2170" width="400" height="200" as="geometry" />
         </mxCell>
-        <mxCell id="a15" value="&lt;b&gt;值得评判时记录轮次&lt;/b&gt;&lt;br&gt;saos round --tier T[,T] --note [--merit]&lt;br&gt;小改动：saos check [--only id,…] 只测受影响项&lt;br&gt;距上次记轮次 ≥ 2 次优化或 ≥ 15 个脚本：结果带 since_round 提醒" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
-          <mxGeometry x="490" y="2435.0" width="320" height="70" as="geometry" />
+        <mxCell id="a15" value="&lt;b&gt;值得评判时记录轮次&lt;/b&gt;&lt;br&gt;saos round --tier T[,T] --note [--merit]&lt;br&gt;小改动：saos check [--only id,…] 只测受影响项&lt;br&gt;rtc 结果未收尾时 check / round 带 warnings；收尾期间可先推送界面、起草报告&lt;br&gt;距上次记轮次 ≥ 2 次优化或 ≥ 15 个脚本：结果带 since_round 提醒" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+          <mxGeometry x="490" y="2435.0" width="320" height="90" as="geometry" />
         </mxCell>
         <mxCell id="t9" value="&lt;b&gt;saos round&lt;/b&gt;：模型确认 → 同一套 checks → 判定只读&lt;br&gt;lenses/rounds/rNNN.zmx · ledger.jsonl · evaluations/NNN/&lt;br&gt;每轮记录 backend、stage、材料与交叠结果&lt;br&gt;阻断问题未答不记轮；viz.json 供工作流窗口显示" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
           <mxGeometry x="980" y="2420.0" width="400" height="100" as="geometry" />

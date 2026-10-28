@@ -41,6 +41,29 @@ def admitted_paths() -> frozenset[str]:
     return frozenset(json.loads(ADMITTED_FILE.read_text(encoding="utf-8"))["paths"])
 
 
+def catalog_indices(names, catalogs, glass_dir: Path | None, environment: tuple[float, float, bool],
+                    wavelengths_um) -> tuple[dict[str, list[float]], dict[str, str]]:
+    """不建镜头，按准入表在 rtc 材料层算目录玻璃在各波长的折射率（与 OpticStudio INDX 差 ≤ 1e-8 的路径才算）。
+    environment 是 (温度 °C, 压力 atm, 是否按环境修正)。返回 {牌号: [n…]} 与 {牌号: 没算的原因}，后者交给 OpticStudio。
+    Catalog indices from rtc's material layer for admitted paths only, without a lens; the rest is left to OpticStudio."""
+    from rtc.material import Catalog, Environment, GlassCatalog, MaterialInvalid, MaterialUnsupported, resolve
+
+    catalog = GlassCatalog(glass_dir) if glass_dir else GlassCatalog()
+    env = _material_call(Environment, *environment)
+    values, skipped = {}, {}
+    for name in names:
+        try:
+            medium = resolve(Catalog(name), catalog, list(catalogs))
+            path = medium.path(env)
+            if path not in admitted_paths():
+                skipped[name] = f"material path {path} is not reconciled with OpticStudio INDX"
+                continue
+            values[name] = [float(medium.index(w, env)) for w in wavelengths_um]
+        except (MaterialInvalid, MaterialUnsupported) as exc:
+            skipped[name] = str(exc)
+    return values, skipped
+
+
 def _unsupported(message: str, problems: list[str] | None = None) -> SaosError:
     return SaosError(ErrorCode.BACKEND_UNSUPPORTED, message, {"problems": problems} if problems else None)
 
@@ -247,7 +270,12 @@ class RtcBackend(Backend):
             mine = lens.surface(i)
             # 像面之后没有介质，存盘时写 INFINITY、OpticStudio 读作 0，不参与追迹
             # nothing follows the image surface: saved as INFINITY, read as 0 by OpticStudio, never traced
-            for name in ("radius", "conic") if i == len(surfaces) - 1 else ("radius", "thickness", "conic"):
+            names = ("radius", "conic") if i == len(surfaces) - 1 else ("radius", "thickness", "conic")
+            if mine.type == "PARAXIAL":
+                # 近轴面没有圆锥系数：ZOS-API 读作 inf、存盘为 0，追迹也不用它
+                # a paraxial surface has no conic: the ZOS-API reads inf, the file holds 0, and tracing ignores it
+                names = tuple(n for n in names if n != "conic")
+            for name in names:
                 got, want = float(self.get_param(f"{i}.{name}")), float(s[name])
                 if name == "radius":
                     # 平面在 OpticStudio 里读作 inf 或 0 / a flat reads as inf or 0 in OpticStudio
@@ -325,6 +353,11 @@ class RtcBackend(Backend):
 
     def _changed(self) -> None:
         self._systems.clear()
+
+    def optical_system(self, wave: int):
+        """第 wave 个波长的 rtc 光学系统（材料已过准入），给 rtc.adtrace 这类直接用内核的探索代码。
+        The rtc optical system of wavelength wave (materials admitted), for exploration code using the kernel directly."""
+        return self._system(wave)
 
     # ---- Backend 接口 / the Backend interface ----
 

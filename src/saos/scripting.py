@@ -168,6 +168,13 @@ class ScriptContext(KitMethods):
         if loaded is not None and loaded.job.id == self.job.id:
             loaded.dirty = True
 
+    def _note_rtc(self, unclosed: bool) -> None:
+        """fast.push 写回 rtc 结果时记为未收尾；在 OpticStudio 上优化过后清掉（saos round / check 据此提醒）。
+        Mark rtc results as unclosed on fast.push; clear the mark after an OpticStudio optimisation."""
+        loaded = self._daemon.loaded
+        if loaded is not None and loaded.job.id == self.job.id:
+            loaded.mark_rtc(unclosed)
+
     def show(self) -> dict[str, Any] | None:
         """在长脚本中途把当前镜头推给流程图窗口（布局、Lens Data、交叠检查）；命令结束时本来就会推一次。
         Push the current lens to the workflow window mid-script (layout, Lens Data, interference); every command does it at the end."""
@@ -209,7 +216,9 @@ class ScriptContext(KitMethods):
             raise SaosError(ErrorCode.FILE_EXISTS, f"job {self.job.id} already has {name}; pass overwrite=True")
         target.parent.mkdir(parents=True, exist_ok=True)
         self.backend.save_as(target)
-        self._daemon.loaded = Loaded(self.job, target)
+        # 另存不改变镜头内容：未收尾的 rtc 结果仍未收尾 / saving does not change the lens, so unclosed rtc results stay unclosed
+        previous = self._daemon.loaded
+        self._daemon.loaded = Loaded(self.job, target, rtc_unclosed=bool(previous is not None and previous.rtc_unclosed))
         self._daemon.window_unsaved = False
         rel = self.job.relative_lens(target)
         self.job.update_state(current_lens=rel, last_saved=rel)

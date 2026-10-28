@@ -60,9 +60,36 @@ class Loaded:
     job: jobs.Job
     path: Path
     dirty: bool = False
+    # fast.push 写回过 rtc 的结果、之后还没在 OpticStudio 上优化过（SKILL.md 第 3 阶段的收尾优化）
+    # rtc results were pushed and no OpticStudio optimisation has run since (the closing optimisation of SKILL.md stage 3)
+    rtc_unclosed: bool = False
+
+    def __post_init__(self) -> None:
+        self._persist()
+
+    def mark_rtc(self, unclosed: bool) -> None:
+        self.rtc_unclosed = bool(unclosed)
+        self._persist()
+
+    def _persist(self) -> None:
+        # 写进 job.json，流程图窗口据此在设计节点上提示 / kept in job.json so the workflow window can show it
+        if bool(self.job.read_state().get("rtc_unclosed", False)) != self.rtc_unclosed:
+            self.job.update_state(rtc_unclosed=self.rtc_unclosed)
 
     def describe(self) -> dict[str, Any]:
         return {"job": self.job.id, "file": self.job.relative_lens(self.path), "dirty": self.dirty}
+
+
+UNCLOSED_RTC = ("this lens holds rtc results pushed with fast.push and no OpticStudio optimisation has run since; "
+                "close with saos opt local on the merit function before judging it (SKILL.md stage 3)")
+
+
+def _warn_unclosed(loaded: Loaded | None, out: dict[str, Any]) -> dict[str, Any]:
+    """判定和记录轮次照常进行，只在结果里提醒（DESIGN.md：不为防 Agent 规避流程加锁）。
+    Checks and rounds go ahead; the result only carries a reminder (DESIGN.md: no locks against skipping steps)."""
+    if loaded is not None and loaded.rtc_unclosed:
+        out.setdefault("warnings", []).append(UNCLOSED_RTC)
+    return out
 
 
 def _arg(args: dict[str, Any], name: str, kind: type | tuple[type, ...], *, default: Any = ..., allow_none=False):
@@ -588,7 +615,7 @@ class Daemon:
         target.parent.mkdir(parents=True, exist_ok=True)
         original = self.backend.system_info()["file"]
         self.backend.save_as(target)
-        self.loaded = Loaded(job, target)
+        self.loaded = Loaded(job, target, rtc_unclosed=bool(self.loaded is not None and self.loaded.rtc_unclosed))
         rel = job.relative_lens(target)
         self.window_unsaved = False
         job.update_state(current_lens=rel, last_saved=rel, captured_from=original)
@@ -851,6 +878,8 @@ class Daemon:
                 result = run(budget.remaining())
             finally:
                 loaded.dirty = True
+            if not result.get("stopped_by"):
+                loaded.mark_rtc(False)
             phase = "review"
             with budget.interruptible():
                 review = self._review(job, ids, before)
@@ -972,15 +1001,17 @@ class Daemon:
         """按需求对当前镜头逐项取值判定，不记录轮次。"""
         job = self._job(args)
         self._require_loaded(job)
-        return workflow.check(scripting.ScriptContext(self, job, {}), only=_arg(args, "only", list, default=None))
+        return _warn_unclosed(self.loaded, workflow.check(scripting.ScriptContext(self, job, {}),
+                                                          only=_arg(args, "only", list, default=None)))
 
     def op_round(self, args: dict[str, Any]) -> dict[str, Any]:
         """记录一个调试轮次并给出终止判断（DESIGN.md「终止规则」）。"""
         job = self._job(args)
         self._require_loaded(job)
         ctx = scripting.ScriptContext(self, job, {})
-        return workflow.record_round(ctx, _arg(args, "tier", str, default=None), str(args.get("note", "")),
-                                     merit=_arg(args, "merit", (int, float), default=None), viz=_arg(args, "viz", bool, default=True))
+        return _warn_unclosed(self.loaded, workflow.record_round(
+            ctx, _arg(args, "tier", str, default=None), str(args.get("note", "")),
+            merit=_arg(args, "merit", (int, float), default=None), viz=_arg(args, "viz", bool, default=True)))
 
     def op_operand(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))

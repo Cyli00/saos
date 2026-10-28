@@ -274,7 +274,8 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
             if in_version:
                 decision = ledger.decide(rows, d["stop"], ledger.stop_for(root, csha, d), ledger.ruled_out_for(root, csha, d))
                 out["decision"] = {k: finite(v) if isinstance(v, float) else v for k, v in decision.items() if k != "stopped"}
-            detail["design"] = {"rounds": len(in_version), "last": out["rounds"][-1] if in_version else None}
+            detail["design"] = {"rounds": len(in_version), "last": out["rounds"][-1] if in_version else None,
+                                "rtc_unclosed": bool(job_state.get("rtc_unclosed"))}
             if decision is not None and decision["status"] in FINAL:
                 status["design"] = "done"
                 status["deliver"] = "done" if _report_current(root) else "active"

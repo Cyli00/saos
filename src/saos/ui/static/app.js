@@ -12,7 +12,7 @@ const TEXT = {
     back_reject: "调整设计", legacy_job: "历史任务：请新建任务并重测",
     no_demand: "访谈中，尚无需求单", invalid_demand: "需求单未通过校验", first: "等待用户确认", reconfirm: "需求已改动，待重新确认",
     waiting: "等你确认", blocked: "待回答", active: "进行中", running: "运行中",
-    rounds_n: (n) => `第 ${n} 轮`, no_rounds: "尚未记录轮次",
+    rounds_n: (n) => `第 ${n} 轮`, no_rounds: "尚未记录轮次", rtc_unclosed: "rtc 结果待 OpticStudio 收尾优化",
     starts_done: (n, k) => `已生成 ${n} 个起点 · ${k} 个未评估`,
     explore_run: (n) => `结构探索：${n} 个候选运行中`, explore_done: (n) => `已比较 ${n} 个候选`,
     st_achieved: "已达成", st_exhausted: "无法再优化", st_limit: "达到轮次上限", st_stopped: "按用户决定停止",
@@ -68,7 +68,7 @@ const TEXT = {
     back_reject: "revise design", legacy_job: "Legacy job: create a new job and remeasure",
     no_demand: "interviewing, no demand yet", invalid_demand: "demand fails validation", first: "waiting for the user", reconfirm: "demand changed, confirm again",
     waiting: "your turn", blocked: "question", active: "in progress", running: "running",
-    rounds_n: (n) => `round ${n}`, no_rounds: "no rounds yet",
+    rounds_n: (n) => `round ${n}`, no_rounds: "no rounds yet", rtc_unclosed: "rtc results await a closing OpticStudio optimisation",
     starts_done: (n, k) => `${n} ${n === 1 ? "start" : "starts"} · ${k} not evaluated`,
     explore_run: (n) => `exploring ${n} ${n === 1 ? "candidate" : "candidates"}`, explore_done: (n) => `compared ${n} ${n === 1 ? "candidate" : "candidates"}`,
     st_achieved: "achieved", st_exhausted: "exhausted", st_limit: "round limit", st_stopped: "stopped by user",
@@ -221,8 +221,9 @@ function nodeSub(step) {
     if (!d) return t("design_sub");
     if (d.legacy) return t("legacy_job");
     const last = d.last;
-    if (!last) return t("no_rounds");
-    return `${t("select_round", last.round)} · G ${fmtG(last.shortfall)} · ${last.tiers.join("+")}`;
+    const unclosed = d.rtc_unclosed ? ` · ${t("rtc_unclosed")}` : "";
+    if (!last) return t("no_rounds") + unclosed;
+    return `${t("select_round", last.round)} · G ${fmtG(last.shortfall)} · ${last.tiers.join("+")}${unclosed}`;
   }
   if (step.id === "deliver") return d ? `${t("st_" + d)} · ${step.status === "done" ? t("report_ready") : t("report_todo")}` : t("deliver_cmd");
   return "";

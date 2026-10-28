@@ -685,10 +685,48 @@ def test_long_operations_report_progress_and_honour_cancel(setup, monkeypatch):
     assert call(daemon, "opt.local", job=job.id, max_seconds=30)["result"]["stopped_by"] == "cancel"
     mid = seen.pop("mid_view")
     assert mid["rays"] == [] and mid["rays_paused"]
-    assert seen == {"cores": config.compute_cores(), "max_seconds": 30, "cancel": True}
+    # 优化器拿到的是扣掉优化前测量后的剩余预算，随机器负载略小于 30 / the remaining budget after measuring, a little under 30
+    assert 29 < seen.pop("max_seconds") <= 30
+    assert seen == {"cores": config.compute_cores(), "cancel": True}
     final = json.loads((job.root / jobs.VIEW_FILE).read_text(encoding="utf-8"))["layout"]
     assert final["rays"] and "rays_paused" not in final  # 结束后带光线 / with rays once it ends
     assert job.read_progress()["merit"] == 2.0
+
+
+def test_pushed_rtc_results_are_flagged_until_an_opticstudio_optimisation(setup):
+    """fast.push 写回 rtc 结果后，check 与 round 照常进行但带提醒；OpticStudio 优化跑完才清掉，被中途停下的不算。"""
+    from types import SimpleNamespace
+
+    from saos import scripting
+    from saos.fast import FastLens
+    from saos.ui import stage
+
+    daemon, job = setup
+    write_demand(job, OPT_DEMAND)
+    ctx = scripting.ScriptContext(daemon, job, {})
+    radius = ctx.get("1.radius")
+    copy = SimpleNamespace(changed={"1.radius"}, values=lambda names: {"1.radius": radius})
+    assert FastLens.push(copy, ctx) == {"1.radius": radius}
+
+    def warned(op, **args):
+        out = call(daemon, op, job=job.id, **args)
+        assert out["ok"], out
+        return daemon_mod.UNCLOSED_RTC in out["result"].get("warnings", [])
+
+    assert warned("demand.check") and warned("round.record")
+    design = lambda: next(x for x in stage.snapshot(job)["steps"] if x["id"] == "design")["detail"]  # noqa: E731
+    assert design()["rtc_unclosed"]  # 流程图窗口也看得到 / the workflow window shows it too
+    daemon.backend.optimize = lambda *a, **k: {"stopped_by": "cancel"}
+    call(daemon, "opt.local", job=job.id, max_seconds=30)
+    assert warned("demand.check")
+    def optimize(*a, **k):  # 收尾优化改了镜头，才能记新的一轮 / the closing optimisation changes the lens
+        daemon.backend.set_param("1.radius", radius * 1.01)
+        return {"final_merit": 1.0}
+
+    daemon.backend.optimize = optimize
+    assert call(daemon, "opt.local", job=job.id, max_seconds=30)["ok"]
+    assert not warned("demand.check") and not warned("round.record", tier="local")
+    assert not design()["rtc_unclosed"]
 
 
 def test_hammer_and_global_need_a_budget_and_archive_the_systems_they_write(setup):
@@ -718,7 +756,8 @@ def test_hammer_and_global_need_a_budget_and_archive_the_systems_they_write(setu
 
     out = call(daemon, "opt.global", job=job.id, max_seconds=5)["result"]
     assert out["files"] == ["global/001/GLOPT_0001_001.zmx", "global/001/GLOPT_0001_002.zmx"] and out["dirty"]
-    assert seen == {"kind": "global", "cores": config.compute_cores(), "max_seconds": 5.0}
+    assert 4 < seen.pop("max_seconds") <= 5  # 剩余预算 / the remaining budget
+    assert seen == {"kind": "global", "cores": config.compute_cores()}
     assert not list(lens_dir.glob("GLOPT_*.zmx"))
     progress = job.read_progress()
     assert progress["op"] == "opt.global" and progress["stage"] == "opt.global" and progress["systems"] == 1000
