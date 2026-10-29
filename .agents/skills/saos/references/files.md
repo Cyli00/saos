@@ -1,6 +1,6 @@
 # Job directory
 
-Everything about a job lives in `work/<instance>/jobs/<job>/`; the instance directory holds only `daemon/` and `jobs/`. Nothing about a specific job goes into the repository, and temporary files go to the system temporary directory. NNN is a three-digit sequence number.
+Everything about a job lives in `work/<instance>/jobs/<job>/`; the instance directory holds only `daemon/` and `jobs/`. NNN is a three-digit sequence number.
 
 ## What you write
 

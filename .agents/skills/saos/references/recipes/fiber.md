@@ -63,10 +63,6 @@ def run(ctx):
 - A flat substrate under a Generalized Fresnel surface must not cross its mounting plane; fix the substrate before optimising.
 - The GRIN jobs used a different convention (`[role]` comment tags, direct launch at the air NA, a segmented rod boundary audit, a reversed system for collection, glue-layer focus compensation). That code is not lifted; lift it, with its own `Layout`, when a GRIN job uses it again.
 
-## Stage 3: optimisation
-
-- A Nelder–Mead on the full shortfall (18 variables, one hour) stopped unconverged after 48 evaluations. Optimise on smooth proxies and keep the PSF items for rounds.
-
 ## Evidence
 
 - 2026-10-17: the library reproduced the `fiber-printed-relay` helpers (version 6) on real OpticStudio, all 20 checks.

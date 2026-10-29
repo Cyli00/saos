@@ -4,7 +4,7 @@ The outcome of this stage is an approved model description: a structure chosen f
 
 ## Build in OpticStudio
 
-Models are built, saved and judged in the persistent ZOS session; the rtc copy only explores a model already there ([computing.md](computing.md#the-rtc-copy)). Report unavailable features explicitly; do not substitute another backend.
+Models are built, saved and judged in the persistent ZOS session; the rtc copy only explores a model already there ([scripting.md](scripting.md#the-rtc-copy)). Report unavailable features explicitly; do not substitute another backend.
 
 - Build or import through `lens build`, `lens load` and `lens save`. Commands use native `.zmx` files (`lens build --as start.zmx`), saved directly by OpticStudio.
 - Keep sourced materials and mechanical semi-diameters (`lens set --param mech_semi_diameter`) in the model; the interference check uses the parts' outer edges.
@@ -12,7 +12,7 @@ Models are built, saved and judged in the persistent ZOS session; the rtc copy o
 
 ## Choose a starting form
 
-For a free structure, generate starts from sourced library designs scaled to the demand. Use the most demanding field, f-number and spectral requirements to choose forms, and inspect first-order and third-order predictions before investing in optimisation. There is no candidate quota; a clearly suitable form may be used directly, with the reason in the model notes. For a prescribed structure, show the user's reason and your feasibility verdict.
+For a free structure, generate starts from sourced library designs and patent examples scaled to the demand, searching the patents by field, f-number, band, element count and power signs rather than recalling forms from memory. Use the most demanding field, f-number and spectral requirements to choose forms, and inspect first-order and third-order predictions before investing in optimisation. There is no candidate quota; a clearly suitable form may be used directly, with the reason in the model notes. For a prescribed structure, show the user's reason and your feasibility verdict.
 
 In a job script:
 
@@ -23,7 +23,7 @@ In a job script:
 - `saos.starts.patents.search(half_field_deg=..., f_number=..., wavelengths_um=..., elements=(lo, hi), ...)` searches 2456 patent examples (`library/patents/README.md` lists filters, tags and conversion rules). Pass the chosen ids to `generate(..., patents=[...])`; zoom lenses are taken one position at a time (`or01401-p2`), and `_SPECIAL` or private glasses need an explicit `materials` mapping, never a substitute. `patents.prescription(id)` gives the prescription alone. Glass codes (`nnnnnn.vvvvvv`) become model glasses; `ctx.GlassExpert("model")` replaces them with in-production glasses before delivery ([rounds.md](rounds.md#optimisers-in-opticstudio)).
 - `saos.starts.scale_prescription(data, K)` scales your own prescription.
 
-Scale every start to the demand and the feasibility estimate, not to wherever its source happened to sit. A start scaled to a smaller target because it is easier there changes a directional objective, which is the user's trade (see the skill entry).
+Scale every start to the demand and the feasibility estimate, not to wherever its source happened to sit. A start scaled to a smaller target because it is easier there changes a directional objective, which is the user's trade (SKILL.md, stop and ask).
 
 ## Screen candidates on equal terms
 
@@ -45,7 +45,7 @@ Write `notes/model-NNN.json` (format: `uv run saos lens describe --help`): what 
 
 ## Approval and what counts as a structural change
 
-`uv run saos lens approve --job J --model models/NNN-<lens> --quote "..."` records the user's words with the fingerprint, `shown_sha`, unknowns and warnings shown. Approval does not certify unknown computations.
+`uv run saos lens approve --job J --model models/NNN-<lens> --quote "..."` records the user's words with the fingerprint, `shown_sha`, unknowns and warnings shown. Approval does not certify unknown computations. Rounds refuse a lens whose structure matches no approved description, so a structural change later needs a new description and approval.
 
 The approved structure is what `saos round` compares against:
 

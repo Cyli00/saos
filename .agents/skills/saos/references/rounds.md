@@ -1,6 +1,6 @@
 # Design in rounds
 
-The outcome of this stage is a ledger of rounds judged against the demand and a final round decision: `achieved`, `exhausted`, `limit` or `stopped`.
+The outcome of this stage is a ledger of rounds judged against the demand and a final round decision: `achieved`, `exhausted`, `limit` or `stopped`. Leaving the approved structure sends you back to stage 2 ([the last section](#gate-expensive-runs-on-the-gap)).
 
 ## Build a merit function that means the demand
 
@@ -10,7 +10,7 @@ The outcome of this stage is a ledger of rounds judged against the demand and a 
 - A merit value the backend cannot compute (for example 9e+09 when rays fail by total internal reflection) is a diagnosis signal: find the cause before going on.
 - When a search must use the demand's own measurement (`ctx.measure(ids)`, a scan's `measure`, a `minimize` plan), give it only the items its variables act on and that take well under a second. Leave slow items (a Huygens PSF series takes seconds) to `saos check --only` and the round. A Nelder–Mead on the full shortfall of the fibre probe (18 variables, one-hour budget) stopped unconverged after 48 evaluations.
 
-Tools: `opt vary --param radius|curvature|thickness|conic|par<N>|material`, `opt merit wizard|add|show`. Bounds belong in Zemax boundary operands, such as CTGT/CTLT/ETGT; there are no per-variable --min/--max flags.
+Tools: `opt vary --param radius|curvature|thickness|conic|par<N>|material`, `opt merit wizard|add|show`. Bounds belong in Zemax boundary operands, such as CTGT/CTLT/ETGT; there are no per-variable --min/--max flags. From a script, add rows in one checked batch with `ctx.merit_add`, design-rule constraints from `saos.ctx.rows`, and solves with `ctx.solve` ([scripting.md](scripting.md#editing-the-lens-from-a-script)).
 
 ## Optimisers in OpticStudio
 
@@ -20,8 +20,8 @@ Tools: `opt vary --param radius|curvature|thickness|conic|par<N>|material`, `opt
 - Read `materials_changed`. A maker's full catalog often yields discontinued glasses (9 of 12 substitutions on the Cooke sample in SCHOTT were Obsolete); replace an `Obsolete` glass with one in production or ask the user before delivering it.
 - `ctx.GlassExpert` in an `exec` script is the `materials` tier done glass by glass: in-production neighbours by working-band n/V, anomalous-dispersion glasses first, each trial re-optimised. `surfaces="model"` replaces every model glass, which a patent start always has (its glass codes), before delivery.
 - `ctx.AsphereExpert(...).rank()` predicts which spherical surfaces gain most from an asphere and leaves the lens as it was. `.run(nas)` changes surface types, which changes the approved structure: show the ranking to the user, run, describe the model again and get `saos lens approve` before `saos round --tier structure`.
-- Neither expert saves the lens or records a round; options are in [computing.md](computing.md#expert-search-classes).
-- Your own `saos.search` loops on a ray-quantity objective run on the rtc copy ([computing.md](computing.md#choose-where-a-loop-runs)); a loop on OpticStudio measurements is slower and gets no gradient from the native solver.
+- Neither expert saves the lens or records a round; options are in [scripting.md](scripting.md#expert-search-classes).
+- Your own `saos.search` loops on a ray-quantity objective run on the rtc copy ([scripting.md](scripting.md#choose-where-a-loop-runs)); a loop on OpticStudio measurements is slower and gets no gradient from the native solver. An rtc result is a starting point: push it and close with `opt local --detach` on the lens's merit function before `saos check` or `saos round` judges it. While that runs you may already show the pushed lens with `ui notify` and draft the user's report, then update both from the closing measurements.
 
 Read the result, not just the merit:
 

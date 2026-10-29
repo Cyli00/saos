@@ -4,7 +4,7 @@ The outcome of this stage is a confirmed `sources/demand.yaml`: conditions and a
 
 ## Interview in rounds
 
-Prepare a whole round before you ask anything: every question you can ask now, numbered, each with your recommended answer. Put first, and mark, the questions whose answer can change the structure or a pass line, so the user can answer those even if they skip the rest. Explain optics terms in plain words. Look facts up yourself (repository files, `ref/docs`, the OpticStudio manual, the web) instead of asking.
+Prepare a whole round before you ask anything: every question you can ask now, numbered, each with your recommended answer. Put first, and mark, the questions whose answer can change the structure or a pass line, so the user can answer those even if they skip the rest. Explain optics terms in plain words. Look facts up yourself (repository files, `ref/docs`, the OpticStudio manual, the web) instead of asking. Once the answers show the system belongs to a recipe's family (SKILL.md lists them), read the recipe before the next round: its stage 1 sections carry the questions, defaults and checks.
 
 - With an ask-user tool, ask through it. Your recommendation is the first option and says so; the other options are the realistic alternatives; a value the user must type goes into the free-text answer. When a round exceeds one call's limits, ask in consecutive calls with the marked questions first and do no other work between them.
 - Without one, write a numbered list in which each item is a `Question:` line followed by an `Advice:` line (your recommended answer and its reason in one sentence), worded so "yes" accepts the advice.

@@ -1,6 +1,6 @@
 # Writing a recipe
 
-A recipe is a reference for one family of optical systems. The skill entry routes to it in stage 2, and its sections feed the stages of the workflow. A recipe adds experience; it never changes the gates or rules of the workflow.
+A recipe is a reference for one family of optical systems. The skill entry routes to it as soon as the interview identifies the family, and its sections feed the stages of the workflow. A recipe adds experience; it never changes the gates or rules of the workflow.
 
 ## Where recipes come from
 

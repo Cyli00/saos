@@ -83,7 +83,7 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 | **交付报告** | Delivery Report (`report/index.html`) | 汇总实测值、达标状态、材料与计算后端的 HTML 报告，只交付满足全部可交付条件的轮次（*勿称：验收报告*） |
 | **诊断量** | Diagnostic | 随报告输出、帮助解释结果但不决定是否达标的光学量，如 Strehl 比（*勿称：附加指标*） |
 | **隐式运行 / 显性调试** | Headless Run / Explicit Debugging | 默认无界面运行 vs 通过 Interactive Extension 连接用户桌面 OpticStudio 窗口调试（*勿称：后台模式 / 窗口模式*） |
-| **配方** | Recipe (`.agents/skills/saos/references/recipes/<系统>.md`) | 针对一类光学系统、由入口技能在建模阶段路由过去的参考文档与配套工具库，从真实任务中提炼（*勿称：模板、插件、子技能*） |
+| **配方** | Recipe (`.agents/skills/saos/references/recipes/<系统>.md`) | 针对一类光学系统、由入口技能在访谈确定系统类别后路由过去的参考文档与配套工具库，从真实任务中提炼（*勿称：模板、插件、子技能*） |
 
 ### 显微物镜配方专用术语
 
@@ -103,7 +103,7 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 | 根目录 | 只有 `README.md`、`DESIGN.md`、`TODO.md`、`AGENTS.md`、`pyproject.toml`、`uv.lock`、`.gitignore`，以及 `.agents/`（技能源文件）和 `.claude/skills/saos`（指向 `.agents/skills/saos` 的链接）；`ref`（联接到 zea 参考资料）和 `work/` 不入库 |
 | `src/saos/` | 核心工具代码。不依赖任何配方，仅 `cli.py` 注册配方命令 |
 | `src/saos/recipes/<配方>/` | 配方配套代码 |
-| `.agents/skills/saos/` | 光学设计工作流技能：`SKILL.md` 入口（定位阶段、各阶段关卡与出口）、`references/` 按阶段的细节、`references/recipes/<配方>.md` 按《配方编写规范》（`references/recipes/README.md`）编写的配方 |
+| `.agents/skills/saos/` | 光学设计工作流技能：`SKILL.md` 入口（定位阶段、各阶段关卡与出口）、`references/` 按阶段的细节与按时机读取的通用参考（`session.md` 会话与长运行、`scripting.md` 脚本与 rtc 副本、`files.md` 任务目录）、`references/recipes/<配方>.md` 按《配方编写规范》（`references/recipes/README.md`）编写的配方 |
 | `docs/` | 跨任务文档：`workflow.drawio`（工作流图）、`adr/NNNN-*.md`、`plans/*.md` |
 | `docs/recipes/<配方>/` | 配方的中文长篇说明：规格与验收口径、入库流程、上收比对记录 |
 | `library/<库>/` | 跨任务共享参考数据（均含 `README.md` 说明来源与用法）：`materials/`、`glasscat/`、`thermal/`、`mechanics/`、`coatings/`、`starts/`、`patents/`、`microscope/` |

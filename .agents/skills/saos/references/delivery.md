@@ -24,7 +24,8 @@ Without such a need, skip it and offer it when you hand over the report.
 `uv run saos report --job J` writes `report/index.html` in the user's language: status, the delivered lens, its materials, and for each unmet goal how far it is off. The delivered lens is the achieved round with the smallest shortfall, else the smallest shortfall among deliverable rounds. With no valid round it says so instead of naming a best lens. The report includes the latest tolerance scan and says whether it ran on the delivered lens.
 
 - The JSON result names a lens in `deliver` only when it is deliverable (`deliverable`, `headline`). Otherwise `deliver` is null and the round shown for diagnosis is under `diagnostic`: never pass it on as the delivery.
-- Regenerate an outdated report before asking for acceptance. The displayed report must match its sealed HTML and metadata.
+- A later round, stop, rule-out or tolerance scan makes the report stale, and the workflow shows delivery as unfinished until you run it again. Regenerate an outdated report before asking for acceptance; the displayed report must match its sealed HTML and metadata.
+- When the user wants changes, continue within the demand and stop rules, or return to demand or model confirmation when those change.
 
 ## Stopping
 

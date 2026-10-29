@@ -60,8 +60,8 @@ class Loaded:
     job: jobs.Job
     path: Path
     dirty: bool = False
-    # fast.push 写回过 rtc 的结果、之后还没在 OpticStudio 上优化过（SKILL.md 第 3 阶段的收尾优化）
-    # rtc results were pushed and no OpticStudio optimisation has run since (the closing optimisation of SKILL.md stage 3)
+    # fast.push 写回过 rtc 的结果、之后还没在 OpticStudio 上优化过（SKILL.md“Measured evidence”规则里的收尾优化）
+    # rtc results were pushed and no OpticStudio optimisation has run since (the closing optimisation in the SKILL.md measured-evidence rule)
     rtc_unclosed: bool = False
 
     def __post_init__(self) -> None:
@@ -81,7 +81,7 @@ class Loaded:
 
 
 UNCLOSED_RTC = ("this lens holds rtc results pushed with fast.push and no OpticStudio optimisation has run since; "
-                "close with saos opt local on the merit function before judging it (SKILL.md stage 3)")
+                "close with saos opt local on the merit function before judging it (SKILL.md, measured evidence)")
 
 
 def _warn_unclosed(loaded: Loaded | None, out: dict[str, Any]) -> dict[str, Any]:
