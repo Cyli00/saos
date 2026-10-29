@@ -2,6 +2,15 @@
 
 The outcome of this stage is a current report the user has accepted or rejected, or a recorded decision to stop.
 
+## Re-measure on OpticStudio
+
+Rounds recorded on the rtc instance are re-measured before anything else in this stage. On an OpticStudio instance ([session.md](session.md#the-rtc-instance-stages-1-and-3)), run `uv run saos round --job J --confirm --detach` (no lens load needed; `--of N` picks a round other than the one the report would deliver). Its numbers replace that round's numbers in the ledger.
+
+- `agrees: true`: continue with this stage on OpticStudio.
+- `agrees: false`: OpticStudio reached another verdict (see `verdict` and `diffs`). Tell the user the differing items, return to stage 3 on the rtc instance, and record new rounds; the decision now uses OpticStudio's numbers.
+
+`saos report` refuses an rtc round that was not re-measured.
+
 ## Tolerance scan
 
 When the demand or the user cares how the design survives manufacturing and assembly, run a tolerance scan on the lens of the round you will deliver, before the report. Load that round's lens, then run `uv run saos scan --job J --plan plan.json` with:

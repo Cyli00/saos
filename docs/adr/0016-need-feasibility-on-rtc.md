@@ -1,5 +1,5 @@
 ---
-status: accepted; 第一批已落地（`saos daemon start --backend rtc`），清单与待对账项见 docs/plans/rtc-need-stage.md
+status: accepted; 第一批已落地（`saos daemon start --backend rtc`），清单与待对账项见 docs/plans/rtc-need-stage.md；ADR-0017 把同一种实例扩展到设计轮次
 ---
 
 # 需求环节的可行性核算可用 rtc 已准入的数值

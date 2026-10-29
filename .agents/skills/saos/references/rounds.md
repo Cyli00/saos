@@ -2,6 +2,8 @@
 
 The outcome of this stage is a ledger of rounds judged against the demand and a final round decision: `achieved`, `exhausted`, `limit` or `stopped`. Leaving the approved structure sends you back to stage 2 ([the last section](#gate-expensive-runs-on-the-gap)).
 
+Run this stage on the rtc instance (ADR-0017; switching in [session.md](session.md#the-rtc-instance-stages-1-and-3)): `opt`, `check`, `scan`, `round` and the expert classes work there as described below, with the differences in [On the rtc instance](#on-the-rtc-instance). An OpticStudio instance serves too, at a licence's cost.
+
 ## Build a merit function that means the demand
 
 - Optimise on smooth proxies: RMS spot or wavefront operands, Seidel terms, real-ray constraints. Judge with the demand checks. Step-like checks (ray counts, a field scanned in steps) give an optimiser almost no gradient.
@@ -31,6 +33,15 @@ Read the result, not just the merit:
 - A failed run leaves the lens marked unsaved: save under a new name to retain it, or load a saved lens with `--discard`.
 
 When you optimise outside the lens's merit function (your own `exec` loop), record the value you optimised with `saos round --merit <value>`.
+
+## On the rtc instance
+
+- **Merit rows.** Same row format and merit value as OpticStudio, saved in the `.zmx`. rtc computes the boundary, lens-data, arithmetic, aberration (TRAR/TRAX/TRAY/TRAC/TRCX/TRCY, OPDC/OPDX/OPDM with Int1 0 and one wavelength) and ray or system operands listed in `docs/plans/rtc-design-stage.md`; a batch with any other operand (ETGT, STHI, STRH, …) is refused whole and the merit function stays as it was. Bound edges with MNEG/MNEA/MNET over a surface range instead of ETGT. A merit function built on OpticStudio that uses refused operands is rebuilt with `opt merit wizard` and `ctx.merit_add` on the instance.
+- **Wizard.** RMS only, Gaussian quadrature, `start_at` keeps the rows before it.
+- **`opt local`.** Damped least squares where boundary rows are exact constraints, not penalties (after CODE V): read `constraints`, `violation.after` and `violated_after`. A start where a weighted row cannot be computed (a ray misses) is refused with the failing rows; diagnose it first. `--algorithm dls` only; `cycles` count iterations, `auto` stops at convergence or 200.
+- **`opt hammer|global`.** Same budget and archive rules as OpticStudio. Only solutions meeting every constraint compete. Substitution picks among the 8 glasses of the catalog nearest in nd/νd to the current one, not the whole catalog. Material variables live in memory only: after `lens load`, run `opt vary --param material` again.
+- **Plots.** Round plots are rtc's spot, ray fan and FFT MTF; `lens analysis` has `FftMtf` only.
+- **Rounds** carry `backend: rtc` and `provenance` (paths and operands not reconciled with OpticStudio). Judge and stop on them as usual; delivery re-measures the delivered round ([delivery.md](delivery.md#re-measure-on-opticstudio)).
 
 ## Record rounds
 

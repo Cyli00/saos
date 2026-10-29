@@ -1,6 +1,6 @@
 ---
 name: saos
-description: Run the saos optical design workflow, taking a user's optical need through an agreed demand, an approved model, OpticStudio design rounds to a delivered lens with a measured HTML report. Use for designing, simulating or debugging an optical system in this repository. Not for changing saos itself (src/, tests/, CLI, docs); use normal repository work for that.
+description: Run the saos optical design workflow, taking a user's optical need through an agreed demand, an approved model and design rounds to a delivered lens with an OpticStudio-measured HTML report. Use for designing, simulating or debugging an optical system in this repository. Not for changing saos itself (src/, tests/, CLI, docs); use normal repository work for that.
 ---
 
 # saos optical design workflow
@@ -33,7 +33,7 @@ Read these when their condition first holds:
 
 ## Rules in every stage
 
-- **Measured evidence.** Every optical number you deliver or decide on comes from OpticStudio through saos (operand, ray trace, analysis, check). Hand estimates guide reasoning and are labelled as estimates; never write your own ray tracer, paraxial or aberration calculator or surrogate (ADR-0013). The rtc copy (`ctx.fast()`) is the one other tracer: its numbers steer loops and are labelled `rtc`. Its result reaches a decision only after you push it to OpticStudio and close with `opt local` on the lens's merit function, since the copy kept solves frozen and never saw the merit function.
+- **Measured evidence.** Every optical number you decide on comes from a saos backend (operand, ray trace, analysis, check), and every number you deliver comes from OpticStudio. Hand estimates guide reasoning and are labelled as estimates; never write your own ray tracer, paraxial or aberration calculator or surrogate (ADR-0013). rtc is the one other tracer, in two forms. The rtc instance runs stage 1 and stage 3 itself; its rounds carry `backend: rtc`, and the round you deliver is re-measured on OpticStudio first ([delivery.md](references/delivery.md#re-measure-on-opticstudio)). The rtc copy (`ctx.fast()`) on an OpticStudio instance steers loops with numbers labelled `rtc`; its result reaches a decision only after you push it to OpticStudio and close with `opt local` on the lens's merit function, since the copy kept solves frozen and never saw the merit function.
 - **One definition per number.** Optimisation targets, script objectives and first-order estimates use the demand checks' definition, or are compared with them on the same lens before you draw a conclusion.
 - **No silent relaxing.** A goal that cannot be met is reported with its gap. Changing what the demand judges (the full list is in the [format](demand.example.yaml) header) goes back to the user for a new confirmation.
 - **Sourced materials in delivery.** Model glasses are for exploration only.
@@ -62,6 +62,7 @@ Before handing over, check that:
 
 - the report is current and names a deliverable lens, or states that none exists and why;
 - every `must` is met or reported with its gap, and every number names its backend;
+- the delivered round was measured on OpticStudio (recorded there, or `saos round --confirm` agreed);
 - the delivered lens uses sourced materials and passes the interference check;
 - a tolerance scan ran on the delivered lens, or you offered one;
 - `uv run saos job verify <job>` reports the evidence intact;

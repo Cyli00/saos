@@ -4,7 +4,7 @@ The outcome of this stage is an approved model description: a structure chosen f
 
 ## Build in OpticStudio
 
-Models are built, saved and judged in the persistent ZOS session; the rtc copy only explores a model already there ([scripting.md](scripting.md#the-rtc-copy)). Report unavailable features explicitly; do not substitute another backend.
+Models are built, saved, described and approved in the persistent ZOS session; the rtc copy only explores a model already there ([scripting.md](scripting.md#the-rtc-copy)), and the rounds after approval run on the rtc instance ([rounds.md](rounds.md)). Report unavailable features explicitly; do not substitute another backend.
 
 - Build or import through `lens build`, `lens load` and `lens save`. Commands use native `.zmx` files (`lens build --as start.zmx`), saved directly by OpticStudio.
 - Keep sourced materials and mechanical semi-diameters (`lens set --param mech_semi_diameter`) in the model; the interference check uses the parts' outer edges.

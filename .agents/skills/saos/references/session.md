@@ -1,6 +1,6 @@
 # Sessions, licences and long runs
 
-The daemon holds one ZOS standalone session from startup; modelling, screening, rounds and delivery all use it. During the interview it can instead be an rtc instance (next section). This file covers what that session needs from the machine and how to run work that takes time without losing it or blocking the user.
+The daemon holds one ZOS standalone session from startup; modelling, screening and delivery use it. During the interview and the design rounds it is normally an rtc instance instead (next section). This file covers what that session needs from the machine and how to run work that takes time without losing it or blocking the user.
 
 ## Preconditions
 
@@ -8,11 +8,19 @@ The daemon holds one ZOS standalone session from startup; modelling, screening, 
 
 The licence allows 8 OpticStudio instances at a time, the user's open windows and this daemon included; count them before choosing `workers`, and a refused worker is reported as unavailable. Workers default to four and a cold start costs about 6–8 s per instance (measured 2026-10-17), so start a pool only for work that outlasts the start-up or will be repeated. A daemon does not exit by itself when a session or its UI closes, and each one holds a licence: `uv run saos daemon list --all` shows every daemon on the machine; stop the ones of finished work with `saos daemon stop` in their instance. `saos daemon stop --all` also stops other sessions' work, so it needs the user's agreement.
 
-## The rtc instance (stage 1)
+## The rtc instance (stages 1 and 3)
 
-`uv run saos daemon start --backend rtc` (or `SAOS_BACKEND=rtc`) starts a daemon that builds, traces and evaluates lenses in rtc: no OpticStudio, no licence, start-up well under a second. Use it for the interview's feasibility checks while the demand is open ([need.md](need.md#question-the-structure-before-you-write-it-down)). Glass catalogs come from `SAOS_GLASSCAT`, default `Documents/Zemax/Glasscat`. `daemon status` and the workflow window show the backend.
+`uv run saos daemon start --backend rtc` (or `SAOS_BACKEND=rtc`) starts a daemon that builds, traces, optimises and judges lenses in rtc: no OpticStudio, no licence, start-up well under a second. Glass catalogs come from `SAOS_GLASSCAT`, default `Documents/Zemax/Glasscat`. `daemon status` and the workflow window show the backend.
 
-It refuses with `BACKEND_UNSUPPORTED` everything that needs OpticStudio's data or measurements: `lens describe|approve|analysis|view|screenshot|capture`, `opt vary|merit|local|hammer|global`, `check`, `scan` and `round`. Once the demand is confirmed, run `saos daemon stop`, then `saos daemon start` on the same `SAOS_INSTANCE`, and `lens load` a lens you saved there if modelling continues from it.
+It refuses with `BACKEND_UNSUPPORTED` what needs OpticStudio: `lens describe|view|screenshot|capture`, `round --confirm`, tolerance scans, and any operand, analysis or prescription item rtc has not implemented. Switch instances on the same `SAOS_INSTANCE` at the stage boundaries, saving the lens before each stop and loading it after each start:
+
+| When | Run |
+|---|---|
+| stage 1, the interview's feasibility checks ([need.md](need.md#question-the-structure-before-you-write-it-down)) | `daemon start --backend rtc` |
+| demand confirmed, before modelling | `daemon stop`, then `daemon start` |
+| model approved, before the first round | `lens save`, `daemon stop`, `daemon start --backend rtc`, `lens load` the approved lens |
+| round decision final, before delivery | `lens save`, `daemon stop`, `daemon start`, then [delivery.md](delivery.md#re-measure-on-opticstudio) |
+| a structure change needs a new model page | `lens save`, back to an OpticStudio instance for `lens describe` and approval |
 
 ## Long runs
 
