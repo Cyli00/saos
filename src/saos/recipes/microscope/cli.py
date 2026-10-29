@@ -45,23 +45,23 @@ def register(sub, parser_class, default_timeout: float) -> None:
     group = sub.add_parser("microscope", help="microscope objective recipe")
     msub = group.add_subparsers(dest="action", required=True, parser_class=parser_class)
 
-    def op_cmd(name: str, help_text: str) -> argparse.ArgumentParser:
-        p = msub.add_parser(name, help=help_text)
+    def op_cmd(name: str) -> argparse.ArgumentParser:
+        p = msub.add_parser(name)
         p.add_argument("--job", required=True)
         p.add_argument("--timeout", type=float, default=default_timeout)
         p.set_defaults(func=cmd_op)
         return p
 
-    p = op_cmd("repro", "reproduction check: focal length, NA, working distance and magnification against expected values")
+    p = op_cmd("repro")
     p.add_argument("expect", help="expected values JSON")
-    p = op_cmd("accept", "acceptance evaluation of the saved lens against the optical spec")
+    p = op_cmd("accept")
     p.add_argument("--spec", required=True, help="spec file inside the job, e.g. sources/spec.yaml or spec/benchmark.yaml")
-    p = op_cmd("perturb", "controlled perturbation of objective radii and thicknesses with a fixed seed")
+    p = op_cmd("perturb")
     p.add_argument("--seed", type=int, required=True)
     p.add_argument("--radius-rel", type=float, required=True, help="relative curvature change limit, e.g. 0.01")
     p.add_argument("--thickness-rel", type=float, default=0.0)
 
-    p = msub.add_parser("adapt", help="patent/textbook extraction → standard-layout prescription + expected values")
+    p = msub.add_parser("adapt")
     p.add_argument("extract", help="extraction JSON")
     p.add_argument("--embodiment", help="embodiment key in a schema-1 extraction")
     p.add_argument("--focal-length", type=float, help="target objective focal length in mm (default: as printed for mm data, 200/|β| for normalized data)")

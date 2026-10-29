@@ -696,6 +696,10 @@ def configure(parser, path: str = "", *, commands=None, groups=None) -> None:
                 current.epilog = "Results and files\n  " + details + "\n\nCommon errors\n  " + errors + "."
         for action in current._actions:
             if isinstance(action, argparse._SubParsersAction):
+                # argparse 只给带 help 参数的子命令列说明行；命令行定义不写 help，这里按定义顺序补上
+                # argparse lists only subcommands added with help; the parser definitions leave it out, so add the rows here in order
+                listed = {choice.dest: choice for choice in action._choices_actions}
+                action._choices_actions = [listed.get(name) or action._ChoicesPseudoAction(name, (), None) for name in action.choices]
                 for name, child in action.choices.items():
                     child_key = f"{key} {name}".strip()
                     visit(child, child_key)
