@@ -17,8 +17,9 @@ const TEXT = {
     explore_run: (n) => `结构探索：${n} 个候选运行中`, explore_done: (n) => `已比较 ${n} 个候选`,
     st_achieved: "已达成", st_exhausted: "无法再优化", st_limit: "达到轮次上限", st_stopped: "按用户决定停止",
     report_ready: "报告已生成", report_todo: "待生成报告", deliver_cmd: "saos scan（公差，按需）· saos report",
-    back_demand: "需求变更", back_model: "结构或计算前提改变", back_reach: "结构不可达", feasibility: "质疑结构 · 手算界限",
-    explicit: "显式调试 · Interactive Extension", standalone: "后台运行 · standalone", no_daemon: "后台进程未运行",
+    back_demand: "需求变更", back_model: "结构或计算前提改变", back_reach: "结构不可达", feasibility: "质疑结构 · 核算界限", feasibility_rtc: "rtc 核算 · 不占许可", feasibility_written: "可行性记录已写",
+    explicit: "显式调试 · Interactive Extension", standalone: "后台运行 · standalone", rtc_instance: "rtc 实例 · 需求阶段，不占许可", no_daemon: "后台进程未运行",
+    rtc_switch: "当前后台进程是 rtc 实例，只做需求阶段的可行性核算；建模起换成 OpticStudio 实例：saos daemon stop 后 saos daemon start。",
     tab_control: "窗口控制", tab_layout: "布局", tab_spot: "点列图", tab_mtf: "MTF", tab_rounds: "轮次",
     blocking: "blocking 待确认问题：",
     viewer: "布局窗口", viewer_p: "切换 OpticStudio 的布局窗口。剖面图画不了的系统（非轴对称、非序列）会自动改用 3D Viewer。",
@@ -30,6 +31,8 @@ const TEXT = {
     viz_failed: "这一轮的可视化导出失败：", spot_foot: (ref) => `点：批量光线追迹，相对主波长主光线，未计被拦光线。RMS / GEO：OpticStudio Standard Spot（参考 ${ref}，全部波长），单位 µm。Standard Spot 每个波长追的光线数与波长权重成正比，权重小于 1 的波长常漏掉边缘光线，所以 GEO 可能小于图中最远的点。`,
     mtf_foot: "曲线：OpticStudio FFT MTF 导出。", mtf_partial: "全部视场一起算不出，改为逐个视场算：", tangential: "子午 T", sagittal: "弧矢 S", diff: "衍射极限",
     layout_foot: "几何与光线坐标：ZOS-API（GetGlobalMatrix、GetSag、批量光线追迹）。",
+    layout_foot_rtc: "几何与光线坐标：rtc（矢高、实际光线追迹；半口径与求解按 OpticStudio 的规则在 rtc 里重算）。数值不作建模之后的证据。",
+    unverified: (items) => `未与 OpticStudio 对账：${items.join("；")}。`,
     model_evidence: "模型确认记录提示：",
     redescribe: "结构已变：重新描述并确认",
     modeling_sub: "起点预判 · 初筛 · 自动微分优先", approval_sub: "方向 · 取舍 · 未知项", design_sub: "自动微分优先 · 到期复核 · round",
@@ -73,8 +76,9 @@ const TEXT = {
     explore_run: (n) => `exploring ${n} ${n === 1 ? "candidate" : "candidates"}`, explore_done: (n) => `compared ${n} ${n === 1 ? "candidate" : "candidates"}`,
     st_achieved: "achieved", st_exhausted: "exhausted", st_limit: "round limit", st_stopped: "stopped by user",
     report_ready: "report written", report_todo: "report pending", deliver_cmd: "saos scan (tolerance, if needed) · saos report",
-    back_demand: "demand change", back_model: "revise model", back_reach: "unreachable", feasibility: "question · hand bounds",
-    explicit: "Explicit · Interactive Extension", standalone: "Background · standalone", no_daemon: "daemon not running",
+    back_demand: "demand change", back_model: "revise model", back_reach: "unreachable", feasibility: "question · check bounds", feasibility_rtc: "rtc checks · no licence", feasibility_written: "feasibility recorded",
+    explicit: "Explicit · Interactive Extension", standalone: "Background · standalone", rtc_instance: "rtc instance · need stage, no licence", no_daemon: "daemon not running",
+    rtc_switch: "The daemon is an rtc instance, which only checks need-stage feasibility; from modelling on use an OpticStudio instance: saos daemon stop, then saos daemon start.",
     tab_control: "Window controls", tab_layout: "Layout", tab_spot: "Spot Diagram", tab_mtf: "MTF", tab_rounds: "Rounds",
     blocking: "Blocking questions:",
     viewer: "Layout window", viewer_p: "Switch OpticStudio's layout window. Systems the cross-section cannot draw (non-axial, non-sequential) get the 3D Viewer.",
@@ -86,6 +90,8 @@ const TEXT = {
     viz_failed: "The visual export of this round failed: ", spot_foot: (ref) => `Points: batch ray trace relative to the primary chief ray, vignetted rays left out. RMS / GEO: OpticStudio Standard Spot (reference ${ref}, all wavelengths), in µm. Standard Spot traces rays per wavelength in proportion to its weight, so wavelengths weighted below 1 often lose their rim rays and GEO can be smaller than the farthest point drawn.`,
     mtf_foot: "Curves: OpticStudio FFT MTF export.", mtf_partial: "Not computable for all fields at once, so computed field by field: ", tangential: "Tangential", sagittal: "Sagittal", diff: "Diff. limit",
     layout_foot: "Geometry and rays: ZOS-API (GetGlobalMatrix, GetSag, batch ray trace).",
+    layout_foot_rtc: "Geometry and rays: rtc (sag, real ray trace; semi-diameters and solves recomputed in rtc by OpticStudio's rules). Not evidence after the need stage.",
+    unverified: (items) => `Not reconciled with OpticStudio: ${items.join("; ")}.`,
     model_evidence: "Model approval evidence: ",
     redescribe: "Structure changed: describe and approve",
     modeling_sub: "Predict · screen · prefer autograd", approval_sub: "Direction · tradeoffs", design_sub: "Prefer autograd · review on expiry · round",
@@ -203,7 +209,11 @@ function foot(key, ...args) {
 
 function nodeSub(step) {
   const d = step.detail;
-  if (step.id === "interview") return d ? t(d) : t("feasibility");
+  if (step.id === "interview") {
+    if (d) return t(d);
+    if (state.feasibility) return t("feasibility_written");
+    return state.daemon.running && state.daemon.backend === "rtc" ? t("feasibility_rtc") : t("feasibility");
+  }
   if (step.id === "demand_confirm") return d ? t(d) : "saos demand confirm";
   if (step.id === "modeling") {
     if (d && d.needs_description) return t("redescribe");
@@ -327,6 +337,10 @@ function renderFlow() {
   const note = $("flow-note");
   note.innerHTML = state.blocking.length ? `<div class="q"><b>${esc(t("blocking"))}</b><br>${state.blocking.map(esc).join("<br>")}</div>` : "";
   if (state.model_evidence?.length) note.innerHTML += `<div class="q"><b>${esc(t("model_evidence"))}</b><br>${state.model_evidence.map((p) => esc(`${p.path}: ${p.code}`)).join("<br>")}</div>`;
+  // rtc 实例只服务访谈与需求确认；走到建模及之后提示换成 OpticStudio 实例 / past the demand, point to an OpticStudio instance
+  if (state.daemon.running && state.daemon.backend === "rtc" && !["interview", "demand_confirm"].includes(state.current)) {
+    note.innerHTML += `<div class="q">${esc(t("rtc_switch"))}</div>`;
+  }
 }
 
 function renderTop() {
@@ -338,8 +352,9 @@ function renderTop() {
   $("job-name").textContent = state.job;
   const chip = $("mode-chip");
   const mode = state.daemon.running ? state.daemon.mode : null;
-  chip.textContent = mode === "extension" ? t("explicit") : mode ? t("standalone") : t("no_daemon");
-  chip.className = "chip" + (mode === "extension" ? " explicit" : "");
+  const rtc = mode && state.daemon.backend === "rtc";
+  chip.textContent = mode === "extension" ? t("explicit") : rtc ? t("rtc_instance") : mode ? t("standalone") : t("no_daemon");
+  chip.className = "chip" + (mode === "extension" ? " explicit" : rtc ? " rtc" : "");
   const run = $("run-chip");
   if (state.progress) {
     run.hidden = false;
@@ -895,7 +910,7 @@ function renderLayout(view) {
   const axisH = dim === "2d" && sec ? sec.u_name : "z", axisV = dim === "2d" && sec ? sec.v_name : "y";
   $("dim-seg").querySelectorAll("button").forEach((x) => { x.classList.toggle("on", x.dataset.dim === dim); x.disabled = only3d && x.dataset.dim === "2d"; x.title = x.disabled ? t("only_3d") : ""; });
   const clash = clashOf(viz);
-  const title = roundShown === "live" ? `${t("live")} · ${viz.lens || ""}${viz.dirty ? ` · ${t("live_unsaved")}` : ""}${viz.layout?.rays_paused ? ` · ${t("live_optimising")}` : ""}` : t("select_round", roundShown);
+  const title = roundShown === "live" ? `${t("live")} · ${viz.lens || ""}${viz.backend === "rtc" ? " · rtc" : ""}${viz.dirty ? ` · ${t("live_unsaved")}` : ""}${viz.layout?.rays_paused ? ` · ${t("live_optimising")}` : ""}` : t("select_round", roundShown);
   const els = elements(surfs);
   const mats = [...new Set(els.map((e) => e.material.toLowerCase()))];
   const matColor = (m) => MATERIAL_COLORS[mats.indexOf(m.toLowerCase()) % MATERIAL_COLORS.length];
@@ -913,7 +928,7 @@ function renderLayout(view) {
       <div class="stage-tools"><button data-opt="grid">${esc(t("opt_grid"))}</button><button data-opt="labels">${esc(t("opt_labels"))}</button><button data-act="png" title="${esc(t("png_title"))}">PNG</button></div>
       <span class="zoom-chip"></span><span class="readout"></span><div class="tip" hidden></div></div>
     <div class="legend" style="margin:8px 0 0">${mats.map((m) => `<span><span class="swatch" style="background:${matColor(m)}55;border-color:${matColor(m)}"></span>${esc(m)}</span>`).join("")}</div></div>
-    <div class="foot ${viz.errors?.sag ? "warn" : ""}">${esc(viz.errors?.sag ? t("sag_flat") + " " : "")}${esc(foot("layout_foot"))} <span id="layout-hint"></span></div>
+    <div class="foot ${viz.errors?.sag ? "warn" : ""}">${esc(viz.errors?.sag ? t("sag_flat") + " " : "")}${esc(foot(viz.backend === "rtc" ? "layout_foot_rtc" : "layout_foot"))}${viz.unverified?.length ? ` ${esc(t("unverified", viz.unverified))}` : ""} <span id="layout-hint"></span></div>
     ${viz.lens_data ? lensDataTable(viz.lens_data) : ""}</div>`;
   const details = view.querySelector(".lens-data");
   if (details) details.addEventListener("toggle", () => { lensDataOpen = details.open; });
@@ -1432,7 +1447,8 @@ async function poll() {
     const text = JSON.stringify(next);
     if (text !== stateText) {
       const roundsChanged = !state || JSON.stringify(state.rounds) !== JSON.stringify(next.rounds);
-      const modeChanged = !state || state.daemon.mode !== next.daemon.mode || state.daemon.running !== next.daemon.running;
+      const modeChanged = !state || state.daemon.mode !== next.daemon.mode || state.daemon.running !== next.daemon.running
+        || state.daemon.backend !== next.daemon.backend;
       const modelingOf = (st) => JSON.stringify(st?.steps?.find((x) => x.id === "modeling")?.detail ?? null);
       const startsChanged = tab === "starts" && modelingOf(state) !== modelingOf(next);
       state = next; stateText = text;

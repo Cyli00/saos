@@ -87,6 +87,7 @@ button, select { font: inherit; color: inherit; }
   background: var(--bg-raise); color: var(--text-2); font-size: 12px; border: 1px solid var(--border-soft); white-space: nowrap;
 }
 .chip.explicit { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+.chip.rtc { color: var(--done); background: var(--done-soft); border-color: transparent; }
 .chip.run { color: var(--text); font-family: var(--mono); }
 .spinner {
   width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--accent-soft); border-top-color: var(--accent);

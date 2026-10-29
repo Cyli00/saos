@@ -21,8 +21,11 @@ FINAL = ("achieved", "exhausted", "limit", "stopped")
 def _daemon() -> dict[str, Any]:
     state = client.read_state()
     if state is None or not client.pid_alive(int(state.get("pid", 0))):
-        return {"running": False, "mode": None}
-    return {"running": True, "mode": state.get("mode"), "pid": state.get("pid")}
+        return {"running": False, "mode": None, "backend": None}
+    # rtc 实例（需求阶段的可行性核算）不占 OpticStudio 许可，窗口据此标明数值来源
+    # an rtc instance (need-stage feasibility) holds no OpticStudio licence; the window labels where numbers come from
+    backend = (state.get("opticstudio") or {}).get("backend") or "zos"
+    return {"running": True, "mode": state.get("mode"), "pid": state.get("pid"), "backend": backend}
 
 
 def exploration_of(job: jobs.Job) -> dict[str, Any] | None:
@@ -186,6 +189,8 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
         if detached:
             out["progress"] = {**detached[-1], "detail": detached[-1]["folder"]}
 
+    # 可行性记录（need.md：explore/feasibility/README.md）写了没有 / whether the feasibility record exists
+    out["feasibility"] = (root / "explore" / "feasibility" / "README.md").is_file()
     try:
         d = demand.load_job(root)
     except SaosError as exc:
