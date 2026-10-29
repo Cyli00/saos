@@ -34,8 +34,9 @@ def editable(ctx):
 
 def sequential(ctx):
     info = ctx.backend.system_info()
-    if info.get("backend") == "rtc":
-        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, "experts require the authoritative ZOS lens, not an rtc exploration copy")
+    # rtc 实例（standalone，ADR-0017）自己持有镜头，可以跑；ctx.fast 的副本不行 / the rtc instance owns its lens; an rtc copy does not
+    if info.get("backend") == "rtc" and not getattr(ctx.backend, "standalone", False):
+        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, "experts require the authoritative lens, not an rtc exploration copy")
     if info.get("mode") == "non_sequential" or info.get("nsc_groups"):
         raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, "experts currently require a purely sequential lens")
     if ctx.backend.configuration_count() != 1:

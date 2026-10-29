@@ -18,6 +18,7 @@ from typing import Any
 from saos import config, geometry, glasscat, lens_files
 from saos.backend import nsc
 from saos.backend.base import (
+    DEFAULT_SUBSTITUTE_CATALOG,
     MATERIAL_MODES,
     NUMERIC_PARAMS,
     PAR_RE,
@@ -338,9 +339,6 @@ def _between(a, q, b) -> bool:
 GRIN_TYPE_RE = re.compile(r"gradi|grin", re.IGNORECASE)
 GRIN_SLICES = 8
 
-
-# 不指定目录时玻璃替换用的目录：成都光明的在产牌号（2026-10-19 用户决定）/ the default catalog for glass substitution
-DEFAULT_SUBSTITUTE_CATALOG = "SAOS_CDGM_INPROD"
 
 
 class ZosBackend(Backend):

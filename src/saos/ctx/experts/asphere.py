@@ -215,12 +215,17 @@ class AsphereExpert:
         candidates, excluded = self._candidates()
         base = session.save()
         try:
-            # 候选面先在 OpticStudio 上转成零系数的非球面（光学上不变），整份交给 rtc；副本建立时已与 OpticStudio 对照追迹
+            # 候选面先在 OpticStudio 上转成零系数的非球面（光学上不变），整份交给 rtc；副本建立时已与 OpticStudio 对照追迹。
+            # rtc 实例（ADR-0017）直接用它自己的镜头 / the rtc instance uses its own lens directly
             for surface in candidates:
                 self._convert(surface)
-            copy = fastmod.from_context(self.ctx, freeze_solves=True)
-            lens = copy.backend.lens
-            primary = copy.backend.optical_system(lens.primary_wave)
+            if getattr(self.ctx.backend, "standalone", False):
+                engine, agreement = self.ctx.backend, None
+            else:
+                copy = fastmod.from_context(self.ctx, freeze_solves=True)
+                engine, agreement = copy.backend, copy.agreement
+            lens = engine.lens
+            primary = engine.optical_system(lens.primary_wave)
             item = {it.index: k for k, it in enumerate(primary.items)}
             image = primary.items[-1].index
             # 实际瞄准时 AD 把发射当常量：光阑前的面改变瞄准，导数会漏掉这一项
@@ -234,7 +239,7 @@ class AsphereExpert:
             px, py = (np.asarray(c, dtype=float) for c in zip(*pupil(self.grid)))
             values, rows = [], []
             for wave, (_, wave_weight) in enumerate(lens.active_wavelengths, 1):
-                system = copy.backend.optical_system(wave)
+                system = engine.optical_system(wave)
                 theta = np.asarray([v.value(system) for v in variables], dtype=float)
                 for (hx, hy), field_weight in zip(fields, field_weights):
                     session.budget.check()
@@ -268,7 +273,7 @@ class AsphereExpert:
         result = rank_projection(e, models)
         result.update(excluded=excluded, surface_type=self.profile.surface_type, engine="rtc",
                       residual="transverse ray errors about the primary chief ray, focus compensated", residual_rows=int(usable.sum()),
-                      backend=self.ctx.backend.identity(), rtc=copy.backend.identity(), agreement=copy.agreement,
+                      backend=self.ctx.backend.identity(), rtc=engine.identity(), agreement=agreement,
                       slope_metric="base_conic_radial_rms_waves_per_radius")
         return result
 

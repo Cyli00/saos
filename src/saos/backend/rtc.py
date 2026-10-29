@@ -1,17 +1,21 @@
-"""rtc 探索后端：在内存里持有 OpticStudio 存出的 .zmx，供脚本做高频追迹（ADR-0014）。
-The rtc exploration backend: an in-memory copy of a lens OpticStudio saved, for scripts that trace at high rates.
+"""rtc 后端：OpticStudio 镜头的内存副本（ctx.fast，ADR-0014），以及 rtc 实例（SAOS_BACKEND=rtc）自己持有的镜头。
+The rtc backend: an in-memory copy of an OpticStudio lens (ctx.fast, ADR-0014), and the lens an rtc instance owns.
 
-数值来自 rtc（ray tracing core，float64 序列追迹，与 saos 并列的 `../rtc`），只用于探索：判定、轮次、报告仍由 OpticStudio 计算。
-建立时用 OpticStudio 自己的描述（describe_model）逐项核对：面型、参数、各波长折射率（INDX）、视场、波长、孔径和
-瞄准方式；rtc 复现不了的设置一律报 BACKEND_UNSUPPORTED，不返回近似值。
-Numbers come from rtc and are for exploration only; checks, rounds and reports stay on OpticStudio. Building one
-compares it item by item with OpticStudio's own description; settings rtc cannot reproduce raise BACKEND_UNSUPPORTED.
+数值来自 rtc（ray tracing core，float64 序列追迹，与 saos 并列的 `../rtc`）。副本只用于探索；rtc 实例在需求阶段做可行性
+核算（ADR-0016），在设计阶段做变量、评价函数、优化、判定和轮次（ADR-0017），交付前在 OpticStudio 上复测。副本建立时用
+OpticStudio 自己的描述（describe_model）逐项核对：面型、参数、各波长折射率（INDX）、视场、波长、孔径和瞄准方式；rtc 复现
+不了的设置一律报 BACKEND_UNSUPPORTED，不返回近似值。
+Numbers come from rtc. A copy is for exploration; the rtc instance checks need-stage feasibility (ADR-0016) and runs
+variables, merit functions, optimisation, checks and rounds in the design stage (ADR-0017), re-measured on OpticStudio
+before delivery. A copy is compared item by item with OpticStudio's own description; settings rtc cannot reproduce raise
+BACKEND_UNSUPPORTED.
 """
 
 from __future__ import annotations
 
 import json
 import math
+import time
 from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path
@@ -20,7 +24,7 @@ from typing import Any
 
 import numpy as np
 
-from saos.backend.base import Backend, check_size, parse_numeric
+from saos.backend.base import DEFAULT_SUBSTITUTE_CATALOG, MATERIAL_MODES, Backend, check_size, parse_numeric
 from saos.protocol import ErrorCode, SaosError
 
 # 求解类型里 rtc 当作普通数值的两种；其余求解（拾取、边缘光线高度、F 数…）改别的参数后 OpticStudio 会重算，rtc 不会
@@ -43,6 +47,20 @@ SYSTEM_OPERANDS = frozenset({"EFFL", "WFNO", "ISFN", "TOTR", "TTHI", "EPDI", "EN
 # those reconciled value by value with OpticStudio (see rtc.operands); the rest follow the manual's definitions
 RECONCILED_OPERANDS = frozenset({"REAX", "REAY", "REAC", "INDX", "SSAG", "EXPP", "EXPD", "CONF"})
 IDENTITY = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+# .zmx 面型 → OpticStudio 的 TypeName（结构指纹按它比较）；BICONICZ 的名字没有实测过
+# .zmx surface type → OpticStudio's TypeName, which the structural fingerprint compares; BICONICZ's name is not measured
+TYPE_NAMES = {"STANDARD": "Standard", "EVENASPH": "Even Asphere", "PARAXIAL": "Paraxial", "BICONIC": "Biconic",
+              "BICONICX": "Biconic", "TOROIDAL": "Toroidal", "BICONICZ": "Biconic Zernike"}
+# rtc 读不出、也改不了的系统设置：存盘时原样带过去，结构指纹不比较，交付前在 OpticStudio 上复测时才核对
+# system settings rtc can neither read nor change: carried over on save, left out of the fingerprint comparison, checked
+# when the round is re-measured on OpticStudio before delivery
+UNREAD_SETTINGS = ("apodization", "polarization", "coating_file")
+# 局部优化 cycles 与迭代次数；auto 也有上限 / local optimisation cycles to iterations; auto has a cap too
+CYCLES = {"auto": 200, "1": 1, "5": 5, "10": 10, "50": 50}
+# 换料时每面在目录里取 n、V 最近的这么多种 / glasses per surface, nearest in n and V, that substitution chooses from
+SUBSTITUTE_NEIGHBOURS = 8
+# FFT MTF 的光瞳采样上限（每边点数）/ the largest pupil sampling of the FFT MTF (points per side)
+MTF_MAX_SAMPLING = 256
 
 
 @lru_cache(maxsize=1)
@@ -51,10 +69,10 @@ def admitted_paths() -> frozenset[str]:
 
 
 def catalog_indices(names, catalogs, glass_dir: Path | None, environment: tuple[float, float, bool],
-                    wavelengths_um) -> tuple[dict[str, list[float]], dict[str, str]]:
-    """不建镜头，按准入表在 rtc 材料层算目录玻璃在各波长的折射率（与 OpticStudio INDX 差 ≤ 1e-8 的路径才算）。
-    environment 是 (温度 °C, 压力 atm, 是否按环境修正)。返回 {牌号: [n…]} 与 {牌号: 没算的原因}，后者交给 OpticStudio。
-    Catalog indices from rtc's material layer for admitted paths only, without a lens; the rest is left to OpticStudio."""
+                    wavelengths_um, admitted_only: bool = True) -> tuple[dict[str, list[float]], dict[str, str]]:
+    """不建镜头，按准入表在 rtc 材料层算目录玻璃在各波长的折射率（与 OpticStudio INDX 差 ≤ 1e-8 的路径才算；admitted_only=False
+    时 rtc 实例照算未准入的路径）。environment 是 (温度 °C, 压力 atm, 是否按环境修正)。返回 {牌号: [n…]} 与 {牌号: 没算的原因}。
+    Catalog indices from rtc's material layer, admitted paths only unless admitted_only is False (the rtc instance)."""
     from rtc.material import Catalog, Environment, GlassCatalog, MaterialInvalid, MaterialUnsupported, resolve
 
     catalog = GlassCatalog(glass_dir) if glass_dir else GlassCatalog()
@@ -64,7 +82,7 @@ def catalog_indices(names, catalogs, glass_dir: Path | None, environment: tuple[
         try:
             medium = resolve(Catalog(name), catalog, list(catalogs))
             path = medium.path(env)
-            if path not in admitted_paths():
+            if admitted_only and path not in admitted_paths():
                 skipped[name] = f"material path {path} is not reconciled with OpticStudio INDX"
                 continue
             values[name] = [float(medium.index(w, env)) for w in wavelengths_um]
@@ -131,6 +149,13 @@ class RtcBackend(Backend):
         self.path = Path(path) if path is not None else None
         self.lens = None
         self.config = 1
+        # 设计阶段（ADR-0017）：评价函数行随镜头存盘；换料变量的 .zmx 写法没见过，只在内存里
+        # design stage (ADR-0017): merit rows are saved with the lens; material variables only live in memory
+        self.merit: list = []
+        self.material_vars: dict[int, dict[str, str]] = {}
+        # 读入文件里 rtc 不建模、存盘时原样带过去的行（rtc_lens.carried_lines）/ lines carried over from the file read
+        self._carried: dict[str, list[str]] | None = None
+        self._glass_tables: dict[str, list] = {}
         if path is None:
             if not self.standalone:
                 raise SaosError(ErrorCode.BAD_ARGS, "an rtc copy needs a lens file")
@@ -149,6 +174,8 @@ class RtcBackend(Backend):
         standalone 时再重算求解与自动半口径。失败时不留下半接手的镜头。
         Check and take over an rtc lens: scope, item-by-item comparison with OpticStudio's description (with a model),
         one system per wavelength; standalone also recomputes solves and automatic semi-diameters. Nothing is kept on failure."""
+        from saos.backend import rtc_merit
+
         previous = (self.lens, self.config, dict(self.held), set(self.unverified_paths))
         self.lens, self.config, self.held = lens, lens.current_config, {}
         self.unverified_paths.clear()
@@ -161,6 +188,7 @@ class RtcBackend(Backend):
             self.lens, self.config, self.held, self.unverified_paths = previous
             self._systems.clear()
             raise
+        self.merit, self.material_vars = rtc_merit.from_lens(lens), {}
 
     def _check_lens(self) -> None:
         model = self.model
@@ -193,6 +221,12 @@ class RtcBackend(Backend):
             out.append("not a sequential system")
         finite = math.isfinite(lens.surface(0).thickness)
         if self.standalone:
+            from saos.backend import rtc_lens
+
+            # rtc 实例要写回 .zmx：不认识的面块行（拾取等求解、膜层）照算或丢掉都会让存盘的镜头与算的不同
+            # the rtc instance writes .zmx back: unknown surface lines (pickups and other solves, coatings) would make the
+            # saved lens differ from the one computed, whether ignored or dropped
+            out += [f"{line} (a .zmx line rtc neither models nor carries over)" for line in rtc_lens.unknown_surface_lines(lens)]
             if lens.aperture_type not in ("EPD", "OBNA"):
                 out.append(f"system aperture {lens.aperture_type} (rtc has entrance pupil diameter and object space NA)")
             if lens.field_type not in ("ANGLE", "OP1") or (lens.field_type == "OP1" and not finite):
@@ -413,6 +447,11 @@ class RtcBackend(Backend):
 
     def _changed(self, edit: bool = True) -> None:
         self._systems.clear()
+        if getattr(self, "_batch", False):
+            # apply_values 里逐项改值时不重算，全部改完再算一次 / apply_values recomputes once after all values are set
+            if edit:
+                self._dirty = True
+            return
         if self.standalone and self.lens is not None:
             if edit:
                 self._dirty = True
@@ -528,28 +567,41 @@ class RtcBackend(Backend):
         from rtc import zmx
         from rtc.material import MaterialInvalid, MaterialUnsupported
 
+        from saos.backend import rtc_lens
+
         try:
+            text = zmx.decode_zmx_bytes(Path(path).read_bytes())
             lens = zmx.parse(Path(path))
         except OSError as exc:
             raise SaosError(ErrorCode.FILE_NOT_FOUND, f"cannot read {path}: {exc}") from exc
         except (MaterialInvalid, MaterialUnsupported) as exc:
             raise _unsupported(f"rtc cannot read the materials or environment of {path}: {exc}") from exc
         self._adopt(lens)
-        self.path, self._dirty = Path(path), False
+        self.path, self._dirty, self._carried = Path(path), False, rtc_lens.carried_lines(text)
 
     def save_as(self, path: Path) -> None:
         if not self.standalone:
             raise _unsupported("rtc never writes lens files; push the values to OpticStudio with fast.push(ctx) and save there")
-        from saos.backend import rtc_lens
-
-        rtc_lens.write(self._need_lens(), Path(path))
+        self._write(Path(path))
         self.path, self._dirty = Path(path), False
+
+    def _write(self, path: Path) -> None:
+        """当前镜头连同评价函数写成 .zmx，不改 self.path。/ Write the lens with its merit function, leaving self.path alone."""
+        from rtc.zmx import MFERow
+
+        from saos.backend import rtc_lens, rtc_merit
+
+        lens = self._need_lens()
+        lens.mfe = [MFERow(op=r.type, numbers=[] if r.type == "BLNK" else [*r.params[:6], r.target, r.weight, *r.params[6:8]], raw=line)
+                    for r, line in zip(self.merit, rtc_merit.to_lines(self.merit))]
+        rtc_lens.write(lens, path, carried=self._carried)
 
     def new_system(self) -> None:
         if not self.standalone:
             raise _unsupported("rtc only holds a copy of an OpticStudio lens")
         self.lens, self.path, self._dirty = None, None, False
         self.held, self._systems = {}, {}
+        self.merit, self.material_vars, self._carried = [], {}, None
 
     def build(self, prescription: dict[str, Any]) -> None:
         """standalone：按规范化处方搭建镜头（rtc 复现不了或写不出的项一次全部列出，BACKEND_UNSUPPORTED）。"""
@@ -558,7 +610,7 @@ class RtcBackend(Backend):
         from saos.backend import rtc_lens
 
         self._adopt(rtc_lens.from_prescription(prescription))
-        self.path, self._dirty = None, True
+        self.path, self._dirty, self._carried = None, True, None
 
     def needs_save(self) -> bool:
         return self._dirty
@@ -567,13 +619,162 @@ class RtcBackend(Backend):
         return False
 
     def describe_model(self, folder: Path | None, prefix: str = "layout") -> dict[str, Any]:
-        raise _unsupported("model descriptions are measured on OpticStudio; open the lens in an OpticStudio instance for saos lens describe")
+        """rtc 实例上镜头的描述数据，字段与 ZosBackend.describe_model(None) 相同，供结构指纹、逐轮材料记录和镜头哈希用；
+        UNREAD_SETTINGS 列在 unread 里、不给值。给用户确认的建模说明页面（带布局图）仍在 OpticStudio 上做。
+        The rtc instance's lens description with ZosBackend.describe_model(None)'s fields, for the structural fingerprint,
+        per-round materials and the lens hash; UNREAD_SETTINGS are listed under unread without values. The model page for
+        the user (with layout pictures) is still made on OpticStudio."""
+        if not self.standalone:
+            raise _unsupported("model descriptions are measured on OpticStudio; open the lens in an OpticStudio instance for saos lens describe")
+        if folder is not None:
+            raise _unsupported("model pages with layout pictures are made on OpticStudio; run saos lens describe on an OpticStudio instance")
+        lens = self._need_lens()
+        info = self.system_info()
+        vertex = self._vertex_z()
+        surfaces = []
+        for s in lens.surfaces:
+            i = s.index
+            surfaces.append({
+                "index": i, "type": TYPE_NAMES.get(s.type.upper(), s.type), "comment": s.comment, "radius": self._radius(s),
+                "thickness": lens.thickness(i, self.config), "material": self._material_text(s), "semi_diameter": s.semi_diameter,
+                "mech_semi_diameter": s.mech_semi_diameter, "conic": s.conic, "is_stop": s.is_stop, "solves": self._solves(s),
+                "material_source": self._material_source(s), "n": self._indices(i), "aperture": self._aperture_spec(s),
+                "params": [{"par": n, "name": f"Par {n}", "value": v, "solve": "Variable" if n in s.variable_params else "Fixed"}
+                           for n, v in sorted(s.params.items()) if v],
+                "tilt_decenter": {}, "coating": "", "global_vertex": [0.0, 0.0, vertex[i]] if i in vertex else None,
+            })
+        fields = info["fields"]
+        return {
+            "backend": "rtc", "file": info["file"], "title": info["title"], "lens_units": "Millimeters", "aperture": info["aperture"],
+            "ray_aiming": {0: "Off", 1: "Paraxial", 2: "Real"}[lens.ray_aiming],
+            "fields": {"type": fields["type"], "normalization": fields["normalization"],
+                       "items": [{**f, "vignetting": {k: 0.0 for k in ("VDX", "VDY", "VCX", "VCY", "VAN")}} for f in fields["items"]]},
+            "wavelengths": info["wavelengths"], "material_catalogs": list(lens.catalogs), "stop_surface": lens.stop_index,
+            "environment": info["environment"], "configurations": self._configurations(), "unread": list(UNREAD_SETTINGS),
+            "surfaces": surfaces, "layout": {},
+        }
+
+    def _solves(self, s) -> dict[str, str]:
+        from rtc.material import Model
+
+        i = s.index
+        material = {"model": "MaterialModel", "substitute": "MaterialSubstitute"}.get(self.material_vars.get(i, {}).get("mode"))
+        return {"radius": "Variable" if s.solve_radius == 1 else "Fixed",
+                "thickness": self.held.get(f"{i}.thickness") or ("Variable" if "VDSZ" in s.raw else "Fixed"),
+                "material": material or ("MaterialModel" if isinstance(s.material, Model) else "Fixed"),
+                "semi_diameter": "Fixed" if s.semi_fixed else "Automatic",
+                "mech_semi_diameter": "Fixed" if s.mech_fixed else "Automatic",
+                "conic": "Variable" if "VCON" in s.raw else "Fixed"}
+
+    def _material_source(self, s) -> dict[str, Any]:
+        from rtc.material import Model
+
+        spec = s.material
+        if spec is None:
+            return {"kind": "none"}
+        if isinstance(spec, Model):
+            return {"kind": "model", "nd": spec.nd, "vd": spec.vd, "dpgf": spec.dpgf}
+        name = s.glass.upper()
+        catalogs = [c for c in self.lens.catalogs if any(g.name.upper() == name for g in self._glass_table(c))]
+        return {"kind": "catalog", "name": name, "catalogs": catalogs, "status": self.glass_status(name, catalogs)}
+
+    def _indices(self, index: int) -> list[float | None]:
+        """面后介质在各波长的折射率（同 OpticStudio 的 INDX）；算不出的波长为 None。"""
+        out: list[float | None] = []
+        for w in range(1, len(self.lens.active_wavelengths) + 1):
+            try:
+                out.append(float(self.operand("INDX", index, w, [])))
+            except SaosError:
+                out.append(None)
+        return out
+
+    def _configurations(self) -> dict[str, Any]:
+        """多重结构，形式同 ZosBackend._configurations：rtc 只有 THIC 行，参数为面号。"""
+        lens = self.lens
+        count = self.configuration_count()
+        surfaces = list(dict.fromkeys(r.surface for r in lens.mce if r.op == "THIC"))
+        return {"count": count, "current": self.config,
+                "operands": [{"row": j, "type": "THIC", "params": [s], "values": [lens.thickness(s, c) for c in range(1, count + 1)],
+                              "solves": ["Fixed"] * count} for j, s in enumerate(surfaces, 1)]}
 
     def analysis_types(self) -> list[str]:
-        raise _unsupported("rtc has no OpticStudio analyses; use ctx.spot, ctx.trace and the operands rtc computes")
+        return ["FftMtf"]
 
     def analysis(self, name: str, settings: dict[str, Any], text_path: Path, keep_open: bool = False) -> dict[str, Any]:
-        raise _unsupported(f"rtc has no OpticStudio analysis {name}; use ctx.spot, ctx.trace and the operands rtc computes")
+        """rtc 能算的分析，结果形式同 ZosBackend.analysis（series、settings、status），不写文本导出。目前只有 FftMtf：
+        设置 Field（0 为全部）、Wavelength（0 为全部，按权重）、MaximumFrequency（0 为到截止频率）、SampleSize（S_32x32…）、
+        ShowDiffractionLimit；各波长以自己的主光线为参考（rtc.psf.mtf_fft），与 OpticStudio 未对账。
+        Analyses rtc computes, shaped like ZosBackend.analysis without a text export. Only FftMtf for now."""
+        if name != "FftMtf":
+            raise _unsupported(f"rtc has no analysis {name}; it has FftMtf. Use ctx.spot, ctx.trace and the operands rtc computes, "
+                               "or an OpticStudio instance")
+        known = {"Field", "Wavelength", "MaximumFrequency", "SampleSize", "Type", "ShowDiffractionLimit"}
+        extra = sorted(set(settings) - known)
+        if extra:
+            raise SaosError(ErrorCode.BAD_ARGS, f"rtc FftMtf settings {extra} unknown; allowed {sorted(known)}")
+        if str(settings.get("Type", "Modulation")) != "Modulation":
+            raise _unsupported("rtc FftMtf computes the modulation only (Type Modulation)")
+        lens = self._need_lens()
+
+        def integer(key: str, top: int) -> int:
+            v = settings.get(key, 0)
+            if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= top:
+                raise SaosError(ErrorCode.BAD_ARGS, f"FftMtf {key} must be 0–{top}, got {v!r}")
+            return v
+
+        field, wave = integer("Field", len(lens.fields)), integer("Wavelength", len(lens.active_wavelengths))
+        size = str(settings.get("SampleSize", "S_64x64"))
+        try:
+            n = int(size.split("_")[1].split("x")[0]) if size.startswith("S_") else int(size)
+        except (IndexError, ValueError):
+            raise SaosError(ErrorCode.BAD_ARGS, f"FftMtf SampleSize must look like S_64x64, got {size!r}") from None
+        if not 16 <= n <= MTF_MAX_SAMPLING:
+            raise _unsupported(f"rtc FftMtf samples 16–{MTF_MAX_SAMPLING} pupil points per side, got {n}")
+        top = settings.get("MaximumFrequency", 0)
+        if isinstance(top, bool) or not isinstance(top, (int, float)) or not math.isfinite(top) or top < 0:
+            raise SaosError(ErrorCode.BAD_ARGS, f"FftMtf MaximumFrequency must be a number ≥ 0, got {top!r}")
+        series, problems = self._mtf_series([field] if field else list(range(1, len(lens.fields) + 1)),
+                                            [wave] if wave else None, n, float(top), bool(settings.get("ShowDiffractionLimit", False)))
+        self._used.add("FFTMTF")
+        out = {"header": [f"rtc FFT MTF, {n} x {n} pupil samples, each wavelength about its own chief ray"], "messages": [],
+               "series": series, "grids": [], "problems": problems, "text_file": False, "message": None, "backend": "rtc",
+               "settings": {"Field": field, "Wavelength": wave, "MaximumFrequency": float(top), "SampleSize": f"S_{n}x{n}",
+                            "Type": "Modulation", "ShowDiffractionLimit": bool(settings.get("ShowDiffractionLimit", False))}}
+        out["status"] = "ok" if series and not problems else "partial" if series else "empty"
+        return out
+
+    def _mtf_series(self, fields: list[int], waves: list[int] | None, n: int, top: float, diffraction: bool):
+        """FFT MTF 的曲线（OpticStudio 导出的形式：每个视场一条，y 为 Tangential、Sagittal），算不出的视场记进 problems。"""
+        from rtc.psf import mtf_fft
+
+        lens = self.lens
+        system = self._system(lens.primary_wave)
+        sx, sy = system._field_scale()
+        unit = "deg" if lens.field_type == "ANGLE" else "mm"
+        chosen = waves or list(range(1, len(lens.active_wavelengths) + 1))
+        systems = [(self._system(w), 1.0 if waves else lens.active_wavelengths[w - 1][1]) for w in chosen]
+        freq = np.linspace(0.0, top, 41) if top > 0 else None
+        series, problems = [], []
+
+        def curve(label: str, hx: float, hy: float, aberrated: bool) -> dict[str, Any]:
+            nonlocal freq
+            result = mtf_fft(systems, hx, hy, frequencies=freq, n=n, aberrated=aberrated)
+            freq = result["frequency"]
+            return {"description": label, "x_label": "Spatial Frequency in cycles per mm", "x": [float(v) for v in freq],
+                    "y": {"Tangential": [float(v) for v in result["tangential"]], "Sagittal": [float(v) for v in result["sagittal"]]}}
+
+        if diffraction:
+            try:
+                series.append(curve("Diff. Limit", 0.0, 0.0, False))
+            except (ValueError, NotImplementedError, FloatingPointError) as exc:
+                problems.append({"part": "diffraction limit", "kind": "computation", "message": str(exc)})
+        for f in fields:
+            x, y, _ = lens.fields[f - 1]
+            try:
+                series.append(curve(f"Field: {x:.4f}, {y:.4f} ({unit})", x / sx if sx else 0.0, y / sy if sy else 0.0, True))
+            except (ValueError, NotImplementedError, FloatingPointError) as exc:
+                problems.append({"part": f"field {f}", "kind": "computation", "message": str(exc)})
+        return series, problems
 
     def system_info(self) -> dict[str, Any]:
         lens = self._need_lens()
@@ -786,6 +987,367 @@ class RtcBackend(Backend):
                 break
         return {"surface": index, "thickness_before": before, "thickness_after": lens.thickness(index, self.config), "backend": "rtc"}
 
+    # ---- 设计阶段：变量、评价函数与优化（ADR-0017）/ the design stage: variables, merit function, optimisation ----
+
+    def _designing(self, what: str):
+        if not self.standalone:
+            raise _unsupported(f"{what} runs on the rtc instance (saos daemon start --backend rtc) or on OpticStudio, not on an rtc copy")
+        return self._need_lens()
+
+    def variables(self) -> list[str]:
+        """当前的变量（get_param 的键），按面序：曲率、厚度、圆锥、Par 列、模型玻璃的 nd 与 vd。换料变量不在其中。
+        The current variables as get_param keys, in surface order; substituted materials are not among them."""
+        lens = self._designing("variables")
+        out = []
+        for s in lens.surfaces:
+            i = s.index
+            if s.solve_radius == 1:
+                out.append(f"{i}.curvature")
+            if "VDSZ" in s.raw:
+                out.append(f"{i}.thickness")
+            if "VCON" in s.raw:
+                out.append(f"{i}.conic")
+            out += [f"{i}.par{n}" for n in sorted(s.variable_params)]
+            if self.material_vars.get(i, {}).get("mode") == "model":
+                out += [f"{i}.nd", f"{i}.vd"]
+        return out
+
+    def vary(self, surface: int, param: str, on: bool, mode: str | None = None, catalog: str | None = None) -> str:
+        from saos.kit import PAR_RE
+
+        lens = self._designing("saos opt vary")
+        if param not in ("radius", "curvature", "thickness", "conic", "material") and not PAR_RE.match(param):
+            raise SaosError(ErrorCode.BAD_ARGS, "only radius, thickness, conic, par<N> and material can be variables")
+        image = len(lens.surfaces) - 1
+        if not (0 < surface < image or (surface == 0 and param == "thickness")):
+            raise SaosError(ErrorCode.BAD_ARGS, f"surface {surface} {param} cannot be a variable")
+        s = lens.surface(surface)
+        name = "radius" if param == "curvature" else param
+        if on and f"{surface}.{name}" in self.held:
+            raise SaosError(ErrorCode.BAD_ARGS, f"surface {surface} {name} is held by a {self.held[f'{surface}.{name}']} solve")
+        if param == "material":
+            out = self._vary_material(s, on, mode, catalog)
+        elif name == "radius":
+            s.solve_radius = 1 if on else 0
+        elif param == "thickness":
+            if on and any(r.op == "THIC" and r.surface == surface for r in lens.mce):
+                raise SaosError(ErrorCode.BAD_ARGS, f"surface {surface} thickness comes from multi-configuration rows; rtc varies plain cells only")
+            if on and not math.isfinite(s.thickness):
+                raise SaosError(ErrorCode.BAD_ARGS, f"surface {surface} thickness is infinite and cannot be a variable")
+            if on:
+                s.raw["VDSZ"] = "VDSZ 0 0"
+            else:
+                s.raw.pop("VDSZ", None)
+        elif param == "conic":
+            if on:
+                s.raw["VCON"] = "VCON"
+            else:
+                s.raw.pop("VCON", None)
+        else:
+            n = int(PAR_RE.match(param).group(1))
+            if s.type.upper() == "STANDARD":
+                raise SaosError(ErrorCode.BAD_ARGS, f"surface {surface} is Standard and has no {param}")
+            if on:
+                s.variable_params.add(n)
+            else:
+                s.variable_params.discard(n)
+        self._dirty = True
+        return out if param == "material" else ("Variable" if on else "Fixed")
+
+    def _vary_material(self, s, on: bool, mode: str | None, catalog: str | None) -> str:
+        """模型玻璃（nd、νd 可变，起点取目录玻璃的 nd、νd）或目录内替换（只在 Hammer、全局搜索里换）。同 ZosBackend._vary_material。"""
+        from rtc.material import Model, as_model
+
+        if not on:
+            self.material_vars.pop(s.index, None)
+            return "MaterialModel" if isinstance(s.material, Model) else "Fixed"
+        if mode not in MATERIAL_MODES:
+            raise SaosError(ErrorCode.BAD_ARGS, f"material needs --mode {' or '.join(MATERIAL_MODES)}")
+        if s.material is None:
+            raise SaosError(ErrorCode.BAD_ARGS, f"surface {s.index} has no glass (air); set a material before making it vary")
+        if mode == "model":
+            if not isinstance(s.material, Model):
+                spec = _material_call(as_model, s.material, self._catalog(), self.lens.catalogs)
+                self._set_material(s, Model(spec.nd, spec.vd, 0.0))
+                self._changed()
+            self.material_vars[s.index] = {"mode": "model"}
+            return "MaterialModel"
+        if isinstance(s.material, Model):
+            raise SaosError(ErrorCode.BAD_ARGS, f"surface {s.index} has a model glass; set a catalog glass before substitution")
+        name = (catalog or "").upper()
+        self._use_catalog(name)
+        self.material_vars[s.index] = {"mode": "substitute", "catalog": name}
+        return "MaterialSubstitute"
+
+    # 面型的 SurfaceType 名（ZosBackend.change_surface_type 的返回值）/ SurfaceType names, as ZosBackend.change_surface_type returns
+    SURFACE_TYPES = {"STANDARD": "Standard", "EVENASPH": "EvenAspheric"}
+
+    def change_surface_type(self, index: int, surface_type: str) -> str:
+        """Standard 与 EvenAspheric 之间换面型：换成偶次非球面时系数为 0（光学上不变），换回标准面时去掉系数。
+        Switch between Standard and EvenAspheric: zero coefficients going aspheric, coefficients dropped going back."""
+        from saos.backend import rtc_lens
+
+        lens = self._designing("changing a surface type")
+        if isinstance(index, bool) or not isinstance(index, int) or not 1 <= index < len(lens.surfaces) - 1:
+            raise SaosError(ErrorCode.BAD_ARGS, f"only surfaces 1–{len(lens.surfaces) - 2} can change type, got {index!r}")
+        kind = rtc_lens.TYPES.get(rtc_lens._type_key(str(surface_type)))
+        s = lens.surface(index)
+        if kind not in self.SURFACE_TYPES or s.type.upper() not in self.SURFACE_TYPES:
+            raise _unsupported(f"rtc switches surfaces between Standard and EvenAspheric only; surface {index} is {s.type}, "
+                               f"asked for {surface_type}")
+        if kind != s.type.upper():
+            s.type = kind
+            s.params, s.extra, s.variable_params = {}, {}, set()
+            self._changed()
+        return self.SURFACE_TYPES[kind]
+
+    def set_solve(self, index: int, param: str, solve: dict[str, Any]) -> dict[str, Any]:
+        """rtc 实例只有 fixed 与 variable 两种求解（同 saos opt vary）；材料只能 fixed。/ Fixed and variable solves only."""
+        kind = solve.get("type")
+        if kind not in ("fixed", "variable") or (param == "material" and kind != "fixed"):
+            raise _unsupported(f"rtc sets fixed and variable solves only (material: fixed), got {kind!r} on surface {index} {param}")
+        if param == "material":
+            self.vary(index, "material", False)
+            return {"type": self._solves(self.lens.surface(index))["material"]}
+        self.vary(index, param, kind == "variable")
+        return {"type": "Variable" if kind == "variable" else "Fixed"}
+
+    def _glass_dir(self) -> Path:
+        return Path(self._catalog().folder)
+
+    def _glass_table(self, catalog: str) -> list:
+        """目录的牌号表（saos.glasscat，取自 rtc 用的玻璃文件夹）；找不到或读不了时为空。"""
+        from saos import glasscat
+
+        key = catalog.upper()
+        if key not in self._glass_tables:
+            try:
+                self._glass_tables[key] = glasscat.load_catalogs([catalog], self._glass_dir())
+            except (OSError, ValueError):
+                self._glass_tables[key] = []
+        return self._glass_tables[key]
+
+    def glass_status(self, name: str, catalogs: list[str]) -> str | None:
+        for catalog in catalogs:
+            for g in self._glass_table(catalog):
+                if g.name.upper() == name.upper():
+                    return g.status
+        return None
+
+    def substitute_catalog(self, catalog: str | None) -> str:
+        """同 ZosBackend.substitute_catalog：指定的目录，否则成都光明在产目录（玻璃文件夹里有时），再否则全部在用目录。"""
+        name = (catalog or "").upper()
+        if not name and any(p.stem.upper() == DEFAULT_SUBSTITUTE_CATALOG for p in self._glass_dir().glob("*.[Aa][Gg][Ff]")):
+            name = DEFAULT_SUBSTITUTE_CATALOG
+        return name
+
+    def catalog_has(self, name: str, catalog: str) -> bool | None:
+        lens = self._need_lens()
+        if not catalog or not name or not any(self.glass_status(name, [c]) is not None for c in lens.catalogs):
+            return None
+        table = self._glass_table(catalog)
+        return None if not table else any(g.name.upper() == name.upper() for g in table)
+
+    def _use_catalog(self, name: str) -> None:
+        """替换只在在用目录里找牌号：不在就加进 GCAT（这是对镜头的改动）/ add the catalog to GCAT when not in use."""
+        from saos.protocol import MaterialError
+
+        lens = self.lens
+        if not name or name in (c.upper() for c in lens.catalogs):
+            return
+        if not self._glass_table(name):
+            raise MaterialError(ErrorCode.BAD_ARGS, f"cannot load glass catalog {name} from {self._glass_dir()}")
+        lens.raw["GCAT"] = "GCAT " + " ".join([*lens.catalogs, name]) + " "
+        self._systems.clear()
+        self._dirty = True
+
+    def _substitutes(self) -> dict[int, list[str]]:
+        """换料变量的各面可换的牌号：所选目录（空为全部在用目录）里 n、V 离现在的玻璃最近的 SUBSTITUTE_NEIGHBOURS 种，含现在的。
+        Per substituted surface, the glasses of its catalog nearest in n and V to the current one, the current one included."""
+        from rtc.material import as_model
+
+        from saos import glasscat
+
+        out = {}
+        for i, var in sorted(self.material_vars.items()):
+            if var["mode"] != "substitute":
+                continue
+            s = self.lens.surface(i)
+            spec = _material_call(as_model, s.material, self._catalog(), self.lens.catalogs)
+            pool = [g for c in ([var["catalog"]] if var["catalog"] else self.lens.catalogs) for g in self._glass_table(c)]
+            near = glasscat.nearest(spec.nd, spec.vd, pool, nd_tol=0.03, vd_tol=6.0, k=SUBSTITUTE_NEIGHBOURS)
+            out[i] = list(dict.fromkeys([s.glass.upper(), *(g.name.upper() for _, g in near)]))
+        return out
+
+    def apply_values(self, values: dict[str, float]) -> None:
+        """一次改多个参数、只重算一次（求解与自动半口径）；任何一项或重算失败时全部恢复，报 VALUE_NOT_APPLIED 或原错误。
+        Set several parameters with one recomputation; on any failure everything is restored."""
+        self._need_lens()
+        before = {k: self.get_param(k) for k in values}
+        self._batch = True
+        try:
+            for key, value in values.items():
+                self.set_param(key, value)
+        except BaseException:
+            self._restore(before)
+            raise
+        finally:
+            self._batch = False
+        try:
+            self._changed()
+        except SaosError as exc:
+            self._restore(before)
+            raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"the lens cannot be computed with these values: {exc.message}",
+                            {"values": values}) from exc
+
+    def _restore(self, before: dict[str, Any]) -> None:
+        self._batch = True
+        try:
+            for key, value in before.items():
+                self.set_param(key, value)
+        finally:
+            self._batch = False
+        self._changed()
+
+    def _evaluate_merit(self):
+        from saos.backend import rtc_merit
+
+        self._designing("the merit function")
+        self._used.update(r.type for r in self.merit if r.type not in rtc_merit.INERT)
+        return rtc_merit.Evaluator(self).evaluate(self.merit)
+
+    def merit_wizard(self, settings: dict[str, Any]) -> int:
+        """rtc 的序列优化向导（rtc_merit.wizard_rows）；start_at 之前的行保留，其后换成向导的行（同 OpticStudio）。"""
+        from saos.backend import rtc_merit
+
+        lens = self._designing("the optimisation wizard")
+        start_at = settings.get("start_at", 1)
+        if isinstance(start_at, bool) or not isinstance(start_at, int) or not 1 <= start_at <= len(self.merit) + 1:
+            raise SaosError(ErrorCode.BAD_ARGS, f"optimization wizard start_at must be 1–{len(self.merit) + 1}, got {start_at!r}")
+        rows = self.merit[:start_at - 1] + rtc_merit.wizard_rows(lens, settings)
+        rtc_merit.Evaluator(self).check(rows)
+        self.merit, self._dirty = rows, True
+        return len(self.merit)
+
+    def merit_add(self, rows: list[dict[str, Any]]) -> int:
+        self.merit_append(rows)
+        return len(self.merit)
+
+    def merit_append(self, rows: list[dict[str, Any]]) -> list[int]:
+        """同 ZosBackend.merit_append：插在第一个 DMFS 之前；rtc 算不了的操作数整批拒绝，评价函数不变。"""
+        from saos.backend import rtc_merit
+        from saos.ctx.rows import compile_rows
+
+        self._designing("merit rows")
+        position = next((k for k, r in enumerate(self.merit) if r.type == "DMFS"), len(self.merit))
+        try:
+            specs = compile_rows(rows, position + 1)
+        except ValueError as exc:
+            raise SaosError(ErrorCode.BAD_ARGS, f"merit rows: {exc}") from exc
+        added = rtc_merit.from_specs(specs)
+        merged = self.merit[:position] + added + self.merit[position:]
+        rtc_merit.Evaluator(self).check(merged)
+        self.merit, self._dirty = merged, True
+        return list(range(position + 1, position + 1 + len(added)))
+
+    def merit_clear(self) -> None:
+        self._designing("the merit function")
+        self.merit, self._dirty = [], True
+
+    def merit_value(self) -> float:
+        """OpticStudio 定义的评价函数值；有正权重的行算不出时为 inf。/ The merit value; inf when a weighted row fails."""
+        return self._evaluate_merit().merit if self.merit else 0.0
+
+    def merit_rows(self) -> list[dict[str, Any]]:
+        if not self.merit:
+            return []
+        result = self._evaluate_merit()
+        return [{"row": k + 1, "type": r.type, "target": r.target, "weight": r.weight, "value": result.values[k],
+                 "contribution": result.contributions[k], **({"error": result.failed[k]} if k in result.failed else {})}
+                for k, r in enumerate(self.merit) if r.type != "BLNK"]
+
+    def _problem(self):
+        from saos.backend import rtc_merit, rtc_optim
+
+        keys = self.variables()
+        if not keys:
+            raise SaosError(ErrorCode.BAD_ARGS, "the lens has no variables; make some with saos opt vary first")
+        if not any(r.weight > 0 and r.type not in rtc_merit.INERT for r in self.merit):
+            raise SaosError(ErrorCode.BAD_ARGS, "the merit function has no row with a positive weight; build it with saos opt merit")
+        self._used.update(r.type for r in self.merit if r.type not in rtc_merit.INERT)
+        return rtc_optim.Problem(self, self.merit, keys)
+
+    def optimize(self, cycles: str, cores: int | None = None, *, max_seconds: float | None = None,
+                 on_progress=None, should_cancel=None, algorithm: str | None = None) -> dict[str, Any]:
+        """带精确约束的阻尼最小二乘（rtc_optim.local）；cycles 换成迭代次数（auto 到收敛，至多 CYCLES["auto"] 次）。
+        结果字段同 ZosBackend.optimize，另有约束数、违背量和是否收敛。cores 不用（单线程）。
+        Damped least squares with exact constraints; cycles become iterations. Result fields as ZosBackend.optimize plus
+        constraint counts, violation and convergence. cores is unused (single thread)."""
+        import time
+
+        from saos.backend import rtc_optim
+
+        self._designing("local optimisation")
+        if cycles not in CYCLES:
+            raise SaosError(ErrorCode.BAD_ARGS, f"cycles must be one of {list(CYCLES)}")
+        if algorithm not in (None, "auto", "dls"):
+            raise _unsupported(f"rtc optimises with damped least squares only (dls), got {algorithm!r}")
+        problem = self._problem()
+        deadline = time.monotonic() + float(max_seconds) if max_seconds is not None else None
+        run = rtc_optim.local(problem, iterations=CYCLES[cycles], deadline=deadline, should_cancel=should_cancel, on_progress=on_progress)
+        return {**rtc_optim.summary(run, problem), "backend": "rtc"}
+
+    def optimize_search(self, kind: str, cores: int | None = None, *, max_seconds: float,
+                        on_progress=None, should_cancel=None) -> dict[str, Any]:
+        """Hammer 或全局搜索（rtc_optim.search），到 max_seconds 或取消为止；结束后镜头是找到的最好解。找到的系统写在镜头文件旁
+        （全局搜索 GLOPT_NNNN.zmx 按评价函数从小到大，Hammer 为 <镜头>_0000_HAMMER.zmx），由后台进程归档，同 OpticStudio。
+        Hammer or global search until max_seconds or a cancel; the lens ends on the best solution. The systems found are
+        written next to the lens file for the daemon to archive, as OpticStudio does."""
+        from saos.backend import rtc_optim
+        from saos.budget import outcome
+
+        lens = self._designing("Hammer and global search")
+        problem = self._problem()
+        before = [self._material_text(s) for s in lens.surfaces]
+        result = rtc_optim.search(problem, kind, max_seconds=max_seconds, substitutes=self._substitutes(),
+                                  should_cancel=should_cancel, on_progress=on_progress)
+        self._write_search(kind, result, problem)
+        final = self.merit_value()
+        initial = result["initial_merit"]
+        improved = outcome(initial, final, converged=False, stopped_by=result["stopped_by"])["improved"]
+        found = math.isfinite(result["best"].merit)
+        out = {"initial_merit": initial, "final_merit": final, "systems": result["systems"], "variables": len(problem.keys),
+               "targets": sum(1 for r in self.merit if r.weight > 0 and r.type not in ("BLNK", "DMFS")),
+               "succeeded": improved and found and result["stopped_by"] is None, "solver_succeeded": found, "improved": improved,
+               "converged": None, "stopped_by": result["stopped_by"], "elapsed_s": result["elapsed_s"], "seed": result["seed"],
+               "substitutes": {str(s): len(names) for s, names in self._substitutes().items()}, "backend": "rtc"}
+        if not found:
+            out["note"] = "no solution met every constraint; the lens is back at its start"
+        if kind == "global":
+            out["best_merits"] = [c.merit for c in result["kept"]]
+        out["materials_changed"] = [{"surface": i, "before": a, "after": b, "status": self.glass_status(b, list(lens.catalogs))}
+                                    for i, (a, b) in enumerate(zip(before, (self._material_text(s) for s in lens.surfaces)))
+                                    if a.upper() != b.upper()]
+        return out
+
+    def _write_search(self, kind: str, result: dict[str, Any], problem) -> None:
+        """把搜索找到的系统写在镜头文件旁（没存过盘的镜头不写），最后回到最好解。"""
+        if self.path is None:
+            return
+        best = result["best"]
+        folder, stem = self.path.parent, self.path.stem
+        chosen = result["kept"] if kind == "global" else ([best] if math.isfinite(best.merit) else [])
+        try:
+            for k, candidate in enumerate(chosen):
+                for s, name in candidate.glasses.items():
+                    self.set_param(f"{s}.material", name)
+                problem.apply(candidate.x)
+                self._write(folder / (f"GLOPT_{k:04d}.zmx" if kind == "global" else f"{stem}_{k:04d}_HAMMER.zmx"))
+        finally:
+            for s, name in best.glasses.items():
+                self.set_param(f"{s}.material", name)
+            problem.apply(best.x)
+
     # ---- 流程图窗口 / the workflow window ----
 
     @staticmethod
@@ -841,11 +1403,11 @@ class RtcBackend(Backend):
 
     def viz_data(self, folder: Path | None, *, fan: int = 7, full: bool = True, rays: bool = True,
                  plots: frozenset[str] | None = None) -> dict[str, Any]:
-        """流程图窗口的当前视图，结构同 ZosBackend.viz_data（不带 full 的部分）：逐面几何、布局光线、Lens Data、交叠检查，
-        另带 backend 与 unverified，窗口据此标明数值来自 rtc。
-        The live view for the workflow window, shaped like ZosBackend.viz_data without full, plus backend and unverified."""
-        import time
-
+        """流程图窗口的数据，结构同 ZosBackend.viz_data：逐面几何、布局光线、Lens Data、交叠检查；full 时（每轮的 viz.json）
+        另有 plots 所选的点列图（spot）、光线扇图（fan）和 FFT MTF（mtf），plots 为 None 时全算。另带 backend 与 unverified，
+        窗口据此标明数值来自 rtc。
+        Data for the workflow window shaped like ZosBackend.viz_data; with full also the spot, ray fan and FFT MTF chosen
+        by plots (all when None). backend and unverified tell the window the numbers come from rtc."""
         from rtc.trace import trace
 
         from saos import geometry
@@ -913,18 +1475,103 @@ class RtcBackend(Backend):
                     paths.append({"field": f, "px": px, "py": py, "points": points, "start_dir": first})
         timings["layout_rays"] = round(time.monotonic() - started, 3)
         stop = next((s for s in surfaces if s["is_stop"]), None)
-        return {
+        out = {
             "backend": "rtc", "unverified": self.unverified(),
             "system": {**{k: info[k] for k in ("title", "lens_units", "aperture", "fields", "wavelengths", "stop_surface")},
                        "primary_wave": primary, "normalization": lens.field_normalization.capitalize(), "normalized_fields": norm,
                        "stop_semi_diameter": stop["semi_diameter"] if stop else None, "image_surface": image,
-                       "non_axial": any(s.type in ("BICONICX", "BICONIC", "BICONICZ", "TOROIDAL") for s in lens.surfaces)},
+                       "non_axial": any(s.type in ("BICONICX", "BICONIC", "BICONICZ", "TOROIDAL") for s in lens.surfaces),
+                       "backend": "rtc"},
             "surfaces": surfaces,
             "layout": {"wave": primary, "rays": paths, **({} if rays else {"rays_paused": True})},
             "lens_data": self.surfaces(),
             "interference": clash,
             "timings_s": timings, "errors": errors,
         }
+        if not full:
+            return out
+        for tab, key, make in (("spot", "spot", lambda: self._spot_plot(norm)), ("fan", "ray_fan", lambda: self._fan_plot(norm)),
+                               ("mtf", "mtf", lambda: self._mtf_plot(errors))):
+            if plots is not None and tab not in plots:
+                continue
+            started = time.monotonic()
+            try:
+                out[key] = make()
+            except (SaosError, ValueError, NotImplementedError, FloatingPointError) as exc:
+                errors[key if key != "mtf" else "FftMtf"] = getattr(exc, "message", None) or str(exc)
+            timings[key] = round(time.monotonic() - started, 3)
+        return out
+
+    def _spot_plot(self, norm, pupil_grid: int = 31) -> dict[str, Any]:
+        """点列图：方形网格取单位圆内的光瞳点，各视场各波长追到像面，相对主波长主光线（同 ZosBackend.viz_data）；
+        RMS、GEO 为全部波长按权重合在一起、相对同一主光线的值（µm），每个波长一列同值，形式同 OpticStudio 的 Standard Spot。
+        The spot diagram as ZosBackend.viz_data draws it; RMS and GEO over every wavelength by weight about the primary
+        chief ray (µm), one equal value per wavelength column as OpticStudio's Standard Spot gives."""
+        from rtc.trace import trace
+
+        lens = self.lens
+        grid = np.array([2 * k / (pupil_grid - 1) - 1 for k in range(pupil_grid)])
+        px, py = np.meshgrid(grid, grid)
+        inside = px * px + py * py <= 1.0
+        px, py = px[inside], py[inside]
+        waves = lens.active_wavelengths
+        fields, rms, geo = [], [], []
+        for f, (hx, hy) in enumerate(norm):
+            chief = trace(self._system(lens.primary_wave), [0.0], [0.0], hx, hy)
+            ok_chief = int(chief.error[0]) == 0 and int(chief.vig[0]) == 0
+            cx, cy = (float(chief.x[0, -1]), float(chief.y[0, -1])) if ok_chief else (0.0, 0.0)
+            per_wave, r2, wt, far = [], 0.0, 0.0, 0.0
+            for w, (_, weight) in enumerate(waves, 1):
+                block = trace(self._system(w), px, py, hx, hy)
+                ok = (block.error == 0) & (block.vig == 0)
+                dx, dy = block.x[ok, -1] - cx, block.y[ok, -1] - cy
+                per_wave.append([[round(float(a), 7), round(float(b), 7)] for a, b in zip(dx, dy)])
+                if ok.any():
+                    r2 += float(weight) * float(np.mean(dx * dx + dy * dy))
+                    wt += float(weight)
+                    far = max(far, float(np.max(np.hypot(dx, dy))))
+            fields.append({"field": f, "chief": [cx, cy] if ok_chief else None, "points": per_wave})
+            value = 1000.0 * math.sqrt(r2 / wt) if wt > 0 and ok_chief else None
+            rms.append([value] * len(waves))
+            geo.append([1000.0 * far if ok_chief else None] * len(waves))
+        return {"reference": "chief ray, primary wavelength", "pupil_grid": pupil_grid, "fields": fields, "rms_radius": rms,
+                "geo_radius": geo, "analysis_settings": {"ReferTo": "ChiefRay", "Pattern": "square grid", "RayDensity": pupil_grid}}
+
+    def _fan_plot(self, norm, points: int = 21) -> dict[str, Any]:
+        """光线扇图：子午扇（Px = 0）的 ey 与弧矢扇（Py = 0）的 ex，相对主波长主光线，各波长一条，单位同镜头；
+        追不到像面的点为 None。/ Ray fans about the primary chief ray: ey along Py and ex along Px, one curve per wavelength."""
+        from rtc.trace import trace
+
+        lens = self.lens
+        pupil = [2 * k / (points - 1) - 1 for k in range(points)]
+        zero = np.zeros(points)
+        p = np.array(pupil)
+        fields = []
+        for f, (hx, hy) in enumerate(norm):
+            chief = trace(self._system(lens.primary_wave), [0.0], [0.0], hx, hy)
+            if int(chief.error[0]) or int(chief.vig[0]):
+                fields.append({"field": f, "tangential": None, "sagittal": None})
+                continue
+            cx, cy = float(chief.x[0, -1]), float(chief.y[0, -1])
+            tangential, sagittal = [], []
+            for w in range(1, len(lens.active_wavelengths) + 1):
+                system = self._system(w)
+                t_block, s_block = trace(system, zero, p, hx, hy), trace(system, p, zero, hx, hy)
+                t_ok = (t_block.error == 0) & (t_block.vig == 0)
+                s_ok = (s_block.error == 0) & (s_block.vig == 0)
+                tangential.append([float(v - cy) if k else None for v, k in zip(t_block.y[:, -1], t_ok)])
+                sagittal.append([float(v - cx) if k else None for v, k in zip(s_block.x[:, -1], s_ok)])
+            fields.append({"field": f, "tangential": tangential, "sagittal": sagittal})
+        return {"pupil": pupil, "reference": "chief ray, primary wavelength", "fields": fields}
+
+    def _mtf_plot(self, errors: dict[str, str]) -> dict[str, Any]:
+        series, problems = self._mtf_series(list(range(1, len(self.lens.fields) + 1)), None, 64, 0.0, True)
+        if problems:
+            errors["FftMtf"] = "; ".join(f"{p['part']}: {p['message']}" for p in problems)
+        if not any(s["description"] != "Diff. Limit" for s in series):
+            raise ValueError(errors.get("FftMtf") or "no field gave an MTF")
+        return {"series": series, "spot": None, "settings": {"SampleSize": "S_64x64", "Type": "Modulation", "ShowDiffractionLimit": True,
+                                                              "backend": "rtc"}}
 
     def configuration_count(self) -> int:
         return max(1, self.lens.num_configs)

@@ -193,13 +193,19 @@ class GlassExpert:
             catalogs = [preferred] if preferred else self.ctx.backend.system_info()["material_catalogs"]
         folder = Path(self.directory) if self.directory else (
             self.ctx.backend._glass_dir() if hasattr(self.ctx.backend, "_glass_dir") else glasscat.DEFAULT_GLASSCAT_DIR)
+        # rtc 实例（ADR-0017）：目录加进 GCAT，全部牌号在 rtc 材料层算 / the rtc instance adds catalogs to GCAT and computes every glass on rtc
+        rtc_instance = getattr(self.ctx.backend, "standalone", False)
         # 目录设置随镜头事务保存；不永久安装或改写厂家目录。
-        mc = self.ctx.system.SystemData.MaterialCatalogs
-        for catalog in catalogs:
-            if not mc.IsCatalogInUse(catalog):
-                mc.AddCatalog(catalog)
-            if not mc.IsCatalogInUse(catalog):
-                raise SaosError(ErrorCode.BAD_ARGS, f"OpticStudio cannot enable catalog {catalog}")
+        if rtc_instance:
+            for catalog in catalogs:
+                self.ctx.backend._use_catalog(str(catalog).upper())
+        else:
+            mc = self.ctx.system.SystemData.MaterialCatalogs
+            for catalog in catalogs:
+                if not mc.IsCatalogInUse(catalog):
+                    mc.AddCatalog(catalog)
+                if not mc.IsCatalogInUse(catalog):
+                    raise SaosError(ErrorCode.BAD_ARGS, f"OpticStudio cannot enable catalog {catalog}")
         # 坐标只取决于材料、坐标波长与环境，同一个实例里 candidates() 与 run() 复用
         key = (tuple(catalogs), str(folder), self.spectral_waves, self.partial)
         if key in self._databases:
@@ -214,14 +220,22 @@ class GlassExpert:
         # 已准入的色散路径在 rtc 材料层直接算（与 INDX 差 ≤ 1e-8，ADR-0015），不动镜头
         from saos.backend.rtc import catalog_indices
 
-        env = self.ctx.system.SystemData.Environment
-        computed, left = catalog_indices([g.name for g in source], catalogs, folder,
-                                         (float(env.Temperature), float(env.Pressure), bool(env.AdjustIndexToEnvironment)),
-                                         self._band_waves())
+        if rtc_instance:
+            e = self.ctx.backend.system_info()["environment"]
+            environment = (float(e["temperature"]), float(e["pressure"]), bool(e["adjust_index"]))
+        else:
+            env = self.ctx.system.SystemData.Environment
+            environment = (float(env.Temperature), float(env.Pressure), bool(env.AdjustIndexToEnvironment))
+        computed, left = catalog_indices([g.name for g in source], catalogs, folder, environment, self._band_waves(),
+                                         admitted_only=not rtc_instance)
         rest = []
         for g in source:
             if g.name not in computed:
-                rest.append(g)
+                if rtc_instance:
+                    # rtc 实例上没有 OpticStudio 可以补测 / no OpticStudio to measure the rest on the rtc instance
+                    rejected.append({"glass": g.name, "reason": left.get(g.name, "rtc cannot compute this glass")})
+                else:
+                    rest.append(g)
                 continue
             try:
                 n, v, partial = self._from_indices(computed[g.name])
@@ -243,7 +257,7 @@ class GlassExpert:
                             rejected.append({"glass": g.name, "reason": str(exc)})
             finally:
                 session.restore(base)
-        self.sources = {"rtc": len(source) - len(rest), "opticstudio": len(rest)}
+        self.sources = {"rtc": len(computed), "opticstudio": len(rest)}
         self._databases[key] = database, rejected, self.sources
         return database, rejected
 

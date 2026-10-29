@@ -105,6 +105,8 @@ def from_context(ctx, freeze_solves: bool = False) -> FastLens:
 
     if getattr(ctx, "in_check", False):
         raise SaosError(ErrorCode.BAD_ARGS, "checks measure on OpticStudio; rtc numbers are exploration only (ADR-0014)")
+    if ctx.backend.identity().get("backend") == "rtc":
+        raise SaosError(ErrorCode.BAD_ARGS, "this instance computes on rtc already; use ctx itself (ctx.trace, ctx.op, ctx.set) instead of ctx.fast")
     export = getattr(ctx.backend, "export_rtc", None)
     if export is None:
         raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(ctx.backend).__name__} cannot hand its lens to rtc")

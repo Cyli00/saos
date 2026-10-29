@@ -17,6 +17,8 @@ SURFACE_PARAMS = NUMERIC_PARAMS + TEXT_PARAMS
 # surface-type parameter columns (aspheric terms, coordinate-break decenters and tilts, …) by their Lens Data Par number
 PAR_RE = re.compile(r"^par([1-9]\d{0,2})$")
 MATERIAL_MODES = ("model", "substitute")
+# 不指定目录时玻璃替换用的目录：成都光明的在产牌号（2026-10-19 用户决定）/ the default catalog for glass substitution
+DEFAULT_SUBSTITUTE_CATALOG = "SAOS_CDGM_INPROD"
 
 
 def is_par(param: str) -> bool:

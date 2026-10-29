@@ -161,6 +161,8 @@ def _surface(k: int, s: dict[str, Any]):
             out.solve_radius = 1
         elif solve["type"] == "variable" and column == "conic":
             out.raw["VCON"] = "VCON"
+        elif solve["type"] == "variable" and column == "thickness":
+            out.raw["VDSZ"] = "VDSZ 0 0"
         elif solve["type"] == "variable" and column.startswith("par"):
             out.variable_params.add(int(column[3:]))
         elif solve["type"] == "marginal_ray_height" and float(solve.get("zone", 0.0)) == 0.0:
@@ -227,15 +229,53 @@ def auto_semi_diameters(system, lens, config: int, waves: int, trace) -> dict[in
 
 # ---- .zmx ----
 
+# dump 自己生成的文件头行；其余文件头行（偏振 POLS、膜层文件 COFN、玻璃替换模板 GSTD…）rtc 不建模，从读入的文件原样带过去
+# header lines dump writes itself; the others (POLS polarization, COFN coating files, GSTD, …) are not modelled by rtc and
+# are carried over verbatim from the file that was read
+GENERATED_HEADER = frozenset({"VERS", "MODE", "NAME", "UNIT", "ENPD", "OBNA", "ENVD", "GCAT", "RAIM", "FTYP", "XFLN", "YFLN",
+                              "FWGN", "VDXN", "VDYN", "VCXN", "VCYN", "VANN", "WAVM", "PWAV", "XFLD", "YFLD"})
+# 面块里 rtc 不建模、但 OpticStudio 存盘总会写的显示类行：原样带过去 / display lines OpticStudio always saves: carried over
+SURFACE_PASSTHROUGH = ("HIDE", "MIRR", "SLAB", "POPS", "FIMP", "SSID")
+# 面块里 rtc 建模并自己写出的行 / surface lines rtc models and writes itself
+SURFACE_MODELLED = frozenset({"VDSZ", "VCON", "MAZH", "CLAP", "FLAP"})
+
+
+def carried_lines(text: str) -> dict[str, list[str]]:
+    """读入的 .zmx 里 dump 不生成、要原样带过去的行：第一个 SURF 之前的文件头行，和公差行（TOL，在评价函数之后）。
+    Lines of a read .zmx that dump does not generate and carries over: header lines before the first SURF and TOL rows."""
+    header, tail = [], []
+    seen_surface = False
+    for line in text.lstrip("﻿").splitlines():
+        if not line.strip() or line[:1].isspace():
+            continue
+        key = line.split()[0].upper()
+        if key == "SURF":
+            seen_surface = True
+        elif not seen_surface and key not in GENERATED_HEADER:
+            header.append(line.strip())
+        elif seen_surface and key == "TOL":
+            tail.append(line.strip())
+    return {"header": header, "tail": tail}
+
+
+def unknown_surface_lines(lens) -> list[str]:
+    """面块里 rtc 没见过、也不建模的行（拾取等求解、膜层…）：照算或丢掉都会让存盘的镜头与 rtc 算的不同，交给调用方拒绝。
+    Surface lines rtc has neither seen nor models (pickups and other solves, coatings, …); the caller refuses them."""
+    known = SURFACE_MODELLED | set(SURFACE_PASSTHROUGH)
+    return [f"surface {s.index}: {s.raw[key]}" for s in lens.surfaces for key in s.raw if key not in known]
+
+
 def _num(v: float) -> str:
     if math.isinf(v):
         return "INFINITY" if v > 0 else "-INFINITY"
     return repr(float(v))
 
 
-def dump(lens, title: str | None = None) -> str:
-    """rtc 镜头 → .zmx 文本（OpticStudio 24.1 存盘的行格式）。只写 rtc 镜头模型里的量，其余行由 OpticStudio 打开时取默认值。
-    An rtc lens → .zmx text in the line format OpticStudio 24.1 saves; only what the rtc lens model holds is written."""
+def dump(lens, title: str | None = None, carried: dict[str, list[str]] | None = None) -> str:
+    """rtc 镜头 → .zmx 文本（OpticStudio 24.1 存盘的行格式）。只写 rtc 镜头模型里的量和 carried（carried_lines 的结果）里原样
+    带过去的行，其余行由 OpticStudio 打开时取默认值。
+    An rtc lens → .zmx text in the line format OpticStudio 24.1 saves: what the rtc lens model holds plus the lines in
+    carried (from carried_lines); OpticStudio takes defaults for the rest."""
     from rtc.material.types import Catalog, Model
 
     lines = ["VERS 231205 0 20120530 20120530", "MODE SEQ", f"NAME {title if title is not None else lens.name}", "UNIT MM X W X CM MR CPMM"]
@@ -259,6 +299,7 @@ def dump(lens, title: str | None = None) -> str:
     for k, (um, weight) in enumerate(lens.active_wavelengths, start=1):
         lines.append(f"WAVM {k} {_num(um)} {_num(weight)}")
     lines.append(f"PWAV {int(lens.primary_wave)}")
+    lines.extend((carried or {}).get("header", []))
     for s in sorted(lens.surfaces, key=lambda s: s.index):
         lines.append(f"SURF {s.index}")
         if s.is_stop:
@@ -274,6 +315,9 @@ def dump(lens, title: str | None = None) -> str:
             if n in s.variable_params:
                 lines.append(f"  VPAR {n}")
         lines.append(f"  DISZ {_num(s.thickness)}")
+        if "VDSZ" in s.raw:
+            # 厚度变量：OpticStudio 存盘写成单独的 VDSZ 行（rtc fixtures/rounds 里所见）/ a thickness variable, saved as its own VDSZ line
+            lines.append("  VDSZ 0 0")
         if "MAZH" in s.raw:
             lines.append(f"  {s.raw['MAZH']}")
         spec = s.material
@@ -293,15 +337,27 @@ def dump(lens, title: str | None = None) -> str:
             lines.append(f"  FLAP {_num(s.ap_min)} {_num(s.ap_max)} 0")
         elif s.aperture_code:
             raise unsupported(f"surface {s.index} aperture code {s.aperture_code} cannot be written by rtc")
+        lines.extend(f"  {s.raw[key]}" for key in SURFACE_PASSTHROUGH if key in s.raw)
+    # 评价函数行在面之后、多重结构之前（OpticStudio 存盘的顺序；放在 MNUM 之后会被读成多重结构行）
+    # merit rows follow the surfaces and precede the multi-configuration block, as OpticStudio saves them
+    lines.extend(row.raw for row in lens.mfe)
+    # 公差行在评价函数之后、MNUM 之前（同 OpticStudio 存盘的顺序）/ tolerance rows sit between the merit rows and MNUM
+    lines.extend((carried or {}).get("tail", []))
     if lens.mce:
         lines.append(f"MNUM {lens.num_configs} {lens.current_config}")
         for row in lens.mce:
-            if row.op != "THIC" or row.pickup is not None:
+            if row.op not in ("THIC", "MOFF") or (row.op == "THIC" and row.pickup is not None):
                 raise unsupported(f"multi-configuration row {row.op} cannot be written by rtc")
-            lines.append(f"THIC {row.surface:3d} {row.config:3d} {row.value:.12E} 0 0 0 1 1 1.000000000000E+00 0.000000000000E+00 0 \"\" 0")
+            if row.raw:
+                # rtc 不改多重结构的格，读入的行原样写回 / rtc never changes configuration cells: rows read are written back as they were
+                lines.append(row.raw)
+            elif row.op == "THIC":
+                lines.append(f"THIC {row.surface:3d} {row.config:3d} {row.value:.12E} 0 0 0 1 1 1.000000000000E+00 0.000000000000E+00 0 \"\" 0")
+            else:
+                raise unsupported("a MOFF row without its file line cannot be written by rtc")
     return "\r\n".join(lines) + "\r\n"
 
 
-def write(lens, path, title: str | None = None) -> None:
+def write(lens, path, title: str | None = None, carried: dict[str, list[str]] | None = None) -> None:
     """按 OpticStudio 的存盘编码（UTF-16LE + BOM）写出。"""
-    path.write_bytes(BOM + dump(lens, title).encode("utf-16-le"))
+    path.write_bytes(BOM + dump(lens, title, carried).encode("utf-16-le"))
