@@ -114,6 +114,22 @@ def surface(ctx, ref: int | str, _names: dict[str, int] | None = None) -> int:
     return names[ref]
 
 
+def info(ctx) -> dict[str, Any]:
+    """系统设置（saos lens info 结果里的 system）：孔径、视场、波长、在用的玻璃目录等。/ The system part of saos lens info."""
+    return ctx.backend.system_info()
+
+
+def surface_params(ctx, ref: int | str) -> list[dict[str, Any]]:
+    """该面型的参数列：列号、列标题、按单元格类型读出的值、是否只读，与 objects() 的 params 同形。数值列用 ctx.set({"<面>.par<N>": 值}) 写。
+    The surface type's parameter columns with number, header, value by cell type and read-only flag, shaped like objects()'s params."""
+    from saos.backend.zos import cell_value, param_cells
+
+    sysm = _need_system(ctx, "surface_params")
+    row = sysm.LDE.GetSurfaceAt(surface(ctx, ref))
+    return [{"par": n, "name": str(c.Header), "value": cell_value(c), "read_only": bool(c.IsReadOnly)}
+            for n, c in param_cells(zosapi(ctx), row).items()]
+
+
 def parse_key(key: str) -> tuple[str, Any, str]:
     """("system", 名, 序号) 或 ("surface", 面, 参数)。/ ("system", name, n) or ("surface", ref, param)."""
     key = str(key).strip()
@@ -995,6 +1011,12 @@ class KitMethods:
 
     def surface(self, ref):
         return surface(self, ref)
+
+    def info(self):
+        return info(self)
+
+    def surface_params(self, ref):
+        return surface_params(self, ref)
 
     def get(self, key):
         return get(self, key)

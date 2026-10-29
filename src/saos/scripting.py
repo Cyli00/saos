@@ -49,6 +49,19 @@ class ScriptContext(KitMethods):
         # 判定用的上下文不给 rtc 副本（ADR-0014）/ check contexts get no rtc copy
         self.in_check = False
 
+    def __getattr__(self, name: str) -> Any:
+        # 只在正常查找失败时调用。脚本常按 ZOS-API 的习惯猜 ctx.zos、ctx.lde 一类名字（2026-10 的任务日志里 6 次），报错时指明原生入口
+        # called only when normal lookup fails; scripts guessed ZOS-API style names such as ctx.zos or ctx.lde, so point to the native entries
+        if name.startswith("_"):
+            raise AttributeError(name)
+        if hasattr(type(self), name):
+            # 属性（property）内部抛出的 AttributeError 也会落到这里；重新求值，让原错误照常抛出
+            # an AttributeError raised inside a property also lands here; evaluate it again so the original error surfaces
+            return object.__getattribute__(self, name)
+        raise AttributeError(f"ctx has no attribute {name!r}. The ctx methods are listed in .agents/skills/saos/references/scripting.md; "
+                             "native OpticStudio objects are ctx.system (the IOpticalSystem: LDE, MFE, SystemData) and ctx.zosapi (the ZOSAPI "
+                             "namespace), for what the ctx methods do not cover")
+
     def child(self, args: dict[str, Any], cache: dict[Any, Any] | None = None) -> ScriptContext:
         """给判定脚本用的上下文：同一个任务和后台进程，默认共享 cache。/ A context for a check script; shares the cache by default."""
         ctx = ScriptContext(self._daemon, self.job, args, self.cache if cache is None else cache, self.script)

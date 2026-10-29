@@ -191,3 +191,16 @@ def test_experts_refuse_non_sequential_and_mixed_lenses(session, name):
         with pytest.raises(SaosError) as err:
             run()
         assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED
+
+
+def test_surface_params_list_the_type_columns_that_ctx_get_reads(session):
+    def asphere(p):
+        p["surfaces"][0].update(type="EvenAspheric", params={"par2": 1.2e-5})
+
+    ctx = build(session, "sequential", asphere)
+    rows = ctx.surface_params(1)
+    by_par = {r["par"]: r for r in rows}
+    assert by_par[2]["name"] == "4th Order Term" and by_par[2]["value"] == pytest.approx(1.2e-5, rel=1e-15)
+    for r in rows:
+        if isinstance(r["value"], float):
+            assert ctx.get(f"1.par{r['par']}") == r["value"]

@@ -133,3 +133,16 @@ def test_constraint_builders_wire_their_references():
                 lambda: rows.chief_ray_angle(5, 1, [], maximum=30), lambda: rows.total_track(minimum=5, maximum=1)):
         with pytest.raises(ValueError):
             bad()
+
+
+def test_unknown_ctx_names_point_to_the_native_entries(daemon, loaded):
+    reply = run(daemon, loaded, "def run(ctx):\n    return ctx.zos\n")
+    assert reply["error"]["code"] == "SCRIPT_ERROR"
+    assert "ctx.system" in reply["error"]["message"] and "ctx.zosapi" in reply["error"]["message"]
+    # 定义过的属性照常可用 / defined attributes still work
+    assert run(daemon, loaded, "def run(ctx):\n    return ctx.dirty\n")["result"]["result"] is False
+
+
+def test_ctx_info_is_the_system_part_of_lens_info(daemon, loaded):
+    reply = run(daemon, loaded, "def run(ctx):\n    return ctx.info()\n")
+    assert reply["result"]["result"] == daemon.handle({"op": "lens.info", "args": {"job": loaded.id}})["result"]["system"]
