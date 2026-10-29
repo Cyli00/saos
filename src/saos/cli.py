@@ -50,7 +50,7 @@ def _key_values(items: list[str], flag: str) -> dict[str, Any]:
 
 def cmd_daemon(args: argparse.Namespace) -> Any:
     if args.action == "start":
-        return client.start(args.mode, timeout=args.start_timeout)
+        return client.start(args.mode, timeout=args.start_timeout, backend=args.backend)
     if args.action == "stop":
         if args.all:
             return client.stop_all(discard=args.discard, force=args.force)
@@ -335,6 +335,9 @@ def build_parser() -> argparse.ArgumentParser:
     dsub = daemon.add_subparsers(dest="action", required=True, parser_class=_Parser)
     start = dsub.add_parser("start", help="start a persistent OpticStudio session; standalone by default, extension for desktop debugging")
     start.add_argument("--mode", choices=("standalone", "extension"), default="standalone")
+    start.add_argument("--backend", choices=("zos", "rtc"), default=None,
+                       help="zos (default, or SAOS_BACKEND) or rtc: build, trace and evaluate rtc's operands without OpticStudio "
+                            "during the interview; descriptions, checks, optimisation, scans and rounds stay on OpticStudio")
     start.add_argument("--start-timeout", type=float, default=client.DEFAULT_START_TIMEOUT_S)
     stop = dsub.add_parser("stop", help="stop the daemon")
     stop.add_argument("--discard", action="store_true", help="discard unsaved changes")
@@ -348,6 +351,7 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument("--no-env", action="store_true", help="only this instance's daemon")
     run = dsub.add_parser("run", help="run the daemon in the foreground (used by start; also for debugging)")
     run.add_argument("--mode", choices=("standalone", "extension"), default="standalone")
+    run.add_argument("--backend", choices=("zos", "rtc"), default=None, help=argparse.SUPPRESS)
     run.add_argument("--token", default="", help=argparse.SUPPRESS)
     daemon.set_defaults(func=cmd_daemon)
 
@@ -616,6 +620,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.group == "daemon" and args.action == "run":
         from saos.daemon import serve
 
+        if args.backend:
+            # 后台进程和它的 worker 都按这个后端启动 / the daemon and its workers start on this backend
+            os.environ["SAOS_BACKEND"] = args.backend
         return serve(args.mode, args.token)
     if args.group == "ui" and args.action == "serve":
         from saos.ui.server import serve as serve_ui

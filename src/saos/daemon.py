@@ -52,6 +52,13 @@ SEARCH_FILES = {"hammer": "{stem}_*_HAMMER.zmx", "global": "GLOPT_*.zmx"}
 ROUND_REMINDER = {"opt": 2, "exec": 15}
 RUN_KINDS = {"opt.local": "opt", "opt.hammer": "opt", "opt.global": "opt", "script.exec": "exec", "scan.run": "scan"}
 COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
+# rtc 实例（SAOS_BACKEND=rtc）只做需求阶段的可行性核算：建模说明与确认、分析、评价函数与优化、判定、扫描、轮次都要
+# OpticStudio 的实测或它的数据，一律拒绝
+# the rtc instance only checks need-stage feasibility: model descriptions and approval, analyses, merit functions and
+# optimisation, checks, scans and rounds need OpticStudio's measurements or data, so they are refused
+OPTICSTUDIO_ONLY = frozenset({"lens.describe", "lens.approve", "lens.analysis", "lens.view", "lens.screenshot", "lens.capture",
+                              "opt.vary", "opt.merit", "opt.local", "opt.hammer", "opt.global", "demand.check", "scan.run",
+                              "round.record"})
 COMPARED_NUMBER_KEYS = ("radius", "thickness", "conic", "semi_diameter")
 
 
@@ -139,6 +146,7 @@ class Daemon:
         # 分离运行的扫描线程，键为任务内的 scans/NNN / threads of detached scans, keyed by scans/NNN in the job
         self.background: dict[str, Any] = {}
         self.view_seq = 0
+        self.rtc_instance = backend.identity().get("backend") == "rtc"
         self.handlers: dict[str, Callable[[dict[str, Any]], Any]] = {
             "ping": self.op_ping,
             "shutdown": self.op_shutdown,
@@ -183,6 +191,11 @@ class Daemon:
             handler = self.handlers.get(op)  # type: ignore[arg-type]
             if handler is None:
                 raise SaosError(ErrorCode.UNKNOWN_OP, f"unknown operation {op!r}", {"available": sorted(self.handlers)})
+            if op in OPTICSTUDIO_ONLY and self.rtc_instance:
+                raise SaosError(ErrorCode.BACKEND_UNSUPPORTED,
+                                f"{op} needs OpticStudio; this daemon is an rtc instance for need-stage feasibility. Run saos daemon stop, "
+                                "then saos daemon start (OpticStudio) on the same SAOS_INSTANCE, and load the saved lens there",
+                                {"backend": "rtc"})
             if op not in ("ping", "shutdown") and not self.backend.healthy():
                 raise self._connection_lost({"detected": "connection check before the operation"})
             if op not in ("ping", "shutdown"):
@@ -312,10 +325,12 @@ class Daemon:
             log.exception(_t("导出当前视图失败", "exporting the live view failed"))
             data = {"ok": False, "error": f"{type(exc).__name__}: {getattr(exc, 'message', exc)}"[:500]}
         described_at = time.perf_counter()
-        try:
-            data["model"] = self.backend.describe_model(None)
-        except Exception as exc:
-            data["model_error"] = f"{type(exc).__name__}: {exc}"[:500]
+        # rtc 实例没有建模说明的数据（结构指纹由 OpticStudio 描述）/ an rtc instance has no model description data
+        if not self.rtc_instance:
+            try:
+                data["model"] = self.backend.describe_model(None)
+            except Exception as exc:
+                data["model_error"] = f"{type(exc).__name__}: {exc}"[:500]
         data["timing"] = {"viz_s": round(described_at - started, 6),
                           "model_s": round(time.perf_counter() - described_at, 6)}
         self.view_seq += 1

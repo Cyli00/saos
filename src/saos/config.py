@@ -86,6 +86,13 @@ def backend_name() -> str:
     return os.environ.get("SAOS_BACKEND", "zos").strip().lower()
 
 
+def glass_dir() -> Path | None:
+    """rtc 实例读 AGF 玻璃目录的文件夹：SAOS_GLASSCAT，没设时为 None（rtc 自己的默认：RTC_GLASSCAT 或 Documents/Zemax/Glasscat）。
+    The folder the rtc instance reads AGF catalogs from: SAOS_GLASSCAT, else None (rtc's own default)."""
+    value = os.environ.get("SAOS_GLASSCAT", "").strip()
+    return Path(value) if value else None
+
+
 COMPUTE_PRECISION = "float64"
 
 

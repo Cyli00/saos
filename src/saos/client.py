@@ -181,9 +181,9 @@ def _kill_tree(pid: int) -> None:
     subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, check=False)
 
 
-def _spawn(mode: str, token: str) -> subprocess.Popen:
+def _spawn(mode: str, token: str, backend: str | None = None) -> subprocess.Popen:
     config.daemon_dir().mkdir(parents=True, exist_ok=True)
-    cmd = [sys.executable, "-m", "saos", "daemon", "run", "--mode", mode, "--token", token]
+    cmd = [sys.executable, "-m", "saos", "daemon", "run", "--mode", mode, "--token", token, *(["--backend", backend] if backend else [])]
     log_fh = config.daemon_log_file().open("ab")
     # DETACHED_PROCESS 只作用于 venv 启动器，其解释器子进程仍可能创建可见控制台。
     # CREATE_NO_WINDOW 让整条启动链继承无窗口控制台，不能与 DETACHED_PROCESS 混用。
@@ -420,7 +420,7 @@ def environment() -> dict[str, Any]:
     }
 
 
-def start(mode: str, timeout: float = DEFAULT_START_TIMEOUT_S) -> dict[str, Any]:
+def start(mode: str, timeout: float = DEFAULT_START_TIMEOUT_S, backend: str | None = None) -> dict[str, Any]:
     current = status()
     if current.get("running"):
         raise SaosError(ErrorCode.DAEMON_ALREADY_RUNNING, "the daemon is already running", current)
@@ -430,7 +430,7 @@ def start(mode: str, timeout: float = DEFAULT_START_TIMEOUT_S) -> dict[str, Any]
     started = time.monotonic()
     # venv 的 python.exe 是启动器，真正的解释器是它的子进程，PID 对不上，所以用一次性令牌识别
     token = secrets.token_hex(8)
-    proc = _spawn(mode, token)
+    proc = _spawn(mode, token, backend)
     while time.monotonic() - started < timeout:
         if proc.poll() is not None:
             if error_file.is_file():

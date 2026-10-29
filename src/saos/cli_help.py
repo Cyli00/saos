@@ -51,7 +51,9 @@ Environment
     updates (slower); long operations normally refresh once at completion.
   SAOS_UI_PID: select an OpticStudio window for extension mode when several exist.
   SAOS_POOL_IDLE_S: worker idle lifetime, default 600 seconds.
-  SAOS_OPTICSTUDIO_DIR: OpticStudio installation; SAOS_BACKEND=fake for tool tests;
+  SAOS_OPTICSTUDIO_DIR: OpticStudio installation; SAOS_BACKEND=rtc for a need-stage rtc instance
+    (same as daemon start --backend rtc), fake for tool tests; SAOS_GLASSCAT: AGF folder for rtc,
+    default Documents/Zemax/Glasscat;
     SAOS_LIBRARY: microscope starting-design library, default <repo>/library/microscope.
 
 Help
@@ -96,7 +98,7 @@ always opens it. Gate windows restore/raise without taking keyboard focus.
 }
 
 COMMANDS = {
-    "daemon start": ('Start the daemon and wait for an OpticStudio connection (2024 R1 Premium).', 'standalone creates a private instance. extension uses UI Automation to open/reuse\n  Interactive Extension, disable Auto Close on Disconnect and read its instance.\n  It refuses a window connected elsewhere; use SAOS_UI_PID for multiple windows.\n  Startup errors include details.log_tail. Background logs: daemon/daemon.log;\n  startup creates no console window. Typical cold instance startup: 6-8 s.', 'DAEMON_ALREADY_RUNNING, DAEMON_START_FAILED, DAEMON_TIMEOUT, UI_BLOCKED, ZOS_LICENSE, ZOS_VERSION_MISMATCH, ZOS_ERROR'),
+    "daemon start": ('Start the daemon and wait for an OpticStudio connection (2024 R1 Premium).', 'standalone creates a private instance. extension uses UI Automation to open/reuse\n  Interactive Extension, disable Auto Close on Disconnect and read its instance.\n  It refuses a window connected elsewhere; use SAOS_UI_PID for multiple windows.\n  Startup errors include details.log_tail. Background logs: daemon/daemon.log;\n  startup creates no console window. Typical cold instance startup: 6-8 s.\n  --backend rtc starts an rtc instance for need-stage feasibility instead: no\n  OpticStudio or licence; descriptions, analyses, optimisation, checks, scans and\n  rounds return BACKEND_UNSUPPORTED.', 'DAEMON_ALREADY_RUNNING, DAEMON_START_FAILED, DAEMON_TIMEOUT, UI_BLOCKED, ZOS_LICENSE, ZOS_VERSION_MISMATCH, ZOS_ERROR'),
     "daemon stop": (
         "Stop this daemon; wait for it and its private OpticStudio process to exit.",
         "Unsaved agent edits require --discard. A detached scan must finish or be\n"

@@ -295,6 +295,10 @@ def execute(daemon: Daemon, job: jobs.Job, name: str, source: str, args: dict[st
             raise SaosError(ErrorCode.BAD_ARGS, f"run(ctx) must return JSON-serializable data: {exc}") from exc
         record.update(ok=True, result=result)
         out = {"script": rel, "result": result}
+        provenance = getattr(daemon.backend, "provenance", None)
+        if callable(provenance) and getattr(daemon.backend, "standalone", False):
+            # rtc 实例的数值标明来源与未对账的路径 / rtc-instance numbers carry their source and unreconciled paths
+            record["computed_by"] = out["computed_by"] = provenance()
         if hints:
             out["hints"] = hints
         if ctx.captured:
