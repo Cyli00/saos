@@ -1,5 +1,5 @@
 ---
-status: accepted; ADR-0014 adds the rtc exploration copy
+status: accepted; ADR-0014 adds the rtc exploration copy; ADR-0016 lets need-stage feasibility use admitted rtc values
 ---
 
 # 计算统一在 ZOS standalone，光学数值只由计算后端算

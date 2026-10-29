@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: accepted; ADR-0016 lets need-stage feasibility use admitted rtc values
 ---
 
 # 脚本可用 rtc 副本做高频探索，判定与交付仍在 OpticStudio
