@@ -227,9 +227,9 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
     scripts = demand.prepare_scripts(ctx.job.root, h)
     method_sha = demand.method_digest(scripts)
     path = ctx.path(ledger.LEDGER_FILE)
-    all_history = ledger.load(path, h)
-    number = len(all_history)
-    history = all_history
+    # 编号按存下的每一行（含复测记录），比较和判定按 effective 之后的轮次 / numbers count every stored row, decisions the effective rounds
+    number = len(ledger.load(path, h, raw=True))
+    history = ledger.load(path, h)
     ruled = ledger.ruled_out_for(ctx.job.root, sha, h)
     best = None
     if not history:
@@ -270,6 +270,9 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
             merit = float(ctx.backend.merit_value())
         except Exception:  # noqa: BLE001 - 没有评价函数或后端不支持时只是不记录 / no merit function: just not recorded
             merit = None
+        if merit is not None and not math.isfinite(merit):
+            # rtc 的评价函数有行算不出时为 inf / rtc's merit is inf when a row cannot be computed
+            merit = None
     evaluation = demand.evaluate(ctx, h, scripts)
     # 判定不能改动镜头：否则归档的镜头和测得的数值对不上，本轮不记录
     # checks must not change the lens; otherwise the archived lens would not be the one measured, so no round is recorded
@@ -295,9 +298,15 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
         if rebase["equivalent"] and status != "continue" and best.get("method_sha"):
             raise SaosError(ErrorCode.BAD_ARGS, f"rounds already stopped ({status}) and the new checks give the same numbers; review the demand with the user to continue",
                             {"status": status, "evaluation": rebase["evaluation"]})
+    measured_by = evaluation.get("environment") or {}
     record = {
         "round": number,
+        # stage 只标明不是旧的双后端任务；算这一轮的后端记在 backend（rtc 轮次交付前要在 OpticStudio 上复测，ADR-0017）
+        # stage only marks a job that is not a legacy hybrid one; backend says who computed the round (rtc rounds are
+        # re-measured on OpticStudio before delivery, ADR-0017)
         "stage": "zos",
+        "backend": measured_by.get("backend", "zos"),
+        **({"provenance": measured_by["provenance"]} if measured_by.get("provenance") else {}),
         # tier 留第一个层级，兼容旧记录；tiers 是本轮用到的全部层级 / tier keeps the first for older readers; tiers lists them all
         "tier": tiers[0],
         "tiers": tiers,
@@ -357,6 +366,92 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
     return out
 
 
+CONFIRM_PURPOSE = "confirm"
+
+
+def confirm_round(ctx, of: int | None = None, viz: bool = True) -> dict[str, Any]:
+    """在 OpticStudio 上复测一个 rtc 轮次的归档镜头（ADR-0017），记一条 tier 为 confirm 的记录；读 ledger 时它的数值换进那一轮。
+    不给 of 时复测报告要交付的那一轮。判定结论（达成、硬条件、可交付）与 rtc 不同时 agrees 为 False，回到设计阶段。
+    结束时重新加载复测前的镜头（有的话）。
+    Re-measure the archived lens of an rtc round on OpticStudio and record a confirmation; reading the ledger puts its
+    numbers into that round. Without of, the round a report would deliver. agrees is False when the verdict (achieved,
+    hard limits, deliverable) differs from rtc's, which sends the job back to design. The lens loaded before is reloaded."""
+    if ctx.backend.identity().get("backend") == "rtc":
+        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, "round --confirm re-measures on OpticStudio; run it on an OpticStudio instance")
+    h, sha, confirmation = preflight(ctx.job.root)
+    scripts = demand.prepare_scripts(ctx.job.root, h)
+    method_sha = demand.method_digest(scripts)
+    path = ctx.path(ledger.LEDGER_FILE)
+    number = len(ledger.load(path, h, raw=True))
+    rounds = ledger.load(path, h)
+    if not rounds:
+        raise SaosError(ErrorCode.BAD_ARGS, f"job {ctx.job.id} has no recorded rounds")
+    if of is None:
+        target = ledger.deliver_round(ledger.current_window(rounds))
+    else:
+        target = next((r for r in rounds if int(r["round"]) == int(of)), None)
+        if target is None:
+            raise SaosError(ErrorCode.BAD_ARGS, f"round {of} is not in the ledger (confirmations are no rounds of their own)")
+    if target.get("backend") != "rtc":
+        raise SaosError(ErrorCode.BAD_ARGS, f"round {target['round']} was measured on OpticStudio already; nothing to confirm",
+                        {"round": target["round"]})
+    if ledger.version(target) != (sha, method_sha):
+        raise SaosError(ErrorCode.SPEC_CHANGED, f"round {target['round']} was judged under another demand or check version; "
+                        "record a new round on the rtc instance first", {"round": target["round"]})
+    current = ctx.lens
+    try:
+        ctx.job.write_progress(stage=f"confirm r{int(target['round']):03d}")
+        ctx.backend.load(ctx.path(f"lenses/{target['file']}"))
+        desc, lens_sha = lens_state(ctx)
+        approved = model_gate.require_approved(ctx.job, desc)
+        ev = demand.evaluate(ctx, h, scripts, lens={"file": target["file"], "round": target["round"], "purpose": CONFIRM_PURPOSE})
+        desc_after, _ = lens_state(ctx)
+        clash = parts_clash(ctx)
+        try:
+            merit = float(ctx.backend.merit_value())
+        except Exception:  # noqa: BLE001 - 没有评价函数时只是不记录 / no merit function: just not recorded
+            merit = None
+        view = export_viz(ctx, ev["evidence_dir"]) if viz else None
+    finally:
+        if current is not None:
+            ctx.backend.load(current)
+    if lens_changes(desc, desc_after):
+        raise SaosError(ErrorCode.LENS_MODIFIED_BY_CHECK, f"a check changed the lens of round {target['round']} while re-measuring it; "
+                        "make the checks read-only", {"evaluation": ev["evidence_dir"]})
+    values = {i["id"]: i["value"] for i in ev["items"]}
+    achieved = ev["achieved"] and clash is None
+    model_glass = [i for i in model_gate.model_glass_surfaces(desc) if i not in approved["environment"]]
+    measured = {"achieved": achieved, "hard_failing": ev["hard_failing"], "measurement_errors": ev["measurement_errors"],
+                "model_glass": model_glass, **({"parts_clash": clash} if clash else {})}
+    verdict = {"achieved": achieved, "deliverable": ledger.deliverable(measured)}
+    before = {"achieved": bool(target.get("achieved")), "deliverable": ledger.deliverable(target)}
+    agrees = verdict == before and sorted(ev["hard_failing"]) == sorted(target.get("hard_failing") or [])
+    old = target.get("values") or {}
+    diffs = {k: {"rtc": old.get(k), "zos": values.get(k)} for k in sorted(set(old) | set(values)) if not _same(old.get(k), values.get(k))}
+    record = {
+        "round": number, "stage": "zos", "backend": (ev.get("environment") or {}).get("backend", "zos"),
+        "tier": ledger.CONFIRM, "tiers": [ledger.CONFIRM], "confirm_of": int(target["round"]),
+        "note": f"r{int(target['round']):03d} re-measured on OpticStudio", "file": target["file"], "lens_sha": lens_sha,
+        "agrees": agrees, "verdict": {"rtc": before, "zos": verdict}, "diffs": diffs,
+        "evaluation": ev["evidence_file"], "shortfall": ev["shortfall"], **measured,
+        **({"pursuing": True} if ev.get("pursuing") else {}),
+        "values": values, "failing": {i["id"]: i["shortfall"] for i in ev["items"] if i.get("shortfall", 0) > 0},
+        "merit": merit if merit is not None and math.isfinite(merit) else None,
+        "demand_sha": sha, "method_sha": method_sha, "confirmation": confirmation, "model": approved["model"],
+        "materials": model_gate.materials(desc), "coatings": model_gate.coatings(desc), "environment": approved["environment"],
+        "time": jobs.now_iso(),
+    }
+    ledger.append(path, record)
+    decision = ledger.decide(ledger.load(path, h), h["stop"], ledger.stop_for(ctx.job.root, sha, h), ledger.ruled_out_for(ctx.job.root, sha, h))
+    ctx.job.update_state(round=number, round_status=decision["status"])
+    out = {"record": record, "decision": decision, "evaluation": ev, "agrees": agrees,
+           "next": "deliver: saos report" if agrees else
+                   "the OpticStudio verdict differs from rtc's; go back to the design stage on the rtc instance (see diffs) and record new rounds"}
+    if view is not None:
+        out["viz"] = view
+    return out
+
+
 # 判定代码改了以后，重测的数值与原记录在这个相对容差内一致，就算口径没变 / within this the new checks measure the same thing
 EQUAL_RTOL = 1e-9
 
@@ -400,5 +495,6 @@ def _rebase(ctx, h: dict[str, Any], scripts: dict[str, Any], best: dict[str, Any
         "measurement_errors": ev["measurement_errors"], "hard_failing": ev["hard_failing"], "values": values,
         "failing": {i["id"]: i["shortfall"] for i in ev["items"] if i.get("shortfall", 0) > 0},
         "merit": best.get("merit"), "demand_sha": sha, "method_sha": method_sha, "confirmation": confirmation,
+        "backend": (ev.get("environment") or {}).get("backend", "zos"),
         **{k: best.get(k) for k in ("model", "materials", "coatings", "model_glass", "environment", "stage")}, "time": jobs.now_iso(),
     }

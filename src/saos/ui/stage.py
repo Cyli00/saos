@@ -121,7 +121,10 @@ def rounds_of(job: jobs.Job, metrics: list[str] | None = None) -> list[dict[str,
         folder = evaluation.rsplit("/", 1)[0] if evaluation else ""
         out.append({"round": r["round"], "tiers": ledger.tiers_of(r), "note": r.get("note", ""), "shortfall": finite(r["shortfall"]),
                     "achieved": bool(r.get("achieved")), "deliverable": ledger.deliverable(r), "time": r.get("time"),
-                    "demand_sha": ledger.version(r)[0], "viz": bool(folder) and (job.root / folder / "viz.json").is_file()})
+                    "demand_sha": ledger.version(r)[0], "viz": bool(folder) and (job.root / folder / "viz.json").is_file(),
+                    # 谁算的这一轮；rtc 轮次复测后数值换成 OpticStudio 的（ADR-0017）/ who computed it; confirmed rtc rounds show OpticStudio's numbers
+                    "backend": r.get("backend", "zos"),
+                    **({"confirmed_by": r["confirmed_by"], "agrees": bool(r.get("agrees"))} if r.get("confirmed_by") is not None else {})})
         if metrics:
             values = r.get("values") or {}
             out[-1]["values"] = {k: finite(values.get(k)) for k in metrics}
@@ -281,11 +284,19 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
                 out["decision"] = {k: finite(v) if isinstance(v, float) else v for k, v in decision.items() if k != "stopped"}
             detail["design"] = {"rounds": len(in_version), "last": out["rounds"][-1] if in_version else None,
                                 "rtc_unclosed": bool(job_state.get("rtc_unclosed"))}
+            # 最近一次复测与 rtc 结论不同、之后还没有新轮次：回到设计 / the latest confirmation disagreed and no round followed
+            confirmed = [r for r in in_version if r.get("confirmed_by") is not None]
+            if confirmed and in_version[-1] is confirmed[-1] and not confirmed[-1].get("agrees"):
+                detail["design"]["confirm_failed"] = confirmed[-1]["round"]
             if decision is not None and decision["status"] in FINAL:
                 status["design"] = "done"
                 status["deliver"] = "done" if _report_current(root) else "active"
                 current = "deliver"
                 detail["deliver"] = decision["status"]
+                shown = ledger.deliver_round(ledger.current_window(rows))
+                if not ledger.confirmed(shown):
+                    # rtc 轮次待在 OpticStudio 上复测 / an rtc round awaits its OpticStudio re-measurement
+                    out["confirm_pending"] = shown["round"]
             else:
                 status["design"] = "active"
                 current = "design"

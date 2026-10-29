@@ -35,6 +35,9 @@ TEXT: dict[str, tuple[str, str]] = {
                         "The user decided to stop for the reason below; the demand is not fully met. The table lists the unmet items and their gaps."),
     "tier.baseline": ("初始", "Start"),
     "tier.rebase": ("新判定重测", "Re-measured with new checks"),
+    "tier.confirm": ("OpticStudio 复测", "Re-measured on OpticStudio"),
+    "round.rtc": ("rtc 计算，未复测", "computed on rtc, not re-measured"),
+    "round.rtc_confirmed": ("rtc 计算，数值为 OpticStudio 复测", "computed on rtc, numbers re-measured on OpticStudio"),
     "tier.verify": ("OpticStudio 首轮复测", "Initial OpticStudio measurement"),
     "tier.local": ("局部优化", "Local optimisation"),
     "tier.variables": ("放开变量", "More variables"),
@@ -168,7 +171,10 @@ class Tr:
         return self(f"tier.{tier}") if f"tier.{tier}" in TEXT else str(tier)
 
     def tiers(self, record: dict[str, Any]) -> str:
-        return self("list_sep").join(self.tier(x) for x in ledger.tiers_of(record))
+        text = self("list_sep").join(self.tier(x) for x in ledger.tiers_of(record))
+        if record.get("backend") == "rtc":
+            text += f" ({self('round.rtc_confirmed' if ledger.confirmed(record) else 'round.rtc')})"
+        return text
 
 
 CSS = """
@@ -322,19 +328,13 @@ def build(job: jobs.Job) -> dict[str, Any]:
         raise SaosError(ErrorCode.SPEC_CHANGED, "no round matches the current demand and check scripts; record a new round before reporting")
     decision = ledger.decide(rounds, d["stop"], ledger.stop_for(job.root, current[0], stored), ledger.ruled_out_for(job.root, current[0], stored))
     rounds = ledger.current_window(rounds)
-    final = rounds[-1]
     # 只交付不含模型玻璃、满足硬条件的轮次；都不满足时取最好的一轮并标明不可交付
     # only rounds without a model glass that keep the hard conditions are deliverable; otherwise show the best one marked as not deliverable
-    candidates = [r for r in rounds if ledger.deliverable(r)] or rounds
-    best = min(candidates, key=lambda r: (r["shortfall"], r["round"]))
-    # 达成的轮次里取 G 最小的（有越小/越大越好的目标时 G 在达标后还会变小）；相同取最新的，它用的是当前的判定
-    # among achieved rounds the smallest G (it keeps shrinking after the pass lines with objectives to pursue); the latest on a
-    # tie, judged with the current checks
-    achieved = [r for r in rounds if r.get("achieved") and ledger.deliverable(r)]
-    deliver = min(achieved, key=lambda r: (r["shortfall"], -r["round"])) if achieved else best
-    if not math.isfinite(deliver["shortfall"]):
-        # 没有任何有效轮次时，列最后一轮供诊断，而不是挑一个"最好"的 / with no valid round, show the last one for diagnosis instead of a "best"
-        deliver = final
+    deliver = ledger.deliver_round(rounds)
+    if not ledger.confirmed(deliver):
+        # rtc 轮次要先在 OpticStudio 上复测，报告只用 OpticStudio 的数（ADR-0017）/ an rtc round is re-measured on OpticStudio first
+        raise SaosError(ErrorCode.BAD_ARGS, f"round {deliver['round']} was measured on rtc; re-measure it on an OpticStudio instance with "
+                        f"saos round --confirm --of {deliver['round']} before reporting", {"round": deliver["round"], "backend": "rtc"})
     eval_file = job.root / deliver["evaluation"]
     if not eval_file.is_file():
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"missing evaluation for round {deliver['round']}")
@@ -609,7 +609,7 @@ def write(job: jobs.Job, lang: str | None = None) -> dict[str, Any]:
         "opticstudio_verified": data["backend"]["name"] == "zos",
         "milestones": data["milestones"],
     }
-    history = ledger.load(job.root / ledger.LEDGER_FILE, demand.load_job(job.root))
+    history = ledger.load(job.root / ledger.LEDGER_FILE, demand.load_job(job.root), raw=True)
     metadata = {**result, "demand_sha": ledger.version(history[-1])[0], "method_sha": ledger.version(history[-1])[1],
                 "last_round": history[-1]["round"], "stage": "zos", "time": generated_at}
     write_json(archived.with_suffix(".json"), metadata)

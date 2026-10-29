@@ -212,7 +212,7 @@
         <mxCell id="e24" value="认可（原话）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.6;entryX=0;entryY=0.5;" parent="1" source="u4" target="t5" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="a10" value="&lt;b&gt;saos round&lt;/b&gt;：记录 ZOS 初始基线&lt;br&gt;第 0 轮，使用同一需求单与判定" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+        <mxCell id="a10" value="&lt;b&gt;saos round&lt;/b&gt;：记录设计初始基线（rtc 或 ZOS）&lt;br&gt;第 0 轮，使用同一需求单与判定" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="1560.0" width="320" height="52" as="geometry" />
         </mxCell>
         <mxCell id="a11" value="&lt;b&gt;诊断：可达性阶梯&lt;/b&gt;&lt;br&gt;守恒量 / 不变量（光展量、Lagrange、Petzval）&lt;br&gt;→ 轴上一点 → 全视场；低一级不成立 = 结构问题" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
@@ -230,7 +230,7 @@
         <mxCell id="u5" value="&lt;b&gt;停下来问用户&lt;/b&gt;&lt;br&gt;证据 · 影响 · 建议选项&lt;br&gt;用户选：改需求 / 停止 / 继续" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="85" y="1850.0" width="240" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="a14" value="&lt;b&gt;按诊断选择优化手段&lt;/b&gt;&lt;br&gt;局部：Zemax DLS / 正交下降&lt;br&gt;搜索：Hammer / Global；在产玻璃替换&lt;br&gt;外层：Brent / Nelder–Mead / Powell 调用 ZOS&lt;br&gt;光线量的扫描 / 多起点 / 专家排名可在 rtc 副本里跑，数值只引导&lt;br&gt;rtc 结果 push 回 OpticStudio 后先 opt local 收尾，再判定&lt;br&gt;&lt;br&gt;测量与复核共用预算；取消等待原生调用返回&lt;br&gt;优化器成功不等于实测达标，复核未完成则补测&lt;br&gt;不以评价函数代替通光与结构有效性判定" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+        <mxCell id="a14" value="&lt;b&gt;按诊断选择优化手段&lt;/b&gt;&lt;br&gt;rtc 实例：变量、评价函数、局部优化与搜索&lt;br&gt;搜索：Hammer / Global；在产玻璃替换&lt;br&gt;ZOS 实例：原生优化；外层优化调用 ZOS&lt;br&gt;光线量的扫描 / 多起点 / 专家排名可在 rtc 副本里跑，数值只引导&lt;br&gt;rtc 结果 push 回 OpticStudio 后先 opt local 收尾，再判定&lt;br&gt;&lt;br&gt;测量与复核共用预算；取消等待原生调用返回&lt;br&gt;优化器成功不等于实测达标，复核未完成则补测&lt;br&gt;不以评价函数代替通光与结构有效性判定" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="2170.0" width="320" height="220" as="geometry" />
         </mxCell>
         <mxCell id="t8" value="&lt;b&gt;saos opt vary / merit / local / glass / hammer / global&lt;/b&gt;&lt;br&gt;saos lens analysis · saos exec（kit / ctx.measure）&lt;br&gt;ctx.fast()：rtc 内存副本，fast.push 写回 OpticStudio&lt;br&gt;saos scan / ctx.map：常驻 worker 池按任务阶段选后端&lt;br&gt;scan --detach：后台线程，主实例仍可用；--show 看进度&lt;br&gt;opt / exec / check / round --detach：runs/ 下保存结果&lt;br&gt;review：交叠检查、--measure 前后对比与 valid&lt;br&gt;progress.json：saos job show / saos job cancel" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
@@ -245,7 +245,7 @@
         <mxCell id="a16" value="&lt;b&gt;按当前需求判断终止&lt;/b&gt;&lt;br&gt;achieved / limit / exhausted / stopped&lt;br&gt;continue：继续诊断，选择下一种手段" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="500" y="2545.0" width="300" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="n1" value="structure 无完整匹配确认 → 回到 ③ 重新描述并确认&lt;br&gt;进入 OpticStudio 后，重建与加载仍留在该后端" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#ffffff;strokeColor=#9673a6;fontColor=#4d3466;fontSize=11;align=left;spacingLeft=6;" parent="1" vertex="1">
+        <mxCell id="n1" value="structure 无完整匹配确认 → 回到 ③ 重新描述并确认&lt;br&gt;模型确认后可切换 rtc 设计；交付前换回 OpticStudio" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#ffffff;strokeColor=#9673a6;fontColor=#4d3466;fontSize=11;align=left;spacingLeft=6;" parent="1" vertex="1">
           <mxGeometry x="980" y="2575.0" width="400" height="65" as="geometry" />
         </mxCell>
         <mxCell id="e25" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=1;entryY=0.5;" parent="1" source="t5" target="a10" edge="1">
@@ -337,7 +337,7 @@
         <mxCell id="a17" value="&lt;b&gt;生成实测报告&lt;/b&gt;&lt;br&gt;需求涉及制造或装配时，附对应公差扫描" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="2835" width="320" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="t11" value="&lt;b&gt;saos scan&lt;/b&gt;（tolerance，按需）→ scans/NNN/&lt;br&gt;&lt;b&gt;saos report&lt;/b&gt; → report/index.html + latest.json&lt;br&gt;编号 HTML 与 JSON 副本封存；引用当前需求和判定&lt;br&gt;从合资格轮次选交付镜头；不可交付则 diagnostic&lt;br&gt;没有有效设计时明确说明；停止时保留理由与原话&lt;br&gt;全部指标来自 OpticStudio 实测&lt;br&gt;记录需求确认至模型确认、报告生成耗时" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+        <mxCell id="t11" value="rtc 轮次先 saos round --confirm 在 OpticStudio 复测&lt;br&gt;结论不同则回设计；复测一致后交付&lt;br&gt;&lt;b&gt;saos scan&lt;/b&gt;（tolerance，按需）→ scans/NNN/&lt;br&gt;&lt;b&gt;saos report&lt;/b&gt; → report/index.html + latest.json&lt;br&gt;编号 HTML 与 JSON 副本封存；引用当前需求和判定&lt;br&gt;从合资格轮次选交付镜头；不可交付则 diagnostic&lt;br&gt;没有有效设计时明确说明；停止时保留理由与原话&lt;br&gt;全部指标来自 OpticStudio 实测&lt;br&gt;记录需求确认至模型确认、报告生成耗时" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
           <mxGeometry x="980" y="2820" width="400" height="150" as="geometry" />
         </mxCell>
         <mxCell id="a18" value="&lt;b&gt;交付报告与镜头路径&lt;/b&gt;&lt;br&gt;只交付满足条件的轮次&lt;br&gt;否则说明未达标差距与下一步建议" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
@@ -376,7 +376,7 @@
         <mxCell id="p3" value="&lt;b style=&quot;font-size:14px&quot;&gt;何时停下来问用户&lt;/b&gt;&lt;br&gt;&lt;br&gt;• 需求自相矛盾，或常量 / 范围 / 达标线依据不足&lt;br&gt;• 测量口径有多种读法且影响结果&lt;br&gt;• 可行性判断或一阶分析表明结构达不到目标，或某项 must 差通过线好几倍&lt;br&gt;• 已有结果不支持继续当前策略（brief.review）&lt;br&gt;• 结构要改成用户没见过的样子&lt;br&gt;&lt;br&gt;会改变需求的问题写成 open_questions（blocking: true），未答时 round / opt local / hammer / global 拒绝运行&lt;br&gt;停下来之前先 saos ui notify，窗口顶部写明要用户看什么" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#fffdf0;strokeColor=#d6b656;" parent="1" vertex="1">
           <mxGeometry x="1450" y="720" width="400" height="250" as="geometry" />
         </mxCell>
-        <mxCell id="p4" value="&lt;b style=&quot;font-size:14px&quot;&gt;计算后端与长任务&lt;/b&gt;&lt;br&gt;&lt;br&gt;全部正式计算使用 ZOS standalone&lt;br&gt;daemon 持有一个会话，worker 默认 4 个&lt;br&gt;许可预算包含用户窗口及起点生成会话&lt;br&gt;worker 池空闲后关闭，复用已启动的会话&lt;br&gt;scan / ctx.map / detach 保留&lt;br&gt;job show 查看进度；job cancel 请求安全中断&lt;br&gt;客户端超时不代表后台失败，不重复提交&lt;br&gt;extension 仅用于用户需要的显性调试" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f3faf1;strokeColor=#82b366;" parent="1" vertex="1">
+        <mxCell id="p4" value="&lt;b style=&quot;font-size:14px&quot;&gt;计算后端与长任务&lt;/b&gt;&lt;br&gt;&lt;br&gt;需求核算与设计轮次可用 rtc&lt;br&gt;建模确认及交付复测使用 ZOS standalone&lt;br&gt;daemon 持有一个会话，worker 默认 4 个&lt;br&gt;许可预算包含用户窗口及起点生成会话&lt;br&gt;worker 池空闲后关闭，复用已启动的会话&lt;br&gt;scan / ctx.map / detach 保留&lt;br&gt;job show 查看进度；job cancel 请求安全中断&lt;br&gt;客户端超时不代表后台失败，不重复提交&lt;br&gt;extension 仅用于用户需要的显性调试" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f3faf1;strokeColor=#82b366;" parent="1" vertex="1">
           <mxGeometry x="1450" y="990" width="400" height="450" as="geometry" />
         </mxCell>
         <mxCell id="p5" value="&lt;b style=&quot;font-size:14px&quot;&gt;封存与恢复&lt;/b&gt;&lt;br&gt;&lt;br&gt;判定、轮次、模型、扫描和报告编号副本写入 seals.jsonl&lt;br&gt;已有完整匹配模型确认可继续使用&lt;br&gt;job verify 显示改动；证据损坏时报告拒绝生成&lt;br&gt;旧双后端任务只读保留，另建任务重建和实测&lt;br&gt;不改旧账本，不继承旧后端指标" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f5f5f5;strokeColor=#666666;" parent="1" vertex="1">
@@ -457,7 +457,7 @@
         <mxCell id="lget3" value="轮次循环" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="1712" y="2050" width="130" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="title" value="&lt;b style=&quot;font-size:18px&quot;&gt;saos 工作流&lt;/b&gt;&lt;br&gt;需求确认 → 模型确认 → ZOS 设计轮次 → 报告交付" style="text;html=1;align=left;verticalAlign=middle;" parent="1" vertex="1">
+        <mxCell id="title" value="&lt;b style=&quot;font-size:18px&quot;&gt;saos 工作流&lt;/b&gt;&lt;br&gt;需求确认 → 模型确认 → rtc / ZOS 设计 → ZOS 复测与交付" style="text;html=1;align=left;verticalAlign=middle;" parent="1" vertex="1">
           <mxGeometry x="1450" y="0" width="400" height="40" as="geometry" />
         </mxCell>
         <mxCell id="a0" value="&lt;b&gt;会话开始：环境预检&lt;/b&gt;&lt;br&gt;缺什么在第一条回复里就说" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
@@ -495,7 +495,7 @@
         <mxCell id="p6" value="&lt;b style=&quot;font-size:14px&quot;&gt;上下文经济&lt;/b&gt;&lt;br&gt;&lt;br&gt;• 大文件按章节读，辅助库用到时再读&lt;br&gt;• 选型表交给 optic-material-explorer（haiku · effort high），只拿回带出处的表&lt;br&gt;• 待答问题可能推翻的工作，先等答复" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f5f5f5;strokeColor=#666666;" vertex="1" parent="1">
           <mxGeometry x="1450" y="1620" width="400" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="p7" value="&lt;b style=&quot;font-size:14px&quot;&gt;测量与物理有效性&lt;/b&gt;&lt;br&gt;&lt;br&gt;检查由 ZOS 追迹、操作数和原生分析给出&lt;br&gt;结构交叠、丢光和无效像面不能作为可交付结果&lt;br&gt;检查失败与目标未达标分开记录&lt;br&gt;预算耗尽的候选保留其状态，不冒充优化完成&lt;br&gt;报告包含材料来源、未达标项和未测范围" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f3faf1;strokeColor=#82b366;" parent="1" vertex="1">
+        <mxCell id="p7" value="&lt;b style=&quot;font-size:14px&quot;&gt;测量与物理有效性&lt;/b&gt;&lt;br&gt;&lt;br&gt;检查由当前后端追迹、操作数和分析给出；交付由 ZOS 复测&lt;br&gt;结构交叠、丢光和无效像面不能作为可交付结果&lt;br&gt;检查失败与目标未达标分开记录&lt;br&gt;预算耗尽的候选保留其状态，不冒充优化完成&lt;br&gt;报告包含材料来源、未达标项和未测范围" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f3faf1;strokeColor=#82b366;" parent="1" vertex="1">
           <mxGeometry x="1450" y="2150" width="400" height="235" as="geometry" />
         </mxCell>
       </root>

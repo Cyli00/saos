@@ -51,7 +51,7 @@ Environment
     updates (slower); long operations normally refresh once at completion.
   SAOS_UI_PID: select an OpticStudio window for extension mode when several exist.
   SAOS_POOL_IDLE_S: worker idle lifetime, default 600 seconds.
-  SAOS_OPTICSTUDIO_DIR: OpticStudio installation; SAOS_BACKEND=rtc for a need-stage rtc instance
+  SAOS_OPTICSTUDIO_DIR: OpticStudio installation; SAOS_BACKEND=rtc for an rtc instance (need stage and design rounds)
     (same as daemon start --backend rtc), fake for tool tests; SAOS_GLASSCAT: AGF folder for rtc,
     default Documents/Zemax/Glasscat;
     SAOS_LIBRARY: microscope starting-design library, default <repo>/library/microscope.
@@ -79,7 +79,7 @@ own unsaved edits still require lens save or --discard; --discard drops only
 those edits. Archived rounds cannot be overwritten. Extension mode is optional;
 the local workflow window shows modelling in either mode.
 """,
-    "opt": 'Configure and run OpticStudio optimization on the loaded job lens.\nlocal/hammer/global require the current demand to be confirmed and free of\nblocking questions. Model approval is required to record rounds. Geometry and\nmaterial changes require saving before worker scans; model glass is exploratory\nand cannot be delivered. Optimization keeps the best reached system in memory.\n',
+    "opt": 'Configure and run optimization on the loaded job lens: OpticStudio, or on an\nrtc instance damped least squares with boundary rows as exact constraints and\nrtc Hammer/global search (ADR-0017).\nlocal/hammer/global require the current demand to be confirmed and free of\nblocking questions. Model approval is required to record rounds. Geometry and\nmaterial changes require saving before worker scans; model glass is exploratory\nand cannot be delivered. Optimization keeps the best reached system in memory.\n',
     "demand": """Validate and confirm sources/demand.yaml locally, without OpticStudio.
 Format: .agents/skills/saos/demand.example.yaml; shortfall and stop rules: saos round --help.
 Each bound needs a source; confirmation records the user's actual approval and
@@ -98,7 +98,7 @@ always opens it. Gate windows restore/raise without taking keyboard focus.
 }
 
 COMMANDS = {
-    "daemon start": ('Start the daemon and wait for an OpticStudio connection (2024 R1 Premium).', 'standalone creates a private instance. extension uses UI Automation to open/reuse\n  Interactive Extension, disable Auto Close on Disconnect and read its instance.\n  It refuses a window connected elsewhere; use SAOS_UI_PID for multiple windows.\n  Startup errors include details.log_tail. Background logs: daemon/daemon.log;\n  startup creates no console window. Typical cold instance startup: 6-8 s.\n  --backend rtc starts an rtc instance for need-stage feasibility instead: no\n  OpticStudio or licence; descriptions, analyses, optimisation, checks, scans and\n  rounds return BACKEND_UNSUPPORTED.', 'DAEMON_ALREADY_RUNNING, DAEMON_START_FAILED, DAEMON_TIMEOUT, UI_BLOCKED, ZOS_LICENSE, ZOS_VERSION_MISMATCH, ZOS_ERROR'),
+    "daemon start": ('Start the daemon and wait for an OpticStudio connection (2024 R1 Premium).', 'standalone creates a private instance. extension uses UI Automation to open/reuse\n  Interactive Extension, disable Auto Close on Disconnect and read its instance.\n  It refuses a window connected elsewhere; use SAOS_UI_PID for multiple windows.\n  Startup errors include details.log_tail. Background logs: daemon/daemon.log;\n  startup creates no console window. Typical cold instance startup: 6-8 s.\n  --backend rtc starts an rtc instance instead: no OpticStudio or licence. It\n  serves need-stage feasibility and design rounds (vary, merit, opt\n  local/hammer/global, check, scan, round; analysis FftMtf only). lens describe,\n  view, screenshot, capture, round --confirm and tolerance scans return\n  BACKEND_UNSUPPORTED; rtc rounds are re-measured on OpticStudio with\n  saos round --confirm before saos report.', 'DAEMON_ALREADY_RUNNING, DAEMON_START_FAILED, DAEMON_TIMEOUT, UI_BLOCKED, ZOS_LICENSE, ZOS_VERSION_MISMATCH, ZOS_ERROR'),
     "daemon stop": (
         "Stop this daemon; wait for it and its private OpticStudio process to exit.",
         "Unsaved agent edits require --discard. A detached scan must finish or be\n"
@@ -269,6 +269,14 @@ COMMANDS.update({
         "Requires no blocking questions and a nonterminal demand version. --tier is\n"
         "  comma-separated local,variables,materials,global,structure; omit for round 0.\n"
         "  --merit records a finite external objective instead of the lens merit.\n"
+        "  record.backend names who computed the round. On an rtc instance rounds carry\n"
+        "  backend rtc and provenance (paths and operands not reconciled with\n"
+        "  OpticStudio). --confirm [--of N], on an OpticStudio instance with no lens\n"
+        "  needed, re-measures rtc round N (default: the round saos report would\n"
+        "  deliver) and appends a tier confirm record; reading the ledger puts its\n"
+        "  numbers into round N (confirmed_by, rtc keeps the old ones). agrees is false\n"
+        "  when achieved, hard_failing or deliverability differ: go back to design.\n"
+        "  saos report refuses an rtc round that is not confirmed.\n"
         "  Saves lenses/rounds/rNNN.zmx only after checks prove the lens unchanged;\n"
         "  evaluations/NNN/result.json is authoritative and ledger.jsonl commits the\n"
         "  round. Returns record, evaluation, stop decision, untried tiers and brief;\n"
@@ -285,8 +293,9 @@ COMMANDS.update({
         "  directional goals max(0, distance to ideal)/scale, each times its weight; a check\n"
         "  with no valid value counts as infinite. Constants and variable ranges are hard:\n"
         "  a round breaking one is never delivered and lists it in hard_failing.\n"
-        "  Decision order: invalid round (a check failed to run) -> achieved -> limit\n"
-        "  (max_rounds, default 30) -> stopped -> exhausted (every tier tried or ruled out\n"
+        "  Decision order: achieved -> stopped -> limit (max_rounds, default 30) ->\n"
+        "  invalid round (a check failed to run: continue) -> targets met with a model\n"
+        "  glass (continue with materials) -> exhausted (every tier tried or ruled out\n"
         "  since the last gain of rel, default 0.01) -> continue with next_tier.\n"
         "  Changed checks (including helpers/data and used recipe/kit code) remeasure\n"
         "  the earlier best archived round first: rebase_of, rebase.equivalent and diffs\n"
@@ -301,7 +310,7 @@ COMMANDS.update({
         "  invalidate the recorded round. MTF falls back to per-field calculation when\n"
         "  a chief ray fails; errors.FftMtf explains missing fields. StandardSpot traces\n"
         "  fewer rays for wavelength weights <1, so its GEO may understate point extent.",
-        "DEMAND_NOT_CONFIRMED, DEMAND_BLOCKED, MODEL_NOT_APPROVED, LENS_MODIFIED_BY_CHECK, DUPLICATE_ROUND, BAD_ARGS"),
+        "DEMAND_NOT_CONFIRMED, DEMAND_BLOCKED, MODEL_NOT_APPROVED, LENS_MODIFIED_BY_CHECK, DUPLICATE_ROUND, SPEC_CHANGED, BACKEND_UNSUPPORTED, BAD_ARGS"),
     "rule-out": (
         "Exclude strategy tiers using evidence for the current demand version locally.",
         "Requires an existing round in this demand version. --tier repeats or uses\n"

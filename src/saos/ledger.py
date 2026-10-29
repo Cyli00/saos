@@ -41,6 +41,12 @@ When the demand's compute-layer hash changes (values, ranges, checks, weights, u
 变了就从这条重测记录开始新窗口。
 When the check code changes, saos round first re-measures the best earlier round with the new checks (tier "rebase")
 and later rounds compare with it: unchanged numbers keep the window, changed ones start a new window at that record.
+
+rtc 实例上记的轮次（backend 为 rtc，ADR-0017）交付前要在 OpticStudio 上复测（saos round --confirm，tier 为 confirm）：
+复测记录不单独成轮，读 ledger 时（effective）用它的数值替换被复测那一轮的数值，判定、终止和报告都按 OpticStudio 的数。
+Rounds recorded on the rtc instance (backend rtc, ADR-0017) are re-measured on OpticStudio before delivery (saos round
+--confirm, tier "confirm"). A confirmation is no round of its own: reading the ledger (effective) puts its numbers in
+place of the confirmed round's, so decisions, stops and the report use OpticStudio's numbers.
 """
 
 from __future__ import annotations
@@ -59,12 +65,19 @@ STOPS_FILE = "stops.jsonl"
 RULED_OUT_FILE = "ruled_out.jsonl"
 # 判定代码改动后对此前最好一轮的重测记录 / the re-measurement of the best earlier round after the check code changed
 REBASE = "rebase"
+# rtc 轮次在 OpticStudio 上的复测记录 / the OpticStudio re-measurement of an rtc round
+CONFIRM = "confirm"
+# 复测时换成 OpticStudio 数值的字段 / the fields a confirmation replaces with OpticStudio's numbers
+MEASURED = ("evaluation", "shortfall", "achieved", "parts_clash", "pursuing", "measurement_errors", "hard_failing", "values", "failing",
+            "materials", "coatings", "model_glass")
 
 
-def load(path: Path, demand: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+def load(path: Path, demand: dict[str, Any] | None = None, *, raw: bool = False) -> list[dict[str, Any]]:
     """读取 ledger。给出 demand 时，升级前写下的轮次版本（旧公式哈希）在内存里换成这一版需求的计算层哈希，文件不改。
+    默认返回 effective 之后的轮次（复测记录并入被复测的轮次）；raw 时原样返回每一行，编号新记录时用。
     Read the ledger. Given demand, round versions written before the upgrade are swapped in memory for this demand's
-    compute-layer hash; the file is not touched."""
+    compute-layer hash; the file is not touched. Returns the effective rounds (confirmations folded into the rounds
+    they confirm) unless raw, which returns every stored row, as numbering a new record needs."""
     rows = read_jsonl(path)
     for r in rows:
         r["shortfall"] = float(r["shortfall"])
@@ -73,7 +86,39 @@ def load(path: Path, demand: dict[str, Any] | None = None) -> list[dict[str, Any
             current = as_current(stored, demand, "compute", path.parent)
             if current != stored:
                 r["demand_sha"] = current
-    return rows
+    return rows if raw else effective(rows)
+
+
+def is_confirm(record: dict[str, Any]) -> bool:
+    return record.get("tier") == CONFIRM
+
+
+def effective(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """去掉复测记录，并把每条复测（与被复测轮次同一判定版本的最后一条）的数值换进被复测的那一轮；原来的 rtc 数值留在 rtc 里。
+    Drop the confirmations and put each one's numbers (the last of the same check version) into the round it confirms;
+    the original rtc numbers stay under rtc."""
+    out: list[dict[str, Any]] = []
+    where: dict[int, int] = {}
+    for r in rows:
+        if not is_confirm(r):
+            where[int(r["round"])] = len(out)
+            out.append(r)
+            continue
+        k = where.get(int(r.get("confirm_of", -1)))
+        if k is None or version(out[k]) != version(r):
+            continue
+        target = out[k]
+        original = target.get("rtc") or {key: target[key] for key in MEASURED if key in target}
+        merged = {key: v for key, v in target.items() if key not in MEASURED}
+        merged.update({key: r[key] for key in MEASURED if key in r})
+        merged.update(confirmed_by=int(r["round"]), agrees=bool(r.get("agrees")), measured_on="zos", rtc=original)
+        out[k] = merged
+    return out
+
+
+def confirmed(record: dict[str, Any]) -> bool:
+    """这一轮的数值来自 OpticStudio：在 OpticStudio 上记的，或 rtc 轮次已复测。/ The round's numbers come from OpticStudio."""
+    return record.get("backend", "zos") != "rtc" or record.get("confirmed_by") is not None
 
 
 def _current(stored: str | None, demand: dict[str, Any] | None, root: Path) -> str | None:
@@ -186,6 +231,22 @@ def deliverable(record: dict[str, Any]) -> bool:
     """含模型玻璃、测量出错、常量/变量范围不满足、或零件交叠的轮次不能交付。
     Rounds with a model glass, failed checks, a broken constant / variable range or clashing parts are not deliverable."""
     return not record.get("model_glass") and valid(record) and not record.get("hard_failing") and not record.get("parts_clash")
+
+
+def deliver_round(window: list[dict[str, Any]]) -> dict[str, Any]:
+    """报告交付的那一轮：达成且可交付的轮次里 G 最小的（相同取最新）；没有时取可交付轮次里 G 最小的，都不可交付时取全部里
+    G 最小的；没有有效轮次时取最后一轮。
+    The round a report delivers: the smallest G among achieved deliverable rounds (the latest on a tie); else the
+    smallest G among deliverable rounds, or among all; the last round when none is valid."""
+    candidates = [r for r in window if deliverable(r)] or window
+    best = min(candidates, key=lambda r: (r["shortfall"], r["round"]))
+    # 达成的轮次里取 G 最小的（有越小/越大越好的目标时 G 在达标后还会变小）；相同取最新的，它用的是当前的判定
+    # among achieved rounds the smallest G (it keeps shrinking after the pass lines with objectives to pursue); the latest on a
+    # tie, judged with the current checks
+    achieved = [r for r in window if r.get("achieved") and deliverable(r)]
+    deliver = min(achieved, key=lambda r: (r["shortfall"], -r["round"])) if achieved else best
+    # 没有任何有效轮次时，列最后一轮供诊断，而不是挑一个"最好"的 / with no valid round, show the last one for diagnosis instead of a "best"
+    return deliver if math.isfinite(deliver["shortfall"]) else window[-1]
 
 
 def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str, Any] | None = None,

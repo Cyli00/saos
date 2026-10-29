@@ -688,6 +688,9 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
     # the version comes from the backend that measured this round only, never the daemon's start backend (another version)
     identity = ctx.backend.identity()
     backend_name = identity["backend"]
+    # rtc 实例上的判定：记下用到的、未与 OpticStudio 对账的计算路径和操作数（ADR-0017）
+    # checks on the rtc instance record the calculation paths and operands not reconciled with OpticStudio
+    provenance = ctx.backend.provenance() if backend_name == "rtc" and hasattr(ctx.backend, "provenance") else None
     result = {"shortfall": total,
               # 没有任何带界限的条目时不能宣布达成 / nothing with a pass line means nothing can be declared achieved
               "achieved": only is None and bool(judged) and all(i["passed"] for i in judged), "items": items,
@@ -704,7 +707,8 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
                               "opticstudio": identity["version"] if backend_name == "zos" else None,
                               "backend": backend_name,
                               "backend_version": identity["version"],
-                              "precision": identity["precision"]},
+                              "precision": identity["precision"],
+                              **({"provenance": {k: provenance[k] for k in ("unverified", "operands_unverified")}} if provenance else {})},
               "lens": lens or ctx.describe(), "evidence_dir": folder.relative_to(ctx.job.root).as_posix(),
               "evidence_file": (folder / "result.json").relative_to(ctx.job.root).as_posix()}
     write_json(folder / "result.json", result)

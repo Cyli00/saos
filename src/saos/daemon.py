@@ -39,7 +39,7 @@ REQUEST_READ_TIMEOUT_S = 30
 # 显性调试：这些操作可能改变镜头，结束后刷新已打开的分析窗口
 # 可能跑很久的操作：开始和结束都写进 progress.json，开始前清掉旧的取消请求
 # operations that may run long: their start and end go to progress.json; a stale cancel request is cleared first
-LONG_OPS = frozenset({"opt.local", "opt.hammer", "opt.global", "script.exec", "round.record", "demand.check", "scan.run"})
+LONG_OPS = frozenset({"opt.local", "opt.hammer", "opt.global", "script.exec", "round.record", "round.confirm", "demand.check", "scan.run"})
 REFRESH_AFTER = frozenset({"lens.load", "lens.set", "lens.build", "opt.local", "opt.hammer", "opt.global", "script.exec", "round.record"})
 # 优化运行中多久给流程图窗口推一次当前镜头（只有几何，不带光线）/ how often a running optimisation updates the live view
 VIEW_DURING_OPT_S = 5.0
@@ -52,13 +52,13 @@ SEARCH_FILES = {"hammer": "{stem}_*_HAMMER.zmx", "global": "GLOPT_*.zmx"}
 ROUND_REMINDER = {"opt": 2, "exec": 15}
 RUN_KINDS = {"opt.local": "opt", "opt.hammer": "opt", "opt.global": "opt", "script.exec": "exec", "scan.run": "scan"}
 COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
-# rtc 实例（SAOS_BACKEND=rtc）只做需求阶段的可行性核算：建模说明与确认、分析、评价函数与优化、判定、扫描、轮次都要
-# OpticStudio 的实测或它的数据，一律拒绝
-# the rtc instance only checks need-stage feasibility: model descriptions and approval, analyses, merit functions and
-# optimisation, checks, scans and rounds need OpticStudio's measurements or data, so they are refused
-OPTICSTUDIO_ONLY = frozenset({"lens.describe", "lens.approve", "lens.analysis", "lens.view", "lens.screenshot", "lens.capture",
-                              "opt.vary", "opt.merit", "opt.local", "opt.hammer", "opt.global", "demand.check", "scan.run",
-                              "round.record"})
+# rtc 实例（SAOS_BACKEND=rtc）做需求阶段的可行性核算（ADR-0016）和设计阶段的变量、评价函数、优化、判定、扫描与轮次
+# （ADR-0017）；给用户看的建模说明页面、OpticStudio 窗口，以及交付前的复测要 OpticStudio
+# the rtc instance checks need-stage feasibility (ADR-0016) and runs the design stage (ADR-0017); the model page shown to
+# the user, OpticStudio's windows and the re-measurement before delivery need OpticStudio
+OPTICSTUDIO_ONLY = frozenset({"lens.describe", "lens.view", "lens.screenshot", "lens.capture", "round.confirm"})
+# rtc 实例上不跑的扫描：公差分析属于交付，要在 OpticStudio 上做 / scans the rtc instance refuses: tolerancing belongs to delivery
+OPTICSTUDIO_SCANS = ("tolerance",)
 COMPARED_NUMBER_KEYS = ("radius", "thickness", "conic", "semi_diameter")
 
 
@@ -174,6 +174,7 @@ class Daemon:
             "demand.check": self.op_check,
             "scan.run": self.op_scan,
             "round.record": self.op_round,
+            "round.confirm": self.op_confirm,
         }
 
     # ---- 请求分发 ----
@@ -193,9 +194,9 @@ class Daemon:
                 raise SaosError(ErrorCode.UNKNOWN_OP, f"unknown operation {op!r}", {"available": sorted(self.handlers)})
             if op in OPTICSTUDIO_ONLY and self.rtc_instance:
                 raise SaosError(ErrorCode.BACKEND_UNSUPPORTED,
-                                f"{op} needs OpticStudio; this daemon is an rtc instance for need-stage feasibility. Run saos daemon stop, "
-                                "then saos daemon start (OpticStudio) on the same SAOS_INSTANCE, and load the saved lens there",
-                                {"backend": "rtc"})
+                                f"{op} needs OpticStudio; this daemon is an rtc instance (need-stage feasibility and design rounds). "
+                                "Save the lens, run saos daemon stop, then saos daemon start (OpticStudio) on the same SAOS_INSTANCE, "
+                                "and load the saved lens there", {"backend": "rtc"})
             if op not in ("ping", "shutdown") and not self.backend.healthy():
                 raise self._connection_lost({"detected": "connection check before the operation"})
             if op not in ("ping", "shutdown"):
@@ -325,12 +326,10 @@ class Daemon:
             log.exception(_t("导出当前视图失败", "exporting the live view failed"))
             data = {"ok": False, "error": f"{type(exc).__name__}: {getattr(exc, 'message', exc)}"[:500]}
         described_at = time.perf_counter()
-        # rtc 实例没有建模说明的数据（结构指纹由 OpticStudio 描述）/ an rtc instance has no model description data
-        if not self.rtc_instance:
-            try:
-                data["model"] = self.backend.describe_model(None)
-            except Exception as exc:
-                data["model_error"] = f"{type(exc).__name__}: {exc}"[:500]
+        try:
+            data["model"] = self.backend.describe_model(None)
+        except Exception as exc:
+            data["model_error"] = f"{type(exc).__name__}: {exc}"[:500]
         data["timing"] = {"viz_s": round(described_at - started, 6),
                           "model_s": round(time.perf_counter() - described_at, 6)}
         self.view_seq += 1
@@ -1003,6 +1002,10 @@ class Daemon:
 
         job = self._job(args)
         plan = _arg(args, "plan", dict)
+        refused = [k for k in OPTICSTUDIO_SCANS if k in plan]
+        if refused and self.rtc_instance:
+            raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{refused[0]} scans run on OpticStudio (they belong to delivery); "
+                            "switch to an OpticStudio instance for them", {"backend": "rtc"})
         # 结构探索的候选是各自的文件，不用当前镜头，所以不要求加载镜头 / exploration candidates are files of their own
         if "candidates" not in plan:
             self._require_loaded(job)
@@ -1027,6 +1030,15 @@ class Daemon:
         return _warn_unclosed(self.loaded, workflow.record_round(
             ctx, _arg(args, "tier", str, default=None), str(args.get("note", "")),
             merit=_arg(args, "merit", (int, float), default=None), viz=_arg(args, "viz", bool, default=True)))
+
+    def op_confirm(self, args: dict[str, Any]) -> dict[str, Any]:
+        """在 OpticStudio 上复测 rtc 实例记下的一轮（ADR-0017）。不要求先加载镜头：复测加载归档镜头，结束后回到原来加载的镜头。
+        Re-measure an rtc round on OpticStudio. No lens needs to be loaded: the archive is loaded and the previous lens restored."""
+        job = self._job(args)
+        if self.loaded is not None:
+            self._require_loaded(job)
+        ctx = scripting.ScriptContext(self, job, {})
+        return workflow.confirm_round(ctx, _arg(args, "of", int, default=None), viz=_arg(args, "viz", bool, default=True))
 
     def op_operand(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))

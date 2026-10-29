@@ -13,13 +13,15 @@ const TEXT = {
     no_demand: "访谈中，尚无需求单", invalid_demand: "需求单未通过校验", first: "等待用户确认", reconfirm: "需求已改动，待重新确认",
     waiting: "等你确认", blocked: "待回答", active: "进行中", running: "运行中",
     rounds_n: (n) => `第 ${n} 轮`, no_rounds: "尚未记录轮次", rtc_unclosed: "rtc 结果待 OpticStudio 收尾优化",
+    confirm_pending: (n) => `第 ${n} 轮在 rtc 上算，待 OpticStudio 复测：saos round --confirm`, confirm_failed: (n) => `第 ${n} 轮 OpticStudio 复测结论与 rtc 不同，回到设计`,
+    tag_rtc: "rtc", tag_confirmed: "OpticStudio 复测", tag_disagrees: "复测不符",
     starts_done: (n, k) => `已生成 ${n} 个起点 · ${k} 个未评估`,
     explore_run: (n) => `结构探索：${n} 个候选运行中`, explore_done: (n) => `已比较 ${n} 个候选`,
     st_achieved: "已达成", st_exhausted: "无法再优化", st_limit: "达到轮次上限", st_stopped: "按用户决定停止",
     report_ready: "报告已生成", report_todo: "待生成报告", deliver_cmd: "saos scan（公差，按需）· saos report",
     back_demand: "需求变更", back_model: "结构或计算前提改变", back_reach: "结构不可达", feasibility: "质疑结构 · 核算界限", feasibility_rtc: "rtc 核算 · 不占许可", feasibility_written: "可行性记录已写",
-    explicit: "显式调试 · Interactive Extension", standalone: "后台运行 · standalone", rtc_instance: "rtc 实例 · 需求阶段，不占许可", no_daemon: "后台进程未运行",
-    rtc_switch: "当前后台进程是 rtc 实例，只做需求阶段的可行性核算；建模起换成 OpticStudio 实例：saos daemon stop 后 saos daemon start。",
+    explicit: "显式调试 · Interactive Extension", standalone: "后台运行 · standalone", rtc_instance: "rtc 实例 · 需求与设计阶段，不占许可", no_daemon: "后台进程未运行",
+    rtc_switch: "当前后台进程是 rtc 实例，服务需求与设计阶段；建模说明、确认和交付（复测、报告）换成 OpticStudio 实例：存盘后 saos daemon stop，再 saos daemon start。",
     tab_control: "窗口控制", tab_layout: "布局", tab_spot: "点列图", tab_mtf: "MTF", tab_rounds: "轮次",
     blocking: "blocking 待确认问题：",
     viewer: "布局窗口", viewer_p: "切换 OpticStudio 的布局窗口。剖面图画不了的系统（非轴对称、非序列）会自动改用 3D Viewer。",
@@ -29,9 +31,12 @@ const TEXT = {
     opened: (n) => `已打开 ${n}`, failed: "失败", aperture: "孔径", units: "单位", stop: "光阑面", fields: "视场", waves: "波长", primary: "主",
     no_viz: "第 0 轮记录后，这里显示该轮的布局、点列图和 MTF。", viz_missing: "这一轮没有可视化数据（用 --no-viz 记录，或记录早于 saos ui）。",
     viz_failed: "这一轮的可视化导出失败：", spot_foot: (ref) => `点：批量光线追迹，相对主波长主光线，未计被拦光线。RMS / GEO：OpticStudio Standard Spot（参考 ${ref}，全部波长），单位 µm。Standard Spot 每个波长追的光线数与波长权重成正比，权重小于 1 的波长常漏掉边缘光线，所以 GEO 可能小于图中最远的点。`,
+    spot_foot_rtc: () => "点：rtc 批量光线追迹，相对主波长主光线，未计被拦光线。RMS / GEO：同一批点按波长权重合算，单位 µm；未与 OpticStudio Standard Spot 对账。",
+    fan_foot: "光线扇：rtc 批量光线追迹，子午扇为 ey 对 Py、弧矢扇为 ex 对 Px，相对主波长主光线；追不到像面的点断开。",
+    mtf_foot_rtc: "曲线：rtc FFT MTF（64×64 光瞳采样，各波长以自己的主光线为参考），未与 OpticStudio 对账。",
     mtf_foot: "曲线：OpticStudio FFT MTF 导出。", mtf_partial: "全部视场一起算不出，改为逐个视场算：", tangential: "子午 T", sagittal: "弧矢 S", diff: "衍射极限",
     layout_foot: "几何与光线坐标：ZOS-API（GetGlobalMatrix、GetSag、批量光线追迹）。",
-    layout_foot_rtc: "几何与光线坐标：rtc（矢高、实际光线追迹；半口径与求解按 OpticStudio 的规则在 rtc 里重算）。数值不作建模之后的证据。",
+    layout_foot_rtc: "几何与光线坐标：rtc（矢高、实际光线追迹；半口径与求解按 OpticStudio 的规则在 rtc 里重算）。交付前在 OpticStudio 上复测。",
     unverified: (items) => `未与 OpticStudio 对账：${items.join("；")}。`,
     model_evidence: "模型确认记录提示：",
     redescribe: "结构已变：重新描述并确认",
@@ -72,13 +77,15 @@ const TEXT = {
     no_demand: "interviewing, no demand yet", invalid_demand: "demand fails validation", first: "waiting for the user", reconfirm: "demand changed, confirm again",
     waiting: "your turn", blocked: "question", active: "in progress", running: "running",
     rounds_n: (n) => `round ${n}`, no_rounds: "no rounds yet", rtc_unclosed: "rtc results await a closing OpticStudio optimisation",
+    confirm_pending: (n) => `round ${n} computed on rtc awaits OpticStudio: saos round --confirm`, confirm_failed: (n) => `OpticStudio disagreed with rtc on round ${n}; back to design`,
+    tag_rtc: "rtc", tag_confirmed: "OpticStudio re-measured", tag_disagrees: "re-measure differs",
     starts_done: (n, k) => `${n} ${n === 1 ? "start" : "starts"} · ${k} not evaluated`,
     explore_run: (n) => `exploring ${n} ${n === 1 ? "candidate" : "candidates"}`, explore_done: (n) => `compared ${n} ${n === 1 ? "candidate" : "candidates"}`,
     st_achieved: "achieved", st_exhausted: "exhausted", st_limit: "round limit", st_stopped: "stopped by user",
     report_ready: "report written", report_todo: "report pending", deliver_cmd: "saos scan (tolerance, if needed) · saos report",
     back_demand: "demand change", back_model: "revise model", back_reach: "unreachable", feasibility: "question · check bounds", feasibility_rtc: "rtc checks · no licence", feasibility_written: "feasibility recorded",
-    explicit: "Explicit · Interactive Extension", standalone: "Background · standalone", rtc_instance: "rtc instance · need stage, no licence", no_daemon: "daemon not running",
-    rtc_switch: "The daemon is an rtc instance, which only checks need-stage feasibility; from modelling on use an OpticStudio instance: saos daemon stop, then saos daemon start.",
+    explicit: "Explicit · Interactive Extension", standalone: "Background · standalone", rtc_instance: "rtc instance · need and design stages, no licence", no_daemon: "daemon not running",
+    rtc_switch: "The daemon is an rtc instance, which serves the need and design stages; model descriptions, approval and delivery (re-measurement, report) need an OpticStudio instance: save, saos daemon stop, then saos daemon start.",
     tab_control: "Window controls", tab_layout: "Layout", tab_spot: "Spot Diagram", tab_mtf: "MTF", tab_rounds: "Rounds",
     blocking: "Blocking questions:",
     viewer: "Layout window", viewer_p: "Switch OpticStudio's layout window. Systems the cross-section cannot draw (non-axial, non-sequential) get the 3D Viewer.",
@@ -88,9 +95,12 @@ const TEXT = {
     opened: (n) => `opened ${n}`, failed: "failed", aperture: "Aperture", units: "Units", stop: "Stop surface", fields: "Fields", waves: "Wavelengths", primary: "primary",
     no_viz: "After round 0 is recorded, its layout, spot diagram and MTF appear here.", viz_missing: "This round has no visual data (recorded with --no-viz or before saos ui).",
     viz_failed: "The visual export of this round failed: ", spot_foot: (ref) => `Points: batch ray trace relative to the primary chief ray, vignetted rays left out. RMS / GEO: OpticStudio Standard Spot (reference ${ref}, all wavelengths), in µm. Standard Spot traces rays per wavelength in proportion to its weight, so wavelengths weighted below 1 often lose their rim rays and GEO can be smaller than the farthest point drawn.`,
+    spot_foot_rtc: () => "Points: rtc batch ray trace relative to the primary chief ray, vignetted rays left out. RMS / GEO: the same points over all wavelengths by weight, in µm; not reconciled with OpticStudio's Standard Spot.",
+    fan_foot: "Ray fan: rtc batch ray trace, ey against Py (tangential) and ex against Px (sagittal), relative to the primary chief ray; rays missing the image break the curve.",
+    mtf_foot_rtc: "Curves: rtc FFT MTF (64×64 pupil samples, each wavelength about its own chief ray), not reconciled with OpticStudio.",
     mtf_foot: "Curves: OpticStudio FFT MTF export.", mtf_partial: "Not computable for all fields at once, so computed field by field: ", tangential: "Tangential", sagittal: "Sagittal", diff: "Diff. limit",
     layout_foot: "Geometry and rays: ZOS-API (GetGlobalMatrix, GetSag, batch ray trace).",
-    layout_foot_rtc: "Geometry and rays: rtc (sag, real ray trace; semi-diameters and solves recomputed in rtc by OpticStudio's rules). Not evidence after the need stage.",
+    layout_foot_rtc: "Geometry and rays: rtc (sag, real ray trace; semi-diameters and solves recomputed in rtc by OpticStudio's rules). Re-measured on OpticStudio before delivery.",
     unverified: (items) => `Not reconciled with OpticStudio: ${items.join("; ")}.`,
     model_evidence: "Model approval evidence: ",
     redescribe: "Structure changed: describe and approve",
@@ -233,9 +243,14 @@ function nodeSub(step) {
     const last = d.last;
     const unclosed = d.rtc_unclosed ? ` · ${t("rtc_unclosed")}` : "";
     if (!last) return t("no_rounds") + unclosed;
-    return `${t("select_round", last.round)} · G ${fmtG(last.shortfall)} · ${last.tiers.join("+")}${unclosed}`;
+    if (d.confirm_failed != null) return t("confirm_failed", d.confirm_failed);
+    const rtc = last.backend === "rtc" ? ` · ${t("tag_rtc")}` : "";
+    return `${t("select_round", last.round)} · G ${fmtG(last.shortfall)} · ${last.tiers.join("+")}${rtc}${unclosed}`;
   }
-  if (step.id === "deliver") return d ? `${t("st_" + d)} · ${step.status === "done" ? t("report_ready") : t("report_todo")}` : t("deliver_cmd");
+  if (step.id === "deliver") {
+    if (d && state.confirm_pending != null) return `${t("st_" + d)} · ${t("confirm_pending", state.confirm_pending)}`;
+    return d ? `${t("st_" + d)} · ${step.status === "done" ? t("report_ready") : t("report_todo")}` : t("deliver_cmd");
+  }
   return "";
 }
 
@@ -337,8 +352,8 @@ function renderFlow() {
   const note = $("flow-note");
   note.innerHTML = state.blocking.length ? `<div class="q"><b>${esc(t("blocking"))}</b><br>${state.blocking.map(esc).join("<br>")}</div>` : "";
   if (state.model_evidence?.length) note.innerHTML += `<div class="q"><b>${esc(t("model_evidence"))}</b><br>${state.model_evidence.map((p) => esc(`${p.path}: ${p.code}`)).join("<br>")}</div>`;
-  // rtc 实例只服务访谈与需求确认；走到建模及之后提示换成 OpticStudio 实例 / past the demand, point to an OpticStudio instance
-  if (state.daemon.running && state.daemon.backend === "rtc" && !["interview", "demand_confirm"].includes(state.current)) {
+  // rtc 实例服务需求与设计阶段（ADR-0016、0017）；建模、确认和交付提示换成 OpticStudio 实例 / modelling, approval and delivery need OpticStudio
+  if (state.daemon.running && state.daemon.backend === "rtc" && ["modeling", "model_approve", "deliver"].includes(state.current)) {
     note.innerHTML += `<div class="q">${esc(t("rtc_switch"))}</div>`;
   }
 }
@@ -537,7 +552,7 @@ function renderSpot(view) {
   view.innerHTML = `<div class="figure" style="min-width:${cols * CELL + (cols - 1) * GAP + 30}px">
     <div class="fig-head"><div class="legend">${sys.wavelengths.map((w, i) => `<span><i style="background:${colors[i]}"></i>${Math.round(w.um * 1000)} nm</span>`).join("")}</div></div>
     <div class="spot-grid" style="grid-template-columns:repeat(${cols},minmax(${CELL}px,1fr))"></div></div>
-    <div class="foot">${esc(foot("spot_foot", spot.analysis_settings?.ReferTo || "—"))}</div>`;
+    <div class="foot">${esc(foot(viz.backend === "rtc" ? "spot_foot_rtc" : "spot_foot", spot.analysis_settings?.ReferTo || "—"))}</div>`;
   const grid = view.querySelector(".spot-grid");
   const pw = sys.primary_wave - 1;
   const width = (grid.clientWidth - (cols - 1) * GAP) / cols - 14;
@@ -593,7 +608,7 @@ function renderMtf(view) {
   const settings = Object.entries(mtf.settings || {}).filter(([, v]) => v != null).map(([k, v]) => `${k} ${v}`).join(" · ");
   view.innerHTML = `<div class="figure plot"><div class="fig-head"><div class="legend">${named.map((s, i) => `<span><i style="background:${FIELD_COLORS[i % FIELD_COLORS.length]}"></i>${esc(s.description)}</span>`).join("")}
     <span><i class="line"></i>${esc(t("tangential"))}</span><span><i class="line dash"></i>${esc(t("sagittal"))}</span></div></div><div id="mtf-plot"></div></div>
-    <div class="foot">${esc(foot("mtf_foot"))} ${esc(settings)}${mtf.per_field ? `<br>${esc(t("mtf_partial") + (viz.errors?.FftMtf || ""))}` : ""}</div>`;
+    <div class="foot">${esc(foot(viz.backend === "rtc" ? "mtf_foot_rtc" : "mtf_foot"))} ${esc(settings)}${mtf.per_field ? `<br>${esc(t("mtf_partial") + (viz.errors?.FftMtf || ""))}` : ""}</div>`;
   const host = $("mtf-plot");
   const head = view.querySelector(".fig-head").offsetHeight;
   const W = host.clientWidth, H = Math.max(300, Math.min(520, view.clientHeight - head - 90));
@@ -1395,13 +1410,20 @@ function renderDetectors(view) {
 
 // ---------------- 轮次 ----------------
 
+// 这一轮谁算的：rtc 轮次标 rtc，复测过的再标 OpticStudio 复测（数值已换成 OpticStudio 的）/ who computed a round
+function roundSource(r) {
+  if (r.backend !== "rtc") return "";
+  if (r.confirmed_by == null) return `<span class="tag">${esc(t("tag_rtc"))}</span>`;
+  return `<span class="tag ${r.agrees ? "ok" : ""}">${esc(t(r.agrees ? "tag_confirmed" : "tag_disagrees"))}</span>`;
+}
+
 function renderRounds(view) {
   const rounds = state.rounds;
   if (!rounds.length) { view.innerHTML = `<div class="empty">${esc(t("no_rounds"))}</div>`; return; }
   view.innerHTML = `<div class="table-wrap"><div class="figure"><div id="g-plot"></div></div><div class="foot">${esc(t("pick_round"))}</div>
     <table><tr><th>${esc(t("round"))}</th><th>${esc(t("tiers"))}</th><th class="num">${esc(t("gap"))}</th><th>${esc(t("state"))}</th><th>${esc(t("note"))}</th></tr>
     ${rounds.slice().reverse().map((r) => `<tr class="${r.viz ? "pick" : ""} ${r.round === roundShown ? "sel" : ""}" data-round="${r.round}">
-      <td class="num" style="text-align:left">${t("select_round", r.round)}</td><td>${r.tiers.map((x) => `<span class="tag">${esc(x)}</span>`).join("")}</td>
+      <td class="num" style="text-align:left">${t("select_round", r.round)}</td><td>${r.tiers.map((x) => `<span class="tag">${esc(x)}</span>`).join("")}${roundSource(r)}</td>
       <td class="num">${fmtG(r.shortfall)}</td><td>${r.achieved ? `<span class="tag ok">${esc(t("achieved"))}</span>` : ""}${r.deliverable ? `<span class="tag">${esc(t("deliverable"))}</span>` : ""}</td>
       <td>${esc(r.note)}</td></tr>`).join("")}</table></div>`;
   view.querySelectorAll("tr.pick").forEach((tr) => tr.addEventListener("click", () => {

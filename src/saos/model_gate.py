@@ -239,6 +239,12 @@ def fingerprint_changes(approved: dict, current: dict, desc: dict | None = None)
     if a.get("mode") != b.get("mode"):
         return ["mode"]
     _align(a, b)
+    # rtc 实例读不出的系统设置（偏振、切趾、膜层文件）不比较：rtc 存盘原样带过去，交付前在 OpticStudio 上复测时核对（ADR-0017）
+    # settings the rtc instance cannot read are not compared: rtc carries them over on save and the OpticStudio
+    # re-measurement before delivery checks them (ADR-0017)
+    for key in (desc or {}).get("unread") or ():
+        a.pop(key, None)
+        b.pop(key, None)
     for get, put in ((lambda f: f["fields"]["items"], lambda f, v: f["fields"].__setitem__("items", v)),
                      (lambda f: f["wavelengths"], lambda f, v: f.__setitem__("wavelengths", v))):
         try:
