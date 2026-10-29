@@ -118,14 +118,6 @@ uv run saos daemon stop --all    # 逐个停止它们，并清掉已退出进程
 
 完整列表见 `uv run saos --help`。
 
-## 从旧 Optiland 分支迁移
-
-代码在 `feat/zos-standalone` 延续当前工作流，旧实验保留于 `archive/optiland-hybrid`。旧任务文件不自动改写；含双后端阶段记录或探索轮次的任务不能继续计算。
-
-新建任务后，按原始 JSON 处方用 `lens build` 重建，或者导入经 OpticStudio 另存、没有 `.optiland.json` 伴随文件的 `.zmx`。重新确认需求和模型，再记录 ZOS 基线；旧数值不能继承。不要删除伴随文件来冒充已迁移的镜头。
-
-`zos begin`、`lens export`、`opt glass`、`opt merit script`、Torch/SciPy 局部算法选项、`--device` 和逐变量 `--min/--max` 已移除。玻璃替换使用 Hammer/Global 的 material substitute 求解，边界通过原生评价函数操作数表达；通用 `saos.search` 外层搜索仍保留。里程碑由报告认可耗时改为当前需求版本的首次报告生成耗时（`to_first_report_s`）。
-
 ## 文档
 
 | 文件 | 内容 |
