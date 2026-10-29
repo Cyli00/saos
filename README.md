@@ -98,7 +98,7 @@ uv run saos daemon stop --all    # 逐个停止它们，并清掉已退出进程
 
 ## 注意事项
 
-- **数值以 OpticStudio 为准**：从可行性、初筛到最终报告均使用同一后端；不再经过跨后端重建与对比。
+- **数值以 OpticStudio 为准**：从建模、初筛到最终报告均使用同一后端；不再经过跨后端重建与对比。需求访谈阶段的可行性核算可以用 `uv run saos daemon start --backend rtc` 启动的 rtc 实例，不占许可，确认需求后换回 OpticStudio。
 - **OpticStudio 许可证**：同时最多 8 个 OpticStudio 实例，包括你自己打开的窗口。daemon 启动即占一个许可；并发计算默认使用 4 个常驻 worker，起点生成另用一个独占会话。
 - **OpticStudio 弹出对话框会卡住计算**：例如自动保存恢复提示，saos 遇到时返回 `UI_BLOCKED`，需要你手动关掉。`Documents/Zemax/Autosave/Recovered` 里的旧恢复文件会让每个新实例都弹提示。
 - **长任务在后台跑**：命令超时不代表计算失败，不要让 agent 重新提交同一项计算。要中断用 `uv run saos job cancel <任务>`，已完成的部分会保留。

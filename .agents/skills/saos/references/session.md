@@ -1,12 +1,18 @@
 # Sessions, licences and long runs
 
-The daemon holds one ZOS standalone session from startup; modelling, screening, rounds and delivery all use it. This file covers what that session needs from the machine and how to run work that takes time without losing it or blocking the user.
+The daemon holds one ZOS standalone session from startup; modelling, screening, rounds and delivery all use it. During the interview it can instead be an rtc instance (next section). This file covers what that session needs from the machine and how to run work that takes time without losing it or blocking the user.
 
 ## Preconditions
 
 `uv run saos daemon status` shows whether a daemon runs and which job it holds, whether another session is using it, and how many OpticStudio licences are free. Extension mode also needs a visible OpticStudio window. Ask the user for whatever is missing in your first reply.
 
 The licence allows 8 OpticStudio instances at a time, the user's open windows and this daemon included; count them before choosing `workers`, and a refused worker is reported as unavailable. Workers default to four and a cold start costs about 6–8 s per instance (measured 2026-10-17), so start a pool only for work that outlasts the start-up or will be repeated. A daemon does not exit by itself when a session or its UI closes, and each one holds a licence: `uv run saos daemon list --all` shows every daemon on the machine; stop the ones of finished work with `saos daemon stop` in their instance. `saos daemon stop --all` also stops other sessions' work, so it needs the user's agreement.
+
+## The rtc instance (stage 1)
+
+`uv run saos daemon start --backend rtc` (or `SAOS_BACKEND=rtc`) starts a daemon that builds, traces and evaluates lenses in rtc: no OpticStudio, no licence, start-up well under a second. Use it for the interview's feasibility checks while the demand is open ([need.md](need.md#question-the-structure-before-you-write-it-down)). Glass catalogs come from `SAOS_GLASSCAT`, default `Documents/Zemax/Glasscat`. `daemon status` and the workflow window show the backend.
+
+It refuses with `BACKEND_UNSUPPORTED` everything that needs OpticStudio's data or measurements: `lens describe|approve|analysis|view|screenshot|capture`, `opt vary|merit|local|hammer|global`, `check`, `scan` and `round`. Once the demand is confirmed, run `saos daemon stop`, then `saos daemon start` on the same `SAOS_INSTANCE`, and `lens load` a lens you saved there if modelling continues from it.
 
 ## Long runs
 

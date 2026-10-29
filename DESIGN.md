@@ -66,7 +66,7 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 | **重测基准** | Rebase (`rebase`) | 判定代码改动后，用新判定重测此前最佳归档镜头的记录；数值一致则延续比较窗口，不一致则开启新窗口（*勿称：reverify、回归测试*） |
 | **设计任务** | Design Job (`jobs/<job>/`) | 从一份用户需求到交付的一次完整设计及其文件目录（*勿称：项目、会话、run*） |
 | **运行实例** | Instance (`work/<instance>/`) | 一个后台进程及其独占运行目录，不同实例可并行（*勿单称“实例”指代 OpticStudio 进程*） |
-| **计算后端** | Backend (`zos`) | 持有镜头并完成计算的 OpticStudio 会话；`fake` 仅供工具测试 |
+| **计算后端** | Backend (`zos`) | 持有镜头并完成计算的 OpticStudio 会话；`rtc` 实例只做需求阶段的可行性核算；`fake` 仅供工具测试 |
 | **OpticStudio 实例** | OpticStudio Instance | 占用一个 ZOS-API 许可的 OpticStudio 进程（桌面窗口、standalone 会话或 Worker）（*勿称：license 槽*） |
 | **原生镜头** | Native Lens (`.zmx`) | OpticStudio 保存的完整镜头，作为加载、工作与轮次归档的权威文件 |
 | **环境面** | Environment Surface | 声明为不由本设计制造的面（样品、介质、外购件），须有数据来源，使用模型介质不阻止交付（*勿称：背景介质*） |

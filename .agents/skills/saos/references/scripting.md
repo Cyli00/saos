@@ -39,6 +39,13 @@ def run(ctx):
 
 Material keys are `material`, `nd`, `vd` and `dpgf`. Writing `nd`, `vd` or `dpgf` of a catalog glass turns it into a model glass (ΔPgF 0 for a catalog glass, as on OpticStudio); `with fast.kept(["1.material"]): ...` restores the catalog glass itself. A model glass reads back as `{"nd", "vd", "dpgf"}` on both `ctx` and the copy and can be written back as it is; `fast.push(ctx)` writes nd/vd/dpgf changes of a surface as that whole dictionary, so OpticStudio cannot fill in a value of its own.
 
+## The rtc instance
+
+On a daemon started with `--backend rtc` ([session.md](session.md#the-rtc-instance-stage-1)), `ctx` itself is rtc; `ctx.fast()` is not needed. `lens build` takes the same prescriptions with what rtc can trace: standard, paraxial, even-asphere, biconic and toroidal surfaces, EPD or object-space NA, angle or object-height fields, infinite or finite object, circular apertures, variable flags and marginal-ray-height thickness solves. It lists every other item in one `BACKEND_UNSUPPORTED`. Automatic semi-diameters and the solves are recomputed after every change, following OpticStudio's rules; `lens save` writes an OpticStudio `.zmx`.
+
+- `ctx.op` evaluates the ray operands `REAX|Y|Z|R|A|B|C`, `RAGX|Y|Z|A|B|C`, `RANG`, `RAID` (Int1 = surface, Int2 = wavelength, data = Hx, Hy, Px, Py) and `EFFL`, `WFNO`, `ISFN`, `TOTR`, `TTHI`, `EPDI`, `ENPP`, `EXPP`, `EXPD`, `PETZ`, `INDX`, `SSAG`, `CONF`; any other operand is `BACKEND_UNSUPPORTED`, so compute that quantity from rays or leave it to OpticStudio. `ctx.trace`, `ctx.spot`, `ctx.cra`, `ctx.field_profile`, `ctx.set`/`get`/`kept` and `ctx.quick_focus()` (smallest RMS spot over every field and wavelength) work as on OpticStudio; analyses do not exist.
+- Every `exec` result carries `computed_by`: the backend, the operands used that rtc has not yet reconciled with OpticStudio, and the unreconciled paths this lens takes (finite object, object-space NA, object-height field, a material outside the admission table). A number built on a listed item is an estimate: say so where you write it.
+
 ## Scripts
 
 `uv run saos exec SCRIPT --job J` runs `def run(ctx)` inside the daemon and archives the copy and result in `scripts/`. Python may hold control logic (scans, multi-starts, sequencing, bookkeeping) as long as every optical evaluation goes through `ctx`. Reach for built-ins first; scripts you write cost more time than the runs they drive.
