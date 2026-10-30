@@ -137,10 +137,16 @@ TEXT: dict[str, tuple[str, str]] = {
         "The glass between surfaces {a} and {b} is thinnest near its centre, {min} ({r} from the axis, outer diameter {d}), below the "
         "minimum negative-lens centre {need} of table 17-2 in 李晓彤's textbook.",
     ),
-    "w.no_exploration": (
-        "没有结构探索记录；请在说明中写明起点依据或直接采用该结构的理由。",
-        "No screening record; explain the source of this start or why this form was used directly.",
+    "w.no_search_record": (
+        "没有起型检索记录：notes 的 exploration 要列出 searches（库、检索条件、命中数、取舍），或 fixed_by_user（用户固定了哪些部分及其原话）；缺少时这份说明不能确认。",
+        "No starting-form search record: notes.exploration must list searches (library, query, hits, decision) or fixed_by_user "
+        "(the parts the user fixed and their words); without it this description cannot be approved.",
     ),
+    "h.exploration": ("起型检索", "Starting-form search"),
+    "th.exploration": ("库|检索条件|命中数|取舍", "Library|Query|Hits|Decision"),
+    "exp.fixed": ("用户固定：{parts}（原话：{quote}）", "Fixed by the user: {parts} (their words: {quote})"),
+    "exp.legacy": ("旧格式的文字记录，不算检索记录：{text}", "Unstructured text, not a search record: {text}"),
+    "exp.rebuild": ("重建原因：{text}", "Why the structure was rebuilt: {text}"),
     "w.uncatalogued": ("第 {s} 面的材料 {name} 不在在用的材料目录里。", "Surface {s}: material {name} is not in the catalogs in use."),
     "w.obsolete_material": ("第 {s} 面的玻璃 {name} 在目录里标为 Obsolete（停产），通常买不到；交付前换成在产牌号或向厂家确认。",
                             "Surface {s}: glass {name} is marked Obsolete in its catalog and is usually unavailable; replace it with a glass in production or confirm with the maker before delivery."),
@@ -653,6 +659,7 @@ def render_nsc(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[st
 <h2>{t('h.materials')}</h2><div class="wrap"><table><thead><tr>{header_row(t('th.obj_materials', waves=wave_heads))}</tr></thead><tbody>{''.join(mat_rows)}</tbody></table></div>
 <p class="muted">{t('obj_n_note')}</p>
 {_objects_html(rows, t, 'h2')}
+<h2>{t('h.exploration')}</h2>{_exploration_html(notes, t)}
 <h2>{t('h.first_order')}</h2><ul>{first_order}</ul>
 <h2>{t('h.assumptions')}</h2><ul>{assumptions}</ul>
 <h2>{t('h.layout')}</h2>{''.join(layouts)}
@@ -839,6 +846,7 @@ def render(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[str, A
 {params_html}
 {groups_html}
 {configs_html}
+<h2>{t('h.exploration')}</h2>{_exploration_html(notes, t)}
 <h2>{t('h.first_order')}</h2><ul>{first_order}</ul>
 <h2>{t('h.assumptions')}</h2><ul>{assumptions}</ul>
 <h2>{t('h.layout')}</h2>{''.join(layouts)}
@@ -1357,8 +1365,9 @@ def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, An
     chosen = i18n.resolve(lang, _demand_lang(job))
     meta = {"job": job.id, "lens": lens, "time": jobs.now_iso()}
     found = checks(desc, notes, materials_record.recorded_names(job))
-    if not explorations(job) and not str((notes or {}).get("exploration", "")).strip():
-        found.append(("no_exploration", {}))
+    searched = exploration_record(notes)
+    if not searched:
+        found.append(("no_search_record", {}))
     d, demand_error = _demand_or_error(job)
     selection, selection_found = _selection(job, d, desc, folder) if d is not None else ({"mode": "unknown"}, [])
     found += selection_found
@@ -1394,7 +1403,8 @@ def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, An
                 "scan": (selection.get("chosen") or {}).get("scan")} if d is not None else None)
     write_json(folder / "model.json", {**meta, "notes": notes, "warnings": warnings, "fingerprint": fp,
                                         "fingerprint_sha": model_gate.digest(fp), "model": desc,
-                                        "approval_schema": 2, "evidence_context": context,
+                                        # 3：起型检索记录（exploration_recorded）成为确认的前提 / 3: a search record is required for approval
+                                        "approval_schema": 3, "exploration_recorded": searched, "evidence_context": context,
                                         "shown": shown, "shown_sha": shown_sha, "unknowns": unknowns})
     out = folder / "index.html"
     out.write_text(render(desc, notes, meta, chosen, found, shown), encoding="utf-8")
@@ -1408,6 +1418,60 @@ def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, An
         "unknowns": unknowns,
         "next": "show the page to the user; after they approve, run lens approve --model <folder> --quote \"<their words>\"",
     }
+
+
+EXPLORATION_KEYS = {"searches", "fixed_by_user", "notes"}
+SEARCH_KEYS = {"library", "query", "hits", "decision"}
+
+
+def exploration_record(notes: dict[str, Any] | None) -> bool:
+    """校验 notes.exploration，返回它是否记下了检索（searches）或用户固定的部分（fixed_by_user）；格式错报 BAD_ARGS。
+    旧的文字形式照样能读，但不算记录（10-30 的任务写一句“未进行结构搜索”就过了关，起型全靠慢慢优化）。
+    Validates notes.exploration and returns whether it records searches or the parts the user fixed; a malformed one is
+    BAD_ARGS. The old free text still reads but is no record (on 2026-10-30 one line saying "no structure search" passed)."""
+    value = (notes or {}).get("exploration")
+    if value is None or isinstance(value, str):
+        return False
+    fmt = "notes.exploration: {searches: [{library, query, hits, decision}], fixed_by_user: {parts, quote}, notes} (lens describe --help)"
+    if not isinstance(value, dict) or set(value) - EXPLORATION_KEYS:
+        raise SaosError(ErrorCode.BAD_ARGS, f"expected {fmt}")
+    searches = value.get("searches") or []
+    if not isinstance(searches, list):
+        raise SaosError(ErrorCode.BAD_ARGS, f"searches must be a list; expected {fmt}")
+    for n, s in enumerate(searches):
+        ok = (isinstance(s, dict) and set(s) == SEARCH_KEYS and isinstance(s["library"], str) and s["library"].strip()
+              and s["query"] not in (None, "", {}, []) and isinstance(s["hits"], int) and not isinstance(s["hits"], bool)
+              and s["hits"] >= 0 and isinstance(s["decision"], str) and s["decision"].strip())
+        if not ok:
+            raise SaosError(ErrorCode.BAD_ARGS, f"searches[{n}] needs a library, a query, hits (a whole number, 0 for none) and a decision")
+    fixed = value.get("fixed_by_user")
+    if fixed is not None and not (isinstance(fixed, dict) and set(fixed) == {"parts", "quote"}
+                                  and all(isinstance(fixed[k], str) and fixed[k].strip() for k in ("parts", "quote"))):
+        raise SaosError(ErrorCode.BAD_ARGS, "fixed_by_user needs parts (what the user fixed) and quote (their words)")
+    return bool(searches) or fixed is not None
+
+
+def _exploration_html(notes: dict[str, Any], t: Any) -> str:
+    # 窗口确认时重建原因取自 notes.rebuild_reason，所以页面上要让用户看到 / the window's approval takes it from the notes
+    reason = str(notes.get("rebuild_reason") or "").strip()
+    return (f"<p><strong>{e(t('exp.rebuild', text=reason))}</strong></p>" if reason else "") + _search_html(notes, t)
+
+
+def _search_html(notes: dict[str, Any], t: Any) -> str:
+    value = notes.get("exploration")
+    if isinstance(value, str) and value.strip():
+        return f"<p class='muted'>{e(t('exp.legacy', text=value))}</p>"
+    if not isinstance(value, dict):
+        return f"<p>{t('none')}</p>"
+    rows = "".join(f"<tr><td>{e(s['library'])}</td><td>{e(s['query'] if isinstance(s['query'], str) else json.dumps(s['query'], ensure_ascii=False))}</td>"
+                   f"<td class='num'>{s['hits']}</td><td>{e(s['decision'])}</td></tr>" for s in value.get("searches") or [])
+    out = f"<div class='wrap'><table><thead><tr>{header_row(t('th.exploration'))}</tr></thead><tbody>{rows}</tbody></table></div>" if rows else ""
+    fixed = value.get("fixed_by_user")
+    if fixed:
+        out += f"<p>{e(t('exp.fixed', parts=fixed['parts'], quote=fixed['quote']))}</p>"
+    if value.get("notes"):
+        out += f"<p>{e(str(value['notes']))}</p>"
+    return out or f"<p>{t('none')}</p>"
 
 
 def explorations(job: jobs.Job) -> list[str]:

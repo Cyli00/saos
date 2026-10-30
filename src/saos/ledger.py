@@ -152,16 +152,20 @@ def stop_for(root: Path, demand_sha: str, demand: dict[str, Any] | None = None) 
     return next((s for s in reversed(stops(root)) if _current(s.get("demand_sha"), demand, root) == demand_sha), None)
 
 
-def record_stop(root: Path, demand_sha: str, reason: str, quote: str, demand: dict[str, Any] | None = None) -> dict[str, Any]:
-    """记录用户的停止决定。停止等于接受达不到需求，所以必须有用户原话。
-    Record the user's decision to stop. Stopping accepts that the demand is not met, so it needs the user's words."""
+def record_stop(root: Path, demand_sha: str, reason: str, quote: str, demand: dict[str, Any] | None = None, *, via: str = "cli") -> dict[str, Any]:
+    """记录停止决定。停止等于接受达不到需求：参与任务里必须有用户原话；自主任务里 agent 可以自行停止（via="auto"），
+    理由带证据，报告标明未经用户确认（ADR-0021）。
+    Record a decision to stop. Stopping accepts that the demand is not met: an interactive job needs the user's words;
+    in an autonomous job the agent may stop by itself (via="auto") with the evidence, and the report says so."""
     reason, quote = str(reason or "").strip(), str(quote or "").strip()
-    if not reason or not quote:
+    if via == "auto":
+        jobs.require_autonomous(root, "stopping")
+    if not reason or (via != "auto" and not quote):
         raise SaosError(ErrorCode.BAD_ARGS, "a stop needs --reason (why, with the evidence) and --quote (the user's own words deciding to stop)")
     rounds = load(root / LEDGER_FILE, demand)
     if not rounds or version(rounds[-1])[0] != demand_sha:
         raise SaosError(ErrorCode.BAD_ARGS, "record a round under the current demand before stopping; the stop refers to the last round")
-    record = {"round": int(rounds[-1]["round"]), "demand_sha": demand_sha, "reason": reason, "quote": quote, "time": jobs.now_iso()}
+    record = {"round": int(rounds[-1]["round"]), "demand_sha": demand_sha, "reason": reason, "quote": quote, "via": via, "time": jobs.now_iso()}
     append(root / STOPS_FILE, record)
     return record
 

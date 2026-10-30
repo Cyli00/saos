@@ -35,7 +35,7 @@ import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable, Iterator
+from typing import Any, Callable, Iterable, Iterator, Sequence
 
 import numpy as np
 
@@ -71,7 +71,9 @@ def zosapi(ctx):
 def _need_system(ctx, what: str):
     sysm = system(ctx)
     if sysm is None:
-        raise SaosError(ErrorCode.BAD_ARGS, f"{what} needs OpticStudio; {type(ctx.backend).__name__} has none")
+        # rtc 上算作当前后端算不了（判定的 backend_unsupported），其他后端仍是参数错 / on rtc a backend gap, elsewhere a bad call
+        code = ErrorCode.BACKEND_UNSUPPORTED if ctx.backend.identity().get("backend") == "rtc" else ErrorCode.BAD_ARGS
+        raise SaosError(code, f"{what} needs OpticStudio; {type(ctx.backend).__name__} has none")
     return sysm
 
 
@@ -667,6 +669,155 @@ def sag(ctx, ref: int | str, x: float, y: float) -> float | None:
     return ctx.backend.sag(surface(ctx, ref), float(x), float(y))
 
 
+def aperture(ctx, ref: int | str) -> dict[str, Any]:
+    """面孔径设置：type（CircularAperture、FloatingAperture、None …）及 MinimumRadius、MaximumRadius 等。
+    A surface's aperture: type (CircularAperture, FloatingAperture, None, ...) with MinimumRadius, MaximumRadius, ..."""
+    return ctx.backend.surface_aperture(surface(ctx, ref))
+
+
+# ---------- 衍射 PSF 与波前 / diffraction PSF and wavefront ----------
+
+@dataclass
+class Psf:
+    """一张 Huygens PSF：values[行 y][列 x] 为不归一化的强度（同一会话内可比），dx、dy 为像元间距（µm）。
+    One Huygens PSF: values[row y][column x] are unnormalised intensities (comparable within a session); dx, dy in µm."""
+
+    values: list[list[float]]
+    dx: float
+    dy: float
+
+    def peak(self, n_photon: int = 1) -> float:
+        return _photons(max(max(row) for row in self.values), n_photon)
+
+
+def _photon_order(n_photon: Any) -> int:
+    if isinstance(n_photon, bool) or not isinstance(n_photon, int) or n_photon < 1:
+        raise SaosError(ErrorCode.BAD_ARGS, f"n_photon must be a positive integer (1 for linear, 2 for two-photon), got {n_photon!r}")
+    return n_photon
+
+
+def _photons(v: float, n_photon: int) -> float:
+    # 逐次相乘而不是 v ** n：双光子与原先手写的 v * v 逐位相同 / repeated products, so two-photon matches a hand-written v * v bit for bit
+    out = v
+    for _ in range(_photon_order(n_photon) - 1):
+        out *= v
+    return out
+
+
+class _PsfSession:
+    def __init__(self, session):
+        self._session = session
+
+    def psf(self, field: int | tuple[float, float], delta_um: float) -> Psf | None:
+        """field 为视场号或镜头视场单位下的 (x, y)；delta_um 为像元间距。分析没有数据时为 None。
+        field is a field number or (x, y) in the lens's field units; delta_um the pixel pitch. None when there is no data."""
+        got = self._session.psf(field, delta_um)
+        return None if got is None else Psf(*got)
+
+
+@contextmanager
+def huygens(ctx, wave: int | None = None, pupil: int = 64, image: int = 128) -> Iterator[_PsfSession]:
+    """Huygens PSF 会话（默认主波长，光瞳 64×64、像面 128×128 采样）。会话内换视场、像元间距或镜头参数（ctx.set、ctx.kept）后
+    再调 psf() 就重新计算；按坐标给的视场在会话结束时从视场表删掉。离焦扫描、多视场都在一个会话里做。
+    A Huygens PSF session (primary wave, 64×64 pupil and 128×128 image sampling by default). Calling psf() again after
+    changing the field, pixel pitch or the lens (ctx.set, ctx.kept) recomputes; fields given as coordinates are removed
+    when the session ends. Do focus scans and field sweeps inside one session."""
+    session = ctx.backend.huygens(primary_wave(ctx) if wave is None else int(wave), int(pupil), int(image))
+    try:
+        yield _PsfSession(session)
+    finally:
+        session.close()
+
+
+def fwhm(values: Sequence[float], step: float) -> float | None:
+    """一维剖面的半高全宽：从首个最大值向两侧找第一次降到一半以下的位置，线性插值；最大值不为正或半高不在采样窗口内时为 None。
+    Full width at half maximum of a profile: from the first maximum outwards to the first drop below half, linearly
+    interpolated; None when the peak is not positive or a half-maximum crossing lies outside the window."""
+    values = [float(v) for v in values]
+    if not values:
+        return None
+    peak = max(values)
+    if not peak > 0:
+        return None
+    k = values.index(peak)
+    half = peak / 2
+    left = right = None
+    for i in range(k, 0, -1):
+        if values[i - 1] < half <= values[i]:
+            left = (i - 1) + (half - values[i - 1]) / (values[i] - values[i - 1])
+            break
+    for i in range(k, len(values) - 1):
+        if values[i + 1] < half <= values[i]:
+            right = i + (values[i] - half) / (values[i] - values[i + 1])
+            break
+    if left is None or right is None:
+        return None
+    return (right - left) * float(step)
+
+
+def psf_widths(p: Psf, n_photon: int = 1, ee: float = 0.8) -> dict[str, float | None]:
+    """横向宽度（µm）：强度取 n_photon 次方后，fwhm_x、fwhm_y 是过首个峰值像素的行、列剖面的半高全宽；ee_diameter 是以强度质心为圆心、
+    包含 ee 份能量的最小像素圆直径。取不到的量为 None。
+    Lateral widths (µm) of the intensity raised to n_photon: fwhm_x, fwhm_y across the row and column through the first
+    peak pixel; ee_diameter is the diameter of the pixel circle about the intensity centroid holding the fraction ee.
+    Values that cannot be found are None."""
+    if not 0 < float(ee) <= 1:
+        raise SaosError(ErrorCode.BAD_ARGS, f"ee must be a fraction in (0, 1], got {ee!r}")
+    n = _photon_order(n_photon)
+    rows = [[_photons(v, n) for v in row] for row in p.values]
+    iy, ix = max(((r, c) for r in range(len(rows)) for c in range(len(rows[0]))), key=lambda rc: rows[rc[0]][rc[1]])
+    out: dict[str, float | None] = {"fwhm_x": fwhm(rows[iy], p.dx), "fwhm_y": fwhm([row[ix] for row in rows], p.dy), "ee_diameter": None}
+    total = sum(map(sum, rows))
+    if not total > 0:
+        return out
+    cx = sum(v * c for row in rows for c, v in enumerate(row)) / total
+    cy = sum(v * r for r, row in enumerate(rows) for v in row) / total
+    pix = sorted(((math.hypot((c - cx) * p.dx, (r - cy) * p.dy), v) for r, row in enumerate(rows) for c, v in enumerate(row)))
+    acc = 0.0
+    for rad, v in pix:
+        acc += v
+        if acc >= float(ee) * total:
+            out["ee_diameter"] = 2 * rad
+            break
+    return out
+
+
+def psf_axial(peak_at: Callable[[int], float], step_um: float, reaches: Sequence[int] = (15, 30), *, n_photon: int = 1) -> dict[str, Any] | None:
+    """轴向宽度：peak_at(k) 给出离焦 k 步（k·step_um）处 PSF 的峰值（单光子强度，调用方负责移像面并在之后恢复），
+    取 n_photon 次方后在 −reach…reach 步上求半高全宽；半高不在窗口内时换下一个 reach（已算的离焦面复用），都不够时为 None。
+    peak_offset_um 是采样中首个最大值的离焦量，分辨率为一步。
+    Axial width: peak_at(k) is the PSF peak (single-photon intensity) k steps of step_um out of focus; the caller moves
+    the plane and restores it afterwards. Raised to n_photon, the FWHM is taken over −reach…reach steps; when a
+    half-maximum crossing falls outside, the next reach is tried, reusing planes already computed; None when none
+    suffices. peak_offset_um is the defocus of the first sampled maximum, resolved to one step."""
+    n = _photon_order(n_photon)
+    if not (math.isfinite(float(step_um)) and float(step_um) > 0) or not reaches:
+        raise SaosError(ErrorCode.BAD_ARGS, "psf_axial needs a positive step_um and at least one reach")
+    cache: dict[int, float] = {}
+
+    def value(k: int) -> float:
+        if k not in cache:
+            cache[k] = _photons(float(peak_at(k)), n)
+        return cache[k]
+
+    for reach in reaches:
+        ks = list(range(-int(reach), int(reach) + 1))
+        curve = [value(k) for k in ks]
+        width = fwhm(curve, step_um)
+        if width is not None:
+            j = max(range(len(curve)), key=lambda i: curve[i])
+            return {"fwhm_um": width, "peak_offset_um": ks[j] * float(step_um), "reach": int(reach),
+                    "curve": [(k * float(step_um), v) for k, v in zip(ks, curve)]}
+    return None
+
+
+def wavefront_rms(ctx, field: int | tuple[float, float], wave: int | None = None) -> float | None:
+    """光线积分的 RMS 波前误差（波长，参考质心：扣除平移与倾斜，默认主波长）；field 同 huygens 的 psf()；算不出时为 None。
+    RMS wavefront error from ray integration (waves, to centroid: piston and tilt removed; primary wave by default);
+    field as in huygens' psf(); None when not computable."""
+    return ctx.backend.wavefront_rms(primary_wave(ctx) if wave is None else int(wave), field)
+
+
 # ---------- 光线 / rays ----------
 
 @dataclass
@@ -1058,6 +1209,15 @@ class KitMethods:
 
     def cra(self, direction=(0.0, 1.0), wave=None, n=33, refine=2, to=None):
         return cra(self, direction, wave, n, refine, to)
+
+    def huygens(self, wave=None, pupil=64, image=128):
+        return huygens(self, wave, pupil, image)
+
+    def wavefront_rms(self, field, wave=None):
+        return wavefront_rms(self, field, wave)
+
+    def aperture(self, ref):
+        return aperture(self, ref)
 
     def field_profile(self, fn, direction=(0.0, 1.0), n=17, **kw):
         return field_profile(self, fn, direction, n, **kw)

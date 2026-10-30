@@ -502,6 +502,42 @@ def detector_spill(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], l
     return found, unchecked
 
 
+# 面型 → 根号下的二次项来自哪几列：rotational 用 LDE 的半径与圆锥；biconic 另有 X 方向（参数 1 = Rx、参数 2 = kx，
+# 与 rtc.surface.sag 一致）；toroidal 只查 Y 方向轮廓（有限旋转半径不在 rtc 的已标定范围内）
+# which columns feed the square root: rotational uses the LDE radius and conic; biconic adds X (par 1 = Rx, par 2 = kx,
+# as rtc.surface.sag); toroidal checks the Y profile only (a finite rotation radius is outside rtc's calibrated range)
+_ROTATIONAL = {"STANDARD", "EVENASPH", "EVENASPHERE", "ODDASPH", "ODDASPHERE"}
+_BICONIC = {"BICONIC", "BICONICX", "BICONICZ", "BICONICZERNIKE"}
+_TOROIDAL = {"TOROIDAL"}
+
+
+def undefined_surfaces(rows: list[dict[str, Any]], param: Any) -> list[dict[str, Any]]:
+    """矢高公式的平方根在零件外缘内没有实数解的面：1 − (1+k)c²r² < 0。OpticStudio 和 rtc 都不报错，超出部分返回边界上的值，
+    采样矢高看不出来，只能按面型参数解析地查（fiber-var-zoom 第 16 轮的 S4 实数定义域只有 4.4/6.7 µm，半口径却是 125 µm）。
+    rows 是后端 surfaces() 的行；param(index, n) 读参数 n。外缘取机械半口径，未设时取通光半口径。
+    Surfaces whose sag square root has no real value inside the part's edge: 1 − (1+k)c²r² < 0. Neither OpticStudio nor
+    rtc reports it (beyond it they return the boundary value), so sampled sags cannot show it; it is checked analytically.
+    rows are a backend's surfaces(); param(index, n) reads parameter n. The edge is the mechanical semi-diameter, else the clear one."""
+    out = []
+    for s in rows[1:-1]:
+        kind = str(s.get("type", "")).upper().replace(" ", "").replace("_", "")
+        if kind not in _ROTATIONAL | _BICONIC | _TOROIDAL:
+            continue
+        edge = s.get("mech_semi_diameter") or s.get("semi_diameter") or 0.0
+        if not edge or not math.isfinite(edge):
+            continue
+        radius = float(s.get("radius") or math.inf)
+        c = 0.0 if not math.isfinite(radius) or radius == 0 else 1.0 / radius
+        a = (1.0 + float(s.get("conic") or 0.0)) * c * c
+        if kind in _BICONIC:
+            rx = float(param(s["index"], 1) or 0.0)
+            cx = 0.0 if rx == 0 or not math.isfinite(rx) else 1.0 / rx
+            a = max(a, (1.0 + float(param(s["index"], 2) or 0.0)) * cx * cx)
+        if a * edge * edge > 1.0 + TOL:
+            out.append({"surface": s["index"], "type": s.get("type"), "edge": edge, "defined_to": 1.0 / math.sqrt(a)})
+    return out
+
+
 def interference(surfaces: list[dict[str, Any]]) -> dict[str, Any]:
     """surfaces：按序号排列，每个带 index、type、comment、material（面后的材料）、sd（网格半径，即零件外缘）、rot（行优先 3×3）、off、
     sags（与 polar_points(sd) 对应），可选 ap（aperture() 的结果）和 clear（净口径半径，缺省同 sd）。两侧材料不同（或是反射镜）的面

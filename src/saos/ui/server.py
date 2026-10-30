@@ -104,6 +104,66 @@ def viz_of(job: jobs.Job, number: int) -> dict[str, Any]:
     return _with_section(json.loads(path.read_text(encoding="utf-8")))
 
 
+def gate_of(job: jobs.Job) -> dict[str, Any]:
+    """窗口里要用户点确认的关卡：当前步骤是确认需求时给出需求单（demand.confirm_gate），是确认建模说明时给出那份说明
+    （model_gate.approval_gate）；都不是时两项为 None。
+    The gate the window asks the user to press: the demand (demand.confirm_gate) at demand_confirm, the description
+    (model_gate.approval_gate) at model_approve; both None otherwise."""
+    from saos import demand, model_gate
+
+    current = stage.snapshot(job)["current"]
+    return {"step": current, "demand": demand.confirm_gate(job.root) if current == "demand_confirm" else None,
+            "model": model_gate.approval_gate(job) if current == "model_approve" else None}
+
+
+def confirm_of(job: jobs.Job, args: dict[str, Any]) -> dict[str, Any]:
+    """用户在窗口里按下确认：记录窗口确认（via=window），备注可空；sha 须是窗口显示的那一版（ADR-0020）。
+    The user pressed confirm in the window: record a window confirmation with an optional note; sha must be the version shown."""
+    from saos import demand, model_gate
+
+    note = str(args.get("note") or "").strip()[:2000]
+    gate = args.get("gate")
+    if gate not in ("demand", "model"):
+        raise SaosError(ErrorCode.BAD_ARGS, "gate must be demand or model")
+    pending = gate_of(job)[gate]
+    model = str(args.get("model") or "")
+    if pending is None or (gate == "model" and pending["model"] != model):
+        raise SaosError(ErrorCode.BAD_ARGS, f"nothing to confirm: this {gate} is not waiting for confirmation (already confirmed, or the step moved on)")
+    if gate == "demand":
+        return {"gate": gate, "record": demand.confirm(job.root, note, via="window", shown_sha=str(args.get("sha") or ""))}
+    return {"gate": gate, "record": model_gate.approve(job, model, note, via="window", shown_sha=str(args.get("sha") or ""))}
+
+
+def revise_of(job: jobs.Job, args: dict[str, Any]) -> dict[str, Any]:
+    """用户在窗口里对关卡要求修改（只在参与任务里）：记下原话，关卡保持等待，agent 出新版后再确认（ADR-0021）。
+    The user asked for changes at a gate (interactive jobs): their words are kept and the gate keeps waiting."""
+    if job.mode != "interactive":
+        raise SaosError(ErrorCode.BAD_ARGS, "this job runs autonomously; switch it to interactive in the window first")
+    gate = args.get("gate")
+    if gate not in ("demand", "model"):
+        raise SaosError(ErrorCode.BAD_ARGS, "gate must be demand or model")
+    pending = gate_of(job)[gate]
+    if pending is None:
+        raise SaosError(ErrorCode.BAD_ARGS, f"this {gate} is not waiting for confirmation")
+    target = pending["demand_sha"] if gate == "demand" else pending["model"]
+    if str(args.get("sha") or "") != (pending["demand_sha"] if gate == "demand" else pending["shown_sha"]):
+        raise SaosError(ErrorCode.BAD_ARGS, f"the {gate} changed after the window showed it; read the new version first")
+    return {"revision": jobs.record_revision(job, gate, target, str(args.get("note") or ""))}
+
+
+def open_page(job: jobs.Job, args: dict[str, Any]) -> dict[str, Any]:
+    """用系统默认浏览器打开这个任务的一份建模说明页（models/<文件夹>/index.html），别的文件一律拒绝。
+    Open one of the job's model pages (models/<folder>/index.html) in the default browser; any other file is refused."""
+    import webbrowser
+
+    rel = str(args.get("page") or "")
+    path = (job.root / rel).resolve()
+    if path.name != "index.html" or path.parent.parent != (job.root / "models").resolve() or not path.is_file():
+        raise SaosError(ErrorCode.BAD_ARGS, "page must be models/<folder>/index.html of this job")
+    webbrowser.open(path.as_uri())
+    return {"opened": rel}
+
+
 def _with_section(viz: dict[str, Any]) -> dict[str, Any]:
     # 2D 剖面所在的平面；折转系统也能画 2D / the plane of the 2D section, so folded systems get a 2D view too
     if viz.get("surfaces"):
@@ -185,6 +245,22 @@ class Handler(BaseHTTPRequestHandler):
             self.server.seen.pop(job.id, None)
             _mark_closed(job.id, True)
             return {"closed": job.id}
+        if path == "/api/gate":
+            return gate_of(job)
+        if path == "/api/confirm" and method == "POST":
+            # 连点两下只记一次：第二次时关卡已过，sha 对不上 / a double click records once: the second finds the gate passed
+            with self.server.confirm_lock:
+                return confirm_of(job, args)
+        if path == "/api/open" and method == "POST":
+            return open_page(job, args)
+        if path == "/api/revise" and method == "POST":
+            with self.server.confirm_lock:
+                return revise_of(job, args)
+        if path == "/api/mode" and method == "POST":
+            # 只能从自主改为参与：agent 不能借窗口把任务切成自主 / only autonomous → interactive
+            if args.get("mode") != "interactive":
+                raise SaosError(ErrorCode.BAD_ARGS, "the window can only make a job interactive")
+            return jobs.make_interactive(job)
         if path == "/api/live":
             return live_of(job)
         if path == "/api/starts":
@@ -249,6 +325,7 @@ class UiServer(ThreadingHTTPServer):
         self.seen: dict[str, float] = {}
         self.hidden: set[str] = set()
         self.notices: dict[str, dict[str, str]] = {}
+        self.confirm_lock = threading.Lock()
 
     def touch(self) -> None:
         self.last_request = time.monotonic()

@@ -10,11 +10,11 @@ The licence allows 8 OpticStudio instances at a time, the user's open windows an
 
 ## Two backends in one daemon
 
-`uv run saos daemon start` runs each command on the backend its job's workflow stage uses (ADR-0018): rtc for the interview, demand confirmation and design rounds; OpticStudio for modelling, model approval and delivery, and always for `lens describe|view|screenshot|capture`, `round --confirm` and tolerance scans. rtc needs no licence; its glass catalogs come from `SAOS_GLASSCAT`, default `Documents/Zemax/Glasscat`.
+`uv run saos daemon start` runs each command on the backend its job's workflow stage uses (ADR-0020): rtc for every stage before delivery (interview, demand confirmation, modelling, model approval, design rounds); OpticStudio for delivery, and always for `lens describe|view|screenshot|capture`, `round --confirm` and tolerance scans. rtc needs no licence; its glass catalogs come from `SAOS_GLASSCAT`, default `Documents/Zemax/Glasscat`.
 
 When a command moves to the other backend, the loaded lens is handed over through its file: save it first (`lens save`), or the command stops with `UNSAVED_CHANGES`. The result's `backend_switch` names the backend that took over. `handover.agrees: false` lists what rtc and OpticStudio read differently (`mismatches`, `rays`); these stay on the lens as unverified provenance until the re-measurement before delivery, so tell the user when one concerns a demand item. `backend_switch.stayed` means rtc cannot reproduce the lens and OpticStudio keeps computing it.
 
-`saos daemon use zos|rtc` pins a backend, for instance for an OpticStudio analysis during the design rounds; `saos daemon use auto` returns to the stage rule. `daemon start --backend rtc` starts an rtc-only daemon for a machine without OpticStudio, which refuses OpticStudio's commands with `BACKEND_UNSUPPORTED`.
+`saos daemon use zos|rtc` pins a backend for the current workflow stage, for instance for an OpticStudio analysis rtc lacks during the design rounds; the pin ends by itself when the stage changes, or at once with `saos daemon use auto`. While it holds, every result carries `backend_pin` with `stage_rule`, the backend the stage would use; the result where it ends carries `released`. Pin for a named step and say which item needs it, since every result you get under it costs a licence the stage rule would not. `daemon start --backend rtc` starts an rtc-only daemon for a machine without OpticStudio, which refuses OpticStudio's commands with `BACKEND_UNSUPPORTED`.
 
 ## Long runs
 

@@ -163,3 +163,33 @@ def test_checks_and_backends_without_export_get_no_copy():
     with pytest.raises(SaosError) as err:
         from_context(SimpleNamespace(backend=FakeBackend(), in_check=False))
     assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED
+
+
+def test_a_check_reaching_for_ctx_system_on_rtc_is_filed_as_a_backend_gap():
+    # 10-30 的光纤任务里 6 个检查直接读 ctx.system.LDE，在 rtc 上一项都算不了 / six checks read ctx.system.LDE directly
+    from saos import demand
+    from saos.scripting import ScriptContext
+
+    ctx = ScriptContext(SimpleNamespace(backend=RtcBackend(None, standalone=True)), None, {}).child({})
+    with pytest.raises(SaosError) as err:
+        ctx.system
+    assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED and "ctx.get" in err.value.message
+    assert demand._error_kind(err.value) == "backend"
+    assert demand._error_kind(ValueError("bad geometry")) == "computation"
+
+
+def test_psf_and_wavefront_wait_for_reconciliation_on_rtc_while_apertures_read_as_recorded(fast, recorded):
+    # rtc.psf.psf_huygens 已有，但没和 OpticStudio 对账前不给数，判定归为后端缺口 / no numbers before reconciliation
+    from saos import demand, kit
+
+    with pytest.raises(SaosError) as err:
+        with kit.huygens(fast):
+            pass
+    assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED and demand._error_kind(err.value) == "backend"
+    with pytest.raises(SaosError) as err:
+        kit.wavefront_rms(fast, (0.0, 0.0))
+    assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED
+    assert [kit.aperture(fast, s["index"]) for s in fast.backend.surfaces()] == [s["aperture"] for s in recorded["model"]["surfaces"]]
+    with pytest.raises(SaosError) as err:
+        kit.aperture(fast, 9)
+    assert err.value.code == ErrorCode.BAD_ARGS

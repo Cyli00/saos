@@ -25,7 +25,7 @@ Petzval、远摄的原始英寸尺寸按 25.4 转成 mm。远摄网页画廊与 
 
 ## 格式与用法
 
-沿用显微物镜库的 `entries/<id>/entry.json` 元数据与 `prescription.json` 处方布局。`metrics` 保存来源给出的标称量，`applicability` 保存选库范围，`source` 保存书目页码或专利号、URL 和转录说明，`notes` 保留假设。生成时先保留原处方几何并设置需求的波长、视场和 f/#，通过 ZOS 测参考 EFL，再缩放至需求焦距；生成记录保存实测参考焦距、比例及条目/处方摘要。
+沿用显微物镜库的 `entries/<id>/entry.json` 元数据与 `prescription.json` 处方布局。`metrics` 保存来源给出的标称量，`applicability` 保存选库范围，`source` 保存书目页码或专利号、URL 和转录说明，`notes` 保留假设。生成时先保留原处方几何并设置需求的波长、视场和 f/#（物在无穷远时用入瞳直径 = EFL/F#，与 image_f_number 同义），先在 rtc 上测参考 EFL，再缩放至需求焦距；rtc 建不了的条目逐条改在 OpticStudio 上做，候选的 `provenance.computed_by` 记下是哪一边（ADR-0020）；生成记录保存实测参考焦距、比例及条目/处方摘要。
 
 从脚本调用库函数，不增加独立 CLI：
 
@@ -55,7 +55,7 @@ def run(ctx):
 
 ## 预判约定
 
-`starts.predict` 通过现有 ZOS 操作数和批量追迹取一阶量、三阶像差、Petzval 半径/EFL 与采样入射角。SPHA、COMA、ASTI、FCUR、DIST 展示为 OpticStudio 原生操作数（waves），不再沿用 Optiland SI–SV 的符号或单位。完整三阶与色差信息保存在 SeidelCoefficients 原生文本中。
+`starts.predict` 通过后端操作数和批量追迹取一阶量、三阶像差（三阶操作数与 SeidelCoefficients 只有 OpticStudio 有，rtc 上建的候选这几项记为不可用）、Petzval 半径/EFL 与采样入射角。SPHA、COMA、ASTI、FCUR、DIST 展示为 OpticStudio 原生操作数（waves），不再沿用 Optiland SI–SV 的符号或单位。完整三阶与色差信息保存在 SeidelCoefficients 原生文本中。
 
 入射角通过 RAID 取得，只统计成功到达对应面的采样光线；同时记录像面无效光线数，不声称连续最大值已验证。三阶量是近轴预判，不能替代真实像质判定。
 

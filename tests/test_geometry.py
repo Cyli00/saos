@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import math
 
+import pytest
+
 from saos import geometry
 
 IDENTITY = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
@@ -110,3 +112,21 @@ def test_aperture_outline_chord_and_extent():
     circle = geometry.aperture({"type": "CircularAperture", "MinimumRadius": 0.0, "MaximumRadius": 0.25}, 1.0)
     assert circle["explicit"] and geometry.extent(circle) == 0.25
     assert geometry.aperture({"type": "None"}, 0.4) == {"shape": "circle", "hx": 0.4, "hy": 0.4, "dx": 0.0, "dy": 0.0, "rmin": 0.0, "explicit": False}
+
+
+def test_a_surface_whose_sag_is_undefined_inside_its_edge_is_found_from_radius_and_conic():
+    # fiber-var-zoom 第 16 轮的 S4：双圆锥面的实数定义域只有几微米，半口径却是 125 µm，OpticStudio 不报错
+    def row(i, kind, radius, conic, sd, mech=None):
+        return {"index": i, "type": kind, "radius": radius, "conic": conic, "semi_diameter": sd, "mech_semi_diameter": mech}
+
+    params = {(2, 1): 0.05, (2, 2): -0.5, (3, 1): 0.0}
+    rows = [row(0, "Standard", math.inf, 0, 0),
+            row(1, "Standard", 0.2, 0.0, 0.1),          # 定义到 0.2 mm，外缘 0.1：合法
+            row(2, "Biconic Zernike", 1.0, 0.0, 0.125),  # X: (1−0.5)/0.05² → 定义到 0.0707 mm < 0.125
+            row(3, "TOROIDAL", 0.1, 0.0, 0.08, 0.12),    # Y 轮廓定义到 0.1 mm，机械外缘 0.12 > 0.1
+            row(4, "Paraxial", math.inf, math.inf, 1.0),
+            row(5, "Standard", math.inf, 0, 0)]
+    found = geometry.undefined_surfaces(rows, lambda i, n: params.get((i, n), 0.0))
+    assert [u["surface"] for u in found] == [2, 3]
+    assert found[0]["defined_to"] == pytest.approx(0.05 / math.sqrt(0.5)) and found[0]["edge"] == 0.125
+    assert found[1]["defined_to"] == pytest.approx(0.1) and found[1]["edge"] == 0.12

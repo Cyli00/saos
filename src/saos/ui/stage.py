@@ -174,6 +174,22 @@ def _report_current(root) -> bool:
     return all(made >= p.stat().st_mtime for p in inputs if p.is_file())
 
 
+def pending_revisions(job: jobs.Job, sha: str, d: dict[str, Any]) -> list[dict[str, Any]]:
+    """用户在窗口里对当前版本提出、还没处理的修改意见：需求单还是那一版且未确认，或建模说明还是最新一份且未确认。
+    出了新版本（或用户后来还是确认了），请求就不再列出。
+    Change requests the user made on the current versions and not yet answered: the same demand version, unconfirmed,
+    or the latest description, unapproved. A new version (or a later confirmation) settles them."""
+    root = job.root
+    models = sorted(p for p in (root / "models").glob("*/model.json")) if (root / "models").is_dir() else []
+    latest = models[-1].parent if models else None
+    open_targets = set()
+    if demand.confirmation_for(root, sha, d) is None:
+        open_targets.add(("demand", sha))
+    if latest is not None and not (latest / model_gate.APPROVAL_FILE).is_file():
+        open_targets.add(("model", latest.relative_to(root).as_posix()))
+    return [r for r in jobs.revisions(root) if (r.get("gate"), r.get("target")) in open_targets]
+
+
 def snapshot(job: jobs.Job) -> dict[str, Any]:
     root = job.root
     status = dict.fromkeys(STEPS, "pending")
@@ -181,8 +197,8 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
     job_state = job.read_state()
     # 任务记住的窗口设置（saos ui open --tabs / --metrics）/ the job's remembered window settings
     ui = job_state.get("ui") or {}
-    out: dict[str, Any] = {"job": job.id, "name": job_state.get("name"), "daemon": _daemon(), "progress": None,
-                           "blocking": [], "decision": None, "rounds": rounds_of(job), "ui": ui}
+    out: dict[str, Any] = {"job": job.id, "name": job_state.get("name"), "mode": job.mode, "daemon": _daemon(), "progress": None,
+                           "blocking": [], "decision": None, "rounds": rounds_of(job), "ui": ui, "revisions": []}
     # 当前镜头的评价函数值和各项测量值，后台进程自动更新（saos.live）/ the live metrics, updated by the daemon
     try:
         out["metrics"] = json.loads((root / jobs.METRICS_FILE).read_text(encoding="utf-8"))
@@ -223,6 +239,7 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
     # 版本（轮次、停止、排除、报告）用计算层哈希；确认用确认层哈希 / versions use the compute layer; confirmation uses the confirmation layer
     csha = demand.compute_digest(d)
     status["interview"] = "done"
+    out["revisions"] = pending_revisions(job, sha, d)
     if demand.confirmation_for(root, sha, d) is None:
         status["demand_confirm"] = "waiting"
         # 确认过旧版本：需求改过，要重新确认 / an older version was confirmed: the demand changed and needs confirming again

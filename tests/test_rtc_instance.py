@@ -181,3 +181,23 @@ def test_copy_mode_still_refuses_settings_it_cannot_check(tmp_path):
     with pytest.raises(SaosError) as exc:
         RtcBackend(tmp_path / "finite.zmx")
     assert exc.value.code == ErrorCode.BACKEND_UNSUPPORTED
+
+
+def test_paraxial_conic_reads_as_opticstudio_does():
+    """近轴面没有圆锥系数：ZOS-API 读作 inf、文件存 0。rtc 若读 0，声明为环境面的近轴源面在结构指纹里与 OpticStudio
+    记下的批准记录不符，轮次门禁拒绝运行（fiber-var-zoom，2026-10-30）。"""
+    from saos import model_gate
+
+    backend = _built({"title": "paraxial source", "aperture": {"type": "entrance_pupil_diameter", "value": 1.0},
+                      "fields": {"type": "angle", "y": [0]}, "wavelengths": {"um": [0.92]},
+                      "surfaces": [{"type": "paraxial", "focal_length": 4.0, "thickness": 4.0, "stop": True}]})
+    assert math.isinf(backend.surfaces()[1]["conic"])
+    assert math.isinf(backend.get_param("1.conic"))
+    desc = backend.describe_model(None)
+    assert math.isinf(desc["surfaces"][1]["conic"])
+    assert model_gate.fingerprint(desc, [1])["surfaces"][1]["conic"] == model_gate._num(math.inf)
+    # kept 恢复时把读出的 inf 写回，不改镜头；其他值无处可写
+    backend.set_param("1.conic", math.inf)
+    with pytest.raises(SaosError) as err:
+        backend.set_param("1.conic", -1.0)
+    assert err.value.code == ErrorCode.BAD_ARGS

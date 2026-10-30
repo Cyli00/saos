@@ -1,11 +1,13 @@
 """光纤侧视探头的判定量（配方草稿，由 fiber-printed-relay 任务的 checks/fiberlib.py 检查 v6 上收，2026-10-17）。
 Measurements for side-viewing fibre probes (draft recipe, lifted from checks/fiberlib.py v6 of the fiber-printed-relay job).
 
-数值定义与 fiberlib v6 相同；改动只有两处：追迹、操作数和材料查询改用 saos.kit，同一次判定内反复用到的量（几何前提、
-轴上焦点、各视场光线、PSF）经 ctx.memo 只算一次。判定脚本只要一行：
-The numbers are defined as in fiberlib v6; only two things changed: tracing, operands and material lookups go through
-saos.kit, and quantities several checks reuse within one evaluation (geometric preconditions, the on-axis focus, the
-field rays, the PSF) are computed once through ctx.memo. A check script is one line:
+数值定义与 fiberlib v6 相同；改动只有两处：全部读写经 saos.kit（面表、操作数、材料、Huygens PSF 与波前，不直接碰 OpticStudio
+对象，后端支持哪一项就能在哪个后端上测），同一次判定内反复用到的量（几何前提、轴上焦点、各视场光线、PSF）经 ctx.memo 只算一次。
+判定脚本只要一行：
+The numbers are defined as in fiberlib v6; only two things changed: every read and write goes through saos.kit (surface
+table, operands, materials, Huygens PSF and wavefront; no OpticStudio objects, so an item measures on any backend that
+supports it), and quantities several checks reuse within one evaluation (geometric preconditions, the on-axis focus,
+the field rays, the PSF) are computed once through ctx.memo. A check script is one line:
 
     from saos.recipes.fiber import side_view as sv
     def run(ctx):
@@ -36,14 +38,15 @@ from typing import Any, Callable
 import numpy as np
 
 from saos import kit
+from saos.protocol import ErrorCode, SaosError
 
 W488, W532 = 1, 2
 GRID = 21
 FIELDS5 = ((0.0, 0.0), (0.7, 0.0), (-0.7, 0.0), (0.0, 0.7), (0.0, -0.7))
 MID_FIELDS = ((0.7, 0.0), (-0.7, 0.0), (0.0, 0.7), (0.0, -0.7))
 EDGE_FIELDS = ((1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0))
-PSF_PUPIL = "S_64x64"
-PSF_IMAGE = "S_128x128"
+PSF_PUPIL = 64    # Huygens 光瞳采样 64×64 / pupil sampling
+PSF_IMAGE = 128   # 像面采样 128×128 / image sampling
 
 
 @dataclass(frozen=True)
@@ -172,49 +175,63 @@ def _centroid(h):
     return c[0], c[1]
 
 
+def _outer_key(ctx, layout: Layout) -> str:
+    """外壁这一面的厚度键：它决定样品面（像面）的位置。/ The outer wall's thickness key: it places the sample (image) plane."""
+    return f"{surface_index(ctx, layout.tube_outer)}.thickness"
+
+
 def sample_distance(ctx, layout: Layout = DEFAULT) -> float:
     """样品面到外壁的前进距离（折转一次后厚度为负）。"""
-    return -float(ctx.system.LDE.GetSurfaceAt(surface_index(ctx, layout.tube_outer)).Thickness)
+    return -float(kit.get(ctx, _outer_key(ctx, layout)))
 
 
 # ---- 几何前提 ----
 
-def _is_cb(s) -> bool:
-    return "Coordinate" in str(s.TypeName)
+def _is_cb(row: dict[str, Any]) -> bool:
+    # OpticStudio 叫 "Coordinate Break"，rtc 叫 "COORDBRK" / "Coordinate Break" in OpticStudio, "COORDBRK" in rtc
+    return "COORD" in str(row["type"]).upper()
+
+
+def _sag(ctx, i: int, x: float, y: float) -> float | None:
+    """SSAG；该点没有矢高时为 None（OpticStudio 给非有限值，rtc 报 BAD_ARGS）。/ SSAG; None where the surface has no sag."""
+    try:
+        z = kit.op(ctx, "SSAG", i, 0, x, y)
+    except SaosError as exc:
+        if exc.code != ErrorCode.BAD_ARGS:
+            raise
+        return None
+    return z if math.isfinite(z) else None
 
 
 def _geometry(ctx, layout: Layout) -> bool:
-    lde = ctx.system.LDE
+    rows = ctx.backend.surfaces()
     inner = surface_index(ctx, layout.tube_inner)
     # 厚度方向：折转（理想反射面）之前沿 +z，之后沿 -z；反向的厚度表示零件长回前一个零件里
-    mirror = next(i for i in range(lde.NumberOfSurfaces) if str(lde.GetSurfaceAt(i).Material).upper() == "MIRROR")
-    for i in range(0, lde.NumberOfSurfaces - 1):
-        s = lde.GetSurfaceAt(i)
+    mirror = next(s["index"] for s in rows if str(s["material"]).upper() == "MIRROR")
+    for s in rows[:-1]:
         if _is_cb(s):
             continue
-        t = float(s.Thickness)
+        i, t = s["index"], float(s["thickness"])
         if (i < mirror and t < -1e-6) or (i > mirror and t > 1e-6):   # 容差 1 nm
-            raise DesignFailure(f"surface {i} ({s.Comment}) has thickness {t * 1000:.1f} um against the direction of propagation")
+            raise DesignFailure(f"surface {i} ({s['comment']}) has thickness {t * 1000:.1f} um against the direction of propagation")
     # 面在其半口径内必须有定义（例如球面半口径不能超过半径）
-    for i in range(1, inner + 1):
-        s = lde.GetSurfaceAt(i)
+    for s in rows[1:inner + 1]:
         if _is_cb(s):
             continue
-        sd = float(s.SemiDiameter)
+        i, sd = s["index"], float(s["semi_diameter"])
         for x, y in ((sd, 0.0), (0.0, sd), (-sd, 0.0), (0.0, -sd)):
-            if not math.isfinite(kit.op(ctx, "SSAG", i, 0, x, y)):
-                raise DesignFailure(f"surface {i} ({s.Comment}) is undefined at its semi-diameter {sd * 1000:.1f} um")
-        r = float(s.Radius)
-        if str(s.TypeName) == "Standard" and math.isfinite(r) and r != 0 and abs(float(s.Conic)) < 1e-12 and sd > abs(r) + 1e-9:
-            raise DesignFailure(f"surface {i} ({s.Comment}) semi-diameter {sd * 1000:.1f} um exceeds its radius {abs(r) * 1000:.1f} um")
-    for i in range(0, inner - 1):
-        s, nxt = lde.GetSurfaceAt(i), lde.GetSurfaceAt(i + 1)
-        t = float(s.Thickness)
-        if abs(t) < 1e-9 or _is_cb(s) or _is_cb(nxt) or str(s.Material).upper() in ("N-BK7", "MIRROR") or i + 1 == inner:
+            if _sag(ctx, i, x, y) is None:
+                raise DesignFailure(f"surface {i} ({s['comment']}) is undefined at its semi-diameter {sd * 1000:.1f} um")
+        r = float(s["radius"])
+        if str(s["type"]).upper() == "STANDARD" and math.isfinite(r) and r != 0 and abs(float(s["conic"])) < 1e-12 and sd > abs(r) + 1e-9:
+            raise DesignFailure(f"surface {i} ({s['comment']}) semi-diameter {sd * 1000:.1f} um exceeds its radius {abs(r) * 1000:.1f} um")
+    for s, nxt in zip(rows[:inner - 1], rows[1:inner]):
+        i, t = s["index"], float(s["thickness"])
+        if abs(t) < 1e-9 or _is_cb(s) or _is_cb(nxt) or str(s["material"]).upper() in ("N-BK7", "MIRROR") or i + 1 == inner:
             continue
         e = kit.op(ctx, "ETVA", i, 0)
         if not math.isfinite(e) or e * (1 if t > 0 else -1) < 0:
-            raise DesignFailure(f"edge thickness after surface {i} ({s.Comment}) is {e * 1000:.1f} um against centre {t * 1000:.1f} um")
+            raise DesignFailure(f"edge thickness after surface {i} ({s['comment']}) is {e * 1000:.1f} um against centre {t * 1000:.1f} um")
     return True
 
 
@@ -224,14 +241,12 @@ def geometry_ok(ctx, layout: Layout = DEFAULT) -> bool:
     return _once(ctx, ("geometry", layout), lambda: _geometry(ctx, layout))
 
 
-def part_radius(s) -> float:
-    """零件实际的半径：面上定义了圆形孔径时取孔径半径，否则取半口径。"""
-    try:
-        if "Circular" in str(s.ApertureData.CurrentType):
-            return float(s.ApertureData.CurrentTypeSettings._S_CircularAperture.MaximumRadius)
-    except Exception:  # noqa: BLE001 - 读不到孔径设置时按半口径
-        pass
-    return float(s.SemiDiameter)
+def part_radius(ctx, row: dict[str, Any]) -> float:
+    """零件实际的半径：面上定义了圆形孔径时取孔径半径，否则取半口径。row 是 ctx.backend.surfaces() 的一行。"""
+    ap = kit.aperture(ctx, row["index"])
+    if ap.get("type") == "CircularAperture" and ap.get("MaximumRadius") is not None:
+        return float(ap["MaximumRadius"])
+    return float(row["semi_diameter"])
 
 
 def _global(ctx, i) -> list[float]:
@@ -241,7 +256,7 @@ def _global(ctx, i) -> list[float]:
 
 def _wall_clearance(ctx, layout: Layout) -> float:
     geometry_ok(ctx, layout)
-    lde = ctx.system.LDE
+    rows = ctx.backend.surfaces()
     o = _global(ctx, 0)[9:12]
     p1 = _global(ctx, 1)[9:12]
     axis = [p1[c] - o[c] for c in range(3)]
@@ -254,27 +269,27 @@ def _wall_clearance(ctx, layout: Layout) -> float:
         return math.sqrt(max(0.0, sum(c * c for c in v) - along * along))
 
     inner = surface_index(ctx, layout.tube_inner)
-    r_in = abs(float(lde.GetSurfaceAt(inner).Radius))
+    r_in = abs(float(rows[inner]["radius"]))
     if abs(radial(_global(ctx, inner)[9:12]) - r_in) > 1e-6:
         raise ValueError("tube inner wall vertex is not on the tube radius")
     far = layout.fiber_max_radius
     d_exit = radial(_global(ctx, surface_index(ctx, layout.prism_exit))[9:12])
     far = max(far, math.hypot(d_exit, layout.prism_half), math.hypot(d_exit - 2 * layout.prism_half, layout.prism_half))
-    for i in range(1, inner):
-        s = lde.GetSurfaceAt(i)
-        if _is_cb(s) or str(s.Comment) in layout.wall_skip or str(s.Material).upper() == "MIRROR":
+    for s in rows[1:inner]:
+        if _is_cb(s) or str(s["comment"]) in layout.wall_skip or str(s["material"]).upper() == "MIRROR":
             continue
+        i = s["index"]
         tr = _global(ctx, i)
-        sd = part_radius(s)
+        sd = part_radius(ctx, s)
         for ring in range(21):
             r = sd * ring / 20
             for k in range(36 if ring else 1):
                 a = 2 * math.pi * k / 36
                 x, y = r * math.cos(a), r * math.sin(a)
-                z = kit.op(ctx, "SSAG", i, 0, x, y)
+                z = _sag(ctx, i, x, y)
                 # 取不到矢高的点原先被 max 悄悄跳过（NaN）；前提不成立应判无效 / an undefined sag was silently skipped by max; it voids the check
-                if not math.isfinite(z):
-                    raise DesignFailure(f"surface {i} ({s.Comment}) is undefined at r = {r * 1000:.1f} um inside its aperture")
+                if z is None:
+                    raise DesignFailure(f"surface {i} ({s['comment']}) is undefined at r = {r * 1000:.1f} um inside its aperture")
                 p = [tr[9 + j] + tr[3 * j] * x + tr[3 * j + 1] * y + tr[3 * j + 2] * z for j in range(3)]
                 far = max(far, radial(p))
     clearance = (r_in - far) * 1000
@@ -292,10 +307,9 @@ def wall_clearance_um(ctx, layout: Layout = DEFAULT) -> float:
 # ---- 材料与底径 ----
 
 def lens_index(ctx, layout: Layout = DEFAULT) -> float:
-    lde = ctx.system.LDE
-    rows = [i for i in range(lde.NumberOfSurfaces)
-            if str(lde.GetSurfaceAt(i).Material).upper().startswith(layout.printed_prefix)
-            or str(lde.GetSurfaceAt(i).MaterialCell.GetSolveData().Type) == "MaterialModel"]
+    """打印透镜与胶（材料名以 printed_prefix 开头，或模型玻璃）中最大的 nd。"""
+    rows = [s["index"] for s in ctx.backend.surfaces()
+            if str(s["material"]).upper().startswith(layout.printed_prefix) or isinstance(kit.get(ctx, f"{s['index']}.material"), dict)]
     if not rows:
         raise ValueError("no printed lens or glue material found")
     return max(kit.material_nd(ctx, i) for i in rows)
@@ -303,12 +317,14 @@ def lens_index(ctx, layout: Layout = DEFAULT) -> float:
 
 def lens_base_um(ctx, layout: Layout = DEFAULT) -> float:
     """棱镜出射面上透镜的底径：贴合面与穹顶实际半径（part_radius）的较大者 × 2；没有该透镜时为 0。"""
-    lde = ctx.system.LDE
     i = surface_index(ctx, layout.lens_plane, required=False)
-    if i is None or abs(float(lde.GetSurfaceAt(i).Thickness)) < 1e-9:
+    if i is None:
+        return 0.0
+    rows = ctx.backend.surfaces()
+    if abs(float(rows[i]["thickness"])) < 1e-9:
         return 0.0
     j = surface_index(ctx, layout.lens_dome)
-    return 2 * max(part_radius(lde.GetSurfaceAt(i)), part_radius(lde.GetSurfaceAt(j))) * 1000
+    return 2 * max(part_radius(ctx, rows[i]), part_radius(ctx, rows[j])) * 1000
 
 
 # ---- 焦点、光斑、通过率、视场 ----
@@ -471,134 +487,64 @@ def collection(ctx, fields, n: int = 61, layout: Layout = DEFAULT) -> float:
 
 # ---- Huygens PSF（发射波长，样品面移到轴上最佳焦面） ----
 
-class _Temporary:
-    """测量期间临时改动样品面位置与视场表，退出时逐项恢复（检查只读）。期间不用 field_hits 的缓存。"""
-
-    def __init__(self, ctx, layout: Layout):
-        self.ctx = ctx
-        self.layout = layout
-        self.outer = ctx.system.LDE.GetSurfaceAt(surface_index(ctx, layout.tube_outer))
-        self.t0 = float(self.outer.Thickness)
-        self.fields = ctx.system.SystemData.Fields
-        self.n0 = int(self.fields.NumberOfFields)
-
-    def __enter__(self):
-        return self
-
-    def set_plane(self, forward_from_wall_mm: float) -> None:
-        self.outer.Thickness = -float(forward_from_wall_mm)
-
-    def field_number(self, hx: float, hy: float) -> int:
-        """在视场表末尾追加物高 (h·hx, h·hy) 的视场，返回其编号。"""
-        f = self.fields.AddField(self.layout.object_height * hx, self.layout.object_height * hy, 1.0)
-        return int(f.FieldNumber)
-
-    def __exit__(self, *exc):
-        while int(self.fields.NumberOfFields) > self.n0:
-            self.fields.RemoveField(int(self.fields.NumberOfFields))
-        self.outer.Thickness = self.t0
-        return False
-
-
-class _Huygens:
-    """整个测量只开一个 Huygens PSF 分析，换视场、像元间距或像面后重新计算。
-    extension 模式下每次新建分析都会在界面开关一个窗口，连续上百次会使 OpticStudio 崩溃（2026-10-16 实测）。"""
-
-    def __init__(self, ctx, wave: int):
-        self.run = ctx.system.Analyses.New_Analysis(ctx.zosapi.Analysis.AnalysisIDM.HuygensPsf)
-        s = self.run.GetSettings()
-        self.s = getattr(s, "__implementation__", s)
-        self.s.Wavelength.SetWavelengthNumber(wave)
-        self.s.PupilSampleSize = getattr(type(self.s.PupilSampleSize), PSF_PUPIL)
-        self.s.ImageSampleSize = getattr(type(self.s.ImageSampleSize), PSF_IMAGE)
-        self.s.Normalize = False
-
-    def __enter__(self):
-        return self
-
-    def grid(self, field_no: int, delta_um: float) -> dict[str, Any]:
-        self.s.Field.SetFieldNumber(int(field_no))
-        self.s.ImageDelta = float(delta_um)
-        self.run.ApplyAndWaitForCompletion()
-        r = self.run.GetResults()
-        if r is None or int(r.NumberOfDataGrids) < 1:
-            raise DesignFailure("Huygens PSF returned no data")
-        g = r.GetDataGrid(0)
-        nx, ny, values = int(g.Nx), int(g.Ny), g.Values
-        rows = [[float(values[iy, ix]) for ix in range(nx)] for iy in range(ny)]
-        return {"values": rows, "dx": float(g.Dx), "dy": float(g.Dy), "step": 1}
-
-    def __exit__(self, *exc):
-        self.run.Close()
-        return False
+def _field_at(layout: Layout, hx: float, hy: float) -> tuple[float, float]:
+    """归一化视场 → 视场表坐标（物高 h·hx, h·hy）；PSF 与波前分析按坐标临时追加视场。"""
+    return layout.object_height * hx, layout.object_height * hy
 
 
 def _fwhm_1d(values, step: float) -> float:
-    peak = max(values)
-    if not peak > 0:
+    """kit.fwhm；取不到时为 DesignFailure。/ kit.fwhm, with DesignFailure when it has no value."""
+    if not max(values) > 0:
         raise DesignFailure("PSF has no positive peak")
-    k = values.index(peak)
-    half = peak / 2
-    left = right = None
-    for i in range(k, 0, -1):
-        if values[i - 1] < half <= values[i]:
-            left = (i - 1) + (half - values[i - 1]) / (values[i] - values[i - 1])
-            break
-    for i in range(k, len(values) - 1):
-        if values[i + 1] < half <= values[i]:
-            right = i + (values[i] - half) / (values[i] - values[i + 1])
-            break
-    if left is None or right is None:
+    width = kit.fwhm(values, step)
+    if width is None:
         raise DesignFailure("PSF half maximum not inside the sampled window")
-    return (right - left) * step
+    return width
 
 
-def _delta_for(ctx, hx: float, hy: float, dz: float, layout: Layout) -> float:
-    """像元间距：让 128 点窗口约为该视场几何光斑 RMS 直径的 4 倍，最小 0.05 µm。在临时像面上追迹，不用缓存。"""
+def _psf(hug, field: tuple[float, float], delta_um: float) -> kit.Psf:
+    p = hug.psf(field, delta_um)
+    if p is None:
+        raise DesignFailure("Huygens PSF returned no data")
+    return p
+
+
+def _delta_for(ctx, hx: float, hy: float, layout: Layout) -> float:
+    """像元间距：让 PSF_IMAGE 点窗口约为该视场几何光斑 RMS 直径的 4 倍，最小 0.05 µm。在临时像面上追迹，不用缓存。"""
     hits, _ = _field_hits_raw(ctx, [(hx, hy)], layout.emission, GRID)
     h = hits[(hx, hy)]
     if len(h) < 4:
         raise DesignFailure(f"too few rays reach the sample at field {(hx, hy)}")
-    return max(0.05, 4 * 2 * _rms(h, dz) * 1000 / 128)
+    return max(0.05, 4 * 2 * _rms(h, 0.0) * 1000 / PSF_IMAGE)
 
 
 def _psf_widths(ctx, layout: Layout) -> list[dict[str, Any]]:
     geometry_ok(ctx, layout)
     dz = best_focus_dz(ctx, layout)
     focus = sample_distance(ctx, layout) - dz
+    key = _outer_key(ctx, layout)
     out = []
-    with _Temporary(ctx, layout) as tmp, _Huygens(ctx, layout.emission) as hug:
-        tmp.set_plane(focus)
+    with kit.kept(ctx, [key]), kit.huygens(ctx, layout.emission, PSF_PUPIL, PSF_IMAGE) as hug:
+        kit.set(ctx, {key: -focus})
         for hx, hy in FIELDS5:
-            delta = _delta_for(ctx, hx, hy, 0.0, layout)
-            g = hug.grid(tmp.field_number(hx, hy), delta)
-            rows = [[v or 0.0 for v in row] for row in g["values"]]
-            dx, dy = g["dx"] * g["step"], g["dy"] * g["step"]
-            iy, ix = max(((r, c) for r in range(len(rows)) for c in range(len(rows[0]))), key=lambda rc: rows[rc[0]][rc[1]])
-            fx = _fwhm_1d(rows[iy], dx)
-            fy = _fwhm_1d([row[ix] for row in rows], dy)
-            total = sum(map(sum, rows))
-            cx = sum(v * c for row in rows for c, v in enumerate(row)) / total
-            cy = sum(v * r for r, row in enumerate(rows) for v in row) / total
-            pix = sorted(((math.hypot((c - cx) * dx, (r - cy) * dy), v) for r, row in enumerate(rows) for c, v in enumerate(row)))
-            acc, ee80 = 0.0, None
-            for rad, v in pix:
-                acc += v
-                if acc >= 0.8 * total:
-                    ee80 = 2 * rad
-                    break
-            out.append({"field": (hx, hy), "fwhm_x": fx, "fwhm_y": fy, "ee80": ee80, "delta_um": delta})
+            delta = _delta_for(ctx, hx, hy, layout)
+            p = _psf(hug, _field_at(layout, hx, hy), delta)
+            w = kit.psf_widths(p)
+            if w["fwhm_x"] is None or w["fwhm_y"] is None:
+                raise DesignFailure("PSF has no positive peak" if not p.peak() > 0 else "PSF half maximum not inside the sampled window")
+            out.append({"field": (hx, hy), "fwhm_x": w["fwhm_x"], "fwhm_y": w["fwhm_y"], "ee80": w["ee_diameter"], "delta_um": delta})
     return out
 
 
 def psf_widths_um(ctx, layout: Layout = DEFAULT) -> list[dict[str, Any]]:
-    """5 个视场的 X、Y 半高全宽与 80% 包围能量直径（µm），在发射波长轴上最佳焦面计算 Huygens PSF。psf_x、psf_y、ee80 共用一次计算。"""
+    """5 个视场的 X、Y 半高全宽与 80% 包围能量直径（µm），在发射波长轴上最佳焦面计算 Huygens PSF（kit.psf_widths）。
+    psf_x、psf_y、ee80 共用一次计算。"""
     return _once(ctx, ("psf", layout), lambda: _psf_widths(ctx, layout))
 
 
 def psf_z_um(ctx, step_um: float = 4.0, half_range_um: float = 60.0, layout: Layout = DEFAULT) -> float:
-    """各视场 Huygens PSF 峰值随像面离焦的曲线的半高全宽（µm），5 个视场取最差。离焦面相对轴上最佳焦面，像元间距按最佳焦面定且
-    各离焦面相同；离焦面不得进入外壁以内。曲线两侧都须降到峰值一半以下，否则扩大一次范围，仍不够则无效。
+    """各视场 Huygens PSF 峰值随像面离焦的曲线的半高全宽（µm，kit.psf_axial），5 个视场取最差。离焦面相对轴上最佳焦面，像元间距
+    按最佳焦面定且各离焦面相同；离焦面不得进入外壁以内。曲线两侧都须降到峰值一半以下，否则扩大一次范围，仍不够则无效。
     在后台进程里时各视场分给 worker 池并行（_psf_z_parallel，池没开就启动），池忙或 worker 没算成的视场在主实例里串行算。"""
     geometry_ok(ctx, layout)
     dz = best_focus_dz(ctx, layout)
@@ -607,41 +553,30 @@ def psf_z_um(ctx, step_um: float = 4.0, half_range_um: float = 60.0, layout: Lay
     worst = max(widths.values(), default=0.0)
     rest = [f for f in FIELDS5 if f not in widths]
     if rest:
-        with _Temporary(ctx, layout) as tmp, _Huygens(ctx, layout.emission) as hug:
+        with kit.kept(ctx, [_outer_key(ctx, layout)]), kit.huygens(ctx, layout.emission, PSF_PUPIL, PSF_IMAGE) as hug:
             for hx, hy in rest:
-                worst = max(worst, _psf_z_field(ctx, tmp, hug, hx, hy, focus, step_um, half_range_um, layout))
+                worst = max(worst, _psf_z_field(ctx, hug, hx, hy, focus, step_um, half_range_um, layout))
     return worst
 
 
-def _psf_z_field(ctx, tmp: _Temporary, hug: _Huygens, hx: float, hy: float, focus: float, step_um: float, half_range_um: float,
-                 layout: Layout) -> float:
-    """一个视场的离焦曲线半高全宽（µm）。/ The axial FWHM of one field (µm)."""
-    tmp.set_plane(focus)
-    delta = _delta_for(ctx, hx, hy, 0.0, layout)
-    fno = tmp.field_number(hx, hy)
-    cache: dict[int, float] = {}
+def _psf_z_field(ctx, hug, hx: float, hy: float, focus: float, step_um: float, half_range_um: float, layout: Layout) -> float:
+    """一个视场的离焦曲线半高全宽（µm）；调用方负责恢复外壁厚度。/ The axial FWHM of one field (µm); the caller restores the wall."""
+    key = _outer_key(ctx, layout)
+    kit.set(ctx, {key: -focus})
+    delta = _delta_for(ctx, hx, hy, layout)
+    field = _field_at(layout, hx, hy)
 
     def peak_at(k: int) -> float:
-        if k not in cache:
-            plane = focus + k * step_um / 1000
-            if plane <= 0:
-                cache[k] = 0.0
-            else:
-                tmp.set_plane(plane)
-                g = hug.grid(fno, delta)
-                cache[k] = max(v or 0.0 for row in g["values"] for v in row)
-        return cache[k]
+        plane = focus + k * step_um / 1000
+        if plane <= 0:
+            return 0.0
+        kit.set(ctx, {key: -plane})
+        return _psf(hug, field, delta).peak()
 
-    for half in (half_range_um, 2 * half_range_um):
-        try:
-            # 窗口内全部取值，与原定义相同；扩到 ±2×half 时已算过的离焦面直接复用
-            # every plane in the window, as before; widening reuses the planes already computed
-            reach = int(half / step_um)
-            return _fwhm_1d([peak_at(k) for k in range(-reach, reach + 1)], step_um)
-        except DesignFailure:
-            if half != half_range_um:
-                raise
-    raise AssertionError("unreachable")
+    axial = kit.psf_axial(peak_at, step_um, (int(half_range_um / step_um), int(2 * half_range_um / step_um)))
+    if axial is None:
+        raise DesignFailure("PSF half maximum not inside the sampled window")
+    return axial["fwhm_um"]
 
 
 # 自动开池时给用户留下的许可证数（他们自己的窗口、别的实例）；凑不出这么多个 worker 就不并行
@@ -652,17 +587,18 @@ PSF_Z_MIN_WORKERS = 2
 
 def _psf_z_parallel(ctx, focus: float, step_um: float, half_range_um: float) -> dict[tuple[float, float], float]:
     """把 FIELDS5 分给后台进程的 worker 池（没开就按需启动；新开 worker 前给用户留 PSF_Z_KEEP_FREE 个许可证，凑不出 2 个 worker 就串行），返回算成的各视场半高全宽；任一视场
-    设计失败就抛 DesignFailure，worker 没算成的视场不在返回值里，由调用方串行补算。池正被分离扫描占用或不在后台进程里时返回空。
-    worker 拿到的是主实例当前内存状态的快照（CopySystem 另存），所以未保存的修改、rebase 时装着的归档镜头都照样测。
+    设计失败就抛 DesignFailure，worker 没算成的视场不在返回值里，由调用方串行补算。池正被分离扫描占用、不在后台进程里或后端导不出副本时返回空。
+    worker 拿到的是主实例当前内存状态的副本（export_native），所以未保存的修改、rebase 时装着的归档镜头都照样测。
     Share FIELDS5 out to the daemon's worker pool, starting it if needed while leaving PSF_Z_KEEP_FREE licences free (serial when fewer than 2 workers fit), and return
     the widths it got; a design failure in any field raises DesignFailure, fields no worker finished are left out for the
-    caller to compute serially. Empty when the pool is busy with a detached scan or there is no daemon. Workers get a
-    snapshot of the main instance's state in memory (CopySystem, saved aside), so unsaved changes and the archived lens
-    of a rebase are measured as they are."""
+    caller to compute serially. Empty when the pool is busy with a detached scan, there is no daemon, or the backend
+    cannot export a copy. Workers get a copy of the main instance's state in memory (export_native), so unsaved changes
+    and the archived lens of a rebase are measured as they are."""
     from saos import client, config, parallel
 
     pool = getattr(getattr(ctx, "_daemon", None), "pool", None)
-    if pool is None:
+    export = getattr(ctx.backend, "export_native", None)
+    if pool is None or export is None:
         return {}
     # 已开着的 worker 照用；新开的只用许可证余量减去留给用户的部分，凑不出 2 个 worker 就串行
     # workers already up are used; new ones only from the free licences minus the share kept for the user; fewer than 2: serial
@@ -678,12 +614,8 @@ def _psf_z_parallel(ctx, focus: float, step_um: float, half_range_um: float) -> 
         folder = Path(tempfile.mkdtemp(prefix="saos-psfz-"))
         snapshot = folder / "lens.zmx"
         try:
-            copy = ctx.system.CopySystem()
-            try:
-                copy.SaveAs(str(snapshot))
-            finally:
-                copy.Close(False)
-        except Exception:  # noqa: BLE001 - 存不出快照就在主实例串行 / no snapshot: measure serially in the main instance
+            export(snapshot)
+        except Exception:  # noqa: BLE001 - 存不出副本就在主实例串行 / no copy: measure serially in the main instance
             return {}
         if not snapshot.is_file():
             return {}
@@ -707,33 +639,22 @@ def _psf_z_parallel(ctx, focus: float, step_um: float, half_range_um: float) -> 
 def psf_z_field(w, item: dict[str, Any]) -> float:
     """worker 里测一个视场的 psf_z（由 _psf_z_parallel 分派，只用于默认 Layout）。
     One field of psf_z inside a worker (dispatched by _psf_z_parallel, default Layout only)."""
-    with _Temporary(w, DEFAULT) as tmp, _Huygens(w, DEFAULT.emission) as hug:
-        return _psf_z_field(w, tmp, hug, float(item["hx"]), float(item["hy"]), float(item["focus"]), float(item["step"]),
+    with kit.kept(w, [_outer_key(w, DEFAULT)]), kit.huygens(w, DEFAULT.emission, PSF_PUPIL, PSF_IMAGE) as hug:
+        return _psf_z_field(w, hug, float(item["hx"]), float(item["hy"]), float(item["focus"]), float(item["step"]),
                             float(item["half"]), DEFAULT)
 
 
 def wfe_rms_waves(ctx, layout: Layout = DEFAULT) -> float:
-    """发射波长 RMS 波前误差（波长），5 个视场取最差：Zernike 标准系数分析文本中 "From integration of the rays" 下的
-    RMS (to centroid)（扣除平移与倾斜），像面移到轴上最佳焦面。"""
+    """发射波长 RMS 波前误差（波长，kit.wavefront_rms：光线积分、参考质心即扣除平移与倾斜），5 个视场取最差，像面移到轴上最佳焦面。"""
     geometry_ok(ctx, layout)
     dz = best_focus_dz(ctx, layout)
     focus = sample_distance(ctx, layout) - dz
+    key = _outer_key(ctx, layout)
     worst = 0.0
-    with _Temporary(ctx, layout) as tmp:
-        tmp.set_plane(focus)
+    with kit.kept(ctx, [key]):
+        kit.set(ctx, {key: -focus})
         for hx, hy in FIELDS5:
-            # 读完就删；OpticStudio 偶尔还占着文件时不让清理失败打断测量 / removed once read; a file OpticStudio still holds must not fail the check
-            with tempfile.TemporaryDirectory(prefix="saos-wfe-", ignore_cleanup_errors=True) as folder:
-                text = Path(folder) / "z.txt"
-                ctx.backend.analysis("ZernikeStandardCoefficients", {"Field": tmp.field_number(hx, hy), "Wavelength": layout.emission}, text)
-                lines = text.read_text(encoding="utf-16", errors="ignore").splitlines()
-            v = None
-            for k, line in enumerate(lines):
-                if line.startswith("From integration of the rays"):
-                    for nxt in lines[k + 1:k + 4]:
-                        if nxt.startswith("RMS (to centroid)"):
-                            v = float(nxt.split(":")[1].split()[0])
-                    break
+            v = kit.wavefront_rms(ctx, _field_at(layout, hx, hy), layout.emission)
             if v is None or not math.isfinite(v):
                 raise DesignFailure(f"wavefront error not computable at field {(hx, hy)}")
             worst = max(worst, v)

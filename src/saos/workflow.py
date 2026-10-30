@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from saos import demand, jobs, ledger, lens_files, model_gate
+from saos import demand, geometry, jobs, ledger, lens_files, model_gate
 from saos.demand import TIERS
 from saos.protocol import ErrorCode, SaosError, jsonable, write_json
 
@@ -144,7 +144,11 @@ def parts_clash(ctx) -> dict[str, Any] | None:
     crossings = [{"surfaces": c["surfaces"], "depth": c["depth"]} for c in clash.get("crossings") or []]
     # 序列镜头记镜片和点数，非序列系统记物体和穿插深度 / lenses and points for a sequential lens, objects and depth for a non-sequential one
     overlaps = [{k: o[k] for k in ("lenses", "points", "objects", "depth") if k in o} for o in clash.get("overlaps") or []]
-    return {"crossings": crossings, "overlaps": overlaps} if crossings or overlaps else None
+    # 矢高在零件外缘内没有定义的面同样做不出来（当前结构的曲率与圆锥）/ a surface undefined inside its edge cannot be made either
+    undefined = geometry.undefined_surfaces(ctx.backend.surfaces(), lambda i, n: ctx.backend.get_param(f"{i}.par{n}"))
+    if not (crossings or overlaps or undefined):
+        return None
+    return {"crossings": crossings, "overlaps": overlaps, **({"undefined": undefined} if undefined else {})}
 
 
 def lens_state(ctx) -> tuple[dict[str, Any], str]:

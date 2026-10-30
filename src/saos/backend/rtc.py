@@ -665,7 +665,7 @@ class RtcBackend(Backend):
             surfaces.append({
                 "index": i, "type": TYPE_NAMES.get(s.type.upper(), s.type), "comment": s.comment, "radius": self._radius(s),
                 "thickness": lens.thickness(i, self.config), "material": self._material_text(s), "semi_diameter": s.semi_diameter,
-                "mech_semi_diameter": s.mech_semi_diameter, "conic": s.conic, "is_stop": s.is_stop, "solves": self._solves(s),
+                "mech_semi_diameter": s.mech_semi_diameter, "conic": self._conic(s), "is_stop": s.is_stop, "solves": self._solves(s),
                 "material_source": self._material_source(s), "n": self._indices(i), "aperture": self._aperture_spec(s),
                 "params": [{"par": n, "name": f"Par {n}", "value": v, "solve": "Variable" if n in s.variable_params else "Fixed"}
                            for n, v in sorted(s.params.items()) if v],
@@ -825,11 +825,18 @@ class RtcBackend(Backend):
         self._need_lens()
         return [{"index": s.index, "type": s.type, "comment": s.comment, "radius": self._radius(s),
                  "thickness": self.lens.thickness(s.index, self.config), "material": self._material_text(s), "semi_diameter": s.semi_diameter,
-                 "mech_semi_diameter": s.mech_semi_diameter, "conic": s.conic, "is_stop": s.is_stop} for s in self.lens.surfaces]
+                 "mech_semi_diameter": s.mech_semi_diameter, "conic": self._conic(s), "is_stop": s.is_stop} for s in self.lens.surfaces]
 
     @staticmethod
     def _radius(s) -> float:
         return math.inf if s.curvature == 0 else 1.0 / s.curvature
+
+    @staticmethod
+    def _conic(s) -> float:
+        # 近轴面没有圆锥系数：ZOS-API 读作 inf、存盘为 0；按 OpticStudio 的读数给出，结构指纹才与批准记录一致
+        # a paraxial surface has no conic: the ZOS-API reads inf and the file holds 0; report OpticStudio's reading so
+        # the structural fingerprint matches approvals recorded there
+        return math.inf if s.type.upper() == "PARAXIAL" else s.conic
 
     @staticmethod
     def _material(s) -> str | dict[str, float]:
@@ -968,6 +975,20 @@ class RtcBackend(Backend):
         z, _, _ = item.shape.sag(np.array([float(x)]), np.array([float(y)]))
         value = float(np.asarray(z, dtype=float).ravel()[0])
         return value if math.isfinite(value) else None
+
+    def surface_aperture(self, index: int) -> dict[str, Any]:
+        surfaces = self._need_lens().surfaces
+        if not 0 <= int(index) < len(surfaces):
+            raise SaosError(ErrorCode.BAD_ARGS, f"surface {index} out of range 0–{len(surfaces) - 1}")
+        return self._aperture_spec(surfaces[int(index)])
+
+    def huygens(self, wave: int, pupil: int, image: int) -> Any:
+        # rtc.psf.psf_huygens 已有，但出瞳取法与 OpticStudio 未对账（变形面不一致），对账通过前不给数（ADR-0020）
+        # rtc.psf.psf_huygens exists, but its exit pupil is not reconciled with OpticStudio (anamorphic surfaces differ)
+        raise _unsupported("rtc: the Huygens PSF is not reconciled with OpticStudio yet (ADR-0020); measure it on OpticStudio")
+
+    def wavefront_rms(self, wave: int, field: int | tuple[float, float]) -> float | None:
+        raise _unsupported("rtc: the RMS wavefront error is not reconciled with OpticStudio yet (ADR-0020); measure it on OpticStudio")
 
     def _vertex_z(self) -> dict[int, float]:
         return {it.index: it.vertex_z for it in self._system(self._need_lens().primary_wave).items}
@@ -1647,7 +1668,9 @@ class RtcBackend(Backend):
             return s.curvature
         if param == "thickness":
             return lens.thickness(s.index, self.config)
-        if param in ("conic", "semi_diameter", "mech_semi_diameter", "comment"):
+        if param == "conic":
+            return self._conic(s)
+        if param in ("semi_diameter", "mech_semi_diameter", "comment"):
             return getattr(s, param)
         if param == "material":
             return self._material(s)
@@ -1713,6 +1736,10 @@ class RtcBackend(Backend):
             if index == 0 and math.isfinite(number) and lens.aperture_type == "EPD" and not self.standalone:
                 raise _unsupported("rtc traces an entrance pupil aperture with the object at infinity only")
             s.thickness = number
+        elif param == "conic" and s.type.upper() == "PARAXIAL":
+            # 读出的 inf 原样写回（kept 恢复时）不改任何东西；其他值无处可写
+            if not math.isinf(parse_numeric(param, value)):
+                raise SaosError(ErrorCode.BAD_ARGS, f"surface {index} is Paraxial and has no conic")
         elif param in ("conic", "semi_diameter", "mech_semi_diameter"):
             number = parse_numeric(param, value)
             check_size(param, number)

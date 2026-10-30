@@ -11,7 +11,7 @@ import os
 import re
 import tempfile
 import time
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +23,7 @@ from saos.backend.base import (
     NUMERIC_PARAMS,
     PAR_RE,
     Backend,
+    check_field,
     check_param,
     check_size,
     is_par,
@@ -339,6 +340,57 @@ def _between(a, q, b) -> bool:
 GRIN_TYPE_RE = re.compile(r"gradi|grin", re.IGNORECASE)
 GRIN_SLICES = 8
 
+
+class _HuygensSession:
+    """整个会话只开一个 Huygens PSF 分析，换视场、像元间距或镜头参数后重新计算：extension 模式下每新建一个分析都会在界面
+    开关一个窗口，连续上百次会使 OpticStudio 崩溃（2026-10-16 实测）。
+    One Huygens PSF analysis per session, recomputed for each field, pixel pitch or lens change: in extension mode every
+    new analysis opens and closes a window, and a few hundred in a row crashed OpticStudio (measured 2026-10-16)."""
+
+    def __init__(self, backend: ZosBackend, wave: int, pupil: int, image: int):
+        self._stack = ExitStack()
+        self._numbers: dict[tuple[float, float], int] = {}
+        try:
+            self._add = self._stack.enter_context(backend._added_fields())
+            run = backend.system.Analyses.New_Analysis(_load_zosapi(backend.root).Analysis.AnalysisIDM.HuygensPsf)
+            self._stack.callback(run.Close)
+            s = run.GetSettings()
+            s = getattr(s, "__implementation__", s)
+            s.Wavelength.SetWavelengthNumber(int(wave))
+            for attr, n in (("PupilSampleSize", pupil), ("ImageSampleSize", image)):
+                size = getattr(type(getattr(s, attr)), f"S_{int(n)}x{int(n)}", None)
+                if size is None:
+                    raise SaosError(ErrorCode.BAD_ARGS, f"Huygens PSF {attr} {n}x{n} is not one OpticStudio offers (32, 64, 128, ...)")
+                setattr(s, attr, size)
+            s.Normalize = False
+        except BaseException:
+            self._stack.close()
+            raise
+        self._run, self._s = run, s
+
+    def psf(self, field: int | tuple[float, float], delta_um: float) -> tuple[list[list[float]], float, float] | None:
+        field = check_field(field)
+        delta = float(delta_um)
+        if not (math.isfinite(delta) and delta > 0):
+            raise SaosError(ErrorCode.BAD_ARGS, f"Huygens PSF pixel pitch must be a positive number of µm, got {delta_um!r}")
+        if isinstance(field, int):
+            number = field
+        else:
+            if field not in self._numbers:
+                self._numbers[field] = self._add(*field)
+            number = self._numbers[field]
+        self._s.Field.SetFieldNumber(number)
+        self._s.ImageDelta = delta
+        self._run.ApplyAndWaitForCompletion()
+        r = self._run.GetResults()
+        if r is None or int(r.NumberOfDataGrids) < 1:
+            return None
+        g = r.GetDataGrid(0)
+        nx, ny, values = int(g.Nx), int(g.Ny), g.Values
+        return [[float(values[iy, ix]) for ix in range(nx)] for iy in range(ny)], float(g.Dx), float(g.Dy)
+
+    def close(self) -> None:
+        self._stack.close()
 
 
 class ZosBackend(Backend):
@@ -1712,6 +1764,44 @@ class ZosBackend(Backend):
             self.analysis("ZernikeStandardCoefficients", {"Field": field, "Wavelength": wave,
                           "SampleSize": f"S_{size}x{size}", "MaximumNumberOfTerms": count}, path)
             return zernike_values(_read_text_export(path), terms)
+
+    # ---- 衍射 PSF 与波前 / diffraction PSF and wavefront ----
+
+    @contextmanager
+    def _added_fields(self):
+        """给出 add(x, y) → 视场号：追加的视场在退出时删掉。/ Yields add(x, y) -> field number; added fields go on exit."""
+        fields = self.system.SystemData.Fields
+        n0 = int(fields.NumberOfFields)
+        try:
+            yield lambda x, y: int(fields.AddField(float(x), float(y), 1.0).FieldNumber)
+        finally:
+            while int(fields.NumberOfFields) > n0:
+                fields.RemoveField(int(fields.NumberOfFields))
+
+    def huygens(self, wave: int, pupil: int, image: int) -> _HuygensSession:
+        return _HuygensSession(self, wave, pupil, image)
+
+    def wavefront_rms(self, wave: int, field: int | tuple[float, float]) -> float | None:
+        from saos.backend.analysis import zernike_values
+
+        field = check_field(field)
+        with self._added_fields() as add:
+            number = field if isinstance(field, int) else add(*field)
+            # 读完就删；OpticStudio 偶尔还占着文件时不让清理失败打断测量 / a file OpticStudio still holds must not fail the measurement
+            with tempfile.TemporaryDirectory(prefix="saos-wfe-", ignore_cleanup_errors=True) as folder:
+                path = Path(folder) / "z.txt"
+                self.analysis("ZernikeStandardCoefficients", {"Field": number, "Wavelength": int(wave)}, path)
+                text = _read_text_export(path)
+        try:
+            return zernike_values(text, (-4,))[-4]
+        except SaosError:
+            return None
+
+    def surface_aperture(self, index: int) -> dict[str, Any]:
+        lde = self.system.LDE
+        if not 0 <= int(index) < int(lde.NumberOfSurfaces):
+            raise SaosError(ErrorCode.BAD_ARGS, f"surface {index} out of range 0–{int(lde.NumberOfSurfaces) - 1}")
+        return self._aperture_dict(lde.GetSurfaceAt(int(index)))
 
     # ---- 优化 ----
 

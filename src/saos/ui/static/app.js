@@ -20,9 +20,9 @@ const TEXT = {
     st_achieved: "已达成", st_exhausted: "无法再优化", st_limit: "达到轮次上限", st_stopped: "按用户决定停止",
     report_ready: "报告已生成", report_todo: "待生成报告", deliver_cmd: "saos scan（公差，按需）· saos report",
     back_demand: "需求变更", back_model: "结构或计算前提改变", back_reach: "结构不可达", feasibility: "质疑结构 · 核算界限", feasibility_rtc: "rtc 核算 · 不占许可", feasibility_written: "可行性记录已写",
-    explicit: "显式调试 · Interactive Extension", standalone: "后台运行 · standalone", rtc_instance: "rtc 实例 · 需求与设计阶段，不占许可", no_daemon: "后台进程未运行",
+    explicit: "显式调试 · Interactive Extension", standalone: "后台运行 · standalone", rtc_instance: "rtc 实例 · 交付之前各阶段，不占许可", no_daemon: "后台进程未运行",
     rtc_dual: (started) => `rtc 计算 · OpticStudio ${started ? "待命" : "未启动"}`,
-    rtc_switch: "后台进程只有 rtc（daemon start --backend rtc）；建模说明、确认和交付需要 OpticStudio：存盘后 saos daemon stop，再 saos daemon start。",
+    rtc_switch: "后台进程只有 rtc（daemon start --backend rtc）；建模说明页面和交付需要 OpticStudio：存盘后 saos daemon stop，再 saos daemon start。",
     tab_control: "窗口控制", tab_layout: "布局", tab_spot: "点列图", tab_mtf: "MTF", tab_rounds: "轮次",
     blocking: "blocking 待确认问题：",
     viewer: "布局窗口", viewer_p: "切换 OpticStudio 的布局窗口。剖面图画不了的系统（非轴对称、非序列）会自动改用 3D Viewer。",
@@ -41,12 +41,17 @@ const TEXT = {
     unverified: (items) => `未与 OpticStudio 对账：${items.join("；")}。`,
     model_evidence: "模型确认记录提示：",
     redescribe: "结构已变：重新描述并确认",
-    modeling_sub: "起点预判 · 初筛 · 建模说明", approval_sub: "方向 · 取舍 · 未知项", design_sub: "rtc 上优化 · 到期复核 · round",
+    modeling_sub: "rtc 上起型 · 初筛 · 建模说明", approval_sub: "方向 · 取舍 · 未知项", design_sub: "rtc 上优化 · 到期复核 · round",
     layout_hint_3d: "拖动旋转 · Shift 或右键拖动平移 · 滚轮以光标为中心缩放 · 双击复位 · 指向某面看参数", layout_hint_2d: "拖动平移 · Shift 或右键拖动测距（吸附面上的点）· 滚轮以光标为中心缩放 · 双击复位 · Esc 清除测距 · 指向某面看参数",
     image_z: "像面 z", round: "轮", tiers: "层级", gap: "目标差距", state: "状态", note: "说明", achieved: "达成", deliverable: "可交付",
     pick_round: "点一行在其他视图中查看该轮", sag_flat: "部分面读不到面形，按平面画。", select_round: (n) => `r${String(n).padStart(3, "0")}`,
     live: "当前镜头", live_unsaved: "未保存", no_live: "后台进程加载或改动镜头后，这里显示当前镜头的布局。", live_failed: "当前视图导出失败：",
     only_3d: "各面不在同一个对称平面里，只有 3D 视图", disconnected: "与 saos ui 服务断开，正在重连…", notice_close: "知道了", lens_data: "Lens Data", ld_type: "面型", ld_comment: "注释", ld_radius: "半径", ld_thickness: "厚度",
+    gate_demand: "确认需求单", gate_model: "确认建模说明", gate_weak: "依据薄弱的界限", gate_missing: (ids) => `这些条目还没有来源，不能确认：${ids}`,
+    gate_open: "打开说明页", gate_rebuild: (r) => `重建原因：${r}`, gate_no_rebuild: "结构与上次确认不同，说明里还没写重建原因：请 agent 补上后重新出说明",
+    gate_no_search: "说明里没有起型检索记录：请 agent 补上后重新出说明", gate_note: "备注（可不填）", gate_done: "已记录你的确认", gate_old: "这份说明是旧格式，窗口里不能确认：请 agent 重新出说明",
+    gate_revise: "要求修改", gate_revise_need: "先在备注里写要改什么", gate_revised: (n) => `已要求修改，等 agent 出新版：${n}`, gate_revise_done: "修改意见已记下",
+    mode_auto: "自主运行：agent 自行通过关卡并记录理由，报告标明未经你确认", mode_to_interactive: "改为由我确认", mode_switched: "已改为参与模式：之后的关卡由你确认",
     ld_material: "材料", ld_sd: "半口径", ld_conic: "圆锥", ld_solve: "V 为变量，其他字母为求解或 pickup",
     clash_title: "结构交叠", crossing: (a, b, d) => `第 ${a} 面与第 ${b} 面在口径内相交（最深约 ${d}）`,
     overlap: (a, b, n) => `镜片 ${a} 与镜片 ${b} 相互穿插（${n} 个采样点落在另一片玻璃里）`,
@@ -87,9 +92,9 @@ const TEXT = {
     st_achieved: "achieved", st_exhausted: "exhausted", st_limit: "round limit", st_stopped: "stopped by user",
     report_ready: "report written", report_todo: "report pending", deliver_cmd: "saos scan (tolerance, if needed) · saos report",
     back_demand: "demand change", back_model: "revise model", back_reach: "unreachable", feasibility: "question · check bounds", feasibility_rtc: "rtc checks · no licence", feasibility_written: "feasibility recorded",
-    explicit: "Explicit · Interactive Extension", standalone: "Background · standalone", rtc_instance: "rtc instance · need and design stages, no licence", no_daemon: "daemon not running",
+    explicit: "Explicit · Interactive Extension", standalone: "Background · standalone", rtc_instance: "rtc instance · every stage before delivery, no licence", no_daemon: "daemon not running",
     rtc_dual: (started) => `rtc · OpticStudio ${started ? "standing by" : "not started"}`,
-    rtc_switch: "The daemon holds rtc only (daemon start --backend rtc); model descriptions, approval and delivery need OpticStudio: save, saos daemon stop, then saos daemon start.",
+    rtc_switch: "The daemon holds rtc only (daemon start --backend rtc); the model page and delivery need OpticStudio: save, saos daemon stop, then saos daemon start.",
     tab_control: "Window controls", tab_layout: "Layout", tab_spot: "Spot Diagram", tab_mtf: "MTF", tab_rounds: "Rounds",
     blocking: "Blocking questions:",
     viewer: "Layout window", viewer_p: "Switch OpticStudio's layout window. Systems the cross-section cannot draw (non-axial, non-sequential) get the 3D Viewer.",
@@ -108,12 +113,17 @@ const TEXT = {
     unverified: (items) => `Not reconciled with OpticStudio: ${items.join("; ")}.`,
     model_evidence: "Model approval evidence: ",
     redescribe: "Structure changed: describe and approve",
-    modeling_sub: "Predict · screen · describe", approval_sub: "Direction · tradeoffs", design_sub: "Optimise on rtc · review on expiry · round",
+    modeling_sub: "Start on rtc · screen · describe", approval_sub: "Direction · tradeoffs", design_sub: "Optimise on rtc · review on expiry · round",
     layout_hint_3d: "drag to rotate · Shift or right-drag to pan · wheel zooms at the cursor · double-click to reset · hover a surface for its data", layout_hint_2d: "drag to pan · Shift or right-drag to measure (snaps to surface points) · wheel zooms at the cursor · double-click to reset · Esc clears the ruler · hover a surface for its data",
     image_z: "image z", round: "Round", tiers: "Tiers", gap: "Shortfall", state: "State", note: "Note", achieved: "achieved", deliverable: "deliverable",
     pick_round: "Click a row to view that round in the other tabs", sag_flat: "Some surface shapes could not be read; drawn flat.", select_round: (n) => `r${String(n).padStart(3, "0")}`,
     live: "Current lens", live_unsaved: "unsaved", no_live: "Once the daemon loads or changes the lens, its layout appears here.", live_failed: "The live view export failed: ",
     only_3d: "The surfaces share no plane of symmetry: 3D view only", disconnected: "Lost the saos ui service; reconnecting…", notice_close: "Dismiss", lens_data: "Lens Data", ld_type: "Type", ld_comment: "Comment", ld_radius: "Radius", ld_thickness: "Thickness",
+    gate_demand: "Confirm demand", gate_model: "Approve model", gate_weak: "Limits on a weak basis", gate_missing: (ids) => `These items have no source yet, so the demand cannot be confirmed: ${ids}`,
+    gate_open: "Open the page", gate_rebuild: (r) => `Why it was rebuilt: ${r}`, gate_no_rebuild: "The structure differs from the last approval and the description gives no reason yet: ask the agent to add it and describe again",
+    gate_no_search: "The description records no starting-form search: ask the agent to add it and describe again", gate_note: "Note (optional)", gate_done: "Your confirmation is recorded", gate_old: "This description predates window approval: ask the agent to describe again",
+    gate_revise: "Ask for changes", gate_revise_need: "Write what to change in the note first", gate_revised: (n) => `Changes requested, waiting for a new version: ${n}`, gate_revise_done: "Your change request is recorded",
+    mode_auto: "Autonomous run: the agent passes the gates with its reasons on record, and the report says you did not confirm them", mode_to_interactive: "Let me confirm instead", mode_switched: "Now interactive: you confirm the next gates",
     ld_material: "Material", ld_sd: "Semi-dia.", ld_conic: "Conic", ld_solve: "V marks a variable, other letters a solve or pickup",
     clash_title: "Interference", crossing: (a, b, d) => `surfaces ${a} and ${b} cross inside their apertures (up to about ${d})`,
     overlap: (a, b, n) => `lenses ${a} and ${b} interpenetrate (${n} sample points inside the other's glass)`,
@@ -1491,6 +1501,84 @@ function renderRounds(view) {
   g.fillText("r000", px(0), H - pad.b + 5); g.fillText(t("select_round", n), px(n), H - pad.b + 5);
 }
 
+// ---------------- 确认关卡 / gates ----------------
+
+// 需求单与建模说明由用户在窗口里点确认（ADR-0020）；命令行的 --quote 只在窗口用不了时可用
+// the user confirms the demand and approves a model here; the CLI's --quote only works when the window cannot be used
+let gateKey = null;
+
+async function renderGate() {
+  const el = $("gate");
+  // 自主任务：只说明谁在过关卡，并给用户一个改为参与的按钮（反过来只能在建任务时定，ADR-0021）
+  // an autonomous job: say who passes the gates and offer the switch to interactive (the reverse is set at job creation only)
+  if (state.mode === "autonomous") {
+    if (gateKey === "autonomous") return;
+    gateKey = "autonomous";
+    el.innerHTML = `<p>${esc(t("mode_auto"))}</p><button class="ghost" id="mode-switch">${esc(t("mode_to_interactive"))}</button>`;
+    el.hidden = false;
+    $("mode-switch").addEventListener("click", async () => {
+      try { await api("mode", {}, { mode: "interactive" }); toast(t("mode_switched")); gateKey = null; stateText = ""; } catch (err) { toast(err.message, true); }
+    });
+    return;
+  }
+  const step = state.steps.find((s) => s.id === state.current);
+  if (!["demand_confirm", "model_approve"].includes(state.current) || !["waiting", "blocked"].includes(step?.status)) {
+    el.hidden = true; el.innerHTML = ""; gateKey = null; return;
+  }
+  let g;
+  try { g = await api("gate"); } catch { return; }
+  // 内容没变就不重画：重画会清掉用户正在打的备注 / redraw only on a change, or the note being typed is lost
+  const key = JSON.stringify([g, state.revisions]);
+  if (key === gateKey) return;
+  gateKey = key;
+  if (!g.demand && !g.model) { el.hidden = true; el.innerHTML = ""; return; }
+  const parts = [];
+  let ready = true;
+  if (g.demand) {
+    const d = g.demand;
+    parts.push(`<b>${esc(t("gate_demand"))}</b>`, `<p>${esc(d.summary)}</p>`);
+    if (d.weak_basis.length) {
+      parts.push(`<div class="weak"><b>${esc(t("gate_weak"))}</b>${d.weak_basis.map((w) => `<div>${esc(w.id)}: ${esc(JSON.stringify(w.bound))} · ${esc(w.source || "—")}</div>`).join("")}</div>`);
+    }
+    if (d.missing_source.length) { ready = false; parts.push(`<div class="q">${esc(t("gate_missing", d.missing_source.join(", ")))}</div>`); }
+  } else {
+    const m = g.model;
+    parts.push(`<b>${esc(t("gate_model"))}</b> <span class="muted">${esc(m.model)}</span>`);
+    if (m.page) parts.push(`<button class="ghost" id="gate-open">${esc(t("gate_open"))}</button>`);
+    if (m.rebuild_reason) parts.push(`<p>${esc(t("gate_rebuild", m.rebuild_reason))}</p>`);
+    else if (m.rebuild_required) { ready = false; parts.push(`<div class="q">${esc(t("gate_no_rebuild"))}</div>`); }
+    if (m.exploration_missing) { ready = false; parts.push(`<div class="q">${esc(t("gate_no_search"))}</div>`); }
+    if (!m.shown_sha) { ready = false; parts.push(`<div class="q">${esc(t("gate_old"))}</div>`); }
+  }
+  const gate = g.demand ? "demand" : "model";
+  (state.revisions || []).filter((r) => r.gate === gate).forEach((r) => parts.push(`<div class="weak">${esc(t("gate_revised", r.note))}</div>`));
+  parts.push(`<textarea id="gate-note" rows="2" placeholder="${esc(t("gate_note"))}"></textarea>`,
+    `<div class="row"><button class="primary" id="gate-ok"${ready ? "" : " disabled"}>${esc(t(g.demand ? "gate_demand" : "gate_model"))}</button>`
+    + `<button class="ghost" id="gate-revise">${esc(t("gate_revise"))}</button></div>`);
+  el.innerHTML = parts.join("");
+  el.hidden = false;
+  $("gate-open")?.addEventListener("click", () => api("open", {}, { page: g.model.page }).catch((e) => toast(e.message, true)));
+  $("gate-ok").addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    try {
+      await api("confirm", {}, g.demand ? { gate: "demand", sha: g.demand.demand_sha, note: $("gate-note").value }
+        : { gate: "model", sha: g.model.shown_sha, model: g.model.model, note: $("gate-note").value });
+      toast(t("gate_done"));
+      gateKey = null; stateText = "";
+    } catch (err) { toast(err.message, true); e.target.disabled = false; }
+  });
+  $("gate-revise").addEventListener("click", async (e) => {
+    const note = $("gate-note").value.trim();
+    if (!note) { toast(t("gate_revise_need"), true); return; }
+    e.target.disabled = true;
+    try {
+      await api("revise", {}, { gate, sha: g.demand ? g.demand.demand_sha : g.model.shown_sha, note });
+      toast(t("gate_revise_done"));
+      gateKey = null; stateText = "";
+    } catch (err) { toast(err.message, true); e.target.disabled = false; }
+  });
+}
+
 // ---------------- 轮询与事件 ----------------
 
 async function poll() {
@@ -1515,6 +1603,7 @@ async function poll() {
       if (modeChanged) { analyses = null; renderView(); }
     }
     renderTop();
+    await renderGate();
   } catch (e) {
     // 服务重启后沿用同一端口和令牌，继续轮询就能重连 / a restarted service keeps the port and token: keep polling
     $("mode-chip").textContent = e instanceof TypeError ? t("disconnected") : e.message;

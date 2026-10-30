@@ -103,6 +103,17 @@ button, select { font: inherit; color: inherit; }
 #flow { width: 100%; display: block; }
 .flow-note { margin: 4px 16px 0; color: var(--text-2); font-size: 12px; }
 .flow-note .q { margin-top: 6px; padding: 8px 10px; border-radius: 8px; background: var(--bad-soft); color: var(--text); }
+.gate { margin: 10px 16px 16px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--accent); font-size: 12px; display: flex; flex-direction: column; gap: 6px; }
+.gate[hidden] { display: none; }
+.gate p { margin: 0; }
+.gate .weak, .gate .muted { color: var(--text-2); }
+.gate .q { padding: 6px 8px; border-radius: 8px; background: var(--bad-soft); }
+.gate textarea { font: inherit; resize: vertical; padding: 6px; border-radius: 6px; border: 1px solid var(--text-2); background: transparent; color: inherit; }
+.gate button { cursor: pointer; border-radius: 6px; padding: 4px 10px; font: inherit; }
+.gate button.primary { background: var(--accent); color: #fff; border: 0; }
+.gate button.primary:disabled { opacity: .45; cursor: default; }
+.gate button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); align-self: flex-start; }
+.gate .row { display: flex; gap: 8px; }
 
 .node .frame { fill: var(--bg-panel); stroke: var(--border); stroke-width: 1.2; }
 .node .title { fill: var(--text); font-size: 13px; font-weight: 600; }

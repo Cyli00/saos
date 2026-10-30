@@ -38,4 +38,4 @@ Without such a need, skip it and offer it when you hand over the report.
 
 ## Stopping
 
-Stopping is a conclusion too. When the evidence says the demand cannot be met with what is allowed, show the user the evidence and the options. When they decide to stop, record it with `uv run saos stop --job J --reason "<why, citing the evidence>" --quote "<their words, with the option text>"`. Only the user's decision stops the rounds; the report then shows the reason and their words.
+Stopping is a conclusion too. When the evidence says the demand cannot be met with what is allowed, show the user the evidence and the options. When they decide to stop, record it with `uv run saos stop --job J --reason "<why, citing the evidence>" --quote "<their words, with the option text>"`. Only the user's decision stops the rounds; the report then shows the reason and their words. In an autonomous job you take the decision: `saos stop --job J --reason "..."` without `--quote`, and the report marks it as yours.

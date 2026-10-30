@@ -76,7 +76,7 @@
         <mxCell id="u2" value="停顿 ①&lt;br&gt;用户确认需求单内容" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;strokeWidth=3;fontSize=13;fontStyle=1;" parent="1" vertex="1">
           <mxGeometry x="85" y="660.0" width="240" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="t2" value="&lt;b&gt;saos demand confirm --quote &quot;…&quot;&lt;/b&gt;&lt;br&gt;→ confirmations.jsonl&lt;br&gt;绑定需求版本，保存用户所见全文&lt;br&gt;同时打开工作流小窗（saos ui open 可重开）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+        <mxCell id="t2" value="&lt;b&gt;参与：用户在窗口点确认 / 要求修改&lt;/b&gt;&lt;br&gt;窗口用不了时 saos demand confirm --quote&lt;br&gt;自主：saos demand confirm --reason（via auto）&lt;br&gt;→ confirmations.jsonl，绑定需求版本与所见全文" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
           <mxGeometry x="980" y="655.0" width="400" height="96" as="geometry" />
         </mxCell>
         <mxCell id="e1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#82b366;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a1" target="t1" edge="1">
@@ -160,7 +160,7 @@
         <mxCell id="u4" value="停顿 ②&lt;br&gt;用户认可建模说明&lt;br&gt;&lt;span style=&quot;font-weight:normal;font-size:11px&quot;&gt;不认可 → 回到建模&lt;/span&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;strokeWidth=3;fontSize=13;fontStyle=1;" parent="1" vertex="1">
           <mxGeometry x="85" y="1430.0" width="240" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="t5" value="&lt;b&gt;saos lens approve --quote &quot;…&quot;&lt;/b&gt;&lt;br&gt;核对可用确认 · 记录 shown_sha 与未知项&lt;br&gt;结构/环境声明改变：--rebuild-reason&lt;br&gt;与轮次共用比较 · 允许末尾追加采样" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+        <mxCell id="t5" value="&lt;b&gt;参与：用户在窗口点确认 / 要求修改&lt;/b&gt;&lt;br&gt;窗口用不了时 saos lens approve --quote&lt;br&gt;自主：saos lens approve --reason（via auto）&lt;br&gt;记录 shown_sha 与未知项 · 结构改变需重建原因" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
           <mxGeometry x="980" y="1445.0" width="400" height="50" as="geometry" />
         </mxCell>
         <mxCell id="e12" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="a4" target="a5" edge="1">
@@ -212,7 +212,7 @@
         <mxCell id="e24" value="认可（原话）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.6;entryX=0;entryY=0.5;" parent="1" source="u4" target="t5" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="a10" value="&lt;b&gt;模型确认后进入设计&lt;/b&gt;&lt;br&gt;存盘后后台进程自动换到 rtc，交接时逐值比对&lt;br&gt;saos round 记录第 0 轮" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+        <mxCell id="a10" value="&lt;b&gt;模型确认后进入设计&lt;/b&gt;&lt;br&gt;建模与确认已在 rtc 上，设计继续在 rtc&lt;br&gt;saos round 记录第 0 轮" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="1550" width="320" height="70" as="geometry" />
         </mxCell>
         <mxCell id="a11" value="&lt;b&gt;诊断：可达性阶梯&lt;/b&gt;&lt;br&gt;守恒量 / 不变量（光展量、Lagrange、Petzval）&lt;br&gt;→ 轴上一点 → 全视场；低一级不成立 = 结构问题" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
@@ -245,7 +245,7 @@
         <mxCell id="a16" value="&lt;b&gt;按当前需求判断终止&lt;/b&gt;&lt;br&gt;achieved / limit / exhausted / stopped&lt;br&gt;continue：继续诊断，选择下一种手段" style="rhombus;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="500" y="2545.0" width="300" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="n1" value="structure 无完整匹配确认 → 回到 ③ 重新描述并确认&lt;br&gt;模型确认后可切换 rtc 设计；交付前换回 OpticStudio" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#ffffff;strokeColor=#9673a6;fontColor=#4d3466;fontSize=11;align=left;spacingLeft=6;" parent="1" vertex="1">
+        <mxCell id="n1" value="structure 无完整匹配确认 → 回到 ③ 重新描述并确认&lt;br&gt;交付之前都在 rtc；交付时换到 OpticStudio" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#ffffff;strokeColor=#9673a6;fontColor=#4d3466;fontSize=11;align=left;spacingLeft=6;" parent="1" vertex="1">
           <mxGeometry x="980" y="2575.0" width="400" height="65" as="geometry" />
         </mxCell>
         <mxCell id="e25" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=1;entryY=0.5;" parent="1" source="t5" target="a10" edge="1">
@@ -331,7 +331,7 @@
         <mxCell id="u6" value="用户依据证据&lt;br&gt;决定停止" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="85" y="2740.0" width="240" height="56" as="geometry" />
         </mxCell>
-        <mxCell id="t10" value="&lt;b&gt;saos stop --reason &quot;…&quot; --quote &quot;…&quot;&lt;/b&gt;&lt;br&gt;→ stops.jsonl；ledger 状态 stopped，此版本拒绝后续轮次" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+        <mxCell id="t10" value="&lt;b&gt;saos stop --reason &quot;…&quot; --quote &quot;…&quot;&lt;/b&gt;&lt;br&gt;自主任务可不带 --quote（via auto，报告标明）&lt;br&gt;→ stops.jsonl；ledger 状态 stopped，此版本拒绝后续轮次" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
           <mxGeometry x="980" y="2740.0" width="400" height="56" as="geometry" />
         </mxCell>
         <mxCell id="confirm" value="&lt;b&gt;交付前复测&lt;/b&gt;&lt;br&gt;rtc 轮次：saos round --confirm（自动在 OpticStudio 上算）&lt;br&gt;ZOS 轮次直接进入报告" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" parent="1" vertex="1">
@@ -387,7 +387,7 @@
         <mxCell id="p3" value="&lt;b style=&quot;font-size:14px&quot;&gt;何时停下来问用户&lt;/b&gt;&lt;br&gt;&lt;br&gt;• 需求自相矛盾，或常量 / 范围 / 达标线依据不足&lt;br&gt;• 测量口径有多种读法且影响结果&lt;br&gt;• 可行性判断或一阶分析表明结构达不到目标，或某项 must 差通过线好几倍&lt;br&gt;• 已有结果不支持继续当前策略（brief.review）&lt;br&gt;• 结构要改成用户没见过的样子&lt;br&gt;&lt;br&gt;会改变需求的问题写成 open_questions（blocking: true），未答时 round / opt local / hammer / global 拒绝运行&lt;br&gt;停下来之前先 saos ui notify，窗口顶部写明要用户看什么" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#fffdf0;strokeColor=#d6b656;" parent="1" vertex="1">
           <mxGeometry x="1450" y="720" width="400" height="250" as="geometry" />
         </mxCell>
-        <mxCell id="p4" value="&lt;b style=&quot;font-size:14px&quot;&gt;计算后端与长任务&lt;/b&gt;&lt;br&gt;&lt;br&gt;需求核算与设计轮次可用 rtc&lt;br&gt;建模确认及交付复测使用 ZOS standalone&lt;br&gt;daemon 持有一个会话，worker 默认 4 个&lt;br&gt;许可预算包含用户窗口及起点生成会话&lt;br&gt;worker 池空闲后关闭，复用已启动的会话&lt;br&gt;scan / ctx.map / detach 保留&lt;br&gt;job show 查看进度；job cancel 请求安全中断&lt;br&gt;客户端超时不代表后台失败，不重复提交&lt;br&gt;extension 仅用于用户需要的显性调试" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f3faf1;strokeColor=#82b366;" parent="1" vertex="1">
+        <mxCell id="p4" value="&lt;b style=&quot;font-size:14px&quot;&gt;计算后端与长任务&lt;/b&gt;&lt;br&gt;&lt;br&gt;交付之前各阶段用 rtc；固定后端只在当时阶段有效&lt;br&gt;建模说明页面及交付复测使用 ZOS standalone&lt;br&gt;daemon 持有一个会话，worker 默认 4 个&lt;br&gt;许可预算包含用户窗口及起点生成会话&lt;br&gt;worker 池空闲后关闭，复用已启动的会话&lt;br&gt;scan / ctx.map / detach 保留&lt;br&gt;job show 查看进度；job cancel 请求安全中断&lt;br&gt;客户端超时不代表后台失败，不重复提交&lt;br&gt;extension 仅用于用户需要的显性调试" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f3faf1;strokeColor=#82b366;" parent="1" vertex="1">
           <mxGeometry x="1450" y="990" width="400" height="450" as="geometry" />
         </mxCell>
         <mxCell id="p5" value="&lt;b style=&quot;font-size:14px&quot;&gt;封存与恢复&lt;/b&gt;&lt;br&gt;&lt;br&gt;判定、轮次、模型、扫描和报告编号副本写入 seals.jsonl&lt;br&gt;已有完整匹配模型确认可继续使用&lt;br&gt;job verify 显示改动；证据损坏时报告拒绝生成&lt;br&gt;旧双后端任务只读保留，另建任务重建和实测&lt;br&gt;不改旧账本，不继承旧后端指标" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f5f5f5;strokeColor=#666666;" parent="1" vertex="1">
@@ -468,7 +468,7 @@
         <mxCell id="lget3" value="轮次循环" style="text;html=1;align=left;verticalAlign=middle;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="1712" y="2050" width="130" height="24" as="geometry" />
         </mxCell>
-        <mxCell id="title" value="&lt;b style=&quot;font-size:18px&quot;&gt;saos 工作流&lt;/b&gt;&lt;br&gt;需求确认 → 模型确认 → rtc / ZOS 设计 → ZOS 复测与交付" style="text;html=1;align=left;verticalAlign=middle;" parent="1" vertex="1">
+        <mxCell id="title" value="&lt;b style=&quot;font-size:18px&quot;&gt;saos 工作流&lt;/b&gt;&lt;br&gt;rtc：需求确认 → 模型确认 → 设计 → ZOS 复测与交付" style="text;html=1;align=left;verticalAlign=middle;" parent="1" vertex="1">
           <mxGeometry x="1450" y="0" width="400" height="40" as="geometry" />
         </mxCell>
         <mxCell id="a0" value="&lt;b&gt;会话开始：环境预检&lt;/b&gt;&lt;br&gt;缺什么在第一条回复里就说" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">

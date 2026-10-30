@@ -123,10 +123,17 @@ def generate(job: jobs.Job, bindings: dict, *, short_seconds: float, prepare: st
     parent.mkdir(parents=True, exist_ok=True)
     folder = parent / f"{jobs.next_archive_number(parent):03d}"
     folder.mkdir()
+    # 先在 rtc 上建（不占许可，ADR-0020）；rtc 建不了的条目（反射镜、有限共轭的像方 F 数等）逐条改在 OpticStudio 上建，
+    # OpticStudio 只在第一次需要时启动
+    # build on rtc first (no licence, ADR-0020); entries rtc cannot build go to OpticStudio one by one, started on first need
+    fallback_factory = None
     if backend_factory is None:
         from saos.backend import make_backend
-        backend_factory = lambda: make_backend("standalone")
+        backend_factory = lambda: make_backend("standalone", backend="rtc")
+        fallback_factory = lambda: make_backend("standalone", backend="zos")
     backend = backend_factory()
+    fallback = None
+    infinite = conjugate == "infinite"
     candidates, failures = [], []
     try:
         if choices:
@@ -146,32 +153,56 @@ def generate(job: jobs.Job, bindings: dict, *, short_seconds: float, prepare: st
                 if not isinstance(data, dict):
                     raise SaosError(ErrorCode.BAD_ARGS, "库处方必须为对象")
                 reference = copy.deepcopy(data)
-                reference["aperture"] = {"type": "image_f_number", "value": targets["f_number"]}
+                # 物在无穷远时像方 F 数 = EFL/EPD：参考处方用入瞳直径占位（近轴焦距与它无关），缩放后按 EFL/F# 定入瞳，
+                # 与 OpticStudio 的 image_f_number 同义且 rtc 能建；有限共轭仍用 image_f_number（工作 F 数，rtc 没有）
+                # at infinity the image F-number is EFL/EPD: the reference takes a placeholder EPD (the paraxial EFL ignores it)
+                # and the scaled lens EPD = EFL/F#, equivalent to OpticStudio's image_f_number and buildable on rtc
+                reference["aperture"] = ({"type": "entrance_pupil_diameter", "value": 1.0} if infinite
+                                         else {"type": "image_f_number", "value": targets["f_number"]})
                 field = targets["half_field_deg"]
                 reference["fields"] = {"type": "angle", "y": [0, field * .7, field] if field else [0]}
                 waves = targets["wavelengths_um"]
                 reference["wavelengths"] = {"um": waves, "primary": (len(waves) + 1) // 2}
                 phase = "library_normalize"
                 reference = prescription.normalize(reference)
-                phase = "reference_build"
-                backend.build(reference)
-                phase = "reference_efl"
-                reference_efl = float(backend.operand("EFFL", 0, 0, []))
-                if not math.isfinite(reference_efl) or reference_efl <= 0:
-                    raise ValueError("原处方没有有限正焦距")
-                factor = targets["efl_mm"] / reference_efl
-                phase = "library_scale"
-                scaled = prescription.normalize(scale_prescription(reference, factor))
-                phase = "scaled_build"
-                backend.build(scaled)
                 from saos.starts.prediction import predict
-                phase = "prediction"
-                prediction = predict(backend, should_cancel=job.cancel_requested)
+
+                def measured(on):
+                    nonlocal phase
+                    phase = "reference_build"
+                    on.build(reference)
+                    phase = "reference_efl"
+                    efl = float(on.operand("EFFL", 0, 0, []))
+                    if not math.isfinite(efl) or efl <= 0:
+                        raise ValueError("原处方没有有限正焦距")
+                    phase = "library_scale"
+                    raw = scale_prescription(reference, targets["efl_mm"] / efl)
+                    if infinite:
+                        raw["aperture"] = {"type": "entrance_pupil_diameter", "value": targets["efl_mm"] / targets["f_number"]}
+                    lens = prescription.normalize(raw)
+                    phase = "scaled_build"
+                    on.build(lens)
+                    phase = "prediction"
+                    return efl, lens, predict(on, should_cancel=job.cancel_requested)
+
+                computed_by = "primary"
+                try:
+                    reference_efl, scaled, prediction = measured(backend)
+                except SaosError as exc:
+                    if fallback_factory is None or exc.code != ErrorCode.BACKEND_UNSUPPORTED:
+                        raise
+                    if fallback is None:
+                        fallback = fallback_factory()
+                        fallback.start()
+                    reference_efl, scaled, prediction = measured(fallback)
+                    computed_by = "fallback"
+                factor = targets["efl_mm"] / reference_efl
                 phase = "artifacts"
                 path = folder / f"{entry['id']}.json"
                 write_json(path, scaled)
                 candidates.append({"id": entry["id"], "prescription": path.relative_to(job.root).as_posix(), "form": entry["form"],
                                    "provenance": {**entry["source"], "version": entry["version"], "validation": entry["status"], "reference_efl": reference_efl,
+                                                  "computed_by": {"primary": "rtc", "fallback": "zos"}[computed_by] if fallback_factory is not None else None,
                                                   "scale": factor, "reference_wavelengths": reference["wavelengths"], "notes": entry.get("notes"), **hashes},
                                    "constraints": {"tightest": entry["tightest"], "pressure": entry["pressure"], "extrapolation": entry["extrapolation"]}, "prediction": prediction})
             except Exception as exc:
@@ -187,6 +218,8 @@ def generate(job: jobs.Job, bindings: dict, *, short_seconds: float, prepare: st
     finally:
         if choices:
             backend.close()
+        if fallback is not None:
+            fallback.close()
     plan = {"candidates": candidates, "stages": [], "require_merit": True, "constraints": constraints, "generation": folder.relative_to(job.root).as_posix(), "prepare": prepare}
     result = {"folder": folder.relative_to(job.root).as_posix(), "demand_sha": demand.compute_digest(d), "constraints": constraints,
               "allow_extrapolation": allow_extrapolation, "excluded": excluded, "not_evaluated": failures, "count": len(candidates), "screen_plan": None, "short_plan": None}

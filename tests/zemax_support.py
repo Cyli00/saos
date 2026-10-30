@@ -39,7 +39,7 @@ TWO_GLASS = {
     ],
 }
 NOTES = {"surfaces": {"0": "object", "1": "lens front", "2": "lens back", "3": "second lens front", "4": "second lens back",
-                      "5": "image"}, "assumptions": ["test sample"], "first_order": ["focal length as built"]}
+                      "5": "image"}, "assumptions": ["test sample"], "first_order": ["focal length as built"], "exploration": {"fixed_by_user": {"parts": "the test lens", "quote": "就用这个镜头"}}}
 DEMAND = {"schema": 2,
           "constants": [{"id": "lens", "description": "the two-glass sample", "value": "two_glass", "source": "user"}],
           "variables": [{"id": "radii", "description": "radii and thicknesses are free"}],

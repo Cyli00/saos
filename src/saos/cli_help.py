@@ -100,13 +100,16 @@ always opens it. Gate windows restore/raise without taking keyboard focus.
 }
 
 COMMANDS = {
-    "daemon start": ('Start the daemon with rtc and OpticStudio (2024 R1 Premium) as its two backends.', 'Each command runs on the backend of its job\'s workflow stage (ADR-0018): rtc\n  for the interview, demand confirmation and design rounds; OpticStudio for\n  modelling, model approval and delivery, and always for lens describe, view,\n  screenshot, capture, round --confirm and tolerance scans. OpticStudio starts\n  the first time a command needs it (cold start 6-8 s) and stays up until the\n  daemon stops. A switch hands the loaded lens over through its file: unsaved\n  changes are refused (UNSAVED_CHANGES), then both sides are compared value by\n  value; results carry backend_switch (handover.agrees, mismatches, rays, or\n  stayed when rtc cannot reproduce the lens). Differences stay on the lens as\n  unverified provenance. saos daemon use pins a backend.\n  --backend auto (default, or SAOS_BACKEND) as above; zos connects OpticStudio at\n  start; rtc runs rtc only, without OpticStudio or licence, and refuses its\n  commands with BACKEND_UNSUPPORTED. standalone creates a private OpticStudio\n  instance. extension uses UI Automation to open/reuse Interactive Extension,\n  disable Auto Close on Disconnect and read its instance, and connects at start.\n  It refuses a window connected elsewhere; use SAOS_UI_PID for multiple windows.\n  Startup errors include details.log_tail. Background logs: daemon/daemon.log;\n  startup creates no console window.', 'DAEMON_ALREADY_RUNNING, DAEMON_START_FAILED, DAEMON_TIMEOUT, UI_BLOCKED, ZOS_LICENSE, ZOS_VERSION_MISMATCH, ZOS_ERROR'),
+    "daemon start": ('Start the daemon with rtc and OpticStudio (2024 R1 Premium) as its two backends.', 'Each command runs on the backend of its job\'s workflow stage (ADR-0020):\n  rtc for every stage before delivery; OpticStudio for delivery, and always for\n  lens describe, view, screenshot, capture, round --confirm and tolerance scans. OpticStudio starts\n  the first time a command needs it (cold start 6-8 s) and stays up until the\n  daemon stops. A switch hands the loaded lens over through its file: unsaved\n  changes are refused (UNSAVED_CHANGES), then both sides are compared value by\n  value; results carry backend_switch (handover.agrees, mismatches, rays, or\n  stayed when rtc cannot reproduce the lens). Differences stay on the lens as\n  unverified provenance. saos daemon use pins a backend.\n  --backend auto (default, or SAOS_BACKEND) as above; zos connects OpticStudio at\n  start; rtc runs rtc only, without OpticStudio or licence, and refuses its\n  commands with BACKEND_UNSUPPORTED. standalone creates a private OpticStudio\n  instance. extension uses UI Automation to open/reuse Interactive Extension,\n  disable Auto Close on Disconnect and read its instance, and connects at start.\n  It refuses a window connected elsewhere; use SAOS_UI_PID for multiple windows.\n  Startup errors include details.log_tail. Background logs: daemon/daemon.log;\n  startup creates no console window.', 'DAEMON_ALREADY_RUNNING, DAEMON_START_FAILED, DAEMON_TIMEOUT, UI_BLOCKED, ZOS_LICENSE, ZOS_VERSION_MISMATCH, ZOS_ERROR'),
     "daemon use": (
         "Pin the backend commands run on, or return to the workflow stage's choice.",
         "auto: by the job's workflow stage. rtc or zos: every command runs there, except\n"
-        "  that commands needing OpticStudio still use it. With --job, the loaded lens is\n"
-        "  handed over now (unsaved changes refused) and the result has backend_switch.\n"
-        "  Refused on an rtc-only daemon.", "BAD_ARGS, UNSAVED_CHANGES, BUSY, ZOS_LICENSE"),
+        "  that commands needing OpticStudio still use it, until the workflow stage of\n"
+        "  the job (--job, else the loaded lens's) changes; then auto returns by itself.\n"
+        "  The result has pinned_stage. While pinned, results carry backend_pin (backend,\n"
+        "  pinned_at, stage, stage_rule); the result where it ends has backend_pin.released.\n"
+        "  With --job, the loaded lens is handed over now (unsaved changes refused) and\n"
+        "  the result has backend_switch. Refused on an rtc-only daemon.", "BAD_ARGS, UNSAVED_CHANGES, BUSY, ZOS_LICENSE"),
     "daemon stop": (
         "Stop this daemon; wait for it and its private OpticStudio process to exit.",
         "Unsaved agent edits require --discard. A detached scan must finish or be\n"
@@ -134,7 +137,12 @@ COMMANDS = {
     "job create": (
         "Create a job from --name; no daemon needed.",
         "Returns job, path, state. Creates a timestamp-name id, job.json, lenses/ and\n"
-        "  sources/; recipe-specific directories are created only when used.", "BAD_ARGS, JOB_EXISTS"),
+        "  sources/; recipe-specific directories are created only when used.\n"
+        "  --mode interactive (default, designing from scratch): the user passes the gates\n"
+        "  in the workflow window and may ask for changes there. --mode autonomous\n"
+        "  (exercises, tests): the agent passes them with --reason and may stop without\n"
+        "  --quote; reports mark these decisions. Only the user can later make an\n"
+        "  autonomous job interactive (in the window); never the reverse.", "BAD_ARGS, JOB_EXISTS"),
     "job list": ("List this instance's jobs locally.", "Returns jobs with their recorded state; no optical files are changed.", "BAD_ARGS"),
     "job show": (
         "Read a job's state and running computation progress from local files.",
@@ -187,13 +195,17 @@ COMMANDS = {
         "", "NO_LENS_LOADED, JOB_MISMATCH, BAD_ARGS, ZOS_ERROR"),
     "lens approve": (
         "Record the user's approval after showing models/NNN-<lens>/index.html.",
-        "--model is the job-relative description folder; --quote is the user's actual\n"
-        "  approval. Seals approval.json with fingerprint, outstanding warnings,\n"
+        "The user normally approves with the workflow window's button (via: window);\n"
+        "  this command is the fallback when the window cannot be used and is refused\n"
+        "  while it is open. --model is the job-relative description folder; --quote is\n"
+        "  one user message verbatim (via: cli); an autonomous job passes the gate with\n"
+        "  --reason instead (via: auto). Seals approval.json with fingerprint, outstanding warnings,\n"
         "  shown_sha (digest of the four sections the page showed) and the unknowns\n"
         "  still open then (unknowns_acknowledged). Descriptions made before these\n"
         "  fields existed lack the last two.\n"
         "  Rounds require a matching approved structure; structural changes need approval\n"
-        "  again; --rebuild-reason covers structure or environment-declaration changes.\n"
+        "  again; --rebuild-reason (the window: notes.rebuild_reason) covers structure or\n"
+        "  environment-declaration changes.\n"
         "  Appended field/wavelength samples are allowed, using the round gate comparison.\n"
         "  An intact earlier matching approval remains usable. Damaged history is reported\n"
         "  by path and skipped; modern missing seals cannot be treated as legacy.\n"
@@ -260,7 +272,11 @@ COMMANDS.update({
         "  Legacy harness.yaml is not converted. Format: .agents/skills/saos/demand.example.yaml.", "BAD_ARGS, FILE_NOT_FOUND, JOB_NOT_FOUND"),
     "demand confirm": (
         "Record the user's approval of the exact current demand version.",
-        "Every limit requires source. --quote must contain the user's approval.\n"
+        "The user normally confirms with the workflow window's button (via: window);\n"
+        "  this command is the fallback when the window cannot be used and is refused\n"
+        "  while it is open. Every limit requires source. --quote is one user message\n"
+        "  verbatim; the record and the report mark it as not confirmed in the window.\n"
+        "  In an autonomous job pass the gate with --reason instead (via: auto).\n"
         "  Appends confirmations.jsonl bound to the demand hash; opens/raises the\n"
         "  workflow window unless SAOS_UI=0 and reports its state under ui.", "BAD_ARGS, DEMAND_BLOCKED, FILE_NOT_FOUND, JOB_NOT_FOUND"),
     "check": (
@@ -296,7 +312,8 @@ COMMANDS.update({
         "  warnings flags rtc results pushed with fast.push and not yet closed by an\n"
         "  OpticStudio optimisation (the round is still recorded).\n"
         "  record.achieved governs delivery: evaluation.achieved alone ignores model\n"
-        "  glass, hard conditions and parts_clash. Clashing parts cannot be delivered;\n"
+        "  glass, hard conditions and parts_clash. Clashing parts, or a surface whose sag\n"
+        "  is undefined inside its part edge (parts_clash.undefined), cannot be delivered;\n"
         "  failed interference evaluation prevents recording. Checks must be read-only\n"
         "  (relative 1e-12/absolute 1e-15 roundoff tolerance). A duplicate lens/check/demand\n"
         "  version is refused; inspect the previous round after a client timeout.\n"
@@ -330,9 +347,10 @@ COMMANDS.update({
         "  commas; --reason cites scans/NNN or measured evidence. Appends ruled_out.jsonl.\n"
         "  Stop logic no longer waits for these tiers until the next clear gain.", "BAD_ARGS, FILE_NOT_FOUND, JOB_NOT_FOUND"),
     "stop": (
-        "Record the user's decision to stop this demand version locally.",
+        "Record the decision to stop this demand version locally.",
         "Requires an existing round in the version. --reason cites evidence; --quote\n"
-        "  is the user's words including the selected option. Appends stops.jsonl;\n"
+        "  is the user's words including the selected option. An autonomous job may\n"
+        "  stop without --quote (via: auto, marked in the report). Appends stops.jsonl;\n"
         "  future rounds in this version are refused and reports show reason/quote.", "BAD_ARGS, FILE_NOT_FOUND, JOB_NOT_FOUND"),
     "report": ('Generate the delivery report from the demand and ledger without OpticStudio.', "Writes report/index.html and a sealed report/NNN-rMMM-<status>.html. Language:\n  --lang > demand.lang > SAOS_LANG > system UI language > English. Returns\n  headline (deliver/best_so_far/best_blocked/no_valid), deliverable, deliver,\n  diagnostic and achieved. deliver is null for an undeliverable lens; diagnostic\n  identifies its file/round and hard_failing, measurement_errors, model_glass.\n  An achieved deliverable round with minimum shortfall is preferred; otherwise\n  the best deliverable round is used. Terminal exhausted/limit/stopped can\n  headline deliver with achieved:false. No valid lens means no delivery.\n  Changed demand/checks require a new measured round before reporting; sealed\n  evidence must be intact (uv run saos job verify J lists problems). An rtc\n  round must be confirmed (saos round --confirm); after a disagreeing\n  confirmation a new round is required unless the user stopped.\n  The tolerance section uses the latest finished, uncancelled tolerance scan\n  (yield, per-check distributions, top 10 sensitivities) and states, by lens\n  file content hash, whether it ran on the delivered round's lens; without one\n  it says none was run.", 'BAD_ARGS, SPEC_CHANGED, EVIDENCE_TAMPERED, FILE_NOT_FOUND, JOB_NOT_FOUND'),
     "ui open": (
@@ -492,8 +510,19 @@ Sequential rays, analyses and focus
   ctx.analysis(name, settings=None): exported numeric data without files; status
     ok/partial/empty, problems and text_head when incomplete. Inspect these before
     rerunning. ctx.quick_focus(): OpticStudio quick focus.
+  with ctx.huygens(wave=None, pupil=64, image=128) as h: h.psf(field, delta_um)
+    returns kit.Psf (values[y][x] unnormalised, dx/dy in um) or None; field is a
+    field number or (x, y) in field units, added for the session only. Keep focus
+    scans and field sweeps in one session (each session opens an analysis window).
+    kit.psf_widths(p, n_photon=1, ee=0.8): fwhm_x/fwhm_y through the peak and
+    ee_diameter about the centroid. kit.psf_axial(peak_at, step_um, reaches=(15, 30),
+    n_photon=1): peak_at(k) gives the peak k steps out of focus (move and restore
+    the plane yourself); returns fwhm_um, peak_offset_um, reach, curve or None.
+    ctx.wavefront_rms(field, wave=None): ray-integrated RMS to centroid, waves.
+    ctx.aperture(surface): the surface aperture. rtc: huygens and wavefront_rms
+    are BACKEND_UNSUPPORTED until reconciled with OpticStudio (ADR-0020).
   from saos import kit: global_matrix, sag, pupil, best_focus, material_nd
-    (model glass uses its solve's nd), profile. Optical evaluations use ZOS-API.
+    (model glass uses its solve's nd), profile, fwhm. Optical evaluations use ZOS-API.
 
 Extrema and sampling coverage
   ctx.cra(direction=(0,1), wave=None, n=33, refine=2, to=None): actual chief-ray
@@ -594,8 +623,12 @@ DESCRIBE_HELP_EPILOG = """Input: --notes JSON object (optional)
     "environment": [3],
     "assumptions": ["The sample medium is fixed by the user's experiment"],
     "first_order": ["Measured EFFL and working distance, with evidence paths"],
-    "exploration": "scans/001, or evidence that the user prescribed the structure",
-    "next_budget": {"max_seconds": 900, "plan": "Hammer on the chosen structure, then a 3-point scan of the spacing"}
+    "exploration": {"searches": [{"library": "patents", "query": {"half_field_deg": 20, "f_number": 4},
+                                  "hits": 3, "decision": "or01022 screened in scans/001; the others exceed the length"}],
+                    "fixed_by_user": {"parts": "element count and the fold prism", "quote": "the user's words"},
+                    "notes": "optional text"},
+    "next_budget": {"max_seconds": 900, "plan": "Hammer on the chosen structure, then a 3-point scan of the spacing"},
+    "rebuild_reason": "only when the structure differs from the last approval"
   }
   next_budget is the computation the next stage may spend, with the optimisations and
   scans it covers. The page's budget section shows it; a warning asks for it when it is
@@ -609,9 +642,14 @@ DESCRIBE_HELP_EPILOG = """Input: --notes JSON object (optional)
   image; NSC: object numbers starting at 1). These parts still need material
   sources but are exempt from the manufactured-part model-glass restriction;
   their declared settings are locked into the approval fingerprint.
-  assumptions/first_order are lists of explanatory text. exploration records a
-  candidates scan or the reason structural comparison was unnecessary. Without
-  either it or an existing candidates scan, the page warns that screening evidence is absent.
+  assumptions/first_order are lists of explanatory text. exploration records the
+  starting-form search: each search with its library, query, hits (0 when nothing
+  matched) and decision, and/or fixed_by_user with the parts the user fixed and
+  their words. A description without either (old free text included) shows a
+  warning and lens approve refuses it; a malformed exploration is BAD_ARGS. Without
+  a candidates scan the page separately warns that screening evidence is absent.
+  rebuild_reason is shown on the page; the window's approval of a structure that
+  differs from the last approval takes it from here.
 
 Results and files
   Seals models/NNN-<lens>/index.html, model.json and layout PNGs (3D views and,

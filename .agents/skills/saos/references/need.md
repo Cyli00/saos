@@ -51,6 +51,7 @@ Read the user's requirements as written:
 Checks live in `checks/` with every helper module or data file they use; recipe libraries and `saos.kit` they import count too. Any change to them starts a new comparison window (see [rounds.md](rounds.md)).
 
 - Measure the real quantity. Never special-case a surface type or setting to skip a measurement.
+- Read and change the lens through `ctx` (`get`, with `<surface>.par<N>` for a surface type's parameters, `op` such as `SSAG` and `INDX`, `configuration`, `spot`, `trace`, `analysis`, and `huygens` with `kit.psf_widths` / `kit.psf_axial` for diffraction PSF widths, [scripting.md](scripting.md#scripts)), so the check runs on rtc and OpticStudio alike; rtc has no `ctx.system`, and an item that reaches for it is listed under `backend_unsupported`. On the fibre job six checks read `ctx.system.LDE` and none could run on rtc.
 - Measure an extreme over the field or spectrum (chief ray angle, relative illumination, transmission) with `ctx.cra`, `ctx.field_profile` or `ctx.wave_profile`. They sample densely, refine around the extreme and report its location and coverage. When `coverage.ok` is false, sample finer or return `inf`, never the coarse value: an edge-only CRA missed 19.88° in mid field, and five wavelengths missed a transmission dip, on the nightvision job.
 - State the preconditions (parts do not intersect, the image is real, enough rays arrive, the quantity covers the whole beam and not only the surviving rays) and return `inf` when one fails; a number from an invalid state is worse than no number. Return `inf` when the design gives no valid value; raise only when the check itself cannot run.
 - Keep checks read-only: work on a copy, or restore the lens (`ctx.kept`, `ctx.restored`, `ctx.configuration`). A round refuses a check that changed the lens (`LENS_MODIFIED_BY_CHECK`); last-digit rounding by OpticStudio (relative 1e-12) does not count.
@@ -59,9 +60,11 @@ Checks live in `checks/` with every helper module or data file they use; recipe 
 
 ## Confirm and set up the window
 
-Show the demand in plain language with the feasibility verdicts. Go through every limit that `uv run saos demand show --job J` lists under `weak_basis` one by one and get explicit approval of its content. Record the user's words with `uv run saos demand confirm --job J --quote "..."`; the tools keep the full demand text the user saw.
+Show the demand in plain language with the feasibility verdicts. Go through every limit that `uv run saos demand show --job J` lists under `weak_basis` one by one and get explicit approval of its content.
 
-If the user told you to proceed without confirmations, record that quote, and still send the verdicts, the directional-objective estimates, every weak-basis limit and every interpretation of yours in one `ui notify` message, and append them to `sources/interview.md`. The user can then object while the design is still cheap to change.
+In an interactive job the user confirms a gate by pressing its button in the workflow window, with an optional note, or asks for changes with the other button; the window shows the summary and weak-basis limits and records the exact version it showed. This holds for both gates (here and the model approval). `demand confirm --quote` and `lens approve --quote` are the fallback for when the window cannot be used, and are refused while it is open; the quote is one message of the user's, verbatim, and the record and the report mark it as not confirmed in the window. The tools keep the full demand text the user saw.
+
+In an autonomous job, write the feasibility verdicts, the directional-objective estimates, every weak-basis limit and every interpretation of yours into `sources/interview.md`, then run `uv run saos demand confirm --job J --reason "<the statement it follows and the assumptions made>"`.
 
 `demand confirm` opens the workflow window (result field `ui`). It shows every tab that applies and every checked demand item, and the daemon refreshes the current lens, its merit value and its item values after each lens change by itself. `uv run saos ui open --job J --tabs ... --metrics ...` puts the tabs and items that matter most for this kind of system first (remembered for the job; `--reset` restores the defaults); `ui open --job J` reopens a closed window.
 

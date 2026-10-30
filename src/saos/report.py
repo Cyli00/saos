@@ -72,6 +72,16 @@ TEXT: dict[str, tuple[str, str]] = {
     ),
     "judge.continue": ("尚未终止；当前手段不再见效时，下一个要试的是{tier}", "not finished; when the current approach stops gaining, try {tier} next"),
     "judge.stopped": ("第 {n} 轮后按用户决定停止。理由：{reason}。用户原话：{quote}", "stopped after round {n} by the user's decision. Reason: {reason}. The user's words: {quote}"),
+    "judge.stopped_auto": ("第 {n} 轮后由 agent 自行停止（自主运行，未经用户确认）。理由：{reason}", "stopped after round {n} by the agent (autonomous run, not confirmed by the user). Reason: {reason}"),
+    "autonomous": ("自主运行：需求单、建模结构和停止都由 agent 决定，未经用户确认；各项决定与理由见“自主决定”一节。",
+                   "Autonomous run: the demand, the model structure and any stop were decided by the agent without the user's confirmation; see “Autonomous decisions” for each and its reason."),
+    "h.autonomy": ("自主决定（未经用户确认）", "Autonomous decisions (not confirmed by the user)"),
+    "auto.demand": ("需求单 {sha}：{reason}", "Demand {sha}: {reason}"),
+    "auto.model": ("建模结构 {model}：{reason}", "Model structure {model}: {reason}"),
+    "auto.rebuild": ("（重建原因：{reason}）", " (why rebuilt: {reason})"),
+    "auto.stop": ("第 {n} 轮后停止：{reason}", "Stopped after round {n}: {reason}"),
+    "auto.assumption": ("假设的界限 {id} = {bound}：{source}", "Assumed limit {id} = {bound}: {source}"),
+    "confirmed.auto": ("agent 自行确认（自主运行）：{reason}", "Confirmed by the agent (autonomous run): {reason}"),
     "progress": (
         "<b>最后一次明显进步</b>：第 {n} 轮；之后 {k} 轮没有明显进步，还没试过的手段：{untried}",
         "<b>Last clear gain</b>: round {n}; {k} round(s) since without a clear gain; tiers not yet tried: {untried}",
@@ -121,7 +131,9 @@ TEXT: dict[str, tuple[str, str]] = {
     "blocked.clash": ("<b>没有可交付的镜头</b>：下面这一轮的零件交叠（{what}），物理上不成立，不能作为设计交付。",
                       "<b>No deliverable lens</b>: parts of the round below clash ({what}); it is physically impossible and is not a deliverable design."),
     "model_ok": ("建模说明：{model}（用户已确认）", "Model description: {model} (approved by the user)"),
-    "confirmed": ("用户确认：{quote}", "Confirmed by the user: {quote}"),
+    "confirmed": ("用户确认（非窗口确认）：{quote}", "Confirmed by the user (not in the window): {quote}"),
+    "confirmed.window": ("用户在窗口里确认。", "Confirmed by the user in the window."),
+    "confirmed.note": ("用户在窗口里确认，备注：{quote}", "Confirmed by the user in the window, with the note: {quote}"),
     "not_recorded": ("（未记录）", "(not recorded)"),
     "h.items": ("逐项结果（第 {n} 轮）", "Results by item (round {n})"),
     "th.items": ("项|类别|达标线|实测值|结论|差多少|实测依据", "Item|Kind|Pass line|Measured|Verdict|Gap|Evidence"),
@@ -293,6 +305,42 @@ def chart(rounds: list[dict[str, Any]], t: Tr) -> str:
     )
 
 
+def autonomy_items(job: jobs.Job, confirmed: dict[str, Any] | None, decision: dict[str, Any]) -> list[dict[str, Any]]:
+    """agent 自行做出的决定（via=auto）：需求确认、各次模型确认、停止，以及确认时依据只是 agent 假设的界限（ADR-0021）。
+    Decisions the agent took alone (via=auto): the demand confirmation, each model approval, a stop, and the limits that
+    rested only on an agent assumption when the demand was confirmed."""
+    from saos import model_gate
+
+    out: list[dict[str, Any]] = []
+    if confirmed and confirmed.get("via") == "auto":
+        out.append({"kind": "demand", "sha": confirmed["demand_sha"][:8], "reason": confirmed.get("reason", "")})
+        out += [{"kind": "assumption", "id": w["id"], "bound": w["bound"], "source": w["source"]}
+                for w in confirmed.get("weak_basis") or [] if w.get("source")]
+    out += [{"kind": "model", "model": r["model"], "reason": r.get("reason", ""), "rebuild": r.get("rebuild_reason")}
+            for r in model_gate.approvals(job) if r.get("via") == "auto"]
+    stopped = decision.get("stopped")
+    if stopped and stopped.get("via") == "auto":
+        out.append({"kind": "stop", "n": stopped["round"], "reason": stopped["reason"]})
+    return out
+
+
+def autonomy_section(data: dict[str, Any], t: Tr) -> str:
+    items = data.get("autonomy") or []
+    if not items:
+        return ""
+    lines = []
+    for a in items:
+        if a["kind"] == "demand":
+            lines.append(t("auto.demand", sha=e(a["sha"]), reason=e(a["reason"])))
+        elif a["kind"] == "model":
+            lines.append(t("auto.model", model=e(a["model"]), reason=e(a["reason"])) + (t("auto.rebuild", reason=e(a["rebuild"])) if a.get("rebuild") else ""))
+        elif a["kind"] == "stop":
+            lines.append(t("auto.stop", n=a["n"], reason=e(a["reason"])))
+        else:
+            lines.append(t("auto.assumption", id=e(a["id"]), bound=e(json.dumps(a["bound"], ensure_ascii=False)), source=e(a["source"])))
+    return f"<h2>{t('h.autonomy')}</h2><ul>{''.join(f'<li>{x}</li>' for x in lines)}</ul>"
+
+
 def judgement(decision: dict[str, Any], stop: dict[str, Any], t: Tr) -> str:
     """ledger 的 reason 是给 agent 看的英文，报告里按状态重写。"""
     status = decision["status"]
@@ -302,6 +350,8 @@ def judgement(decision: dict[str, Any], stop: dict[str, Any], t: Tr) -> str:
         return t("judge.limit", cap=stop["max_rounds"])
     if status == "stopped":
         s = decision["stopped"]
+        if s.get("via") == "auto":
+            return t("judge.stopped_auto", n=s["round"], reason=s["reason"])
         return t("judge.stopped", n=s["round"], reason=s["reason"], quote=s["quote"])
     if status == "exhausted":
         tiers = t("list_sep").join(t.tier(x) for x in ledger.TIERS if x in stop["tiers"])
@@ -355,7 +405,9 @@ def build(job: jobs.Job) -> dict[str, Any]:
     shown = {**evaluation["demand"], "summary": d["summary"], "open_questions": d.get("open_questions") or [], "lang": d.get("lang"), "stop": d["stop"]}
     from saos import milestones
 
-    return {"milestones": milestones.elapsed(job), "demand": shown, "confirmed": demand.confirmation_for(job.root, demand.digest(stored), stored), "rounds": rounds, "decision": decision,
+    confirmed = demand.confirmation_for(job.root, demand.digest(stored), stored)
+    return {"milestones": milestones.elapsed(job), "demand": shown, "confirmed": confirmed, "rounds": rounds, "decision": decision,
+            "mode": job.mode, "autonomy": autonomy_items(job, confirmed, decision),
             "deliver": deliver, "items": evaluation["items"], "blocked": not ledger.deliverable(deliver),
             "tolerance": latest_tolerance(job, deliver), "backend": backend}
 
@@ -492,7 +544,16 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
         f'<td class="num">{fmt(r["shortfall"])}</td><td class="num">{fmt(r.get("merit"))}{t("merit.agent") if r.get("merit_source") == "agent" else ""}</td><td><a href="../lenses/{e(r["file"])}">{e(r["file"])}</a></td></tr>'
         for r in rounds
     )
-    confirmed = (data.get("confirmed") or {}).get("quote", "")
+    confirmed = data.get("confirmed") or {}
+    if not confirmed:
+        confirmed_text = t("not_recorded")
+    elif confirmed.get("via") == "auto":
+        confirmed_text = t("confirmed.auto", reason=e(confirmed.get("reason", "")))
+    elif confirmed.get("via") == "window":
+        confirmed_text = t("confirmed.note", quote=e(confirmed.get("quote"))) if confirmed.get("quote") else t("confirmed.window")
+    else:
+        # 没有 via 的旧记录都来自命令行 / older records without via all came from the command line
+        confirmed_text = t("confirmed", quote=e(confirmed.get("quote", "")))
     demand_html = demand_section(h, t)
     evidence = []
     for folder, key in (("analyses", "ev.analyses"), ("scripts", "ev.scripts")):
@@ -520,6 +581,7 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
             clash = deliver["parts_clash"]
             what = [f"{a}–{b}" for a, b in (c["surfaces"] for c in clash.get("crossings") or [])]
             what += [" / ".join("–".join(map(str, lens)) for lens in o["lenses"]) for o in clash.get("overlaps") or []]
+            what += [f"S{u['surface']} r≤{u['defined_to']:.4g}<{u['edge']:.4g} mm" for u in clash.get("undefined") or []]
             text = t("blocked.clash", what=e("; ".join(what)))
         else:
             text = t("blocked", surfaces=e(", ".join(map(str, deliver.get("model_glass") or []))))
@@ -549,15 +611,17 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
 <p class="muted">{t('byline', job=e(job.id), time=e(jobs.now_iso()))}</p>
 <h1>{e(job.read_state().get('name', job.id))} <span class="status {status}">{t('status.' + status)}</span></h1>
 <p>{t('summary.' + status)}</p>
+{f'<div class="card"><b>{t("autonomous")}</b></div>' if data.get('mode') == 'autonomous' or data.get('autonomy') else ''}
 <div class="card">{t(headline(status, deliver, data.get('blocked')), lens=lens_link, n=deliver['round'], g=fmt(deliver['shortfall']))}
 <br>{t('judgement', text=e(judgement(decision, h['stop'], t)))}{progress}
 <br>{t('backend.' + data['backend']['name'], version=e(data['backend']['version'] or ''))}</div>
 {blocked}
 
 {milestones_section(data, t)}
+{autonomy_section(data, t)}
 <h2>{t('h.materials', n=deliver['round'])}</h2>{materials}
 <h2>{t('h.demand')}</h2>{demand_html}
-<p class="muted">{t('confirmed', quote=e(confirmed) or t('not_recorded'))}</p>
+<p class="muted">{confirmed_text}</p>
 <h2>{t('h.items', n=deliver['round'])}</h2><div class="wrap"><table><thead><tr>{header_row(t('th.items'))}</tr></thead><tbody>{''.join(rows)}</tbody></table></div>
 <p class="muted">{t('note.g')}</p>
 <h2>{t('h.process')}</h2><div class="card">{chart(rounds, t)}</div>

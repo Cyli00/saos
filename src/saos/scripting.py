@@ -149,6 +149,12 @@ class ScriptContext(KitMethods):
         """OpticStudio 的 PrimarySystem（只有真实后端才有）。"""
         system = getattr(self.backend, "system", None)
         if system is None:
+            if self.backend.identity().get("backend") == "rtc":
+                # 检查与脚本经 ctx 读写才能在两个后端上跑（ADR-0020）/ checks and scripts run on both backends only through ctx
+                raise SaosError(ErrorCode.BACKEND_UNSUPPORTED,
+                                "ctx.system is OpticStudio's object and rtc has none; read the lens through "
+                                "ctx.get (with <surface>.par<N> for a surface type's parameters), ctx.op (SSAG, INDX, ...), "
+                                "ctx.configuration and ctx.analysis")
             raise SaosError(ErrorCode.BAD_ARGS, f"{type(self.backend).__name__} has no OpticStudio system")
         return system
 

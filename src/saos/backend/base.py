@@ -22,6 +22,21 @@ MATERIAL_MODES = ("model", "substitute")
 DEFAULT_SUBSTITUTE_CATALOG = "SAOS_CDGM_INPROD"
 
 
+def check_field(field: Any) -> int | tuple[float, float]:
+    """PSF 与波前分析的视场：正整数视场号，或两个有限数 (x, y)。/ A field for PSF and wavefront analyses."""
+    if isinstance(field, int) and not isinstance(field, bool):
+        if field >= 1:
+            return field
+    elif isinstance(field, (tuple, list)) and len(field) == 2:
+        try:
+            x, y = float(field[0]), float(field[1])
+        except (TypeError, ValueError):
+            x = y = math.nan
+        if math.isfinite(x) and math.isfinite(y):
+            return x, y
+    raise SaosError(ErrorCode.BAD_ARGS, f"field must be a field number (1, 2, ...) or (x, y) in the lens's field units, got {field!r}")
+
+
 def is_par(param: str) -> bool:
     return bool(PAR_RE.match(str(param)))
 
@@ -256,6 +271,24 @@ class Backend(ABC):
     def zernike(self, *, wave: int, field: int, samp: int, max_term: int, terms: tuple[int, ...]) -> dict[int, float]:
         """一次拟合到 max_term 项（Zernike Standard，参考主光线），返回所需各项；负项号含义同 ZERN。"""
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support zernike")
+
+    def huygens(self, wave: int, pupil: int, image: int) -> Any:
+        """Huygens PSF 会话：psf(field, delta_um) 返回 (行优先强度表, dx_um, dy_um) 或 None（分析没有数据），close() 结束。
+        field 为视场号，或镜头视场单位下的 (x, y)（会话期间追加到视场表，close 时删掉）。强度不归一化，同一会话内可比。
+        A Huygens PSF session: psf(field, delta_um) gives (row-major intensities, dx_um, dy_um) or None (no data), close()
+        ends it. field is a field number or (x, y) in the lens's field units (appended for the session). Intensities are
+        not normalised and compare within one session."""
+        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support huygens")
+
+    def wavefront_rms(self, wave: int, field: int | tuple[float, float]) -> float | None:
+        """光线积分的 RMS 波前误差（波长，参考质心即扣除平移与倾斜）；算不出时为 None。field 同 huygens。
+        RMS wavefront error from ray integration (waves, to centroid: piston and tilt removed); None when not computable."""
+        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support wavefront_rms")
+
+    def surface_aperture(self, index: int) -> dict[str, Any]:
+        """面孔径设置：type（CircularAperture、FloatingAperture、None …）及 MinimumRadius、MaximumRadius 等数值。
+        A surface's aperture: type (CircularAperture, FloatingAperture, None, ...) and its MinimumRadius, MaximumRadius, ..."""
+        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support surface_aperture")
 
     def viz_data(self, folder: Path | None, *, full: bool = True, rays: bool = True) -> dict[str, Any]:
         """saos ui 的数据：逐面全局几何、布局光线、Lens Data、交叠检查；full 时另有点列图光线和分析导出（文本写到 folder）。

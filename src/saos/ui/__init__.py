@@ -119,6 +119,9 @@ def ensure_window(job_id: str, *, gate: bool = False) -> dict[str, Any] | None:
         return None
     if not gate and job_id in server.closed_jobs():
         return None
+    # 自主任务没有人在关卡等着看：不自动打开，saos ui open 照样能开 / an autonomous job has nobody waiting at the gates
+    if jobs.mode_of(config.jobs_dir() / job_id) == "autonomous":
+        return None
     state = server.read_state()
     polled = _seen(state) if state and client.pid_alive(int(state.get("pid", 0))) else None
     if polled is not None:
@@ -141,6 +144,31 @@ def ensure_window(job_id: str, *, gate: bool = False) -> dict[str, Any] | None:
         return None
     # 自动重开不抢焦点：用户可能正在别的窗口里打字 / an automatic reopen keeps the focus where the user is typing
     return open_window(job_id, activate=False)
+
+
+def window_open(job_id: str) -> bool:
+    """这个任务的流程图窗口是否开着：最近轮询过（最小化的按放慢后的间隔算），或刚打开还没来得及轮询。SAOS_UI=0 时为 False。
+    Whether the job's workflow window is open: it polled lately (at the slowed rate when minimised), or was opened just
+    now and has not polled yet. False with SAOS_UI=0."""
+    from saos.ui import server
+
+    if os.environ.get("SAOS_UI") == "0":
+        return False
+    state = server.read_state()
+    polled = _seen(state) if state and client.pid_alive(int(state.get("pid", 0))) else None
+    if polled is not None:
+        seen, hidden = polled
+        if seen.get(job_id, math.inf) <= (HIDDEN_SEEN_WITHIN_S if job_id in hidden else SEEN_WITHIN_S):
+            return True
+    return job_id not in server.closed_jobs() and time.time() - float(_opened().get(job_id, 0)) < OPENING_S
+
+
+def require_window_closed(job_id: str, what: str) -> None:
+    """确认关卡的降级入口（--quote）只在窗口用不了时可用：窗口开着就请用户在窗口里点确认（ADR-0020）。
+    The --quote fallback of a gate works only when the window cannot be used; with it open the user confirms there."""
+    if window_open(job_id):
+        raise SaosError(ErrorCode.BAD_ARGS, f"the workflow window is open: ask the user to press the {what} button there (a note is optional); "
+                        "--quote is only for when the window cannot be used", {"window": "open"})
 
 
 def _raise_window(job_id: str) -> bool:

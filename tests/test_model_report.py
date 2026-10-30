@@ -370,7 +370,8 @@ def test_describe_measures_requirements_and_records_digest_and_unknowns(saos_hom
 
 def test_approval_records_the_digest_and_the_unknowns_shown(saos_home, fake_lens_file):
     backend, daemon, job = _started_daemon(fake_lens_file, "approve-sections")
-    out = _describe(daemon, job, {"surfaces": {"0": "object"}, "first_order": ["f"], "exploration": "prescribed", "next_budget": BUDGET})
+    fixed = {"fixed_by_user": {"parts": "the whole structure", "quote": "就用这个结构"}}
+    out = _describe(daemon, job, {"surfaces": {"0": "object"}, "first_order": ["f"], "exploration": fixed, "next_budget": BUDGET})
     model = json.loads((job.root / out["folder"] / "model.json").read_text(encoding="utf-8"))
     record = model_gate.approve(job, out["folder"], "模型可以")
     assert record["shown_sha"] == model["shown_sha"] and record["unknowns_acknowledged"] == model["unknowns"]
@@ -385,6 +386,28 @@ def test_approval_records_the_digest_and_the_unknowns_shown(saos_home, fake_lens
     old_record = model_gate.approve(job, out["folder"], "旧格式可以")
     assert "shown_sha" not in old_record and "unknowns_acknowledged" not in old_record
     assert model_gate.require_approved(job, backend.describe_model(None))["model"] == out["folder"]
+
+
+def test_a_description_without_a_search_record_cannot_be_approved(saos_home, fake_lens_file):
+    # 10-30 的任务写一句“未进行结构搜索”就过了关 / on 2026-10-30 one line saying "no structure search" passed
+    backend, daemon, job = _started_daemon(fake_lens_file, "search-record")
+    base = {"surfaces": {"0": "object"}, "first_order": ["f"], "next_budget": BUDGET}
+    text = _describe(daemon, job, {**base, "exploration": "按用户指定结构，未进行结构搜索"})
+    assert any("No starting-form search record" in w for w in text["warnings"])
+    with pytest.raises(SaosError) as err:
+        model_gate.approve(job, text["folder"], "可以")
+    assert err.value.code == ErrorCode.BAD_ARGS and "exploration.searches" in err.value.message
+    assert "旧格式的文字记录" in (job.root / text["folder"] / "index.html").read_text(encoding="utf-8")
+
+    # 零命中也是记录 / a search with no hits is a record too
+    searched = {"searches": [{"library": "patents", "query": {"conjugate": "finite", "wavelengths_um": [0.92]}, "hits": 0,
+                              "decision": "no finite-conjugate probe forms; synthesised paraxially"}]}
+    out = _describe(daemon, job, {**base, "exploration": searched})
+    assert not any("search record" in w for w in out["warnings"])
+    assert model_gate.approve(job, out["folder"], "可以")["model"] == out["folder"]
+
+    bad = daemon.handle({"op": "lens.describe", "args": {"job": job.id, "notes": {**base, "exploration": {"searches": [{"library": "patents"}]}}}})
+    assert not bad["ok"] and bad["error"]["code"] == ErrorCode.BAD_ARGS and "searches[0]" in bad["error"]["message"]
 
 
 def test_next_budget_format_is_checked_and_missing_is_a_warning(saos_home):

@@ -66,6 +66,13 @@ class Job:
     root: Path
 
     @property
+    def mode(self) -> str:
+        """interactive（用户在关卡确认、可要求修改）或 autonomous（agent 自行过关卡并记录理由）；旧任务没有这一项，按 interactive。
+        interactive (the user confirms the gates and may ask for changes) or autonomous (the agent passes them with its
+        reasons on record); older jobs lack the field and count as interactive."""
+        return mode_of(self.root)
+
+    @property
     def state_file(self) -> Path:
         return self.root / "job.json"
 
@@ -264,9 +271,68 @@ def get_job(job_id: str) -> Job:
     return Job(job_id, root)
 
 
-def create_job(name: str) -> Job:
+# 任务的两种流程（ADR-0021）：做题、测试用 autonomous，从头设计用 interactive / the two workflows of a job
+MODES = ("interactive", "autonomous")
+# 用户在窗口里对关卡提出的修改意见 / change requests the user made at a gate in the window
+REVISIONS_FILE = "revisions.jsonl"
+
+
+def mode_of(root: Path) -> str:
+    try:
+        mode = json.loads((Path(root) / "job.json").read_text(encoding="utf-8")).get("mode")
+    except (OSError, ValueError):
+        mode = None
+    return mode if mode in MODES else "interactive"
+
+
+def require_autonomous(root: Path, what: str) -> None:
+    """agent 自己过关卡、自己停止只在自主任务里可以。/ Only an autonomous job lets the agent pass a gate or stop by itself."""
+    if mode_of(root) != "autonomous":
+        raise SaosError(ErrorCode.BAD_ARGS, f"{what} by the agent alone is only for autonomous jobs; this job is interactive, so the user decides "
+                        "(the workflow window's button, or --quote with their words when the window cannot be used)")
+
+
+def make_interactive(job: Job) -> dict[str, Any]:
+    """自主任务改为参与：只能由用户在窗口里做，反过来不行，agent 不能为了过关卡把任务切成自主（ADR-0021）。
+    Turn an autonomous job interactive: only the user does it, in the window; never the other way round."""
+    if job.mode == "interactive":
+        return {"mode": "interactive", "changed": False}
+    job.update_state(mode="interactive", mode_changed_at=now_iso())
+    job.append_log({"op": "job.mode", "ok": True, "args": {"mode": "interactive"}})
+    return {"mode": "interactive", "changed": True}
+
+
+def record_revision(job: Job, gate: str, target: str, note: str) -> dict[str, Any]:
+    """用户在关卡处要求修改：记入 revisions.jsonl，并在 sources/interview.md 末尾追加原话。target 是当时显示的版本
+    （需求单的 sha 或建模说明的文件夹）；出了新版本，这条请求就算处理过了。
+    The user asked for changes at a gate: appended to revisions.jsonl and, verbatim, to sources/interview.md. target is
+    the version shown (the demand sha or the description folder); a new version settles the request."""
+    note = str(note or "").strip()
+    if gate not in ("demand", "model") or not target or not note:
+        raise SaosError(ErrorCode.BAD_ARGS, "a change request needs the gate (demand or model), the version shown and the user's note")
+    record = {"gate": gate, "target": target, "note": note[:4000], "time": now_iso()}
+    with (job.root / REVISIONS_FILE).open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    label = {"demand": f"需求单 {target[:8]}", "model": f"建模说明 {target}"}[gate]
+    interview = job.root / "sources" / "interview.md"
+    interview.parent.mkdir(parents=True, exist_ok=True)
+    with interview.open("a", encoding="utf-8") as fh:
+        fh.write(f"\n## {record['time']} 用户在窗口里要求修改（{label}）\n\n{record['note']}\n")
+    return record
+
+
+def revisions(root: Path) -> list[dict[str, Any]]:
+    path = Path(root) / REVISIONS_FILE
+    if not path.is_file():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def create_job(name: str, mode: str = "interactive") -> Job:
     if not NAME_RE.match(name or ""):
         raise SaosError(ErrorCode.BAD_ARGS, "job names: letters, digits, - and _, 1–48 chars, starting with a letter or digit")
+    if mode not in MODES:
+        raise SaosError(ErrorCode.BAD_ARGS, f"mode must be one of {MODES}")
 
     job_id = f"{datetime.now():%Y%m%d-%H%M%S}-{name}"
     root = config.jobs_dir() / job_id
@@ -285,6 +351,7 @@ def create_job(name: str) -> Job:
         {
             "id": job_id,
             "name": name,
+            "mode": mode,
             "status": "created",
             "created_at": created,
             "updated_at": created,
@@ -292,7 +359,7 @@ def create_job(name: str) -> Job:
             "last_saved": None,
         },
     )
-    job.append_log({"op": "job.create", "ok": True, "args": {"name": name}})
+    job.append_log({"op": "job.create", "ok": True, "args": {"name": name, "mode": mode}})
     return job
 
 

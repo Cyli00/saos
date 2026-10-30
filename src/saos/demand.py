@@ -512,15 +512,35 @@ def confirmation_for(root: Path, sha: str, demand: dict[str, Any] | None = None)
                  if (c.get("demand_sha") if demand is None else as_current(c.get("demand_sha"), demand, "confirm", root)) == sha), None)
 
 
-def confirm(root: Path, quote: str) -> dict[str, Any]:
-    """记录用户对当前需求的确认原话。确认前须校验通过；没有 blocking 问题时才算可以开工。
-    Record the user's words of approval for the current demand; it must validate first."""
-    quote = str(quote or "").strip()
-    if not quote:
+# window：用户在窗口里点；cli：窗口用不了时用户原话；auto：自主任务里 agent 带理由自行通过（ADR-0021）
+# window: the user pressed the button; cli: the user's words when the window cannot be used; auto: an autonomous job's agent
+CONFIRM_VIA = ("window", "cli", "auto")
+
+
+def confirm(root: Path, quote: str, *, via: str = "cli", shown_sha: str | None = None, reason: str = "") -> dict[str, Any]:
+    """记录用户对当前需求的确认。via="window"：用户在流程图窗口里点了确认，shown_sha 是窗口显示的那一版（须仍是当前版），
+    quote 是可选备注；via="cli"：窗口用不了时的降级，quote 须是用户单条消息的原文，记录与报告标明非窗口确认（ADR-0020）。
+    确认前须校验通过；没有 blocking 问题时才算可以开工。
+    Record the user's approval of the current demand. via="window": the user pressed confirm in the workflow window,
+    shown_sha is the version it showed (still current) and quote an optional note; via="cli": the fallback when the
+    window cannot be used, quote is one user message verbatim, and records and reports say it was not a window confirmation.
+    via="auto"：只在自主任务里，agent 用 reason 写明为什么这一版可以开工，记录和报告标明未经用户确认。
+    via="auto": autonomous jobs only; the agent states in reason why this version is fit to work on, and records and
+    reports say the user did not confirm it."""
+    if via not in CONFIRM_VIA:
+        raise SaosError(ErrorCode.BAD_ARGS, f"via must be one of {CONFIRM_VIA}")
+    quote, reason = str(quote or "").strip(), str(reason or "").strip()
+    if via == "cli" and not quote:
         raise SaosError(ErrorCode.BAD_ARGS, "--quote must hold the user's own words of approval")
+    if via == "auto":
+        jobs.require_autonomous(root, "confirming the demand")
+        if not reason:
+            raise SaosError(ErrorCode.BAD_ARGS, "--reason must say why this demand is fit to work on (the problem statement it follows, the assumptions made)")
     path = path_of(root)
     d = load(path)
     sha = digest(d)
+    if via == "window" and shown_sha != sha:
+        raise SaosError(ErrorCode.BAD_ARGS, "the demand changed after the window showed it; read the new version and confirm again", {"demand_sha": sha})
     weak = weak_basis(d)
     missing = [w["id"] for w in weak if w["source"] is None]
     if missing:
@@ -529,10 +549,29 @@ def confirm(root: Path, quote: str) -> dict[str, Any]:
     # 存下用户确认时看到的全文（含总结和待确认问题），之后改写总结也能追溯
     # keep the full text the user saw (summary and open questions included), so later rewording stays traceable
     # weak_basis：确认时依据只是 agent 假设的界限，应当已经逐条摆给用户 / limits resting on an agent assumption, which the user should have seen one by one
-    record = {"demand_sha": sha, "quote": quote, "time": jobs.now_iso(), "weak_basis": weak, "content": path.read_text(encoding="utf-8")}
+    record = {"demand_sha": sha, "via": via, "quote": quote, "time": jobs.now_iso(), "weak_basis": weak, "content": path.read_text(encoding="utf-8")}
+    if via == "auto":
+        record["reason"] = reason
     with (root / CONFIRMATIONS_FILE).open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(record, ensure_ascii=False) + "\n")
     return {**{k: v for k, v in record.items() if k != "content"}, "blocking_questions": blocking_questions(d)}
+
+
+def confirm_gate(root: Path) -> dict[str, Any] | None:
+    """窗口确认按钮要显示的内容：当前版需求还没确认时给出版本、总结、依据薄弱的界限、缺来源的条目和阻塞问题；
+    已确认或需求单无效时为 None。
+    What the window's confirm button shows: for an unconfirmed current demand its version, summary, weak-basis limits,
+    items missing a source and blocking questions; None when confirmed or invalid."""
+    try:
+        d = load_job(root)
+    except SaosError:
+        return None
+    sha = digest(d)
+    if confirmation_for(root, sha, d) is not None:
+        return None
+    weak = weak_basis(d)
+    return {"demand_sha": sha, "summary": d["summary"], "weak_basis": weak, "missing_source": [w["id"] for w in weak if w["source"] is None],
+            "blocking_questions": blocking_questions(d)}
 
 
 def show(root: Path) -> dict[str, Any]:
@@ -578,11 +617,16 @@ def _evidence_path(ctx, path: Path) -> str | None:
 
 
 def _error_kind(exc: Exception) -> str:
-    """判定出错的类别：材料数据不可用为 material，其余为 computation。按类型判断，不看消息文字。
-    The kind of a failed check: unusable material data is material, anything else computation. Decided by type, not by text."""
-    from saos.protocol import MaterialError
+    """判定出错的类别：材料数据不可用为 material，当前后端算不了为 backend，其余为 computation。按类型判断，不看消息文字。
+    The kind of a failed check: unusable material data is material, a computation the current backend lacks is backend,
+    anything else computation. Decided by type, not by text."""
+    from saos.protocol import ErrorCode, MaterialError, SaosError
 
-    return "material" if isinstance(exc, MaterialError) else "computation"
+    if isinstance(exc, MaterialError):
+        return "material"
+    if isinstance(exc, SaosError) and exc.code == ErrorCode.BACKEND_UNSUPPORTED:
+        return "backend"
+    return "computation"
 
 
 def measure(ctx: ScriptContext, item: dict[str, Any], folder: Path, scripts: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -701,6 +745,9 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
               # 执行出错的判定（脚本异常、读不到文件）：这一轮的结论不可信，不能当作设计不达标
               # checks that failed to run: the round says nothing about the design and must not count as a shortfall result
               "measurement_errors": [i["id"] for i in items if i.get("error")],
+              # 当前后端算不了的条目（rtc 上没有的分析或 ctx.system）：改写检查或换到能算的后端，不能当作设计不达标
+              # items the current backend cannot compute: rewrite the check or use a backend that can; never a design result
+              "backend_unsupported": [i["id"] for i in items if i.get("error_kind") == "backend"],
               "demand": demand, "demand_sha": compute_digest(demand), "method_sha": method_digest(scripts),
               "support_files": support, **({"saos_code_files": code} if code else {}),
               "environment": {"saos_code_sha256": getattr(daemon, "code_sha256", None),

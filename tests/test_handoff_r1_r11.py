@@ -91,7 +91,7 @@ def test_r1_environment_declaration_change_needs_a_rebuild_reason(saos_home, fak
     (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(demand_doc(), allow_unicode=True), encoding="utf-8")
     demand.confirm(job.root, "确认需求")
     notes = {"surfaces": {"0": "object", "1": "front", "2": "back", "3": "image"},
-             "assumptions": ["test"], "first_order": ["f = 50 mm"], "environment": []}
+             "assumptions": ["test"], "first_order": ["f = 50 mm"], "environment": [], "exploration": {"fixed_by_user": {"parts": "the test lens", "quote": "就用这个镜头"}}}
     folder = call("lens.describe", job=job.id, notes=notes)["result"]["folder"]
     assert call("lens.approve", job=job.id, model=folder, quote="确认模型")["ok"]
     notes["environment"] = [1]
@@ -194,7 +194,7 @@ def test_r2_corrupt_earliest_approval_keeps_round_and_opt_working(saos_home, fak
     (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8")
     demand.confirm(job.root, "确认需求")
     notes = {"surfaces": {"0": "object", "1": "front", "2": "back", "3": "image"},
-             "assumptions": ["test"], "first_order": ["f = 50 mm"]}
+             "assumptions": ["test"], "first_order": ["f = 50 mm"], "exploration": {"fixed_by_user": {"parts": "the test lens", "quote": "就用这个镜头"}}}
     first = call("lens.describe", job=job.id, notes=notes)["result"]["folder"]
     assert call("lens.approve", job=job.id, model=first, quote="确认模型")["ok"]
     second = call("lens.describe", job=job.id, notes=notes)["result"]["folder"]

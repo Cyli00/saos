@@ -1,5 +1,5 @@
 ---
-status: accepted; 修订 ADR-0017 第 4 条（独立 rtc 实例）
+status: accepted; 修订 ADR-0017 第 4 条（独立 rtc 实例）；阶段分工由 ADR-0020 修订（建模与模型确认归 rtc，固定后端限于当时的阶段）
 ---
 
 # 一个后台进程持有 rtc 与 OpticStudio，按流程阶段切换并逐值比对交接

@@ -1,6 +1,6 @@
 # Recipe (draft): side-viewing imaging-fibre probes
 
-Use this when the job designs a sub-millimetre side-viewing probe: imaging fibre face → lenses → 45° fold prism → glass tube wall → tissue, at 488 nm (excitation, focusing) and 532 nm (emission reference).
+Use this when the job designs a sub-millimetre side-viewing probe: imaging fibre face → lenses → 45° fold prism → glass tube wall → tissue, at 488 nm (excitation, focusing) and 532 nm (emission reference). For a fibre-delivered excitation probe (a fibre point source focused through lenses and a tube wall into tissue, such as a two-photon zoom probe), use the backend status, the diffraction bounds and the starting forms below, and measure the PSF with the diffraction kit ([scripting.md](../scripting.md#scripts)); the side-view measurement library does not cover it.
 
 Not covered: the proximal side (beam splitter, relay, camera), volume scattering, tolerancing.
 
@@ -8,7 +8,23 @@ Not covered: the proximal side (beam splitter, relay, camera), volume scattering
 
 ## Backend status
 
-This recipe uses ZOS-API from the start of the task. Its existing measurement library can be used directly; no backend transition is required.
+The measurement library (`saos.recipes.fiber.side_view`) and the diffraction kit work through `ctx` only. rtc refuses the side-view model itself (fold mirror, coordinate breaks), so the daemon builds it on OpticStudio and says so in `backend_switch`. On a probe rtc can build, the geometry and ray items run on rtc. The Huygens PSF and wavefront items (`psf_x`, `psf_y`, `ee80`, `psf_z`, `wfe_rms`), and the edge-thickness precondition (ETVA), come back under `backend_unsupported` until rtc has them (ADR-0020): measure those with OpticStudio pinned for that step. Write a job's own checks through `ctx` as well ([need.md](../need.md#write-checks-that-measure-the-real-quantity)).
+
+## Stage 1: diffraction bounds for two-photon PSF goals
+
+Before a PSF width becomes a `must`, write its diffraction floor at the NA the structure can reach. For a uniformly filled pupil, two-photon excitation (intensity squared), paraxial estimate:
+
+- axial FWHM ≈ 1.276 · n·λ / NA²; lateral FWHM ≈ 0.369 · λ / NA (λ in the medium's units of length, n the sample index).
+- Example, 920 nm in water (n 1.326): NA 0.19 gives 43 µm axial and 1.8 µm lateral; 20 µm axial needs NA ≈ 0.28, 1 µm lateral NA ≈ 0.34. On the 2026-10-30 zoom job, `psf_z < 20 µm` became a `must` at NA 0.19 with no such bound, and a third lens was tried before anyone saw that the floor was twice the pass line.
+- These are estimates: they assume no aberration and a filled pupil; an underfilled Gaussian launch behaves like a Gaussian beam instead. Confirm the deciding number with a Huygens PSF of an ideal (paraxial) lens at that NA before the verdict (Zipfel et al., Nat. Biotechnol. 21, 1369, 2003, give the Gaussian-fit form of the same bounds).
+
+## Stage 2: starting forms
+
+**Untried method** (user decision 2026-10-30; no job has run it yet, so record what it gave in Evidence). The patent and starts libraries hold camera and objective forms at infinite conjugate; on 2026-10-30 a search for finite conjugate, 920 nm, at most five elements matched one of 2456 patent examples. Search them anyway and record the query and hit count in the model notes' `exploration`; then synthesise the start paraxially:
+
+1. Replace each lens to design with a Paraxial surface (focal length a variable) at a trial position, keeping the fixed parts (fibre launch, probe lens, tube wall, sample) real.
+2. On rtc, scan focal lengths and spacings (a `saos scan` grid or `minimize` plan) against the first-order goals: focus range over the zoom travel, sample NA, clearances. Keep every solution that meets them with margin, not only the best.
+3. Thicken each kept solution into real surfaces of the allowed types and materials with the same powers, check that first-order values held, and screen these candidates on equal terms ([model.md](../model.md#screen-candidates-on-equal-terms)).
 
 ## Stage 1: questions for the demand
 
@@ -67,4 +83,5 @@ def run(ctx):
 
 - 2026-10-17: the library reproduced the `fiber-printed-relay` helpers (version 6) on real OpticStudio, all 20 checks.
 - 2026-10-19: after moving statistics to `saos.kit`, 16 real lenses × 20 checks matched the previous library: 261 of 320 bit-identical, the rest within 1.4e-13 relative, every `inf` unchanged.
-- Not verified: any delivered design, the GRIN variant, non-sequential models.
+- 2026-10-30 (`fiber-var-zoom`, OpticStudio): round 22 at sample NA ≈ 0.19 measured two-photon axial FWHM 65–72 µm and lateral 2.2–2.5 µm, above the paraxial floors of 43 µm and 1.8 µm above, as an aberrated lens should be. The floors themselves are not yet checked against a Huygens PSF of an ideal lens.
+- Not verified: any delivered design, the GRIN variant, non-sequential models, the paraxial synthesis of starting forms, and the 2026-10-30 rewrite of the library through `ctx` (no OpticStudio comparison with the previous library yet).

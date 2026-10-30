@@ -33,7 +33,7 @@ def setup(saos_home, fake_lens_file):
     daemon.pool.close()
 
 
-MODEL_NOTES = {"surfaces": {"0": "object", "1": "lens front", "2": "lens back", "3": "image"}, "assumptions": ["test"], "first_order": ["f = 50 mm"]}
+MODEL_NOTES = {"surfaces": {"0": "object", "1": "lens front", "2": "lens back", "3": "image"}, "assumptions": ["test"], "first_order": ["f = 50 mm"], "exploration": {"fixed_by_user": {"parts": "the test lens", "quote": "就用这个镜头"}}}
 
 
 def write_demand(job, data=DEMAND, confirm=None):
@@ -99,6 +99,51 @@ def test_minimize_with_bounds_budget_and_invalid_points():
     assert res["stopped"] == "max_evals" and res["evals"] == 7 and res["best"] is not None and res["best"]["a"] <= 0.2
     assert search.grid({"x": [1, 2], "y": {"from": 0, "to": 1, "steps": 3}})[-1] == {"x": 2, "y": 1.0}
     assert search.axis({"from": 0, "to": 1, "step": 0.25}) == [0.0, 0.25, 0.5, 0.75, 1.0]
+
+
+# ---------- PSF 宽度 / PSF widths ----------
+
+def _gaussian_psf(sigma_um: float, dx: float, dy: float, n: int = 129) -> kit.Psf:
+    c = (n - 1) // 2
+    return kit.Psf([[math.exp(-(((ix - c) * dx) ** 2 + ((iy - c) * dy) ** 2) / (2 * sigma_um ** 2)) for ix in range(n)] for iy in range(n)], dx, dy)
+
+
+def test_psf_widths_of_a_sampled_gaussian_and_its_two_photon_narrowing():
+    # 高斯：FWHM = 2√(2ln2)σ，80% 包围能量直径 = 2σ√(2ln5)；双光子 I² 的 σ 缩小 √2 / Gaussian widths, I² narrows σ by √2
+    sigma = 0.5
+    p = _gaussian_psf(sigma, 0.05, 0.1)
+    one, two = kit.psf_widths(p), kit.psf_widths(p, n_photon=2)
+    fwhm = 2 * math.sqrt(2 * math.log(2)) * sigma
+    assert one["fwhm_x"] == pytest.approx(fwhm, rel=1e-2) and one["fwhm_y"] == pytest.approx(fwhm, rel=1e-2)
+    assert one["ee_diameter"] == pytest.approx(2 * sigma * math.sqrt(2 * math.log(5)), rel=3e-2)
+    assert two["fwhm_x"] == pytest.approx(fwhm / math.sqrt(2), rel=1e-2) and two["fwhm_y"] == pytest.approx(fwhm / math.sqrt(2), rel=1e-2)
+    assert p.peak(2) == pytest.approx(1.0)
+    # 半高落在窗口外、没有正峰值：没有宽度 / no width when the half maximum is outside the window or there is no positive peak
+    assert kit.psf_widths(_gaussian_psf(5.0, 0.05, 0.05, n=33))["fwhm_x"] is None
+    assert kit.fwhm([0.0, 0.0, 0.0], 1.0) is None and kit.fwhm([], 1.0) is None
+    with pytest.raises(SaosError):
+        kit.psf_widths(p, n_photon=0)
+
+
+def test_psf_axial_widens_once_reusing_planes_and_reports_the_peak_offset():
+    step = 4.0
+    calls = []
+
+    def peak_at(sigma_steps):
+        def f(k):
+            calls.append(k)
+            return math.exp(-((k - 3) ** 2) / (2 * sigma_steps ** 2))
+        return f
+
+    # σ = 12 步：右侧半高在 +17.1 步，±15 步窗口不够，扩到 ±30 步 / the right half maximum is at +17.1 steps: widen to ±30
+    got = kit.psf_axial(peak_at(12), step, (15, 30))
+    assert got["reach"] == 30 and got["peak_offset_um"] == 3 * step
+    assert got["fwhm_um"] == pytest.approx(2 * math.sqrt(2 * math.log(2)) * 12 * step, rel=1e-2)
+    assert sorted(calls) == list(range(-30, 31))   # 每个离焦面只算一次 / every plane once
+    calls.clear()
+    two = kit.psf_axial(peak_at(12), step, (15, 30), n_photon=2)
+    assert two["reach"] == 15 and two["fwhm_um"] == pytest.approx(got["fwhm_um"] / math.sqrt(2), rel=1e-2) and len(calls) == 31
+    assert kit.psf_axial(peak_at(40), step, (15, 30)) is None
 
 
 # ---------- ctx.measure 与判定共享 cache / ctx.measure and the shared check cache ----------

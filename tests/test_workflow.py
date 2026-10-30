@@ -156,7 +156,7 @@ def approve_model(daemon, job, quote="模型可以"):
     return folder
 
 
-NOTES = {"surfaces": {"0": "object", "1": "lens front", "2": "lens back", "3": "image"}, "assumptions": ["test"], "first_order": ["f = 50 mm"]}
+NOTES = {"surfaces": {"0": "object", "1": "lens front", "2": "lens back", "3": "image"}, "assumptions": ["test"], "first_order": ["f = 50 mm"], "exploration": {"fixed_by_user": {"parts": "the test lens", "quote": "就用这个镜头"}}}
 
 
 def write_demand(job, data, confirm="确认，开始吧"):

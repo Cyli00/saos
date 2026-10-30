@@ -177,6 +177,52 @@ def test_generate_passes_normalized_prescriptions_without_a_shim(saos_home, tmp_
     assert out["count"] == 1 and out["not_evaluated"] == [] and len(built) == 2
     saved = json.loads((job.root / out["folder"] / "cooke.json").read_text(encoding="utf-8"))
     assert saved["fields"]["x"] == [0,0,0] and saved["wavelengths"]["weights"] == [1,1,1]
+    # 物在无穷远：缩放后入瞳 = EFL/F#，与 image_f_number 同义 / at infinity the scaled EPD is EFL/F#
+    assert built[0]["aperture"]["type"] == "entrance_pupil_diameter"
+    assert saved["aperture"] == {"type": "entrance_pupil_diameter", "value": 50 / 8}
+
+
+def test_generate_builds_on_rtc_and_sends_only_what_rtc_refuses_to_opticstudio(saos_home, tmp_path, monkeypatch):
+    # 生成起点原先总是另开一个 OpticStudio（make_backend("standalone")），建模归 rtc 后不该占许可（ADR-0020）
+    import shutil
+    import yaml
+    from saos import backend as backends, jobs, starts, demand
+    from saos.protocol import ErrorCode
+    from saos.starts import prediction
+    root = tmp_path / "starts-library"
+    for name in ("cooke", "petzval"):
+        shutil.copytree(library_root() / "entries" / name, root / "entries" / name)
+    job = jobs.create_job("starts-rtc-first")
+    doc = {"schema": 2, "constants": [
+        {"id": "f", "description": "焦距", "value": 50, "unit": "mm", "source": "自动化测试夹具"},
+        {"id": "h", "description": "半视场", "value": 1, "unit": "deg", "source": "自动化测试夹具"},
+        {"id": "n", "description": "f数", "value": 8, "source": "自动化测试夹具"},
+        {"id": "w", "description": "波长", "value": [.4861327, .5875618, .6562725], "unit": "um", "source": "自动化测试夹具"}],
+        "variables": [], "objectives": [{"id":"length","description":"总长","check":{"operand":{"type":"TOTR"}},"origin":"user","must":{"max":200},"source":"自动化测试夹具"}], "summary": demand.QUESTION_LINE["zh"]}
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(doc,allow_unicode=True),encoding="utf-8")
+    (job.root / "prepare.py").write_text("def run(w):\n    return None\n",encoding="utf-8")
+    events = []
+
+    class Backend:
+        def __init__(self, kind): self.kind = kind
+        def start(self): events.append(("start", self.kind))
+        def close(self): events.append(("close", self.kind))
+        def build(self, data):
+            if self.kind == "rtc" and data.get("title", "").lower().startswith("petzval"):
+                raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, "rtc cannot build this prescription")
+        def operand(self, *args): return 50.0
+
+    monkeypatch.setattr(backends, "make_backend", lambda mode, backend=None: Backend(backend))
+    monkeypatch.setattr(prediction, "predict", lambda backend, **kwargs: {"first_order": {"efl": 50}, "on": backend.kind})
+    out = starts.generate(job, {"efl_mm":"f","half_field_deg":"h","f_number":"n","wavelengths_um":"w"},
+                          short_seconds=1, prepare="prepare.py", root=root)
+    assert out["count"] == 2 and out["not_evaluated"] == []
+    plan = json.loads((job.root / out["screen_plan"]).read_text(encoding="utf-8"))
+    by_id = {c["id"]: c for c in plan["candidates"]}
+    assert by_id["cooke"]["provenance"]["computed_by"] == by_id["cooke"]["prediction"]["on"] == "rtc"
+    assert by_id["petzval"]["provenance"]["computed_by"] == by_id["petzval"]["prediction"]["on"] == "zos"
+    # OpticStudio 只在有条目需要时启动一次，结束时关闭 / OpticStudio starts once, only when an entry needs it, and closes
+    assert events.count(("start", "zos")) == events.count(("close", "zos")) == 1
 
 
 def test_extrapolation_is_explicit_and_preserves_source_limits():

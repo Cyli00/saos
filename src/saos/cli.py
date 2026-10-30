@@ -69,7 +69,7 @@ def cmd_daemon(args: argparse.Namespace) -> Any:
 
 def cmd_job(args: argparse.Namespace) -> Any:
     if args.action == "create":
-        job = jobs.create_job(args.name)
+        job = jobs.create_job(args.name, args.mode)
         return {"job": job.id, "path": str(job.root), "state": job.read_state()}
     if args.action == "list":
         return {"jobs": jobs.list_jobs()}
@@ -84,7 +84,8 @@ def cmd_job(args: argparse.Namespace) -> Any:
             "path": str(job.root),
             "state": job.read_state(),
             # 工作流走到哪一步，与流程窗口同源 / where the job stands in the workflow, as the workflow window shows it
-            "workflow": {k: snapshot[k] for k in ("current", "steps", "blocking", "decision")},
+            # revisions：用户在窗口里对当前版本提出、还没出新版的修改意见 / change requests on the current versions, not yet answered
+            "workflow": {k: snapshot[k] for k in ("mode", "current", "steps", "blocking", "decision", "revisions")},
             "lenses": sorted(p.relative_to(job.lenses_dir).as_posix() for p in lens_files.all_lenses(job.lenses_dir)),
             "log_tail": [json.loads(line) for line in lines[-args.log:]] if args.log > 0 else [],
             # 直接读文件，后台进程正忙时也能看 / read from the file, so it works while the daemon is busy
@@ -137,7 +138,13 @@ def cmd_lens(args: argparse.Namespace) -> Any:
             raise SaosError(ErrorCode.BAD_ARGS, "--notes must contain a JSON object")
         return _lens_request("lens.describe", args, {"notes": notes, "lang": args.lang})
     if action == "approve":
-        return _lens_request("lens.approve", args, {"model": args.model, "quote": args.quote, "rebuild_reason": args.rebuild_reason})
+        from saos import ui
+
+        via = "auto" if args.reason else "cli"
+        if via == "cli":
+            ui.require_window_closed(args.job, "approve")
+        return _lens_request("lens.approve", args, {"model": args.model, "quote": args.quote or "", "rebuild_reason": args.rebuild_reason,
+                                                    "via": via, "reason": args.reason or ""})
     if action == "set":
         return _lens_request("lens.set", args, {"surface": args.surface, "param": args.param, "value": args.value})
     if action == "save":
@@ -272,7 +279,8 @@ def cmd_stop(args: argparse.Namespace) -> Any:
 
     root = jobs.get_job(args.job).root
     d = demand.load_job(root)
-    return ledger.record_stop(root, demand.compute_digest(d), args.reason, args.quote, d)
+    # 不带 --quote 的停止只在自主任务里可以（record_stop 核对）/ a stop without --quote: autonomous jobs only
+    return ledger.record_stop(root, demand.compute_digest(d), args.reason, args.quote or "", d, via="cli" if args.quote else "auto")
 
 
 def cmd_demand(args: argparse.Namespace) -> Any:
@@ -280,6 +288,12 @@ def cmd_demand(args: argparse.Namespace) -> Any:
 
     root = jobs.get_job(args.job).root
     if args.action == "confirm":
+        from saos import ui
+
+        if args.reason:
+            result = demand.confirm(root, args.quote or "", via="auto", reason=args.reason)
+            return result
+        ui.require_window_closed(args.job, "confirm")
         result = demand.confirm(root, args.quote)
         # 需求确认后确保流程图小窗口开着（已开着就不再开第二个）；SAOS_UI=0 时不开
         # make sure the workflow window is open once the demand is confirmed (no second one); not with SAOS_UI=0
@@ -371,6 +385,9 @@ def build_parser() -> argparse.ArgumentParser:
     jsub = job.add_subparsers(dest="action", required=True, parser_class=_Parser)
     create = jsub.add_parser("create")
     create.add_argument("--name", required=True)
+    create.add_argument("--mode", choices=jobs.MODES, default="interactive",
+                        help="interactive: the user confirms the gates in the window and may ask for changes (designing from scratch); "
+                             "autonomous: the agent passes the gates with --reason and records its decisions (exercises, tests)")
     jsub.add_parser("list")
     show = jsub.add_parser("show")
     show.add_argument("job")
@@ -420,7 +437,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lang", choices=("zh", "en"), help="page language (default: the demand lang, then SAOS_LANG, then the system language)")
     p = lens_cmd("approve")
     p.add_argument("--model", required=True, help="the description folder, e.g. models/001-start")
-    p.add_argument("--quote", required=True, help="the user's own words of approval")
+    p.add_argument("--quote", default=None, help="the user's own words of approval (fallback when the window cannot be used)")
+    p.add_argument("--reason", default=None, help="autonomous jobs only: why this structure is the one to design")
     p.add_argument("--rebuild-reason", default="", help="required for structural or environment-declaration changes under the round gate comparison; appended samples are allowed")
     p = lens_cmd("set")
     p.add_argument("--surface", type=int, required=True)
@@ -501,7 +519,8 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--job", required=True)
     q = dsub.add_parser("confirm")
     q.add_argument("--job", required=True)
-    q.add_argument("--quote", required=True, help="the user's own words of approval")
+    q.add_argument("--quote", default=None, help="the user's own words of approval (fallback when the window cannot be used)")
+    q.add_argument("--reason", default=None, help="autonomous jobs only: why this demand is fit to work on")
     dm.set_defaults(func=cmd_demand)
 
     p = sub.add_parser("scan")
@@ -543,7 +562,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("stop")
     p.add_argument("--job", required=True)
     p.add_argument("--reason", required=True, help="why the rounds stop, with the evidence (e.g. scans/NNN, notes/findings.md F20)")
-    p.add_argument("--quote", required=True, help="the user's own words deciding to stop, including the full text of any option they chose")
+    p.add_argument("--quote", default=None, help="the user's own words deciding to stop, including the full text of any option they chose; "
+                                                  "an autonomous job may stop without it")
     p.set_defaults(func=cmd_stop)
     p = sub.add_parser("report")
     p.add_argument("--job", required=True)

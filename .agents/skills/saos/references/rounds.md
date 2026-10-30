@@ -2,7 +2,7 @@
 
 The outcome of this stage is a ledger of rounds judged against the demand and a final round decision: `achieved`, `exhausted`, `limit` or `stopped`. Leaving the approved structure sends you back to stage 2 ([the last section](#gate-expensive-runs-on-the-gap)).
 
-This stage computes on rtc (ADR-0017; [session.md](session.md#two-backends-in-one-daemon)): `opt`, `check`, `scan`, `round` and the expert classes work there as described below, with the differences in [On the rtc instance](#on-the-rtc-instance). `saos daemon use zos` runs it on OpticStudio instead, at a licence's cost.
+This stage computes on rtc (ADR-0017; [session.md](session.md#two-backends-in-one-daemon)): `opt`, `check`, `scan`, `round` and the expert classes work there as described below, with the differences in [On the rtc instance](#on-the-rtc-instance). A check result's `backend_unsupported` names the items rtc cannot compute: rewrite them through `ctx` ([need.md](need.md#write-checks-that-measure-the-real-quantity)), or, for an analysis rtc lacks, pin OpticStudio for that step as [session.md](session.md#two-backends-in-one-daemon) describes.
 
 ## Build a merit function that means the demand
 
@@ -51,7 +51,7 @@ Your own loops (a multi-start, a batch least-squares script, a `ctx.map` search)
 
 `uv run saos round --job J --tier <tier>[,<tier>...] --note "<what you did>"` names every tier the round used. Tiers, low to high: `local`, `variables`, `materials`, `global`, `structure`. The ladder records what was tried; it is not an order. When evidence says a tier cannot help, `uv run saos rule-out --job J --tier <tier> --reason "<evidence, e.g. scans/NNN>"` instead of spending a round on it; this holds until the next clear gain.
 
-Read the decision (`achieved`, `exhausted`, `limit`, `continue` with `next_tier`) and compare rounds by shortfall, never by merit. A round whose parts cross carries `parts_clash` and is never achieved or deliverable. Each round exports `evaluations/NNN/viz.json` for the workflow window; a failed export is reported under `viz` and does not affect the round.
+Read the decision (`achieved`, `exhausted`, `limit`, `continue` with `next_tier`) and compare rounds by shortfall, never by merit. A round whose parts cross, or with a surface whose sag has no real value inside its part edge (`parts_clash.undefined`, checked from radius and conic because OpticStudio and rtc both return the boundary value silently there), carries `parts_clash` and is never achieved or deliverable. Each round exports `evaluations/NNN/viz.json` for the workflow window; a failed export is reported under `viz` and does not affect the round.
 
 ## Changing the checks
 
@@ -65,4 +65,4 @@ Accuracy follows reachability. Convergence and sampling audits earn their time o
 
 If the structure must change beyond the approved description, describe the new model and get it approved before recording rounds on it.
 
-Before you leave an approved structure, leave evidence of why in the ledger or `scans/`: its best round with the gaps, and a diagnosis or `rule-out` showing what caps them. A first-order or probe result is enough when it settles the question. The new candidates go through the screening in [model.md](model.md) with that best round as the reference. The user hears the gaps, the cap and what the new form gives up before it is built, even under an autonomy grant.
+Before you leave an approved structure, leave evidence of why in the ledger or `scans/`: its best round with the gaps, and a diagnosis or `rule-out` showing what caps them. A first-order or probe result is enough when it settles the question. The new candidates go through the screening in [model.md](model.md) with that best round as the reference. The user hears the gaps, the cap and what the new form gives up before it is built; in an autonomous job they go into `sources/interview.md` and the new description's `--reason`.

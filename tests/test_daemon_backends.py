@@ -153,3 +153,37 @@ def test_an_rtc_only_daemon_still_refuses_opticstudio_operations(saos_home):
     _built(daemon, job)
     assert call(daemon, "lens.view", job=job.id)["error"]["code"] == ErrorCode.BACKEND_UNSUPPORTED
     assert call(daemon, "daemon.use", backend="zos")["error"]["code"] == ErrorCode.BAD_ARGS
+
+
+def test_a_pin_holds_within_its_stage_and_is_released_when_the_stage_changes(saos_home, monkeypatch):
+    # 10-30 的任务固定 zos 后没有放开，设计阶段 11 轮全在 OpticStudio 上 / a pin left in place ran 11 design rounds on OpticStudio
+    daemon, _, _ = _daemon()
+    job = jobs.create_job("pin")
+    _built(daemon, job)
+    stage = {"now": "design"}
+    monkeypatch.setattr(daemon, "_stage_of", lambda args: stage["now"])
+    pinned = call(daemon, "daemon.use", backend="zos", job=job.id)["result"]
+    assert pinned["pinned_stage"] == "design" and daemon.active == "zos"
+
+    held = call(daemon, "lens.operand", job=job.id, type="EFFL")["result"]
+    assert daemon.active == "zos"
+    assert held["backend_pin"] == {"backend": "zos", "pinned_at": "design", "stage": "design", "stage_rule": "rtc"}
+
+    stage["now"] = "model_approve"
+    released = call(daemon, "lens.operand", job=job.id, type="EFFL")["result"]
+    assert released["backend_pin"] == {"released": "zos", "pinned_at": "design", "stage": "model_approve"}
+    assert daemon.preference == "auto" and daemon.pinned_stage is None and daemon.active == "rtc"
+    assert "backend_pin" not in call(daemon, "lens.operand", job=job.id, type="EFFL")["result"]
+
+
+def test_a_prescription_rtc_cannot_build_is_built_on_opticstudio(saos_home):
+    # 建模归 rtc 后（ADR-0020），带倾斜等项的处方不能卡在 rtc 上 / once modelling is on rtc, such prescriptions must not stall there
+    daemon, _, started = _daemon()
+    job = jobs.create_job("tilted")
+    raw = json.loads((CASES / "sequential.json").read_text(encoding="utf-8"))
+    raw["surfaces"][0]["decenter_tilt"] = {"before": {"tilt_x": 5.0}}
+    reply = call(daemon, "lens.build", job=job.id, prescription=prescription.normalize(raw), file="t.zmx")
+    # 离线的 OpticStudio 替身也是 rtc，建不了；要看的是路由 / the offline stand-in is rtc too; the routing is what counts
+    switch = (reply.get("result") or reply["error"]["details"])["backend_switch"]
+    assert started == [1] and daemon.active == "zos"
+    assert switch["to"] == "zos" and "decenter_tilt" in switch["reason"]

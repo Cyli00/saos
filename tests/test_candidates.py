@@ -46,7 +46,7 @@ DEMAND = {"schema": 2, "constants": [LENS, MAX_LENGTH],
 def with_limit(limit, **extra):
     """DEMAND 的总长硬条件换成 limit，其余字段用 extra 覆盖 / DEMAND with its total-track hard limit replaced by limit"""
     return {**DEMAND, "constants": [LENS, limit], **extra}
-NOTES = {"surfaces": {"0": "object", "1": "lens front", "2": "lens back", "3": "image"}, "assumptions": ["test"], "first_order": ["f = 50 mm"]}
+NOTES = {"surfaces": {"0": "object", "1": "lens front", "2": "lens back", "3": "image"}, "assumptions": ["test"], "first_order": ["f = 50 mm"], "exploration": {"fixed_by_user": {"parts": "the test lens", "quote": "就用这个镜头"}}}
 
 
 def call(daemon, op, **args):

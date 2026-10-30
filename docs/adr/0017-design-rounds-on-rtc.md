@@ -1,5 +1,5 @@
 ---
-status: accepted; 第一批已落地，算法、接口与待对账项见 docs/plans/rtc-design-stage.md；第 4 条（独立 rtc 实例）由 ADR-0018 修订为一个后台进程持有两个后端
+status: accepted; 第一批已落地，算法、接口与待对账项见 docs/plans/rtc-design-stage.md；第 4 条（独立 rtc 实例）由 ADR-0018 修订为一个后台进程持有两个后端；第 1 条的“交付前复测”由 ADR-0020 修订为 zemax 最后优化后记一轮、逐轮复测默认不做
 ---
 
 # 设计轮次在 rtc 实例上计算，交付前在 OpticStudio 上复测

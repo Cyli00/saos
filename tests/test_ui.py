@@ -24,7 +24,7 @@ DEMAND = {
                     "must": {"max": 95.0}, "scale": 5.0, "source": "user"}],
     "summary": "总长不超过 95 mm。",
 }
-NOTES = {"surfaces": {"0": "object", "1": "lens front", "2": "lens back", "3": "image"}, "assumptions": ["test"], "first_order": ["f = 50 mm"]}
+NOTES = {"surfaces": {"0": "object", "1": "lens front", "2": "lens back", "3": "image"}, "assumptions": ["test"], "first_order": ["f = 50 mm"], "exploration": {"fixed_by_user": {"parts": "the test lens", "quote": "就用这个镜头"}}}
 
 
 def call(daemon, op, **args):
@@ -168,6 +168,116 @@ def test_server_serves_state_and_viz_behind_the_token(ui):
     # 后台进程没在跑：窗口控制直接拒绝，不会去连接 / no daemon: window controls are refused
     refused = get(srv, f"/api/view?job={job.id}", data={"analysis": "StandardSpot"})[1]
     assert refused["error"]["code"] == "DAEMON_NOT_RUNNING"
+
+
+def test_the_window_confirms_what_it_showed_once_and_the_report_says_how(ui):
+    (daemon, job), srv = ui
+    path = job.root / "sources" / "demand.yaml"
+    path.write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
+    gate = get(srv, f"/api/gate?job={job.id}")[1]["result"]
+    assert gate["step"] == "demand_confirm" and gate["model"] is None and gate["demand"]["summary"] == DEMAND["summary"]
+    shown = gate["demand"]["demand_sha"]
+    # 窗口显示之后需求改了：按下的是旧版，不记 / the demand changed after the window showed it: nothing is recorded
+    path.write_text(yaml.safe_dump({**DEMAND, "objectives": [{**DEMAND["objectives"][0], "must": {"max": 96.0}}]}, allow_unicode=True), encoding="utf-8")
+    stale = get(srv, f"/api/confirm?job={job.id}", data={"gate": "demand", "sha": shown})[1]
+    assert stale["error"]["code"] == "BAD_ARGS" and demand.confirmations(job.root) == []
+    path.write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
+    done = get(srv, f"/api/confirm?job={job.id}", data={"gate": "demand", "sha": shown})[1]["result"]["record"]
+    assert done["via"] == "window" and done["quote"] == "" and done["demand_sha"] == shown
+    # 连点第二下：关卡已过 / a second click finds the gate passed
+    assert get(srv, f"/api/confirm?job={job.id}", data={"gate": "demand", "sha": shown})[1]["error"]["code"] == "BAD_ARGS"
+    assert len(demand.confirmations(job.root)) == 1
+
+    folder = call(daemon, "lens.describe", job=job.id, notes=NOTES)["result"]["folder"]
+    model = get(srv, f"/api/gate?job={job.id}")[1]["result"]["model"]
+    assert model["model"] == folder and model["page"] == f"{folder}/index.html" and not model["rebuild_required"] and not model["exploration_missing"]
+    assert get(srv, f"/api/confirm?job={job.id}", data={"gate": "model", "model": folder, "sha": "other"})[1]["error"]["code"] == "BAD_ARGS"
+    assert get(srv, f"/api/open?job={job.id}", data={"page": "sources/demand.yaml"})[1]["error"]["code"] == "BAD_ARGS"
+    record = get(srv, f"/api/confirm?job={job.id}", data={"gate": "model", "model": folder, "sha": model["shown_sha"], "note": "L2 再薄一点也行"})[1]["result"]["record"]
+    assert record["via"] == "window" and record["quote"] == "L2 再薄一点也行" and steps(job)[0] == "design"
+    assert get(srv, f"/api/gate?job={job.id}")[1]["result"] == {"step": "design", "demand": None, "model": None}
+
+    call(daemon, "round.record", job=job.id, viz=False)
+    daemon.backend.lens["surfaces"][2]["thickness"] = 85.0
+    call(daemon, "round.record", job=job.id, tier="local", viz=False)
+    report.write(job, lang="zh")
+    html = (job.root / "report" / "index.html").read_text(encoding="utf-8")
+    assert "用户在窗口里确认。" in html and "非窗口确认" not in html
+
+
+def test_an_autonomous_job_passes_its_gates_with_reasons_and_the_report_says_so(saos_home, fake_lens_file):
+    from saos import model_gate
+    from saos.protocol import SaosError
+
+    backend = FakeBackend()
+    daemon = Daemon(backend, backend.start(), "extension")
+    job = jobs.create_job("exercise", "autonomous")
+    other = jobs.create_job("design")
+    assert job.mode == "autonomous" and other.mode == "interactive"
+    call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx")
+    call(daemon, "lens.load", job=job.id, file="a.zmx")
+    for j in (job, other):
+        (j.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
+    # 参与任务里 agent 不能自己过关卡；自主任务里要写理由 / an interactive job never lets the agent pass; an autonomous one needs a reason
+    with pytest.raises(SaosError):
+        demand.confirm(other.root, "", via="auto", reason="题目给定")
+    with pytest.raises(SaosError):
+        demand.confirm(job.root, "", via="auto")
+    assert demand.confirm(job.root, "", via="auto", reason="题目给定总长 ≤ 95 mm")["via"] == "auto"
+
+    folder = call(daemon, "lens.describe", job=job.id, notes=NOTES)["result"]["folder"]
+    assert not call(daemon, "lens.approve", job=job.id, model=folder, via="auto")["ok"]
+    approved = call(daemon, "lens.approve", job=job.id, model=folder, via="auto", reason="单片已满足一阶要求")["result"]
+    assert approved["via"] == "auto" and approved["reason"] == "单片已满足一阶要求" and steps(job)[0] == "design"
+    assert model_gate.approvals(job)[-1]["via"] == "auto"
+
+    call(daemon, "round.record", job=job.id, viz=False)
+    d = demand.load_job(job.root)
+    with pytest.raises(SaosError):
+        ledger.record_stop(other.root, demand.compute_digest(d), "预算用完", "", d, via="auto")
+    stop = ledger.record_stop(job.root, demand.compute_digest(d), "预算用完，总长差 5 mm 见 r000", "", d, via="auto")
+    assert stop["via"] == "auto" and stop["quote"] == ""
+    report.write(job, lang="zh")
+    html = (job.root / "report" / "index.html").read_text(encoding="utf-8")
+    for text in ("自主运行：需求单、建模结构和停止都由 agent 决定", "自主决定（未经用户确认）", "题目给定总长 ≤ 95 mm", "单片已满足一阶要求",
+                 "由 agent 自行停止", "agent 自行确认（自主运行）"):
+        assert text in html, text
+
+
+def test_the_user_can_ask_for_changes_at_a_gate_and_switch_an_autonomous_job_to_interactive(ui):
+    (daemon, job), srv = ui
+    path = job.root / "sources" / "demand.yaml"
+    path.write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
+    sha = get(srv, f"/api/gate?job={job.id}")[1]["result"]["demand"]["demand_sha"]
+    assert get(srv, f"/api/revise?job={job.id}", data={"gate": "demand", "sha": sha, "note": ""})[1]["error"]["code"] == "BAD_ARGS"
+    asked = get(srv, f"/api/revise?job={job.id}", data={"gate": "demand", "sha": sha, "note": "总长放宽到 100 mm"})[1]["result"]["revision"]
+    assert asked["target"] == sha and "总长放宽到 100 mm" in (job.root / "sources" / "interview.md").read_text(encoding="utf-8")
+    snap = stage.snapshot(job)
+    assert snap["current"] == "demand_confirm" and [r["note"] for r in snap["revisions"]] == ["总长放宽到 100 mm"]
+    # agent 出了新版：请求算处理过了 / a new version settles the request
+    path.write_text(yaml.safe_dump({**DEMAND, "objectives": [{**DEMAND["objectives"][0], "must": {"max": 100.0}}]}, allow_unicode=True), encoding="utf-8")
+    assert stage.snapshot(job)["revisions"] == []
+
+    auto = jobs.create_job("exercise", "autonomous")
+    assert get(srv, f"/api/mode?job={auto.id}", data={"mode": "autonomous"})[1]["error"]["code"] == "BAD_ARGS"
+    assert get(srv, f"/api/mode?job={auto.id}", data={"mode": "interactive"})[1]["result"] == {"mode": "interactive", "changed": True}
+    assert jobs.get_job(auto.id).mode == "interactive"
+
+
+def test_the_quote_fallback_is_refused_while_the_window_is_open(flow, monkeypatch):
+    import saos.ui as ui_pkg
+    from saos import cli
+
+    daemon, job = flow
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
+    monkeypatch.setattr(ui_pkg, "window_open", lambda job_id: True)
+    assert cli.main(["demand", "confirm", "--job", job.id, "--quote", "可以"]) != 0
+    assert demand.confirmations(job.root) == []
+    monkeypatch.setattr(ui_pkg, "window_open", lambda job_id: False)
+    assert cli.main(["demand", "confirm", "--job", job.id, "--quote", "可以"]) == 0
+    assert demand.confirmations(job.root)[-1]["via"] == "cli"
+    # 没有 via 的旧记录与命令行确认一样标为非窗口确认 / older records without via read as command-line confirmations
+    assert report.TEXT["confirmed"][0].startswith("用户确认（非窗口确认）")
 
 
 def test_window_controls_only_forward_whitelisted_view_ops(ui, monkeypatch):

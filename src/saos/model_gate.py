@@ -329,30 +329,85 @@ def diff(a: Any, b: Any, path: str = "") -> list[str]:
     return [] if a == b else [path or "(root)"]
 
 
-def approve(job: jobs.Job, model: str, quote: str, rebuild_reason: str = "") -> dict[str, Any]:
+def _rebuild_needed(previous: list[dict[str, Any]], data: dict[str, Any]) -> bool:
+    """结构或环境声明与最近一次确认不同，确认要带重建原因。/ Structure or environment differs from the last approval."""
+    env = sorted((data.get("notes") or {}).get("environment") or [])
+    return bool(previous and (previous[-1]["environment"] != env or
+                fingerprint_changes(previous[-1]["fingerprint"], data["fingerprint"], data.get("model"))))
+
+
+def approval_gate(job: jobs.Job) -> dict[str, Any] | None:
+    """窗口确认按钮要显示的内容：最新一份建模说明还没确认时给出它的文件夹、shown_sha、说明页、是否要重建原因（取自说明的
+    notes.rebuild_reason）和是否缺起型检索记录；没有待确认的说明时为 None。
+    What the window's approve button shows: for the latest unapproved description its folder, shown_sha, page, whether a
+    rebuild reason is needed (taken from notes.rebuild_reason) and whether the search record is missing; None otherwise."""
+    root = job.root / "models"
+    models = sorted(root.glob("*/model.json")) if root.is_dir() else []
+    if not models or (models[-1].parent / APPROVAL_FILE).is_file():
+        return None
+    data = json.loads(models[-1].read_text(encoding="utf-8"))
+    page = models[-1].parent / "index.html"
+    return {"model": models[-1].parent.relative_to(job.root).as_posix(), "shown_sha": data.get("shown_sha"),
+            "page": page.relative_to(job.root).as_posix() if page.is_file() else None,
+            "rebuild_required": _rebuild_needed(approvals(job), data),
+            "rebuild_reason": str((data.get("notes") or {}).get("rebuild_reason") or "").strip() or None,
+            "exploration_missing": (data.get("approval_schema") or 0) >= 3 and not data.get("exploration_recorded")}
+
+
+def approve(job: jobs.Job, model: str, quote: str, rebuild_reason: str = "", *, via: str = "cli", shown_sha: str | None = None,
+            reason: str = "") -> dict[str, Any]:
+    """记录用户对一份建模说明的确认。via="window"：用户在流程图窗口里点了确认，shown_sha 须等于该说明的 shown_sha（窗口显示后
+    没有重出），quote 是可选备注，重建原因取自说明的 notes.rebuild_reason；via="cli"：窗口用不了时的降级，quote 须是用户单条
+    消息的原文，记录标明非窗口确认（ADR-0020）。
+    Record the user's approval of a description. via="window": pressed in the workflow window, shown_sha must equal the
+    description's (not redone since it was shown), quote is an optional note and the rebuild reason comes from
+    notes.rebuild_reason; via="cli": the fallback, quote is one user message verbatim, recorded as not from the window.
+    via="auto"：只在自主任务里，agent 用 reason 写明为什么选这个结构；重建原因同样来自 --rebuild-reason 或 notes.rebuild_reason。
+    via="auto": autonomous jobs only, with the agent's reason for the structure; the rebuild reason as above."""
+    from saos.demand import CONFIRM_VIA
+
+    if via not in CONFIRM_VIA:
+        raise SaosError(ErrorCode.BAD_ARGS, f"via must be one of {CONFIRM_VIA}")
     folder = (job.root / model).resolve()
     if job.root.resolve() not in folder.parents or folder.parent.name != "models":
         raise SaosError(ErrorCode.BAD_ARGS, "model must be a folder under the job's models/, e.g. models/001-start")
     data_file = folder / "model.json"
     if not data_file.is_file():
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"{model} has no model.json; run lens describe first")
-    if not quote.strip():
+    if via == "cli" and not quote.strip():
         raise SaosError(ErrorCode.BAD_ARGS, "quote must keep the user's own words of approval")
+    reason = str(reason or "").strip()
+    if via == "auto":
+        jobs.require_autonomous(job.root, "approving a model")
+        if not reason:
+            raise SaosError(ErrorCode.BAD_ARGS, "--reason must say why this structure is the one to design (the search, the screening, the first-order numbers)")
     notes_file = job.root / "notes" / f"model-{folder.name.split('-', 1)[0]}.json"
     if not notes_file.is_file():
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"{model} was described without notes; run lens describe --notes with what each surface is, "
                         "the assumptions and the first-order analysis, then show the new page to the user")
     data = json.loads(data_file.read_text(encoding="utf-8"))
     _verify_description(job, data_file, data)
+    if via == "window":
+        if not data.get("shown_sha") or shown_sha != data["shown_sha"]:
+            raise SaosError(ErrorCode.BAD_ARGS, "this description changed after the window showed it; open the new page and approve again",
+                            {"shown_sha": data.get("shown_sha")})
+        rebuild_reason = rebuild_reason or str((data.get("notes") or {}).get("rebuild_reason") or "")
+    if via == "auto":
+        rebuild_reason = rebuild_reason or str((data.get("notes") or {}).get("rebuild_reason") or "")
+    if (data.get("approval_schema") or 0) >= 3 and not data.get("exploration_recorded"):
+        # 第 3 版说明起，起型检索记录是确认的前提（ADR-0020 之后的用户决定）；之前的说明照旧可以确认
+        # from schema 3 a starting-form search record is required (user decision after ADR-0020); older descriptions still approve
+        raise SaosError(ErrorCode.BAD_ARGS, "this description records no starting-form search: add exploration.searches (library, query, hits, "
+                        "decision) or exploration.fixed_by_user (parts, quote) to the notes, run lens describe again and show the new page")
     if not isinstance(rebuild_reason, str):
         raise SaosError(ErrorCode.BAD_ARGS, "重建原因必须为文字")
     previous = approvals(job)
-    env = sorted((data.get("notes") or {}).get("environment") or [])
-    changed = bool(previous and (previous[-1]["environment"] != env or
-                   fingerprint_changes(previous[-1]["fingerprint"], data["fingerprint"], data.get("model"))))
+    changed = _rebuild_needed(previous, data)
     if changed and not rebuild_reason.strip():
-        raise SaosError(ErrorCode.BAD_ARGS, "结构与上次确认不同；请用 --rebuild-reason 说明重建原因")
-    record = {"rebuild_reason": rebuild_reason.strip() if changed else None, "model": folder.relative_to(job.root).as_posix(), "lens": data.get("lens"), "quote": quote.strip(),
+        raise SaosError(ErrorCode.BAD_ARGS, "结构与上次确认不同；请在建模说明的 notes.rebuild_reason 写明重建原因并重新 lens describe" if via == "window"
+                        else "结构与上次确认不同；请用 --rebuild-reason 说明重建原因")
+    record = {"rebuild_reason": rebuild_reason.strip() if changed else None, "model": folder.relative_to(job.root).as_posix(), "lens": data.get("lens"),
+              "via": via, "quote": quote.strip(), **({"reason": reason} if via == "auto" else {}),
               "time": jobs.now_iso(timespec="microseconds"), "approval_sequence": max((r.get("approval_sequence", 0) for r in previous), default=0) + 1,
               "fingerprint_sha": data["fingerprint_sha"],
               # 用户确认时页面上仍有的自动检查结果，一并留档 / warnings still on the page when the user approved
@@ -417,7 +472,7 @@ def _verify_description(job: jobs.Job, path: Path, data: dict[str, Any]) -> None
 
     if not jobs.sealed(job.root, path.relative_to(job.root).as_posix()):
         raise SaosError(ErrorCode.EVIDENCE_TAMPERED, "model description is unsealed or changed; describe it again", {"path": path.relative_to(job.root).as_posix()})
-    if "shown" in data or data.get("approval_schema") == 2:
+    if "shown" in data or (data.get("approval_schema") or 0) >= 2:
         if not data.get("shown_sha") or digest(data.get("shown")) != data["shown_sha"]:
             raise SaosError(ErrorCode.EVIDENCE_TAMPERED, "model description has no matching shown_sha", {"path": path.relative_to(job.root).as_posix()})
 

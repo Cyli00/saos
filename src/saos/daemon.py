@@ -59,15 +59,15 @@ SEARCH_FILES = {"hammer": "{stem}_*_HAMMER.zmx", "global": "GLOPT_*.zmx"}
 ROUND_REMINDER = {"opt": 2, "exec": 15}
 RUN_KINDS = {"opt.local": "opt", "opt.hammer": "opt", "opt.global": "opt", "script.exec": "exec", "scan.run": "scan"}
 COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
-# rtc 做需求阶段的可行性核算（ADR-0016）和设计阶段的变量、评价函数、优化、判定、扫描与轮次（ADR-0017）；给用户看的
-# 建模说明页面、OpticStudio 窗口，以及交付前的复测要 OpticStudio
-# rtc checks need-stage feasibility (ADR-0016) and runs the design stage (ADR-0017); the model page shown to the user,
-# OpticStudio's windows and the re-measurement before delivery need OpticStudio
+# 交付之前的计算都在 rtc 上（ADR-0020）；建模说明页面（布局图还没有 rtc 版）、OpticStudio 窗口和复测要 OpticStudio
+# everything before delivery computes on rtc (ADR-0020); the model page (no rtc layout pictures yet), OpticStudio's windows
+# and re-measurement need OpticStudio
 OPTICSTUDIO_ONLY = frozenset({"lens.describe", "lens.view", "lens.screenshot", "lens.capture", "round.confirm"})
 # 公差分析属于交付，要在 OpticStudio 上做 / tolerancing belongs to delivery and runs on OpticStudio
 OPTICSTUDIO_SCANS = ("tolerance",)
-# 一个后台进程持有两个后端时（ADR-0018）按流程阶段（saos.ui.stage）选后端 / with both backends, the workflow stage picks one
-STAGE_BACKENDS = {"interview": "rtc", "demand_confirm": "rtc", "modeling": "zos", "model_approve": "zos", "design": "rtc", "deliver": "zos"}
+# 一个后台进程持有两个后端时（ADR-0018）按流程阶段（saos.ui.stage）选后端：交付阶段是 zemax 的最后优化与测量（ADR-0020）
+# with both backends, the workflow stage picks one: delivery is zemax's final optimisation and measurement (ADR-0020)
+STAGE_BACKENDS = {"interview": "rtc", "demand_confirm": "rtc", "modeling": "rtc", "model_approve": "rtc", "design": "rtc", "deliver": "zos"}
 # 不切换后端的操作：只读当前状态，或是切换前的准备（保存）/ ops that never switch: they read the current state or prepare a switch
 UNROUTED = frozenset({"ping", "shutdown", "daemon.use", "lens.import", "lens.unload", "lens.info", "lens.surfaces", "lens.save"})
 # 换上另一份镜头的操作：切换时不交接旧镜头，未保存修改按 lens load 的规则处理 / ops that replace the lens hand nothing over
@@ -158,8 +158,14 @@ class Daemon:
         self.zos_info = zos_info
         self._start_zos = start_zos if on_rtc else None
         self._zos_identity: dict[str, Any] | None = None if on_rtc else zos_info
-        # auto 按流程阶段选后端；rtc、zos 由 saos daemon use 固定 / auto picks by stage; rtc or zos is pinned by saos daemon use
+        # auto 按流程阶段选后端；rtc、zos 由 saos daemon use 固定，流程阶段离开 pinned_stage 时自动放开（10-30 的任务固定 zos 后
+        # 一直没放开，设计阶段 11 轮全在 OpticStudio 上）
+        # auto picks by stage; saos daemon use pins rtc or zos until the stage leaves pinned_stage (a pin left in place on
+        # 2026-10-30 ran all 11 design rounds on OpticStudio)
         self.preference = "auto"
+        self.pinned_stage: str | None = None
+        # 本次操作的固定说明（在用、或刚放开），附在结果里 / the pin in force or just released for the current op, attached to its result
+        self._pin_note: dict[str, Any] | None = None
         # rtc 复现不了的镜头：(路径, 修改时间) → 原因，免得每个操作都重试 / lenses rtc refused, so ops do not retry each time
         self._rtc_refused: dict[tuple[str, int], str] = {}
         # 本次操作里发生的后端切换，附在结果里 / the backend switch made for the current op, attached to its result
@@ -225,6 +231,7 @@ class Daemon:
         error: SaosError | None = None
         result: Any = None
         self._switched = None
+        self._pin_note = None
         try:
             if not isinstance(args, dict):
                 raise SaosError(ErrorCode.BAD_ARGS, "args must be an object")
@@ -275,6 +282,11 @@ class Daemon:
                 error.details = {**(error.details or {}), "backend_switch": self._switched}
             elif isinstance(result, dict):
                 result["backend_switch"] = self._switched
+        if self._pin_note is not None:
+            if error is not None:
+                error.details = {**(error.details or {}), "backend_pin": self._pin_note}
+            elif isinstance(result, dict):
+                result["backend_pin"] = self._pin_note
         return fail(error) if error else ok(result)
 
     def _since_round(self, args: dict[str, Any]) -> dict[str, Any] | None:
@@ -543,7 +555,7 @@ class Daemon:
         if self.state_base is None:
             return
         write_json(config.daemon_state_file(), {**self.state_base, "opticstudio": self.zos_info,
-                                                "backends": {"active": self.active, "preference": self.preference,
+                                                "backends": {"active": self.active, "preference": self.preference, "pinned_stage": self.pinned_stage,
                                                              "dual": self.dual, "zos_started": self.zos is not None}})
 
     def _ensure_zos(self) -> Backend:
@@ -565,21 +577,43 @@ class Daemon:
             return None
         if op in OPTICSTUDIO_ONLY or (op == "scan.run" and any(k in (args.get("plan") or {}) for k in OPTICSTUDIO_SCANS)):
             return "zos"
+        current = self._stage_of(args)
         if self.preference != "auto":
-            return self.preference
+            if self.pinned_stage is None or current is None or current == self.pinned_stage:
+                self._pin_note = {"backend": self.preference, "pinned_at": self.pinned_stage, "stage": current,
+                                  "stage_rule": STAGE_BACKENDS.get(current) if current else None}
+                return self.preference
+            self._pin_note = {"released": self.preference, "pinned_at": self.pinned_stage, "stage": current}
+            log.info(_t("流程阶段 %s → %s，放开固定的后端 %s", "stage %s -> %s, releasing the pinned backend %s"),
+                     self.pinned_stage, current, self.preference)
+            self.preference, self.pinned_stage = "auto", None
+            self.write_state()
+        return STAGE_BACKENDS.get(current) if current else None
+
+    def _stage_of(self, args: dict[str, Any]) -> str | None:
+        """请求所属任务的流程阶段；请求不带任务时取已加载镜头的任务。/ The workflow stage of the request's job, or of the loaded lens's job."""
         job_id = args.get("job")
         if not isinstance(job_id, str):
+            job_id = self.loaded.job.id if self.loaded is not None else None
+        if job_id is None:
             return None
         from saos.ui import stage
 
         try:
-            current = stage.snapshot(jobs.get_job(job_id))["current"]
+            return stage.snapshot(jobs.get_job(job_id))["current"]
         except SaosError:
             return None
-        return STAGE_BACKENDS.get(current)
 
     def _route(self, op: str, args: dict[str, Any]) -> None:
         want = self._wanted(op, args)
+        refused = self._rtc_cannot_build(op, args) if want == "rtc" and self.preference == "auto" else None
+        if refused is not None:
+            # 处方里有 rtc 建不了的项（反射镜、坐标断点等）：这份镜头在 OpticStudio 上建，和 lens load 的 stayed 同理
+            # the prescription holds items rtc cannot build: build it on OpticStudio, as lens load does with stayed
+            want = "zos"
+            if want == self.active:
+                self._switched = {"from": self.active, "to": self.active, "stayed": refused}
+                return
         if want is None or want == self.active:
             return
         if self.running_background():
@@ -587,6 +621,21 @@ class Daemon:
                             f"({', '.join(self.running_background())}); wait for them or cancel them (saos job cancel)",
                             {"background": self.running_background()})
         self._switch(want, op, args)
+        if refused is not None and self._switched is not None:
+            self._switched["reason"] = refused
+
+    def _rtc_cannot_build(self, op: str, args: dict[str, Any]) -> str | None:
+        """lens build 的处方 rtc 建不了时返回原因（不改任何状态）；处方本身有错留给 op_build 报。
+        Why rtc cannot build this lens build prescription, without changing state; a malformed prescription is op_build's to report."""
+        if op != "lens.build" or not isinstance(args.get("prescription"), dict):
+            return None
+        from saos.backend import rtc_lens
+
+        try:
+            rtc_lens.from_prescription(prescription.normalize(args["prescription"]))
+        except SaosError as exc:
+            return exc.message if exc.code == ErrorCode.BACKEND_UNSUPPORTED else None
+        return None
 
     def _switch(self, want: str, op: str, args: dict[str, Any]) -> None:
         """换到 want 后端。当前镜头没有未保存修改时由另一边从文件加载，两边逐值比对（saos.backend.handover）；rtc 复现不了的镜头
@@ -655,19 +704,22 @@ class Daemon:
         log.info(_t("后端 %s → %s（%s）", "backend %s -> %s (%s)"), source, want, op)
 
     def op_use(self, args: dict[str, Any]) -> dict[str, Any]:
-        """固定或放开后端：auto 按流程阶段选，rtc、zos 固定（需要 OpticStudio 的操作仍在 OpticStudio 上算）。
-        Pin or release the backend: auto picks by workflow stage; rtc or zos pins it (ops that need OpticStudio still use it)."""
+        """固定或放开后端：auto 按流程阶段选，rtc、zos 固定到流程阶段改变为止（需要 OpticStudio 的操作仍在 OpticStudio 上算）。
+        Pin or release the backend: auto picks by workflow stage; rtc or zos holds until the workflow stage changes (ops
+        that need OpticStudio still use it)."""
         choice = _arg(args, "backend", str)
         if choice not in BACKEND_CHOICES:
             raise SaosError(ErrorCode.BAD_ARGS, f"backend must be one of {list(BACKEND_CHOICES)}, got {choice!r}")
         if not self.dual and choice != "auto":
             raise SaosError(ErrorCode.BAD_ARGS, f"this daemon holds {self.active} only; start it with saos daemon start for both backends")
         self.preference = choice
+        self.pinned_stage = self._stage_of(args) if choice != "auto" else None
         if choice != "auto" and choice != self.active:
             self._route("daemon.pin", {**args, "job": args.get("job")})
+        self._pin_note = None
         self.write_state()
-        return {"preference": self.preference, "active": self.active, "dual": self.dual, "zos_started": self.zos is not None,
-                **({"backend_switch": self._switched} if self._switched else {})}
+        return {"preference": self.preference, "pinned_stage": self.pinned_stage, "active": self.active, "dual": self.dual,
+                "zos_started": self.zos is not None, **({"backend_switch": self._switched} if self._switched else {})}
 
     def _require_loaded(self, job: jobs.Job) -> Loaded:
         if self.loaded is None:
@@ -717,7 +769,7 @@ class Daemon:
             "started_at": datetime.fromtimestamp(self.started_at).astimezone().isoformat(timespec="seconds"),
             "uptime_s": round(time.time() - self.started_at, 1),
             "opticstudio": self.zos_info,
-            "backends": {"active": self.active, "preference": self.preference, "dual": self.dual, "zos_started": self.zos is not None},
+            "backends": {"active": self.active, "preference": self.preference, "pinned_stage": self.pinned_stage, "dual": self.dual, "zos_started": self.zos is not None},
             "backend_healthy": self.backend.healthy(),
             "loaded": self.loaded.describe() if self.loaded else None,
             "pool": self.pool.status(),
@@ -824,7 +876,8 @@ class Daemon:
         Record the user's approval (their words) of a model description; rounds then require a matching structure."""
         from saos import model_gate
 
-        return model_gate.approve(self._job(args), _arg(args, "model", str), _arg(args, "quote", str), args.get("rebuild_reason") or "")
+        return model_gate.approve(self._job(args), _arg(args, "model", str), str(args.get("quote") or ""), args.get("rebuild_reason") or "",
+                                  via=str(args.get("via") or "cli"), reason=str(args.get("reason") or ""))
 
     def op_set(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))
