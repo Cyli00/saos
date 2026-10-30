@@ -112,8 +112,8 @@ COMMANDS = {
         "Unsaved agent edits require --discard. A detached scan must finish or be\n"
         "  cancelled first. --force kills a process that cannot exit normally. An attached\n"
         "  user window remains open; its extension dialog can be reused on reconnect.\n"
-        "  --all stops every daemon on the machine one by one under the same rules (each\n"
-        "  holds an OpticStudio licence until it exits) and clears state files left by dead\n"
+        "  --all stops every daemon on the machine one by one under the same rules (one\n"
+        "  that started OpticStudio holds a licence until it exits) and clears state files left by dead\n"
         "  ones; details list stopped, stale_removed and failed per instance.",
         "UNSAVED_CHANGES, BUSY, DAEMON_TIMEOUT"),
     "daemon list": (
@@ -554,7 +554,8 @@ Parallel work
     per call; reset reloads it before every item (about 0.08 s). Current lens stays
     unchanged. w exposes the kit methods, measure,args,path,job,worker,reload,cache;
     its cache is fresh per item.
-  Persistent pool: first startup about 6-8 s/instance, reused until idle for
+  Persistent pool on the backend the daemon computes on (closed when it switches):
+    OpticStudio workers start in about 6-8 s/instance, reused until idle for
     SAOS_POOL_IDLE_S (default 600). ctx.pool_close() releases licences immediately.
     Workers run below normal priority. workers defaults to 4, capped by available
     cores. Licence limit is 8 total including user windows and daemon; inspect
