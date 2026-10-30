@@ -100,7 +100,7 @@ def run(ctx):
 
 - 当前后端原位工作，不启动额外许可实例，不自动保存用户镜头或记录调试轮次。
 - 未预期异常恢复入口；取消/超时只保留已接受的完整设计。提交标 dirty，缓存随修改/恢复失效。
-- 快照使用临时 `.zmx` 的 SaveAs/Load，会改变 ZOS SystemFile。保存必须走 `ctx.save_as(<镜头名>)` 或 `saos lens save`，不能随后直接调用 `ctx.system.Save()`。
+- 快照使用临时 `.zmx` 的 SaveAs/Load，会改变 ZOS SystemFile。保存必须走 `ctx.save_as(<镜头名>)` 或 `saos lens save`，不能随后直接调用 `ctx.system.Save()`；保存前 `opt hammer|global` 拒绝运行，免得结果写到临时目录。
 - 回调不得嵌套同一 ctx 的 Expert、切换镜头/后端、自行保存用户镜头或持有跨快照的 .NET 编辑器行对象。
 - max_seconds 是安全检查点和优化器预算，不承诺抢占任意用户回调或原生调用。
 - 这些类不确认需求/模型、不将 MFE merit 当目标差距、不绕过结构审批。改变面型仍触发正常模型结构指纹变化。

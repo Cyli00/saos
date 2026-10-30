@@ -328,6 +328,11 @@ def build(job: jobs.Job) -> dict[str, Any]:
         raise SaosError(ErrorCode.SPEC_CHANGED, "no round matches the current demand and check scripts; record a new round before reporting")
     decision = ledger.decide(rounds, d["stop"], ledger.stop_for(job.root, current[0], stored), ledger.ruled_out_for(job.root, current[0], stored))
     rounds = ledger.current_window(rounds)
+    # 用户停止时照常交付：被复测轮次已换成 OpticStudio 的数 / a stopped job still reports, on the round's OpticStudio numbers
+    failed = ledger.confirmation_failure(rounds)
+    if failed is not None and decision["status"] != "stopped":
+        raise SaosError(ErrorCode.BAD_ARGS, f"OpticStudio disagreed with rtc on round {failed['round']}; "
+                        "return to design and record a new round before reporting")
     # 只交付不含模型玻璃、满足硬条件的轮次；都不满足时取最好的一轮并标明不可交付
     # only rounds without a model glass that keep the hard conditions are deliverable; otherwise show the best one marked as not deliverable
     deliver = ledger.deliver_round(rounds)

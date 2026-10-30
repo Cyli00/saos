@@ -509,6 +509,10 @@ class ZosBackend(Backend):
             raise SaosError(ErrorCode.ZOS_CONNECTION_LOST, "not connected to OpticStudio")
         return self.app.PrimarySystem
 
+    def native_file(self) -> Path | None:
+        name = str(self.system.SystemFile or "")
+        return Path(name) if name else None
+
     def needs_save(self) -> bool:
         return bool(self.system.NeedsSave)
 

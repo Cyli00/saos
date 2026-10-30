@@ -537,10 +537,25 @@ def configuration(ctx, n: int) -> Iterator[None]:
 
 
 @contextmanager
-def restored(ctx) -> Iterator[None]:
+def restored(ctx, *, reload_clean: bool = False) -> Iterator[None]:
     """with 块结束时整个镜头回到进入时的内容（存一份临时副本再加载，约 0.1 s），用于会增删面的试探。
+    加载副本后后端的文件路径（SystemFile）停在副本上，Hammer 与全局搜索要等 saos lens save 之后才能跑。
+    reload_clean 只给 daemon 操作入口用：那里 loaded.dirty 是准的，镜头没有未保存修改时直接重载原文件，路径不变。
+    脚本里的修改要到 exec 结束才记进 dirty，所以脚本不能用它。
     The whole lens returns to its content at entry when the block ends (a temporary copy is saved and reloaded,
     about 0.1 s); for trials that insert or remove surfaces."""
+    from saos.backend.base import same_path
+
+    loaded = getattr(getattr(ctx, "_daemon", None), "loaded", None)
+    native = ctx.backend.native_file()
+    # 不看 needs_save：OpticStudio 只读的测量也会让 NeedsSave 置位；连接窗口时用户的修改由 has_unsaved_changes 挡住
+    if (reload_clean and loaded is not None and not loaded.dirty and not ctx.backend.has_unsaved_changes()
+            and native is not None and same_path(native, loaded.path) and loaded.path.is_file()):
+        try:
+            yield
+        finally:
+            ctx.backend.load(loaded.path)
+        return
     handle, name = tempfile.mkstemp(prefix="saos-keep-", suffix=".zmx")
     os.close(handle)
     path = Path(name)

@@ -285,9 +285,8 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
             detail["design"] = {"rounds": len(in_version), "last": out["rounds"][-1] if in_version else None,
                                 "rtc_unclosed": bool(job_state.get("rtc_unclosed"))}
             # 最近一次复测与 rtc 结论不同、之后还没有新轮次：回到设计 / the latest confirmation disagreed and no round followed
-            confirmed = [r for r in in_version if r.get("confirmed_by") is not None]
-            if confirmed and in_version[-1] is confirmed[-1] and not confirmed[-1].get("agrees"):
-                detail["design"]["confirm_failed"] = confirmed[-1]["round"]
+            if decision is not None and "confirm_failed" in decision:
+                detail["design"]["confirm_failed"] = decision["confirm_failed"]
             if decision is not None and decision["status"] in FINAL:
                 status["design"] = "done"
                 status["deliver"] = "done" if _report_current(root) else "active"

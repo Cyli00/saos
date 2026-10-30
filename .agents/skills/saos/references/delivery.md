@@ -7,7 +7,7 @@ The outcome of this stage is a current report the user has accepted or rejected,
 Rounds recorded on the rtc instance are re-measured before anything else in this stage. On an OpticStudio instance ([session.md](session.md#the-rtc-instance-stages-1-and-3)), run `uv run saos round --job J --confirm --detach` (no lens load needed; `--of N` picks a round other than the one the report would deliver). Its numbers replace that round's numbers in the ledger.
 
 - `agrees: true`: continue with this stage on OpticStudio.
-- `agrees: false`: OpticStudio reached another verdict (see `verdict` and `diffs`). Tell the user the differing items, return to stage 3 on the rtc instance, and record new rounds; the decision now uses OpticStudio's numbers.
+- `agrees: false`: OpticStudio reached another verdict (see `verdict` and `diffs`). Tell the user the differing items, return to stage 3 on the rtc instance, and record new rounds; the decision now uses OpticStudio's numbers, and `saos report` refuses until a new round is recorded, unless the user has stopped.
 
 `saos report` refuses an rtc round that was not re-measured.
 

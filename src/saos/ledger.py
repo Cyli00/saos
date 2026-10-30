@@ -121,6 +121,17 @@ def confirmed(record: dict[str, Any]) -> bool:
     return record.get("backend", "zos") != "rtc" or record.get("confirmed_by") is not None
 
 
+def confirmation_failure(rounds: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """最近一次复测不符且之后没有新设计轮次时，返回被复测的轮次。"""
+    confirmations = [r for r in rounds if r.get("confirmed_by") is not None]
+    if not confirmations:
+        return None
+    latest = max(confirmations, key=lambda r: r["confirmed_by"])
+    if not latest.get("agrees") and max(r["round"] for r in rounds) < latest["confirmed_by"]:
+        return latest
+    return None
+
+
 def _current(stored: str | None, demand: dict[str, Any] | None, root: Path) -> str | None:
     """停止和排除记录的版本哈希：给出 demand 时同样认出升级前的旧公式值。/ stop and rule-out versions: legacy values recognised when demand is given."""
     return stored if demand is None else as_current(stored, demand, "compute", root)
@@ -289,6 +300,11 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str
         # 轮次预算按需求版本计：用户确认新版本后重新计数 / the round budget counts per demand version
         "rounds_in_version": counted,
     }
+    failed = confirmation_failure(window)
+    if failed is not None and stopped is None:
+        return {**base, "status": "continue", "next_tier": untried[0] if untried else "local",
+                "reason": f"OpticStudio disagreed with rtc on round {failed['round']}; return to design and record a new round",
+                "confirm_failed": failed["round"]}
     if current.get("achieved") and deliverable(current):
         if not current.get("pursuing"):
             return {**base, "status": "achieved", "reason": "every constant, variable range and objective pass line is met"}

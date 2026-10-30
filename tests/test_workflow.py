@@ -8,6 +8,7 @@ import pytest
 import yaml
 
 from saos import config, demand, jobs, ledger, report, workflow
+from saos.backend.base import same_path
 from saos.backend.fake import FakeBackend
 from saos import daemon as daemon_mod
 from saos.daemon import Daemon
@@ -166,6 +167,64 @@ def write_demand(job, data, confirm="确认，开始吧"):
 
 def call(daemon, op, **args):
     return daemon.handle({"op": op, "args": args})
+
+
+@pytest.mark.parametrize("fail", [False, True])
+def test_round_confirmation_restores_unsaved_changes_and_blocks_a_disagreed_report(setup, monkeypatch, fail):
+    daemon, job = setup
+    write_demand(job, DEMAND)
+    recorded = call(daemon, "round.record", job=job.id, viz=False)["result"]["record"]
+    path = job.root / ledger.LEDGER_FILE
+    raw = ledger.load(path, raw=True)
+    raw[0].update(backend="rtc", achieved=True)
+    path.write_text("".join(json.dumps(r) + "\n" for r in raw), encoding="utf-8")
+    call(daemon, "lens.set", job=job.id, surface=1, param="radius", value=75.0)
+    before = daemon.backend.surfaces()
+    loaded = daemon.loaded
+    assert loaded.dirty
+    if fail:
+        def broken(*args, **kwargs):
+            raise RuntimeError("复测中断")
+        monkeypatch.setattr(workflow.demand, "evaluate", broken)
+    result = call(daemon, "round.confirm", job=job.id, of=recorded["round"], viz=False)
+    assert daemon.backend.surfaces() == before
+    assert daemon.loaded is loaded and loaded.dirty
+    # 有未保存修改时从临时副本恢复，后端的文件路径停在副本上：Hammer 先拒绝，保存后才回到任务文件
+    # restored from a temporary copy: the backend's file is that copy, so search is refused until the lens is saved
+    assert not same_path(daemon.backend.native_file(), loaded.path)
+    refused = call(daemon, "opt.hammer", job=job.id, max_seconds=5)["error"]
+    assert refused["code"] == ErrorCode.BAD_ARGS and "native_file" in refused["details"]
+    if fail:
+        assert not result["ok"]
+        assert len(ledger.load(path, raw=True)) == 1
+    else:
+        assert result["ok"] and not result["result"]["agrees"]
+        assert result["result"]["decision"]["status"] == "continue"
+        with pytest.raises(SaosError, match="return to design"):
+            report.build(job)
+        again = call(daemon, "round.confirm", job=job.id, of=recorded["round"], viz=False)
+        assert again["ok"] and not again["result"]["agrees"]
+        # 用户停止后照常出报告，用的是 OpticStudio 复测的数 / after the user stops, the report uses OpticStudio's numbers
+        ledger.record_stop(job.root, demand.compute_digest(demand.validate(DEMAND)), "复测不符，按现结构交付", "就交付这一版")
+        built = report.build(job)
+        assert built["decision"]["status"] == "stopped" and built["deliver"]["confirmed_by"] is not None
+    assert call(daemon, "lens.save", job=job.id)["ok"]
+    assert same_path(daemon.backend.native_file(), daemon.loaded.path)
+
+
+def test_round_confirmation_reloads_a_clean_lens_from_its_own_file(setup):
+    daemon, job = setup
+    write_demand(job, DEMAND)
+    recorded = call(daemon, "round.record", job=job.id, viz=False)["result"]["record"]
+    path = job.root / ledger.LEDGER_FILE
+    raw = ledger.load(path, raw=True)
+    raw[0].update(backend="rtc", achieved=True)
+    path.write_text("".join(json.dumps(r) + "\n" for r in raw), encoding="utf-8")
+    loaded = daemon.loaded
+    assert not loaded.dirty and same_path(daemon.backend.native_file(), loaded.path)
+    assert call(daemon, "round.confirm", job=job.id, of=recorded["round"], viz=False)["ok"]
+    assert daemon.loaded is loaded and not loaded.dirty
+    assert same_path(daemon.backend.native_file(), loaded.path)
 
 
 def test_workflow_rounds_until_achieved_and_report(setup):
@@ -737,9 +796,14 @@ def test_hammer_and_global_need_a_budget_and_archive_the_systems_they_write(setu
 
     def search(kind, cores, *, max_seconds, on_progress=None, should_cancel=None):
         on_progress({"progress": 0, "merit": 0.5, "systems": 1000, "elapsed_s": 1.0})
-        names = [f"GLOPT_0001_{k:03d}.zmx" for k in (1, 2)] if kind == "global" else ["a_0001_HAMMER.zmx"]
+        # 同 OpticStudio：Hammer 以当前系统文件名开头；全局搜索之后系统文件是最好的那个 GLOPT（实测）
+        # as in OpticStudio: Hammer is named after the system file, which a global search leaves on its best GLOPT (measured)
+        stem = daemon.backend.native_file().stem
+        names = [f"GLOPT_0001_{k:03d}.zmx" for k in (1, 2)] if kind == "global" else [f"{stem}_0001_HAMMER.zmx"]
         for name in names:
             (lens_dir / name).write_text("lens", encoding="utf-8")
+        if kind == "global":
+            daemon.backend.file = lens_dir / names[0]
         seen.update(kind=kind, cores=cores, max_seconds=max_seconds)
         return {"final_merit": 0.5, "stopped_by": "timeout"}
 
@@ -764,7 +828,7 @@ def test_hammer_and_global_need_a_budget_and_archive_the_systems_they_write(setu
     assert progress["stopped_by"] == "timeout" and progress["status"] == "done"
 
     (lens_dir / "a_0009_HAMMER.zmx").write_text("old", encoding="utf-8")  # 运行前就有的不动 / left as it was
-    assert call(daemon, "opt.hammer", job=job.id, max_seconds=5)["result"]["files"] == ["hammer/001/a_0001_HAMMER.zmx"]
+    assert call(daemon, "opt.hammer", job=job.id, max_seconds=5)["result"]["files"] == ["hammer/001/GLOPT_0001_001_0001_HAMMER.zmx"]
     assert (lens_dir / "a_0009_HAMMER.zmx").read_text(encoding="utf-8") == "old"
     assert call(daemon, "opt.global", job=job.id, max_seconds=5)["result"]["files"][0].startswith("global/002/")
 

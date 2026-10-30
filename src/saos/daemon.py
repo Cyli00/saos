@@ -24,7 +24,7 @@ from typing import Any, Callable
 
 from saos import config, geometry, i18n, jobs, lens_files, parallel, prescription, scripting, timing, workflow
 from saos.backend import Backend, make_backend
-from saos.backend.base import same_number
+from saos.backend.base import same_number, same_path
 from saos.protocol import ErrorCode, SaosError, decode, encode, fail, ok, write_json
 
 log = logging.getLogger("saos.daemon")
@@ -940,8 +940,18 @@ class Daemon:
         from saos.budget import Budget
         Budget(max_seconds)
         workflow.require_optimise(job, self.backend)
+        # 结果写在后端自己的镜头文件旁（rtc 的 Hammer 以它的文件名开头；OpticStudio 的 Hammer 实测不写文件）。
+        # 实测 OpticStudio 全局搜索之后它是镜头旁的 GLOPT_0000_001.zmx；从临时副本恢复后它在任务目录之外，结果会找不到
+        # results land next to the backend's own lens file (rtc's Hammer is named after it; OpticStudio's Hammer writes none,
+        # measured). After an OpticStudio global search it is GLOPT_0000_001.zmx next to the lens; after a restore from a
+        # temporary copy it lies outside the job
+        native = self.backend.native_file() or loaded.path
+        if not same_path(native.parent, loaded.path.parent):
+            raise SaosError(ErrorCode.BAD_ARGS, f"the lens in memory was restored from a temporary copy ({native.name}), so {kind} search "
+                            f"would write its systems outside the job; save it first (saos lens save, or --as NAME)",
+                            {"native_file": str(native), "file": job.relative_lens(loaded.path)})
         lens_dir = loaded.path.parent
-        pattern = SEARCH_FILES[kind].format(stem=glob.escape(loaded.path.stem))
+        pattern = SEARCH_FILES[kind].format(stem=glob.escape(native.stem))
         before = self._search_stamps(lens_dir, pattern)
         # GLOPT 的编号跟文件夹里已有的文件无关（实测每次运行前文件夹为空，编号仍是 0000、0001、0002），同名直接覆盖：
         # 镜头取自 lenses/global/NNN/ 时会冲掉上一次的结果，甚至当前镜头本身

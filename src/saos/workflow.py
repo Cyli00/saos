@@ -398,8 +398,9 @@ def confirm_round(ctx, of: int | None = None, viz: bool = True) -> dict[str, Any
     if ledger.version(target) != (sha, method_sha):
         raise SaosError(ErrorCode.SPEC_CHANGED, f"round {target['round']} was judged under another demand or check version; "
                         "record a new round on the rtc instance first", {"round": target["round"]})
-    current = ctx.lens
-    try:
+    from saos.kit import restored
+
+    with restored(ctx, reload_clean=True):
         ctx.job.write_progress(stage=f"confirm r{int(target['round']):03d}")
         ctx.backend.load(ctx.path(f"lenses/{target['file']}"))
         desc, lens_sha = lens_state(ctx)
@@ -412,9 +413,6 @@ def confirm_round(ctx, of: int | None = None, viz: bool = True) -> dict[str, Any
         except Exception:  # noqa: BLE001 - 没有评价函数时只是不记录 / no merit function: just not recorded
             merit = None
         view = export_viz(ctx, ev["evidence_dir"]) if viz else None
-    finally:
-        if current is not None:
-            ctx.backend.load(current)
     if lens_changes(desc, desc_after):
         raise SaosError(ErrorCode.LENS_MODIFIED_BY_CHECK, f"a check changed the lens of round {target['round']} while re-measuring it; "
                         "make the checks read-only", {"evaluation": ev["evidence_dir"]})
@@ -424,9 +422,10 @@ def confirm_round(ctx, of: int | None = None, viz: bool = True) -> dict[str, Any
     measured = {"achieved": achieved, "hard_failing": ev["hard_failing"], "measurement_errors": ev["measurement_errors"],
                 "model_glass": model_glass, **({"parts_clash": clash} if clash else {})}
     verdict = {"achieved": achieved, "deliverable": ledger.deliverable(measured)}
-    before = {"achieved": bool(target.get("achieved")), "deliverable": ledger.deliverable(target)}
-    agrees = verdict == before and sorted(ev["hard_failing"]) == sorted(target.get("hard_failing") or [])
-    old = target.get("values") or {}
+    rtc = target.get("rtc") or target
+    before = {"achieved": bool(rtc.get("achieved")), "deliverable": ledger.deliverable(rtc)}
+    agrees = verdict == before and sorted(ev["hard_failing"]) == sorted(rtc.get("hard_failing") or [])
+    old = rtc.get("values") or {}
     diffs = {k: {"rtc": old.get(k), "zos": values.get(k)} for k in sorted(set(old) | set(values)) if not _same(old.get(k), values.get(k))}
     record = {
         "round": number, "stage": "zos", "backend": (ev.get("environment") or {}).get("backend", "zos"),

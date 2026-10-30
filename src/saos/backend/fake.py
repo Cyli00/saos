@@ -70,6 +70,9 @@ class FakeBackend(Backend):
         path.write_text(json.dumps(self.lens, allow_nan=True), encoding="utf-8")
         self.file = path
 
+    def native_file(self) -> Path | None:
+        return self.file
+
     def new_system(self) -> None:
         self.lens = None
         self.file = None

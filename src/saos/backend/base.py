@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 import re
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
@@ -51,6 +52,10 @@ def check_size(param: str, number: float) -> None:
     """半口径和机械半口径是尺寸：有限且不为负。/ Semi-diameters are sizes: finite and not negative."""
     if param in ("semi_diameter", "mech_semi_diameter") and not (math.isfinite(number) and number >= 0):
         raise SaosError(ErrorCode.BAD_ARGS, f"{param} must be a finite size >= 0, got {number}")
+
+
+def same_path(a: str | Path, b: str | Path) -> bool:
+    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
 
 
 def same_number(a: float, b: float) -> bool:
@@ -108,6 +113,10 @@ class Backend(ABC):
     def activity(self, label: str, quiet: bool):
         """一次请求期间的界面提示与刷新控制；只在连接手动打开的窗口时起作用。"""
         yield
+
+    def native_file(self) -> Path | None:
+        """后端自己记着的镜头文件（OpticStudio 的 SystemFile）。Hammer 与全局搜索把结果写在它旁边；从临时快照恢复后它指向快照。"""
+        return None
 
     def needs_save(self) -> bool:
         """OpticStudio 的 NeedsSave 标志。实测只读的 Zernike 拟合、把参数写回相同的值也会让它置位。"""

@@ -275,7 +275,11 @@ COMMANDS.update({
         "  needed, re-measures rtc round N (default: the round saos report would\n"
         "  deliver) and appends a tier confirm record; reading the ledger puts its\n"
         "  numbers into round N (confirmed_by, rtc keeps the old ones). agrees is false\n"
-        "  when achieved, hard_failing or deliverability differ: go back to design.\n"
+        "  when achieved, hard_failing or deliverability differ: the decision returns\n"
+        "  continue with confirm_failed and saos report refuses until a new round is\n"
+        "  recorded or the user stops. The lens loaded before is restored afterwards;\n"
+        "  with unsaved edits it comes from a temporary copy, so lens save before opt\n"
+        "  hammer/global.\n"
         "  saos report refuses an rtc round that is not confirmed.\n"
         "  Saves lenses/rounds/rNNN.zmx only after checks prove the lens unchanged;\n"
         "  evaluations/NNN/result.json is authoritative and ledger.jsonl commits the\n"
@@ -321,7 +325,7 @@ COMMANDS.update({
         "Requires an existing round in the version. --reason cites evidence; --quote\n"
         "  is the user's words including the selected option. Appends stops.jsonl;\n"
         "  future rounds in this version are refused and reports show reason/quote.", "BAD_ARGS, FILE_NOT_FOUND, JOB_NOT_FOUND"),
-    "report": ('Generate the delivery report from the demand and ledger without OpticStudio.', "Writes report/index.html and a sealed report/NNN-rMMM-<status>.html. Language:\n  --lang > demand.lang > SAOS_LANG > system UI language > English. Returns\n  headline (deliver/best_so_far/best_blocked/no_valid), deliverable, deliver,\n  diagnostic and achieved. deliver is null for an undeliverable lens; diagnostic\n  identifies its file/round and hard_failing, measurement_errors, model_glass.\n  An achieved deliverable round with minimum shortfall is preferred; otherwise\n  the best deliverable round is used. Terminal exhausted/limit/stopped can\n  headline deliver with achieved:false. No valid lens means no delivery.\n  Changed demand/checks require a new measured round before reporting; sealed\n  evidence must be intact (uv run saos job verify J lists problems).\n  The tolerance section uses the latest finished, uncancelled tolerance scan\n  (yield, per-check distributions, top 10 sensitivities) and states, by lens\n  file content hash, whether it ran on the delivered round's lens; without one\n  it says none was run.", 'SPEC_CHANGED, EVIDENCE_TAMPERED, FILE_NOT_FOUND, JOB_NOT_FOUND'),
+    "report": ('Generate the delivery report from the demand and ledger without OpticStudio.', "Writes report/index.html and a sealed report/NNN-rMMM-<status>.html. Language:\n  --lang > demand.lang > SAOS_LANG > system UI language > English. Returns\n  headline (deliver/best_so_far/best_blocked/no_valid), deliverable, deliver,\n  diagnostic and achieved. deliver is null for an undeliverable lens; diagnostic\n  identifies its file/round and hard_failing, measurement_errors, model_glass.\n  An achieved deliverable round with minimum shortfall is preferred; otherwise\n  the best deliverable round is used. Terminal exhausted/limit/stopped can\n  headline deliver with achieved:false. No valid lens means no delivery.\n  Changed demand/checks require a new measured round before reporting; sealed\n  evidence must be intact (uv run saos job verify J lists problems). An rtc\n  round must be confirmed (saos round --confirm); after a disagreeing\n  confirmation a new round is required unless the user stopped.\n  The tolerance section uses the latest finished, uncancelled tolerance scan\n  (yield, per-check distributions, top 10 sensitivities) and states, by lens\n  file content hash, whether it ran on the delivered round's lens; without one\n  it says none was run.", 'BAD_ARGS, SPEC_CHANGED, EVIDENCE_TAMPERED, FILE_NOT_FOUND, JOB_NOT_FOUND'),
     "ui open": (
         "Start the local workflow service if needed and open the user's job window.",
         "--tabs a,b,... picks and orders the top tabs (layout, spot, fan, field, mtf,\n"
@@ -380,6 +384,9 @@ for _name, _purpose, _details in (
     ("global", "Run OpticStudio global search after demand and model approval.",
      "Requires --max-seconds. The ten best systems are archived under lenses/global/NNN/."),
 ):
+    if _name != "local":
+        _details += (" Refused with BAD_ARGS while the lens in memory comes from a temporary copy (after ctx.restored(), an expert "
+                     "run, or round --confirm on a lens with unsaved edits); lens save first.")
     COMMANDS[f"opt {_name}"] = (
         _purpose, _details + "\n"
         "The command budget includes initial measurements and final review. "
@@ -452,7 +459,8 @@ Parameters (also available on worker w)
     the file name and cannot be set. ctx.object_index(ref) resolves a reference.
   with ctx.kept(keys): restores those values, including on error.
   with ctx.restored(): restores the whole lens using a temporary saved copy
-    (about 0.1 s); useful for trials that add/remove surfaces.
+    (about 0.1 s); useful for trials that add/remove surfaces. Afterwards opt
+    hammer/global wait for a lens save.
   ctx.configurations(): configuration count; with ctx.configuration(n): temporarily
     switches to configuration n and restores the original even on error. Include
     n in memo keys for per-configuration checks. Checks must leave the lens unchanged.
