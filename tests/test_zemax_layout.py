@@ -14,6 +14,7 @@ import pytest
 
 from saos import jobs
 from saos.daemon import Daemon
+from zemax_support import call
 
 pytestmark = [
     pytest.mark.zemax,
@@ -39,8 +40,8 @@ def test_rays_bend_inside_a_grin_lens_in_the_live_view(daemon, monkeypatch):
     from saos.backend.zos import _load_zosapi
 
     job = jobs.create_job("grin")
-    assert daemon.handle({"op": "lens.import", "args": {"job": job.id, "src": str(SAMPLE), "name": "cooke.zmx"}})["ok"]
-    assert daemon.handle({"op": "lens.load", "args": {"job": job.id, "file": "cooke.zmx"}})["ok"]
+    assert call(daemon, "lens.import", job=job.id, src=str(SAMPLE), name="cooke.zmx")["ok"]
+    assert call(daemon, "lens.load", job=job.id, file="cooke.zmx")["ok"]
     backend = daemon.backend
     # 第一片改成 Gradient 1（n = n0 + nr2·r²）；nr2 = -0.003 时口径边缘（r 9.5 mm）n 仍为 1.35，光线在 3.26 mm 内明显弯曲
     row = backend.system.LDE.GetSurfaceAt(1)
@@ -48,7 +49,7 @@ def test_rays_bend_inside_a_grin_lens_in_the_live_view(daemon, monkeypatch):
     assert "Gradient" in str(row.TypeName)
     thickness = float(row.Thickness)
     for param, value in (("par2", 1.62), ("par3", -0.003)):
-        assert daemon.handle({"op": "lens.set", "args": {"job": job.id, "surface": 1, "param": param, "value": value}})["ok"]
+        assert call(daemon, "lens.set", job=job.id, surface=1, param=param, value=value)["ok"]
     view = json.loads((job.root / jobs.VIEW_FILE).read_text(encoding="utf-8"))
     assert view["ok"] and not view.get("errors", {}).get("grin"), view.get("errors")
     assert float(backend.system.LDE.GetSurfaceAt(1).Thickness) == thickness  # 主系统不动 / the main system is untouched
