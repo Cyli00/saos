@@ -62,6 +62,8 @@ def cmd_daemon(args: argparse.Namespace) -> Any:
         if args.no_env:
             return client.status()
         return {**client.status(), "environment": client.environment()}
+    if args.action == "use":
+        return client.request("daemon.use", {"backend": args.backend, "job": args.job}, timeout=args.timeout)
     raise AssertionError(args.action)
 
 
@@ -342,9 +344,9 @@ def build_parser() -> argparse.ArgumentParser:
     dsub = daemon.add_subparsers(dest="action", required=True, parser_class=_Parser)
     start = dsub.add_parser("start")
     start.add_argument("--mode", choices=("standalone", "extension"), default="standalone")
-    start.add_argument("--backend", choices=("zos", "rtc"), default=None,
-                       help="zos (default, or SAOS_BACKEND) or rtc: build, trace and evaluate rtc's operands without OpticStudio "
-                            "during the interview; descriptions, checks, optimisation, scans and rounds stay on OpticStudio")
+    start.add_argument("--backend", choices=("auto", "zos", "rtc"), default=None,
+                       help="auto (default, or SAOS_BACKEND): rtc at once, OpticStudio started when first needed; zos: both, "
+                            "OpticStudio connected at start; rtc: rtc only, no OpticStudio")
     start.add_argument("--start-timeout", type=float, default=client.DEFAULT_START_TIMEOUT_S)
     stop = dsub.add_parser("stop")
     stop.add_argument("--discard", action="store_true", help="discard unsaved changes")
@@ -355,9 +357,13 @@ def build_parser() -> argparse.ArgumentParser:
     lst.add_argument("--all", action="store_true", help="every daemon on the machine, not only this instance's")
     status = dsub.add_parser("status")
     status.add_argument("--no-env", action="store_true", help="only this instance's daemon")
+    use = dsub.add_parser("use")
+    use.add_argument("backend", choices=("auto", "rtc", "zos"), help="auto: by workflow stage; rtc or zos: pin it")
+    use.add_argument("--job", default=None, help="hand this job's loaded lens over now")
+    use.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     run = dsub.add_parser("run")
     run.add_argument("--mode", choices=("standalone", "extension"), default="standalone")
-    run.add_argument("--backend", choices=("zos", "rtc"), default=None, help=argparse.SUPPRESS)
+    run.add_argument("--backend", choices=("auto", "zos", "rtc"), default=None, help=argparse.SUPPRESS)
     run.add_argument("--token", default="", help=argparse.SUPPRESS)
     daemon.set_defaults(func=cmd_daemon)
 
@@ -550,8 +556,8 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--job", required=True)
     q.add_argument("--no-window", action="store_true", help="only start the service and print the URL")
     q.add_argument("--tabs", help="comma-separated tabs to show, in order: layout,spot,fan,field,mtf,detectors,metrics,rounds,starts "
-                                  "(remembered for the job; per-round exports then compute only the chosen spot/fan/field/mtf)")
-    q.add_argument("--metrics", help="comma-separated demand item ids the Metrics tab plots over rounds (remembered for the job)")
+                                  "(remembered for the job)")
+    q.add_argument("--metrics", help="comma-separated demand item ids the Metrics tab shows, in order (default every checked item; remembered for the job)")
     q.add_argument("--tab", help="tab to show first when the window opens")
     q.add_argument("--reset", action="store_true", help="forget the job's tab and metric choices (back to the default tabs)")
     q = usub.add_parser("notify")

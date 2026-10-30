@@ -2,7 +2,7 @@
 
 The outcome of this stage is a ledger of rounds judged against the demand and a final round decision: `achieved`, `exhausted`, `limit` or `stopped`. Leaving the approved structure sends you back to stage 2 ([the last section](#gate-expensive-runs-on-the-gap)).
 
-Run this stage on the rtc instance (ADR-0017; switching in [session.md](session.md#the-rtc-instance-stages-1-and-3)): `opt`, `check`, `scan`, `round` and the expert classes work there as described below, with the differences in [On the rtc instance](#on-the-rtc-instance). An OpticStudio instance serves too, at a licence's cost.
+This stage computes on rtc (ADR-0017; [session.md](session.md#two-backends-in-one-daemon)): `opt`, `check`, `scan`, `round` and the expert classes work there as described below, with the differences in [On the rtc instance](#on-the-rtc-instance). `saos daemon use zos` runs it on OpticStudio instead, at a licence's cost.
 
 ## Build a merit function that means the demand
 

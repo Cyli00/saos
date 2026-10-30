@@ -8,7 +8,7 @@
 - **操作数**：光线类 REAX/Y/Z/R/A/B/C、RAGX/Y/Z/A/B/C、RANG、RAID；系统类 EFFL、WFNO、ISFN、TOTR、TTHI、EPDI、ENPP、EXPP、EXPD、PETZ、INDX、SSAG、CONF（`src/saos/backend/rtc.py`，一阶量在 `../rtc/src/rtc/firstorder.py`）；`quick_focus` 用闭式 RMS² 极小。其余报 `BACKEND_UNSUPPORTED`。
 - **有限物距、物方 NA、物高视场**：rtc 加了 `allow_unverified` 开关，只在 rtc 实例上打开；这些路径的结果在 `computed_by` 里列为未对账。`ctx.fast()` 副本仍拒绝它们。
 - **门禁**：daemon 的 `OPTICSTUDIO_ONLY` 当初拒绝建模说明与确认、分析、评价函数与优化、`check`、`scan`、`round`；ADR-0017 起设计轮次也在 rtc 实例上做，现行门禁见 [rtc-design-stage.md](rtc-design-stage.md)。
-- **界面**：流程图窗口标出 rtc 实例，访谈节点显示可行性记录是否已写，布局脚注列出未对账项，走过需求确认仍在 rtc 实例时提示切换。
+- **界面**：流程图窗口标出 rtc 实例，访谈节点显示可行性记录是否已写，布局脚注列出未对账项，走过需求确认仍在 rtc 实例时提示切换（ADR-0018 起只对只有 rtc 的实例提示，两个后端的后台进程自己切换）。
 - **未做**：PARY、RAED、ETVA/ETGT/MNET、STRH 与第二批；有限物距瞄准的 Newton 精化（沿用 rtc 现有瞄准迭代）；对账与准入（下节），所以第一批里除 REAX/REAY/REAC/INDX/SSAG/EXPP/EXPD/CONF 外，都还只是按手册定义实现。
 
 ## 参照资料

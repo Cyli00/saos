@@ -189,8 +189,9 @@ class ScriptContext(KitMethods):
             loaded.mark_rtc(unclosed)
 
     def show(self) -> dict[str, Any] | None:
-        """在长脚本中途把当前镜头推给流程图窗口（布局、Lens Data、交叠检查）；命令结束时本来就会推一次。
-        Push the current lens to the workflow window mid-script (layout, Lens Data, interference); every command does it at the end."""
+        """在长脚本中途立即把当前镜头推给流程图窗口（布局、Lens Data、交叠检查）；ctx.progress 和命令结束时会自动推送。
+        Push the current lens to the workflow window now (layout, Lens Data, interference); ctx.progress and the end of
+        every command push it on their own."""
         return self._daemon.export_view()
 
     def capture_window(self) -> str | None:
@@ -238,9 +239,11 @@ class ScriptContext(KitMethods):
         return rel
 
     def progress(self, stage: str, **data: Any) -> bool:
-        """长脚本报告进度（写进任务的 progress.json，saos job show 可见）；返回是否收到了取消请求。
-        Report progress from a long script (job's progress.json, shown by saos job show); returns whether a cancel was requested."""
+        """长脚本报告进度（写进任务的 progress.json，saos job show 可见），并隔一段时间刷新流程图窗口的当前镜头；返回是否收到了取消请求。
+        Report progress from a long script (job's progress.json, shown by saos job show) and now and then refresh the
+        workflow window's live view; returns whether a cancel was requested."""
         self.job.write_progress(stage=str(stage), data=jsonable(data))
+        self._daemon.view_tick(self.job)
         return self.job.cancel_requested()
 
     def map(self, fn: str, items: list[Any], workers: int | None = None, reset: bool = True, args: dict[str, Any] | None = None) -> dict[str, Any]:

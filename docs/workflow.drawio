@@ -212,7 +212,7 @@
         <mxCell id="e24" value="认可（原话）" style="edgeStyle=orthogonalEdgeStyle;rounded=1;jumpStyle=arc;jumpSize=10;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;exitX=1;exitY=0.6;entryX=0;entryY=0.5;" parent="1" source="u4" target="t5" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="a10" value="&lt;b&gt;模型确认后进入设计&lt;/b&gt;&lt;br&gt;可存盘并切换：daemon stop → daemon start --backend rtc&lt;br&gt;saos round 记录第 0 轮（rtc 或 ZOS）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+        <mxCell id="a10" value="&lt;b&gt;模型确认后进入设计&lt;/b&gt;&lt;br&gt;存盘后后台进程自动换到 rtc，交接时逐值比对&lt;br&gt;saos round 记录第 0 轮" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="1550" width="320" height="70" as="geometry" />
         </mxCell>
         <mxCell id="a11" value="&lt;b&gt;诊断：可达性阶梯&lt;/b&gt;&lt;br&gt;守恒量 / 不变量（光展量、Lagrange、Petzval）&lt;br&gt;→ 轴上一点 → 全视场；低一级不成立 = 结构问题" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
@@ -334,7 +334,7 @@
         <mxCell id="t10" value="&lt;b&gt;saos stop --reason &quot;…&quot; --quote &quot;…&quot;&lt;/b&gt;&lt;br&gt;→ stops.jsonl；ledger 状态 stopped，此版本拒绝后续轮次" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
           <mxGeometry x="980" y="2740.0" width="400" height="56" as="geometry" />
         </mxCell>
-        <mxCell id="confirm" value="&lt;b&gt;交付前复测&lt;/b&gt;&lt;br&gt;rtc 轮次：切回 OpticStudio，saos round --confirm&lt;br&gt;ZOS 轮次直接进入报告" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" parent="1" vertex="1">
+        <mxCell id="confirm" value="&lt;b&gt;交付前复测&lt;/b&gt;&lt;br&gt;rtc 轮次：saos round --confirm（自动在 OpticStudio 上算）&lt;br&gt;ZOS 轮次直接进入报告" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="2740" width="320" height="70" as="geometry" />
         </mxCell>
         <mxCell id="confirm_ok" value="复测结论一致 / 原为 ZOS" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=11;labelBackgroundColor=#ffffff;" parent="1" source="confirm" target="a17" edge="1">

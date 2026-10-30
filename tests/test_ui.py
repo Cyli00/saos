@@ -28,7 +28,10 @@ NOTES = {"surfaces": {"0": "object", "1": "lens front", "2": "lens back", "3": "
 
 
 def call(daemon, op, **args):
-    return daemon.handle({"op": op, "args": args})
+    """同 serve 循环：回复之后做刷新（view.json、metrics.json）/ as the serve loop: refresh after the reply"""
+    reply = daemon.handle({"op": op, "args": args})
+    daemon.idle()
+    return reply
 
 
 def steps(job):

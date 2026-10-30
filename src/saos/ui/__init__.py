@@ -259,8 +259,6 @@ def _guard_focus(before: int) -> None:
 # 窗口上方可选的标签页；control（显性调试的窗口控制）在 extension 模式下总在最前，不由这里选
 # tabs the window can show; control (explicit-debugging window controls) always leads in extension mode and is not chosen here
 TABS = ("layout", "spot", "fan", "field", "mtf", "detectors", "metrics", "rounds", "starts")
-# 每轮 viz.json 里要算的分析图（其余标签页不需要导出）/ per-round plots computed into viz.json; other tabs need no export
-ROUND_PLOTS = ("spot", "fan", "field", "mtf")
 
 
 def _ids(value: str | None, label: str) -> list[str] | None:
@@ -310,16 +308,6 @@ def configure(job: jobs.Job, *, tabs: str | None = None, metrics: str | None = N
             ui["tabs"] = [*tabs_now[:at], "metrics", *tabs_now[at:]]
     job.update_state(ui=ui)
     return ui
-
-
-def round_plots(job: jobs.Job) -> frozenset[str] | None:
-    """记轮次时要导出的分析图：任务选过标签页就只算选中的，否则全部（None）。
-    The plots a round exports: only the chosen tabs once the job chose tabs, otherwise all (None)."""
-    try:
-        tabs = (job.read_state().get("ui") or {}).get("tabs")
-    except (OSError, ValueError):
-        return None
-    return None if tabs is None else frozenset(t for t in tabs if t in ROUND_PLOTS)
 
 
 def open_window(job_id: str, *, window: bool = True, activate: bool = True, tab: str | None = None) -> dict[str, Any]:

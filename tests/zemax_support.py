@@ -17,7 +17,10 @@ LINE = demand.QUESTION_LINE["zh"]
 
 
 def call(daemon, op, **args):
-    return daemon.handle({"op": op, "args": args})
+    """同 serve 循环：回复之后做刷新（view.json、metrics.json）/ as the serve loop: refresh after the reply"""
+    reply = daemon.handle({"op": op, "args": args})
+    daemon.idle()
+    return reply
 
 # 两片玻璃的样品：第 1 面 N-BK7 为目录玻璃，第 3 面 N-SF2 用于替换与模型玻璃测试
 # Two-glass sample: surface 1 is a catalog glass (N-BK7), surface 3 another one (N-SF2) for the substitution tests

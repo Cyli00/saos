@@ -22,10 +22,12 @@ def _daemon() -> dict[str, Any]:
     state = client.read_state()
     if state is None or not client.pid_alive(int(state.get("pid", 0))):
         return {"running": False, "mode": None, "backend": None}
-    # rtc 实例（需求阶段的可行性核算）不占 OpticStudio 许可，窗口据此标明数值来源
-    # an rtc instance (need-stage feasibility) holds no OpticStudio licence; the window labels where numbers come from
-    backend = (state.get("opticstudio") or {}).get("backend") or "zos"
-    return {"running": True, "mode": state.get("mode"), "pid": state.get("pid"), "backend": backend}
+    # 当前在哪个后端上算、是否两个后端都有（ADR-0018）：窗口据此标明数值来源和 OpticStudio 是否占着许可
+    # which backend computes now and whether the daemon holds both: the window labels where numbers come from
+    backends = state.get("backends") or {}
+    backend = backends.get("active") or (state.get("opticstudio") or {}).get("backend") or "zos"
+    return {"running": True, "mode": state.get("mode"), "pid": state.get("pid"), "backend": backend,
+            "dual": bool(backends.get("dual")), "zos_started": bool(backends.get("zos_started", backend != "rtc"))}
 
 
 def exploration_of(job: jobs.Job) -> dict[str, Any] | None:
@@ -108,9 +110,9 @@ def starts_detail(job: jobs.Job) -> dict[str, Any]:
             "scans": scans}
 
 
-def rounds_of(job: jobs.Job, metrics: list[str] | None = None) -> list[dict[str, Any]]:
-    """轮次列表；metrics 给出时另带这些需求条目在每轮的测量值（“指标”页用）。
-    The rounds; with metrics, also each round's measured value of those demand items (for the Metrics tab)."""
+def rounds_of(job: jobs.Job) -> list[dict[str, Any]]:
+    """轮次列表，带每轮各需求条目的测量值（“指标”页用）。
+    The rounds with each round's measured demand item values (for the Metrics tab)."""
     out = []
     try:
         current_demand = demand.load_job(job.root)
@@ -124,16 +126,17 @@ def rounds_of(job: jobs.Job, metrics: list[str] | None = None) -> list[dict[str,
                     "demand_sha": ledger.version(r)[0], "viz": bool(folder) and (job.root / folder / "viz.json").is_file(),
                     # 谁算的这一轮；rtc 轮次复测后数值换成 OpticStudio 的（ADR-0017）/ who computed it; confirmed rtc rounds show OpticStudio's numbers
                     "backend": r.get("backend", "zos"),
-                    **({"confirmed_by": r["confirmed_by"], "agrees": bool(r.get("agrees"))} if r.get("confirmed_by") is not None else {})})
-        if metrics:
-            values = r.get("values") or {}
-            out[-1]["values"] = {k: finite(values.get(k)) for k in metrics}
+                    **({"confirmed_by": r["confirmed_by"], "agrees": bool(r.get("agrees"))} if r.get("confirmed_by") is not None else {}),
+                    "values": {k: finite(v) for k, v in (r.get("values") or {}).items()}})
     return out
 
 
-def metric_items(d: dict[str, Any], metrics: list[str]) -> list[dict[str, Any]]:
-    """“指标”页各条目的说明、单位和界限，按 --metrics 的顺序；需求里已没有的条目标出来。
-    Description, unit and bound of each Metrics item in --metrics order; items gone from the demand are flagged."""
+def metric_items(d: dict[str, Any], metrics: list[str] | None) -> list[dict[str, Any]]:
+    """“指标”页各条目的说明、单位和界限，按 --metrics 的顺序，没选时为需求里所有带判定方法的条目；需求里已没有的条目标出来。
+    Description, unit and bound of each Metrics item in --metrics order, or of every checked demand item when none
+    were chosen; items gone from the demand are flagged."""
+    if metrics is None:
+        metrics = [s["id"] for s in demand.checked(d)]
     entries = {e["id"]: (section, e) for section in demand.SECTIONS for e in d.get(section) or []}
     out = []
     for k in metrics:
@@ -179,7 +182,12 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
     # 任务记住的窗口设置（saos ui open --tabs / --metrics）/ the job's remembered window settings
     ui = job_state.get("ui") or {}
     out: dict[str, Any] = {"job": job.id, "name": job_state.get("name"), "daemon": _daemon(), "progress": None,
-                           "blocking": [], "decision": None, "rounds": rounds_of(job, ui.get("metrics")), "ui": ui}
+                           "blocking": [], "decision": None, "rounds": rounds_of(job), "ui": ui}
+    # 当前镜头的评价函数值和各项测量值，后台进程自动更新（saos.live）/ the live metrics, updated by the daemon
+    try:
+        out["metrics"] = json.loads((root / jobs.METRICS_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        out["metrics"] = None
     view = root / jobs.VIEW_FILE
     # 当前镜头视图的版本号：界面看到它变了才重新取 / the live view's version; the window refetches only when it changes
     out["live"] = view.stat().st_mtime_ns if view.is_file() else None
@@ -203,8 +211,7 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
         return {**out, "steps": [{"id": s, "status": status[s], "detail": detail.get(s)} for s in STEPS], "current": "interview"}
 
     out["lang"] = i18n.resolve(d.get("lang"))
-    if ui.get("metrics"):
-        out["metric_items"] = metric_items(d, ui["metrics"])
+    out["metric_items"] = metric_items(d, ui.get("metrics"))
     try:
         jobs.require_zos_history(root)
     except SaosError as exc:

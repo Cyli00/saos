@@ -36,13 +36,19 @@ def _t(zh: str, en: str) -> str:
 
 
 REQUEST_READ_TIMEOUT_S = 30
-# 显性调试：这些操作可能改变镜头，结束后刷新已打开的分析窗口
 # 可能跑很久的操作：开始和结束都写进 progress.json，开始前清掉旧的取消请求
 # operations that may run long: their start and end go to progress.json; a stale cancel request is cleared first
 LONG_OPS = frozenset({"opt.local", "opt.hammer", "opt.global", "script.exec", "round.record", "round.confirm", "demand.check", "scan.run"})
-REFRESH_AFTER = frozenset({"lens.load", "lens.set", "lens.build", "opt.local", "opt.hammer", "opt.global", "script.exec", "round.record"})
-# 优化运行中多久给流程图窗口推一次当前镜头（只有几何，不带光线）/ how often a running optimisation updates the live view
+# 不改镜头的操作；其余操作（含以后新加的）回复之后都重写 view.json 并测当前镜头的指标（ADR-0019）
+# ops that leave the lens as it was; after any other op (new ones included) the daemon rewrites view.json and measures
+VIEW_KEEPS = frozenset({"ping", "shutdown", "daemon.use", "lens.import", "lens.info", "lens.surfaces", "lens.describe", "lens.approve",
+                        "lens.save", "lens.operand", "lens.view", "lens.analysis", "lens.screenshot", "lens.capture", "demand.check", "scan.run"})
+# 优化运行中、长脚本报告进度时多久给流程图窗口推一次当前镜头；导出慢时（OpticStudio 上 1–4.5 s）间隔放长，
+# 让导出至多占运行时间的 VIEW_SHARE
+# how often a running optimisation or a long script's progress updates the live view; a slow export (1–4.5 s on
+# OpticStudio) stretches the interval so that exporting takes at most VIEW_SHARE of the run
 VIEW_DURING_OPT_S = 5.0
+VIEW_SHARE = 0.1
 # 全局搜索与 rtc 的 Hammer 在镜头文件旁写出的系统（文件名模式；OpticStudio 的 Hammer 实测不写文件）
 # systems global search and rtc's Hammer write next to the lens file (OpticStudio's Hammer writes none, measured)
 SEARCH_FILES = {"hammer": "{stem}_*_HAMMER.zmx", "global": "GLOPT_*.zmx"}
@@ -53,13 +59,20 @@ SEARCH_FILES = {"hammer": "{stem}_*_HAMMER.zmx", "global": "GLOPT_*.zmx"}
 ROUND_REMINDER = {"opt": 2, "exec": 15}
 RUN_KINDS = {"opt.local": "opt", "opt.hammer": "opt", "opt.global": "opt", "script.exec": "exec", "scan.run": "scan"}
 COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
-# rtc 实例（SAOS_BACKEND=rtc）做需求阶段的可行性核算（ADR-0016）和设计阶段的变量、评价函数、优化、判定、扫描与轮次
-# （ADR-0017）；给用户看的建模说明页面、OpticStudio 窗口，以及交付前的复测要 OpticStudio
-# the rtc instance checks need-stage feasibility (ADR-0016) and runs the design stage (ADR-0017); the model page shown to
-# the user, OpticStudio's windows and the re-measurement before delivery need OpticStudio
+# rtc 做需求阶段的可行性核算（ADR-0016）和设计阶段的变量、评价函数、优化、判定、扫描与轮次（ADR-0017）；给用户看的
+# 建模说明页面、OpticStudio 窗口，以及交付前的复测要 OpticStudio
+# rtc checks need-stage feasibility (ADR-0016) and runs the design stage (ADR-0017); the model page shown to the user,
+# OpticStudio's windows and the re-measurement before delivery need OpticStudio
 OPTICSTUDIO_ONLY = frozenset({"lens.describe", "lens.view", "lens.screenshot", "lens.capture", "round.confirm"})
-# rtc 实例上不跑的扫描：公差分析属于交付，要在 OpticStudio 上做 / scans the rtc instance refuses: tolerancing belongs to delivery
+# 公差分析属于交付，要在 OpticStudio 上做 / tolerancing belongs to delivery and runs on OpticStudio
 OPTICSTUDIO_SCANS = ("tolerance",)
+# 一个后台进程持有两个后端时（ADR-0018）按流程阶段（saos.ui.stage）选后端 / with both backends, the workflow stage picks one
+STAGE_BACKENDS = {"interview": "rtc", "demand_confirm": "rtc", "modeling": "zos", "model_approve": "zos", "design": "rtc", "deliver": "zos"}
+# 不切换后端的操作：只读当前状态，或是切换前的准备（保存）/ ops that never switch: they read the current state or prepare a switch
+UNROUTED = frozenset({"ping", "shutdown", "daemon.use", "lens.import", "lens.unload", "lens.info", "lens.surfaces", "lens.save"})
+# 换上另一份镜头的操作：切换时不交接旧镜头，未保存修改按 lens load 的规则处理 / ops that replace the lens hand nothing over
+REPLACING = {"lens.load": "loading another lens", "lens.build": "building a new lens"}
+BACKEND_CHOICES = ("auto", "rtc", "zos")
 COMPARED_NUMBER_KEYS = ("radius", "thickness", "conic", "semi_diameter")
 
 
@@ -130,10 +143,29 @@ def compare_surfaces(before: list[dict[str, Any]], after: list[dict[str, Any]]) 
 
 
 class Daemon:
-    def __init__(self, backend: Backend, zos_info: dict[str, Any], mode: str):
-        self.zos = backend
+    def __init__(self, backend: Backend, zos_info: dict[str, Any], mode: str,
+                 start_zos: Callable[[], tuple[Backend, dict[str, Any]]] | None = None):
+        """backend 是启动时的后端。它是 rtc 且给了 start_zos 时，一个进程持有两个后端（ADR-0018）：第一次需要 OpticStudio
+        时调用 start_zos 启动它，之后一直开着；每个操作按流程阶段选后端，镜头随之交接。
+        backend is the backend started with. When it is rtc and start_zos is given, the daemon holds both (ADR-0018):
+        start_zos starts OpticStudio the first time it is needed, and it stays up; each op picks a backend by the
+        workflow stage and the lens is handed over."""
+        on_rtc = backend.identity().get("backend") == "rtc"
+        self.rtc: Backend | None = backend if on_rtc else None
+        self.zos: Backend | None = None if on_rtc else backend
         self.backend = backend
+        # 当前后端的身份与版本（状态文件、ping、流程图窗口用）/ the active backend's identity, for the state file, ping and the window
         self.zos_info = zos_info
+        self._start_zos = start_zos if on_rtc else None
+        self._zos_identity: dict[str, Any] | None = None if on_rtc else zos_info
+        # auto 按流程阶段选后端；rtc、zos 由 saos daemon use 固定 / auto picks by stage; rtc or zos is pinned by saos daemon use
+        self.preference = "auto"
+        # rtc 复现不了的镜头：(路径, 修改时间) → 原因，免得每个操作都重试 / lenses rtc refused, so ops do not retry each time
+        self._rtc_refused: dict[tuple[str, int], str] = {}
+        # 本次操作里发生的后端切换，附在结果里 / the backend switch made for the current op, attached to its result
+        self._switched: dict[str, Any] | None = None
+        # serve() 写状态文件时的固定部分（pid、令牌、管道地址等）/ the fixed part of the state file, set by serve()
+        self.state_base: dict[str, Any] | None = None
         self.mode = mode
         # 启动时加载的代码版本；实验记录每轮核对，防止不同后台进程运行不同版本
         self.code_sha256 = config.code_sha256()
@@ -147,10 +179,15 @@ class Daemon:
         # 分离运行的扫描线程，键为任务内的 scans/NNN / threads of detached scans, keyed by scans/NNN in the job
         self.background: dict[str, Any] = {}
         self.view_seq = 0
-        self.rtc_instance = backend.identity().get("backend") == "rtc"
+        self._view_at = 0.0
+        self._view_cost = 0.0
+        # 回复之后要做的刷新，由 idle() 执行 / the refresh due after the reply, done by idle()
+        self._after: dict[str, Any] | None = None
+        self.pool.select_backend(self.active)
         self.handlers: dict[str, Callable[[dict[str, Any]], Any]] = {
             "ping": self.op_ping,
             "shutdown": self.op_shutdown,
+            "daemon.use": self.op_use,
             "lens.import": self.op_import,
             "lens.load": self.op_load,
             "lens.unload": self.op_unload,
@@ -187,17 +224,18 @@ class Daemon:
         phases_before = timing.snapshot()
         error: SaosError | None = None
         result: Any = None
+        self._switched = None
         try:
             if not isinstance(args, dict):
                 raise SaosError(ErrorCode.BAD_ARGS, "args must be an object")
             handler = self.handlers.get(op)  # type: ignore[arg-type]
             if handler is None:
                 raise SaosError(ErrorCode.UNKNOWN_OP, f"unknown operation {op!r}", {"available": sorted(self.handlers)})
+            self._route(op, args)
             if op in OPTICSTUDIO_ONLY and self.rtc_instance:
                 raise SaosError(ErrorCode.BACKEND_UNSUPPORTED,
-                                f"{op} needs OpticStudio; this daemon is an rtc instance (need-stage feasibility and design rounds). "
-                                "Save the lens, run saos daemon stop, then saos daemon start (OpticStudio) on the same SAOS_INSTANCE, "
-                                "and load the saved lens there", {"backend": "rtc"})
+                                f"{op} needs OpticStudio; this daemon runs rtc only (saos daemon start --backend rtc). "
+                                "Save the lens, run saos daemon stop, then saos daemon start on the same SAOS_INSTANCE", {"backend": "rtc"})
             if op not in ("ping", "shutdown") and not self.backend.healthy():
                 raise self._connection_lost({"detected": "connection check before the operation"})
             if op not in ("ping", "shutdown"):
@@ -217,10 +255,6 @@ class Daemon:
             self._progress_start(op, args)
             with self.backend.activity(f"saos {op}", quiet):
                 result = handler(args)
-            if op in REFRESH_AFTER or op == "lens.describe":
-                self._refresh_windows(args)
-            if op in REFRESH_AFTER:
-                self.export_view()
         except SaosError as exc:
             error = exc
         except Exception as exc:  # noqa: BLE001 - 后台进程不能因单个请求崩溃
@@ -234,6 +268,13 @@ class Daemon:
             reminder = self._since_round(args)
             if reminder:
                 result["since_round"] = reminder
+        self._queue_refresh(op, args, result if error is None else None)
+        if self._switched is not None:
+            # 这次操作前切换了后端：结果里说明换到哪边、交接比对是否一致 / say which backend took over and whether the handover agreed
+            if error is not None:
+                error.details = {**(error.details or {}), "backend_switch": self._switched}
+            elif isinstance(result, dict):
+                result["backend_switch"] = self._switched
         return fail(error) if error else ok(result)
 
     def _since_round(self, args: dict[str, Any]) -> dict[str, Any] | None:
@@ -335,11 +376,84 @@ class Daemon:
                           "model_s": round(time.perf_counter() - described_at, 6)}
         self.view_seq += 1
         data.update(lens=loaded.job.relative_lens(loaded.path), dirty=loaded.dirty, updated=jobs.now_iso(), seq=self.view_seq,
-                    elapsed_s=round(time.perf_counter() - started, 3))
+                    view=self.view_token, elapsed_s=round(time.perf_counter() - started, 3))
         write_json(loaded.job.root / jobs.VIEW_FILE, data)
+        self._view_at, self._view_cost = time.monotonic(), data["elapsed_s"]
         clash = data.get("interference") or {}
         return {"elapsed_s": data["elapsed_s"], "timing": data["timing"], "ok": data["ok"],
                 "interference": {k: clash.get(k) for k in ("crossings", "overlaps")} if clash else None}
+
+    @property
+    def view_token(self) -> str:
+        """当前视图的版本，跨后台进程重启也不重复；指标按它判断是否过时 / the live view's version, unique across restarts"""
+        return f"{os.getpid()}-{self.view_seq}"
+
+    def view_tick(self, job: jobs.Job) -> None:
+        """长脚本报告进度时顺带刷新当前镜头视图（ctx.progress），间隔见 VIEW_DURING_OPT_S 与 VIEW_SHARE。
+        Refresh the live view when a long script reports progress (ctx.progress), spaced by VIEW_DURING_OPT_S and VIEW_SHARE."""
+        loaded = self.loaded
+        if loaded is None or loaded.job.id != job.id:
+            return
+        if time.monotonic() - self._view_at >= max(VIEW_DURING_OPT_S, self._view_cost / VIEW_SHARE):
+            self.export_view()
+
+    def _queue_refresh(self, op: Any, args: dict[str, Any], result: Any) -> None:
+        """记下回复之后要做的刷新：改了镜头（或换了后端）就重画窗口、重写 view.json、测指标；check 和 round 的结果直接当指标。
+        Note the refresh due after the reply: a changed lens (or backend) redraws the windows, rewrites view.json and
+        measures the metrics; a check or round result becomes the metrics as it is."""
+        loaded = self.loaded
+        if loaded is None or self.stopping or not isinstance(args, dict) or args.get("job") != loaded.job.id:
+            return
+        pending = self._after or {"args": args, "view": False, "windows": False, "relabel": False, "evaluation": None, "source": None}
+        changed = self._switched is not None or op not in VIEW_KEEPS
+        if changed:
+            pending.update(view=True, windows=True, evaluation=None)
+        if op == "lens.describe" and result is not None:
+            pending["windows"] = True
+        if op == "lens.save" and result is not None:
+            pending["relabel"] = True
+        if op in ("demand.check", "round.record") and isinstance(result, dict):
+            pending.update(evaluation=result.get("evaluation") if op == "round.record" else result, source=op.split(".")[1])
+        if pending["view"] or pending["windows"] or pending["relabel"] or pending["evaluation"] is not None:
+            self._after = {**pending, "args": args}
+
+    def idle(self) -> None:
+        """回复之后、读下一个请求之前（serve 循环里）：刷新窗口、重写 view.json，再记下或测量当前镜头的指标（ADR-0019）。
+        出错只记日志，下一个请求照常处理。
+        After the reply and before the next request (in the serve loop): refresh the windows, rewrite view.json, then
+        store or measure the live metrics (ADR-0019). Errors are only logged."""
+        pending, self._after = self._after, None
+        loaded = self.loaded
+        if pending is None or loaded is None or self.stopping or pending["args"].get("job") != loaded.job.id:
+            return
+        from saos import live
+
+        try:
+            if pending["windows"]:
+                self._refresh_windows(pending["args"])
+            if pending["view"]:
+                self.export_view()
+            elif pending["relabel"]:
+                self._relabel_view()
+            if os.environ.get("SAOS_VIEW") == "0":
+                return
+            if pending["evaluation"] is not None:
+                live.record(loaded.job, pending["evaluation"], view=self.view_token, source=pending["source"])
+            elif pending["view"]:
+                live.measure(self, loaded.job, self.view_token)
+        except Exception:  # noqa: BLE001 - 刷新只是给人看的 / the refresh is for people only
+            log.exception(_t("回复之后刷新当前镜头失败", "refreshing the live lens after the reply failed"))
+
+    def _relabel_view(self) -> None:
+        """保存只改文件名和未保存标记：改写 view.json 的这两项，不重算视图 / a save only changes the file name and the unsaved mark"""
+        loaded = self.loaded
+        path = loaded.job.root / jobs.VIEW_FILE
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        data.update(lens=loaded.job.relative_lens(loaded.path), dirty=loaded.dirty, updated=jobs.now_iso())
+        write_json(path, data)
 
     def _refresh_windows(self, args: dict[str, Any]) -> None:
         """改动镜头后刷新窗口；建模阶段还要保证 Lens Data 和布局窗口开着，被关掉的重新打开。"""
@@ -403,7 +517,157 @@ class Daemon:
         return job
 
     def close(self) -> None:
-        self.backend.close()
+        for backend in {id(b): b for b in (self.backend, self.rtc, self.zos) if b is not None}.values():
+            backend.close()
+
+    # ---- 两个后端（ADR-0018）/ both backends ----
+
+    @property
+    def active(self) -> str:
+        """当前后端：rtc、zos，只有一个后端时取它自己的名字（测试用的 fake）。/ rtc, zos, or the only backend's own name."""
+        if self.rtc is None:
+            return str(self.backend.identity().get("backend") or "zos")
+        return "rtc" if self.backend is self.rtc else "zos"
+
+    @property
+    def rtc_instance(self) -> bool:
+        """当前在 rtc 上，并且起不了 OpticStudio（saos daemon start --backend rtc）。/ on rtc with no OpticStudio to start."""
+        return self.backend is self.rtc and self.zos is None and self._start_zos is None
+
+    @property
+    def dual(self) -> bool:
+        return self.rtc is not None and (self.zos is not None or self._start_zos is not None)
+
+    def write_state(self) -> None:
+        """状态文件：serve() 给的固定部分，加上当前后端的身份；流程图窗口和 daemon status 读它。"""
+        if self.state_base is None:
+            return
+        write_json(config.daemon_state_file(), {**self.state_base, "opticstudio": self.zos_info,
+                                                "backends": {"active": self.active, "preference": self.preference,
+                                                             "dual": self.dual, "zos_started": self.zos is not None}})
+
+    def _ensure_zos(self) -> Backend:
+        if self.zos is None:
+            if self._start_zos is None:
+                raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, "this daemon runs rtc only (saos daemon start --backend rtc); "
+                                "restart it with saos daemon start to compute on OpticStudio", {"backend": "rtc"})
+            log.info(_t("按需启动 OpticStudio", "starting OpticStudio on demand"))
+            self.zos, info = self._start_zos()
+            self.window_unsaved = bool(info.get("initial_needs_save"))
+            self._zos_identity = info
+            if self.mode == "extension":
+                self.zos.show_windows()
+        return self.zos
+
+    def _wanted(self, op: str, args: dict[str, Any]) -> str | None:
+        """这个操作该在哪个后端上算；None 表示不切换。/ The backend this op should run on; None keeps the current one."""
+        if not self.dual or op in UNROUTED:
+            return None
+        if op in OPTICSTUDIO_ONLY or (op == "scan.run" and any(k in (args.get("plan") or {}) for k in OPTICSTUDIO_SCANS)):
+            return "zos"
+        if self.preference != "auto":
+            return self.preference
+        job_id = args.get("job")
+        if not isinstance(job_id, str):
+            return None
+        from saos.ui import stage
+
+        try:
+            current = stage.snapshot(jobs.get_job(job_id))["current"]
+        except SaosError:
+            return None
+        return STAGE_BACKENDS.get(current)
+
+    def _route(self, op: str, args: dict[str, Any]) -> None:
+        want = self._wanted(op, args)
+        if want is None or want == self.active:
+            return
+        if self.running_background():
+            raise SaosError(ErrorCode.BUSY, f"{op} computes on {want}, but detached scans still run on {self.active} "
+                            f"({', '.join(self.running_background())}); wait for them or cancel them (saos job cancel)",
+                            {"background": self.running_background()})
+        self._switch(want, op, args)
+
+    def _switch(self, want: str, op: str, args: dict[str, Any]) -> None:
+        """换到 want 后端。当前镜头没有未保存修改时由另一边从文件加载，两边逐值比对（saos.backend.handover）；rtc 复现不了的镜头
+        留在 OpticStudio 上算。换镜头的操作（REPLACING）不交接旧镜头。
+        Switch to the want backend. A lens without unsaved changes is loaded from its file by the other side and both are
+        compared value by value; a lens rtc cannot reproduce stays on OpticStudio. Ops that replace the lens hand nothing over."""
+        from saos.backend import handover
+
+        source = self.active
+        loaded = self.loaded
+        note: dict[str, Any] = {"from": source, "to": want}
+        if loaded is not None and op in REPLACING:
+            self._check_not_dirty(bool(args.get("discard", False)), REPLACING[op])
+        if want == "rtc" and op == "lens.load":
+            # 先试读：rtc 复现不了的镜头留在 OpticStudio 上加载 / try it first: a lens rtc cannot reproduce loads on OpticStudio
+            path = jobs.get_job(str(args.get("job"))).resolve_lens(_arg(args, "file", str), must_exist=True)
+            try:
+                self.rtc.load(path)
+            except SaosError as exc:
+                if exc.code != ErrorCode.BACKEND_UNSUPPORTED:
+                    raise
+                self._switched = {**note, "to": source, "stayed": exc.message}
+                return
+        if op in REPLACING:
+            self.loaded = None
+            loaded = None
+        if loaded is not None and loaded.dirty:
+            raise SaosError(ErrorCode.UNSAVED_CHANGES, f"{op} computes on {want} at this workflow stage, and the lens has unsaved "
+                            f"changes on {source}; save it first (saos lens save) so it can be handed over", loaded.describe())
+        if want == "rtc" and loaded is not None:
+            key = (str(loaded.path), loaded.path.stat().st_mtime_ns)
+            if key in self._rtc_refused:
+                self._switched = {**note, "to": source, "stayed": self._rtc_refused[key]}
+                return
+            try:
+                self.rtc.load(loaded.path)
+            except SaosError as exc:
+                if exc.code != ErrorCode.BACKEND_UNSUPPORTED:
+                    raise
+                # rtc 复现不了（反射镜、坐标断点等）：这份镜头继续在 OpticStudio 上算 / rtc cannot reproduce it: stay on OpticStudio
+                self._rtc_refused[key] = exc.message
+                self._switched = {**note, "to": source, "stayed": exc.message}
+                return
+            target = self.rtc
+        elif want == "rtc":
+            target = self.rtc
+        else:
+            target = self._ensure_zos()
+            if loaded is not None:
+                self.capture_window(loaded.job)
+                target.load(loaded.path)
+        self.backend = target
+        self.zos_info = target.identity() if target is self.rtc else (self._zos_identity or self.zos_info)
+        self.pool.select_backend(self.active)
+        if loaded is not None:
+            started = time.perf_counter()
+            try:
+                note["handover"] = handover.compare(self.rtc, self.zos)
+            except SaosError as exc:
+                # 比对只是证据：失败时照常切换，原因写进结果 / the comparison is evidence only: the switch stands, the reason is reported
+                self.rtc.handover = {"agrees": False, "mismatches": [f"comparison failed: {exc.message}"], "rays_agree": True, "rays": None}
+                note["handover"] = dict(self.rtc.handover)
+            note["handover"]["elapsed_s"] = round(time.perf_counter() - started, 3)
+        self._switched = note
+        self.write_state()
+        log.info(_t("后端 %s → %s（%s）", "backend %s -> %s (%s)"), source, want, op)
+
+    def op_use(self, args: dict[str, Any]) -> dict[str, Any]:
+        """固定或放开后端：auto 按流程阶段选，rtc、zos 固定（需要 OpticStudio 的操作仍在 OpticStudio 上算）。
+        Pin or release the backend: auto picks by workflow stage; rtc or zos pins it (ops that need OpticStudio still use it)."""
+        choice = _arg(args, "backend", str)
+        if choice not in BACKEND_CHOICES:
+            raise SaosError(ErrorCode.BAD_ARGS, f"backend must be one of {list(BACKEND_CHOICES)}, got {choice!r}")
+        if not self.dual and choice != "auto":
+            raise SaosError(ErrorCode.BAD_ARGS, f"this daemon holds {self.active} only; start it with saos daemon start for both backends")
+        self.preference = choice
+        if choice != "auto" and choice != self.active:
+            self._route("daemon.pin", {**args, "job": args.get("job")})
+        self.write_state()
+        return {"preference": self.preference, "active": self.active, "dual": self.dual, "zos_started": self.zos is not None,
+                **({"backend_switch": self._switched} if self._switched else {})}
 
     def _require_loaded(self, job: jobs.Job) -> Loaded:
         if self.loaded is None:
@@ -453,6 +717,7 @@ class Daemon:
             "started_at": datetime.fromtimestamp(self.started_at).astimezone().isoformat(timespec="seconds"),
             "uptime_s": round(time.time() - self.started_at, 1),
             "opticstudio": self.zos_info,
+            "backends": {"active": self.active, "preference": self.preference, "dual": self.dual, "zos_started": self.zos is not None},
             "backend_healthy": self.backend.healthy(),
             "loaded": self.loaded.describe() if self.loaded else None,
             "pool": self.pool.status(),
@@ -1017,7 +1282,7 @@ class Daemon:
         refused = [k for k in OPTICSTUDIO_SCANS if k in plan]
         if refused and self.rtc_instance:
             raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{refused[0]} scans run on OpticStudio (they belong to delivery); "
-                            "switch to an OpticStudio instance for them", {"backend": "rtc"})
+                            "this daemon runs rtc only, so restart it with saos daemon start", {"backend": "rtc"})
         # 结构探索的候选是各自的文件，不用当前镜头，所以不要求加载镜头 / exploration candidates are files of their own
         if "candidates" not in plan:
             self._require_loaded(job)
@@ -1096,10 +1361,28 @@ def serve(mode: str, token: str = "") -> int:
     error_file = ddir / "start_error.json"
     error_file.unlink(missing_ok=True)
 
-    backend = make_backend(mode)
-    log.info(_t("后台进程 %s 启动，后端 %s（%s）", "daemon %s starting, backend %s (%s)"), os.getpid(), config.backend_name(), mode)
+    name = config.backend_name()
+    log.info(_t("后台进程 %s 启动，后端 %s（%s）", "daemon %s starting, backend %s (%s)"), os.getpid(), name, mode)
+    start_zos = None
+    eager = None
     try:
-        zos_info = backend.start()
+        if name in ("auto", "zos"):
+            # 两个后端（ADR-0018）：rtc 立即可用，OpticStudio 第一次需要时启动；--backend zos 和显式调试模式在启动时就连上
+            # both backends: rtc at once, OpticStudio when first needed; --backend zos and extension mode connect at start
+            backend = make_backend("standalone", "rtc")
+            zos_info = backend.start()
+            if name == "zos" or mode == "extension":
+                zos = make_backend(mode, "zos")
+                eager = (zos, zos.start())
+
+            def start_zos():
+                if eager is not None:
+                    return eager
+                zos = make_backend(mode, "zos")
+                return zos, zos.start()
+        else:
+            backend = make_backend(mode, name)
+            zos_info = backend.start()
     except SaosError as exc:
         log.error(_t("启动失败：%s", "start failed: %s"), exc.message)
         write_json(error_file, exc.to_dict())
@@ -1115,28 +1398,27 @@ def serve(mode: str, token: str = "") -> int:
         listener = Listener(config.pipe_address(), family="AF_PIPE", authkey=authkey)
     except OSError as exc:
         backend.close()
+        if eager is not None:
+            eager[0].close()
         write_json(error_file, SaosError(ErrorCode.DAEMON_ALREADY_RUNNING, f"the named pipe is in use: {exc}").to_dict())
         return 1
 
     config.daemon_authkey_file().write_bytes(authkey)
     registry_entry = _register(mode)
-    daemon = Daemon(backend, zos_info, mode)
-    if mode == "extension":
+    daemon = Daemon(backend, zos_info, mode, start_zos)
+    if eager is not None:
+        try:
+            daemon._ensure_zos()
+        except Exception as exc:  # noqa: BLE001 - 窗口打不开不阻止连接，agent 可以再用 lens view
+            log.warning(_t("打开显性调试窗口失败：%s", "opening the explicit debugging windows failed: %s"), exc)
+    elif mode == "extension":
         try:
             zos_info["windows"] = backend.show_windows()
         except Exception as exc:  # noqa: BLE001 - 窗口打不开不阻止连接，agent 可以再用 lens view
             log.warning(_t("打开显性调试窗口失败：%s", "opening the explicit debugging windows failed: %s"), exc)
-    write_json(
-        config.daemon_state_file(),
-        {
-            "pid": os.getpid(),
-            "token": token,
-            "address": config.pipe_address(),
-            "mode": mode,
-            "started_at": datetime.now().astimezone().isoformat(timespec="seconds"),
-            "opticstudio": zos_info,
-        },
-    )
+    daemon.state_base = {"pid": os.getpid(), "token": token, "address": config.pipe_address(), "mode": mode,
+                         "started_at": datetime.now().astimezone().isoformat(timespec="seconds")}
+    daemon.write_state()
     log.info(_t("就绪：%s，%s %s", "ready: %s, %s %s"), config.pipe_address(), zos_info.get("backend", "zos"), zos_info.get("version"))
     try:
         while not daemon.stopping:
@@ -1151,6 +1433,8 @@ def serve(mode: str, token: str = "") -> int:
                 log.exception(_t("处理请求时出错", "error while handling a request"))
             finally:
                 conn.close()
+            # 回复已发出：调用方不等这一步；下一个请求在它之后处理 / the reply is out: the caller does not wait; the next request comes after
+            daemon.idle()
     finally:
         log.info(_t("正在退出", "shutting down"))
         daemon.pool.close()

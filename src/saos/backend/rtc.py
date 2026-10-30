@@ -142,6 +142,9 @@ class RtcBackend(Backend):
         self._media: dict = {}
         # 建立时 OpticStudio INDX 逐值确认过的 (材料描述, 波长)：未准入的材料路径只在这些点上可用
         self.confirmed: set = set()
+        # 与 OpticStudio 交接这份镜头时的逐值比对（saos.backend.handover），换镜头时清空
+        # the value-by-value comparison made when this lens was handed over with OpticStudio, cleared with the lens
+        self.handover: dict[str, Any] | None = None
         # 被求解锁住的参数：键 → 求解类型 / parameters held by a solve: key → solve type
         self.held: dict[str, str] = {}
         # standalone 时用到的未准入材料路径 / material paths outside the admitted table used by a standalone instance
@@ -177,16 +180,19 @@ class RtcBackend(Backend):
         from saos.backend import rtc_merit
 
         merit = rtc_merit.from_lens(lens)
-        previous = (self.lens, self.config, dict(self.held), set(self.unverified_paths))
+        previous = (self.lens, self.config, dict(self.held), set(self.unverified_paths), set(self.confirmed), self.handover)
         self.lens, self.config, self.held = lens, lens.current_config, {}
+        # INDX 确认的键不含环境，只对确认时的那份镜头有效 / INDX confirmations carry no environment: valid for their lens only
         self.unverified_paths.clear()
+        self.confirmed.clear()
+        self.handover = None
         self._systems.clear()
         try:
             self._check_lens()
             if self.standalone:
                 self._recompute()
         except BaseException:
-            self.lens, self.config, self.held, self.unverified_paths = previous
+            self.lens, self.config, self.held, self.unverified_paths, self.confirmed, self.handover = previous
             self._systems.clear()
             raise
         self.merit, self.material_vars = merit, {}
@@ -391,6 +397,20 @@ class RtcBackend(Backend):
             out.append(f"object space index {object_n} (rtc assumes air)")
         return out
 
+    def reconcile(self, model: dict[str, Any]) -> list[str]:
+        """rtc 实例与 OpticStudio 交接同一份镜头时（standalone）：与它的 describe_model(None) 逐项比较，返回不一致的条目，
+        不报错。INDX 一致的材料点记入 confirmed，各波长系统随之重建，未对账的材料路径相应减少。
+        On a handover of the same lens with OpticStudio (standalone): compare with its describe_model(None) and return
+        the mismatches without raising. Materials whose INDX agrees are confirmed, so the systems are rebuilt and fewer
+        material paths stay unverified."""
+        mismatches = self._compare(model)
+        self._systems.clear()
+        self.unverified_paths.clear()
+        problems = self._system_problems()
+        if problems:
+            raise _unsupported("rtc cannot reproduce this lens: " + "; ".join(problems), problems)
+        return mismatches
+
     def _confirm_indices(self, s, indices) -> list[str]:
         """一面的面后介质逐波长与 OpticStudio 的 INDX 比较；一致的 (材料, 波长) 记入 confirmed。
         rtc 算不了的材料不算不一致，留给 _system_problems 报 BACKEND_UNSUPPORTED。"""
@@ -530,6 +550,10 @@ class RtcBackend(Backend):
         if any("MAZH" in s.raw for s in lens.surfaces):
             out.append("paraxial marginal ray height solves")
         out += [f"material path {path}" for path in sorted(self.unverified_paths)]
+        if self.handover is not None and not self.handover["agrees"]:
+            out += [f"differs from OpticStudio at handover: {m}" for m in self.handover["mismatches"]]
+            if not self.handover["rays_agree"]:
+                out.append(f"traces differently from OpticStudio at handover: {self.handover['rays']}")
         return out
 
     def provenance(self) -> dict[str, Any]:
@@ -1414,13 +1438,11 @@ class RtcBackend(Backend):
             self.select_configuration(current)
         return geometry.merge_configurations(results)
 
-    def viz_data(self, folder: Path | None, *, fan: int = 7, full: bool = True, rays: bool = True,
-                 plots: frozenset[str] | None = None) -> dict[str, Any]:
+    def viz_data(self, folder: Path | None, *, fan: int = 7, full: bool = True, rays: bool = True) -> dict[str, Any]:
         """流程图窗口的数据，结构同 ZosBackend.viz_data：逐面几何、布局光线、Lens Data、交叠检查；full 时（每轮的 viz.json）
-        另有 plots 所选的点列图（spot）、光线扇图（fan）和 FFT MTF（mtf），plots 为 None 时全算。另带 backend 与 unverified，
-        窗口据此标明数值来自 rtc。
-        Data for the workflow window shaped like ZosBackend.viz_data; with full also the spot, ray fan and FFT MTF chosen
-        by plots (all when None). backend and unverified tell the window the numbers come from rtc."""
+        另有点列图（spot）、光线扇图（fan）和 FFT MTF（mtf）。另带 backend 与 unverified，窗口据此标明数值来自 rtc。
+        Data for the workflow window shaped like ZosBackend.viz_data; with full also the spot, ray fan and FFT MTF.
+        backend and unverified tell the window the numbers come from rtc."""
         from rtc.trace import trace
 
         from saos import geometry
@@ -1503,10 +1525,7 @@ class RtcBackend(Backend):
         }
         if not full:
             return out
-        for tab, key, make in (("spot", "spot", lambda: self._spot_plot(norm)), ("fan", "ray_fan", lambda: self._fan_plot(norm)),
-                               ("mtf", "mtf", lambda: self._mtf_plot(errors))):
-            if plots is not None and tab not in plots:
-                continue
+        for key, make in (("spot", lambda: self._spot_plot(norm)), ("ray_fan", lambda: self._fan_plot(norm)), ("mtf", lambda: self._mtf_plot(errors))):
             started = time.monotonic()
             try:
                 out[key] = make()

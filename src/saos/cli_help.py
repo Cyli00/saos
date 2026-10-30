@@ -49,10 +49,12 @@ Environment
   SAOS_LANG: zh/en for human outputs; command help/errors always English.
   SAOS_UI=0: disable automatic workflow windows. SAOS_UI_LIVE=1: live extension
     updates (slower); long operations normally refresh once at completion.
+  SAOS_LIVE_S: seconds the daemon spends measuring the live metrics after each
+    lens change (default 3; 0 off).
   SAOS_UI_PID: select an OpticStudio window for extension mode when several exist.
   SAOS_POOL_IDLE_S: worker idle lifetime, default 600 seconds.
-  SAOS_OPTICSTUDIO_DIR: OpticStudio installation; SAOS_BACKEND=rtc for an rtc instance (need stage and design rounds)
-    (same as daemon start --backend rtc), fake for tool tests; SAOS_GLASSCAT: AGF folder for rtc,
+  SAOS_OPTICSTUDIO_DIR: OpticStudio installation; SAOS_BACKEND: auto (default), zos or rtc as
+    daemon start --backend, fake for tool tests; SAOS_GLASSCAT: AGF folder for rtc,
     default Documents/Zemax/Glasscat;
     SAOS_LIBRARY: microscope starting-design library, default <repo>/library/microscope.
 
@@ -63,7 +65,7 @@ Help
 """
 
 GROUPS = {
-    "daemon": 'Control the per-instance daemon holding the OpticStudio connection.\nStart defaults to standalone. Extension attaches to a user window and leaves it\nopen on exit. Jobs and daemon state use SAOS_INSTANCE (or SAOS_HOME).\n',
+    "daemon": 'Control the per-instance daemon holding rtc and the OpticStudio connection.\nStart defaults to standalone. Extension attaches to a user window and leaves it\nopen on exit. Jobs and daemon state use SAOS_INSTANCE (or SAOS_HOME).\n',
     "job": """Manage local job directories without contacting OpticStudio.
 Jobs live in work/<instance>/jobs/<job>. show, cancel and verify read/write job
 files directly and remain available while the daemon is busy.
@@ -98,7 +100,13 @@ always opens it. Gate windows restore/raise without taking keyboard focus.
 }
 
 COMMANDS = {
-    "daemon start": ('Start the daemon and wait for an OpticStudio connection (2024 R1 Premium).', 'standalone creates a private instance. extension uses UI Automation to open/reuse\n  Interactive Extension, disable Auto Close on Disconnect and read its instance.\n  It refuses a window connected elsewhere; use SAOS_UI_PID for multiple windows.\n  Startup errors include details.log_tail. Background logs: daemon/daemon.log;\n  startup creates no console window. Typical cold instance startup: 6-8 s.\n  --backend rtc starts an rtc instance instead: no OpticStudio or licence. It\n  serves need-stage feasibility and design rounds (vary, merit, opt\n  local/hammer/global, check, scan, round; analysis FftMtf only). lens describe,\n  view, screenshot, capture, round --confirm and tolerance scans return\n  BACKEND_UNSUPPORTED; rtc rounds are re-measured on OpticStudio with\n  saos round --confirm before saos report.', 'DAEMON_ALREADY_RUNNING, DAEMON_START_FAILED, DAEMON_TIMEOUT, UI_BLOCKED, ZOS_LICENSE, ZOS_VERSION_MISMATCH, ZOS_ERROR'),
+    "daemon start": ('Start the daemon with rtc and OpticStudio (2024 R1 Premium) as its two backends.', 'Each command runs on the backend of its job\'s workflow stage (ADR-0018): rtc\n  for the interview, demand confirmation and design rounds; OpticStudio for\n  modelling, model approval and delivery, and always for lens describe, view,\n  screenshot, capture, round --confirm and tolerance scans. OpticStudio starts\n  the first time a command needs it (cold start 6-8 s) and stays up until the\n  daemon stops. A switch hands the loaded lens over through its file: unsaved\n  changes are refused (UNSAVED_CHANGES), then both sides are compared value by\n  value; results carry backend_switch (handover.agrees, mismatches, rays, or\n  stayed when rtc cannot reproduce the lens). Differences stay on the lens as\n  unverified provenance. saos daemon use pins a backend.\n  --backend auto (default, or SAOS_BACKEND) as above; zos connects OpticStudio at\n  start; rtc runs rtc only, without OpticStudio or licence, and refuses its\n  commands with BACKEND_UNSUPPORTED. standalone creates a private OpticStudio\n  instance. extension uses UI Automation to open/reuse Interactive Extension,\n  disable Auto Close on Disconnect and read its instance, and connects at start.\n  It refuses a window connected elsewhere; use SAOS_UI_PID for multiple windows.\n  Startup errors include details.log_tail. Background logs: daemon/daemon.log;\n  startup creates no console window.', 'DAEMON_ALREADY_RUNNING, DAEMON_START_FAILED, DAEMON_TIMEOUT, UI_BLOCKED, ZOS_LICENSE, ZOS_VERSION_MISMATCH, ZOS_ERROR'),
+    "daemon use": (
+        "Pin the backend commands run on, or return to the workflow stage's choice.",
+        "auto: by the job's workflow stage. rtc or zos: every command runs there, except\n"
+        "  that commands needing OpticStudio still use it. With --job, the loaded lens is\n"
+        "  handed over now (unsaved changes refused) and the result has backend_switch.\n"
+        "  Refused on an rtc-only daemon.", "BAD_ARGS, UNSAVED_CHANGES, BUSY, ZOS_LICENSE"),
     "daemon stop": (
         "Stop this daemon; wait for it and its private OpticStudio process to exit.",
         "Unsaved agent edits require --discard. A detached scan must finish or be\n"
@@ -330,16 +338,18 @@ COMMANDS.update({
     "ui open": (
         "Start the local workflow service if needed and open the user's job window.",
         "--tabs a,b,... picks and orders the top tabs (layout, spot, fan, field, mtf,\n"
-        "  detectors, metrics, rounds, starts); --metrics id,... names demand items the\n"
-        "  Metrics tab plots per round (unknown ids are refused when the demand exists).\n"
-        "  Both are stored as ui in the job's state.json and apply to every later window;\n"
-        "  --reset forgets them. Tabs that do not apply (detectors in a sequential system,\n"
-        "  starts before generation) are skipped. OpticStudio round exports compute only\n"
-        "  the chosen spot/fan/field/mtf plots. --tab ID opens on that tab.\n"
+        "  detectors, metrics, rounds, starts); --metrics id,... picks and orders the\n"
+        "  demand items of the Metrics tab (default every checked item; unknown ids are\n"
+        "  refused when the demand exists). Both are stored as ui in the job's state.json\n"
+        "  and apply to every later window; --reset forgets them. Tabs that do not apply\n"
+        "  (detectors in a sequential system, starts before generation) are skipped;\n"
+        "  rounds export every plot whatever the tabs. --tab ID opens on that tab.\n"
         "  --no-window starts only the service and returns its URL. Normally uses a\n"
         "  1080x720 Chrome app window, falling back to the default browser; window is\n"
         "  chrome-app/browser/raised. Six steps show gates/blockers; current geometry,\n"
-        "  Lens Data and interference use view.json; archived spot/fan/field/MTF use\n"
+        "  Lens Data and interference use view.json; the live merit and item values use\n"
+        "  metrics.json, both rewritten by the daemon after every lens change (after its\n"
+        "  reply; SAOS_LIVE_S bounds the measuring); archived spot/fan/field/MTF use\n"
         "  viz.json; Starts lists generated starts, predictions and screening.\n"
         "  URL &ld=1 expands Lens Data. 2D uses the system symmetry plane (section in\n"
         "  geometry); systems without a common plane offer 3D only.\n"
@@ -428,9 +438,10 @@ Context and file operations
   ctx.load(name), ctx.save_as(name, overwrite=False): names relative to lenses/.
   ctx.capture_window(): preserve unsaved extension content before direct window
     replacement. ctx.load also captures automatically; result.captured lists copies.
-  ctx.show(): push geometry/Lens Data/interference to the workflow window at a
-    useful intermediate state; every command also pushes a final view.
-  ctx.progress(stage, **numbers): report progress; True means cancellation requested.
+  ctx.show(): push geometry/Lens Data/interference to the workflow window now;
+    ctx.progress and the end of every command push it on their own.
+  ctx.progress(stage, **numbers): report progress and refresh the window's current
+    lens now and then; True means cancellation requested.
   ctx.cancel_requested(): check cancellation without reporting. Long scripts must
     stop at safe points and retain completed work after uv run saos job cancel J.
 

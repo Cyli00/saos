@@ -734,13 +734,14 @@ def _prepared(root: Path) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     return hit[1], hit[2]
 
 
-def quick(ctx, ids: list[str] | None = None) -> dict[str, Any]:
+def quick(ctx, ids: list[str] | None = None, *, deadline: float | None = None) -> dict[str, Any]:
     """按需求单的判定测当前镜头，不存证据、不进 evaluations/：给 exec 脚本和并发 worker 的改镜头—测量循环用，
     与 check、round 同一套定义。ids 省略时测所有进 G 的项（带界限或越小/越大越好）。shortfall 只含所测各项；invalid 是给不出有效值的项，
     errors 是判定本身出错的项。
     Measure the current lens with the demand's checks without evidence or evaluations/: for change–measure loops in exec
     scripts and parallel workers, with the same definitions as check and round. Without ids, every item that enters G.
-    shortfall covers the measured items only; invalid lists items with no valid value, errors items whose check failed."""
+    shortfall covers the measured items only; invalid lists items with no valid value, errors items whose check failed.
+    deadline (time.monotonic) stops before the next item once passed; the items left are in skipped."""
     import shutil
     import tempfile
 
@@ -758,13 +759,20 @@ def quick(ctx, ids: list[str] | None = None) -> dict[str, Any]:
     error_kinds: dict[str, str] = {}
     gaps: dict[str, float] = {}
     pursued: dict[str, float] = {}
+    durations: dict[str, float] = {}
+    skipped: list[str] = []
     total = 0.0
     try:
         for item_id in wanted:
+            if deadline is not None and time.monotonic() >= deadline:
+                skipped.append(item_id)
+                continue
             spec = specs[item_id]
             sub = folder / item_id
             sub.mkdir()
+            started = time.monotonic()
             measured = measure(shared, spec, sub, scripts)
+            durations[item_id] = round(time.monotonic() - started, 3)
             values[item_id] = measured["value"]
             if measured.get("error"):
                 errors[item_id] = measured["error"]
@@ -779,4 +787,5 @@ def quick(ctx, ids: list[str] | None = None) -> dict[str, Any]:
         shutil.rmtree(folder, ignore_errors=True)
     return {"values": values, "shortfall": total, "gaps": gaps, "pursuit": pursued,
             "hard_failing": [i for i, g in gaps.items() if specs[i]["kind"] in HARD_KINDS and g > 0],
-            "invalid": [i for i, v in values.items() if v is None and i not in errors], "errors": errors, "error_kinds": error_kinds}
+            "invalid": [i for i, v in values.items() if v is None and i not in errors], "errors": errors, "error_kinds": error_kinds,
+            "durations": durations, "skipped": skipped}

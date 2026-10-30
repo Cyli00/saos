@@ -203,10 +203,8 @@ def export_viz(ctx, evidence_dir: str) -> dict[str, Any]:
     exports in viz/. Runs after the round is in the ledger: a failure is noted, never undoes the round."""
     folder = ctx.job.root / evidence_dir
     started = time.monotonic()
-    from saos import ui
-
     try:
-        data = {"ok": True, **ctx.backend.viz_data(folder / "viz", plots=ui.round_plots(ctx.job))}
+        data = {"ok": True, **ctx.backend.viz_data(folder / "viz")}
     except Exception as exc:  # noqa: BLE001 - 界面数据缺失不影响轮次
         data = {"ok": False, "error": f"{type(exc).__name__}: {getattr(exc, 'message', exc)}"}
     data["elapsed_s"] = round(time.monotonic() - started, 2)
@@ -377,7 +375,7 @@ def confirm_round(ctx, of: int | None = None, viz: bool = True) -> dict[str, Any
     numbers into that round. Without of, the round a report would deliver. agrees is False when the verdict (achieved,
     hard limits, deliverable) differs from rtc's, which sends the job back to design. daemon.op_confirm handles unsaved changes and reloads the lens."""
     if ctx.backend.identity().get("backend") == "rtc":
-        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, "round --confirm re-measures on OpticStudio; run it on an OpticStudio instance")
+        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, "round --confirm re-measures on OpticStudio; this daemon runs rtc only, so restart it with saos daemon start")
     h, sha, confirmation = preflight(ctx.job.root)
     scripts = demand.prepare_scripts(ctx.job.root, h)
     method_sha = demand.method_digest(scripts)

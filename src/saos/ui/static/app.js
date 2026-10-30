@@ -21,7 +21,8 @@ const TEXT = {
     report_ready: "报告已生成", report_todo: "待生成报告", deliver_cmd: "saos scan（公差，按需）· saos report",
     back_demand: "需求变更", back_model: "结构或计算前提改变", back_reach: "结构不可达", feasibility: "质疑结构 · 核算界限", feasibility_rtc: "rtc 核算 · 不占许可", feasibility_written: "可行性记录已写",
     explicit: "显式调试 · Interactive Extension", standalone: "后台运行 · standalone", rtc_instance: "rtc 实例 · 需求与设计阶段，不占许可", no_daemon: "后台进程未运行",
-    rtc_switch: "当前后台进程是 rtc 实例，服务需求与设计阶段；建模说明、确认和交付（复测、报告）换成 OpticStudio 实例：存盘后 saos daemon stop，再 saos daemon start。",
+    rtc_dual: (started) => `rtc 计算 · OpticStudio ${started ? "待命" : "未启动"}`,
+    rtc_switch: "后台进程只有 rtc（daemon start --backend rtc）；建模说明、确认和交付需要 OpticStudio：存盘后 saos daemon stop，再 saos daemon start。",
     tab_control: "窗口控制", tab_layout: "布局", tab_spot: "点列图", tab_mtf: "MTF", tab_rounds: "轮次",
     blocking: "blocking 待确认问题：",
     viewer: "布局窗口", viewer_p: "切换 OpticStudio 的布局窗口。剖面图画不了的系统（非轴对称、非序列）会自动改用 3D Viewer。",
@@ -67,9 +68,11 @@ const TEXT = {
     st_screen: "零优化初筛", st_short: (s) => `同预算短优化 · ${s} s`, st_running: "运行中", st_verdict: { valid: "有效", invalid: "预算内无效", material: "未评估：材料", computation: "未评估：计算" },
     st_g: "G 起点 → 终点", st_warn: "数值警告", st_page: "比较页", st_foot: "只读 explore/starts 与 scans 中已有文件；预判由 OpticStudio 的操作数和原生分析给出，不是优化结论。",
     hover_row: "指向表格一行，布局中高亮对应的面",
-    tab_metrics: "指标", metrics_none: "还没有记录轮次；记下轮次后，这里按轮显示所选需求条目的测量值。",
-    metric_missing: "需求单里已没有这一条", metric_bound: "界限", metric_no_value: "无有效值",
-    metrics_foot: "数值取自每轮账本记录的测量值（与 saos round 的判定同一来源）；虚线为需求单的界限。条目由 saos ui open --metrics 选定。",
+    tab_metrics: "指标", metrics_none: "需求单里还没有带判定方法的条目。",
+    metric_missing: "需求单里已没有这一条", metric_bound: "界限", metric_no_value: "无有效值", merit: "评价函数",
+    metric_stale: "镜头改动之前的值", metric_slow: "单项超过自动测量的时限，取 saos check 或 round 的值", metric_pending: "等待测量",
+    metric_src: { live: "自动", check: "check", round: "轮次" },
+    metrics_foot: "“当前镜头”一行由后台进程在每次改动镜头后自动测量（每次限时 SAOS_LIVE_S 秒，默认 3 秒；超时的项取 saos check 或 round 的值），灰色为镜头改动之前的值；其余行是每轮账本记录的测量值，虚线为需求单的界限。saos ui open --metrics 可以改选和排序条目。",
   },
   en: {
     interview: "Interview & feasibility", demand_confirm: "Confirm demand", modeling: "Start designs & model", model_approve: "Approve model", design: "Autonomous design", deliver: "Delivery report",
@@ -85,7 +88,8 @@ const TEXT = {
     report_ready: "report written", report_todo: "report pending", deliver_cmd: "saos scan (tolerance, if needed) · saos report",
     back_demand: "demand change", back_model: "revise model", back_reach: "unreachable", feasibility: "question · check bounds", feasibility_rtc: "rtc checks · no licence", feasibility_written: "feasibility recorded",
     explicit: "Explicit · Interactive Extension", standalone: "Background · standalone", rtc_instance: "rtc instance · need and design stages, no licence", no_daemon: "daemon not running",
-    rtc_switch: "The daemon is an rtc instance, which serves the need and design stages; model descriptions, approval and delivery (re-measurement, report) need an OpticStudio instance: save, saos daemon stop, then saos daemon start.",
+    rtc_dual: (started) => `rtc · OpticStudio ${started ? "standing by" : "not started"}`,
+    rtc_switch: "The daemon holds rtc only (daemon start --backend rtc); model descriptions, approval and delivery need OpticStudio: save, saos daemon stop, then saos daemon start.",
     tab_control: "Window controls", tab_layout: "Layout", tab_spot: "Spot Diagram", tab_mtf: "MTF", tab_rounds: "Rounds",
     blocking: "Blocking questions:",
     viewer: "Layout window", viewer_p: "Switch OpticStudio's layout window. Systems the cross-section cannot draw (non-axial, non-sequential) get the 3D Viewer.",
@@ -131,9 +135,11 @@ const TEXT = {
     st_screen: "Zero-optimisation screening", st_short: (s) => `Equal short budget · ${s} s`, st_running: "running", st_verdict: { valid: "valid", invalid: "invalid within budget", material: "not evaluated: material", computation: "not evaluated: computation" },
     st_g: "G start → end", st_warn: "Numeric warnings", st_page: "Comparison page", st_foot: "Reads existing files in explore/starts and scans only; predictions come from OpticStudio operands and native analyses, not from optimisation.",
     hover_row: "Point at a row to highlight its surface in the layout",
-    tab_metrics: "Metrics", metrics_none: "No rounds yet; once rounds are recorded, this shows the chosen demand items' measured values per round.",
-    metric_missing: "no longer in the demand", metric_bound: "Bound", metric_no_value: "no valid value",
-    metrics_foot: "Values are each round's measured values from the ledger (the same source as saos round's checks); dashed lines are the demand's bounds. Items are chosen with saos ui open --metrics.",
+    tab_metrics: "Metrics", metrics_none: "The demand has no checked items yet.",
+    metric_missing: "no longer in the demand", metric_bound: "Bound", metric_no_value: "no valid value", merit: "Merit",
+    metric_stale: "from before the last lens change", metric_slow: "slower than the live time limit; value from saos check or round", metric_pending: "not measured yet",
+    metric_src: { live: "live", check: "check", round: "round" },
+    metrics_foot: "The current-lens row is measured by the daemon after every lens change (limited to SAOS_LIVE_S seconds, 3 by default; items that do not fit take the value from saos check or round); grey values are from before the last change. The other rows are each round's ledger values; dashed lines are the demand's bounds. saos ui open --metrics picks and orders the items.",
   },
 };
 const ANALYSIS_NAMES = {
@@ -166,6 +172,7 @@ let pinnedRound = null;
 let roundShown = null;
 let viz = null;
 let liveSeen = null;
+let metricsSeen = null;
 let lensDataOpen = Q.get("ld") === "1";
 let dim = Q.get("dim") === "2d" ? "2d" : "3d";
 let analyses = null;
@@ -352,8 +359,9 @@ function renderFlow() {
   const note = $("flow-note");
   note.innerHTML = state.blocking.length ? `<div class="q"><b>${esc(t("blocking"))}</b><br>${state.blocking.map(esc).join("<br>")}</div>` : "";
   if (state.model_evidence?.length) note.innerHTML += `<div class="q"><b>${esc(t("model_evidence"))}</b><br>${state.model_evidence.map((p) => esc(`${p.path}: ${p.code}`)).join("<br>")}</div>`;
-  // rtc 实例服务需求与设计阶段（ADR-0016、0017）；建模、确认和交付提示换成 OpticStudio 实例 / modelling, approval and delivery need OpticStudio
-  if (state.daemon.running && state.daemon.backend === "rtc" && ["modeling", "model_approve", "deliver"].includes(state.current)) {
+  // 只有 rtc 的后台进程（--backend rtc）：建模、确认和交付要换成带 OpticStudio 的；两个后端都有时它自己切换（ADR-0018）
+  // an rtc-only daemon: modelling, approval and delivery need one with OpticStudio; a daemon holding both switches by itself
+  if (state.daemon.running && state.daemon.backend === "rtc" && !state.daemon.dual && ["modeling", "model_approve", "deliver"].includes(state.current)) {
     note.innerHTML += `<div class="q">${esc(t("rtc_switch"))}</div>`;
   }
 }
@@ -368,7 +376,8 @@ function renderTop() {
   const chip = $("mode-chip");
   const mode = state.daemon.running ? state.daemon.mode : null;
   const rtc = mode && state.daemon.backend === "rtc";
-  chip.textContent = mode === "extension" ? t("explicit") : rtc ? t("rtc_instance") : mode ? t("standalone") : t("no_daemon");
+  chip.textContent = rtc ? (state.daemon.dual ? t("rtc_dual", state.daemon.zos_started) : t("rtc_instance"))
+    : mode === "extension" ? t("explicit") : mode ? t("standalone") : t("no_daemon");
   chip.className = "chip" + (mode === "extension" ? " explicit" : rtc ? " rtc" : "");
   const run = $("run-chip");
   if (state.progress) {
@@ -377,6 +386,14 @@ function renderTop() {
     const detail = state.progress.detail ? ` ${state.progress.detail}` : "";
     $("run-text").textContent = `${state.progress.op}${detail} · ${fmtDuration((Date.now() - started) / 1000)}`;
   } else run.hidden = true;
+  // 当前镜头的评价函数和目标差距，后台进程自动更新 / the live merit and shortfall, updated by the daemon
+  const m = state.metrics, mc = $("metric-chip");
+  const parts = m ? [m.merit != null ? `${t("merit")} ${fmtG(m.merit)}` : "", m.shortfall ? `G ${fmtG(m.shortfall.value)}` : ""].filter(Boolean) : [];
+  mc.hidden = !parts.length;
+  if (parts.length) {
+    mc.textContent = parts.join(" · ");
+    mc.classList.toggle("stale", !!state.progress || (m.shortfall && m.shortfall.view !== m.view));
+  }
 }
 
 // ---------------- 面板与标签 ----------------
@@ -387,10 +404,10 @@ const vizRounds = () => (state?.rounds || []).filter((r) => r.viz);
 function renderTabs() {
   const list = [];
   if (explicit()) list.push("control");
-  // 非序列系统没有点列图和 MTF，换成探测器读数；起点页只在生成过起点后出现；指标页要先用 --metrics 选条目
-  // a non-sequential system has detectors instead of spot and MTF; starts appear once generated; metrics need --metrics
+  // 非序列系统没有点列图和 MTF，换成探测器读数；起点页只在生成过起点后出现；指标页要需求单里有带判定方法的条目
+  // a non-sequential system has detectors instead of spot and MTF; starts appear once generated; metrics need checked demand items
   const hasStarts = !!state?.steps?.find((s) => s.id === "modeling")?.detail?.starts;
-  const hasMetrics = !!state?.ui?.metrics?.length;
+  const hasMetrics = !!state?.metric_items?.length;
   const applies = (k) => k === "layout" || k === "rounds" || (k === "detectors" ? isNsc() : ["spot", "fan", "field", "mtf"].includes(k) ? !isNsc()
     : k === "starts" ? hasStarts : k === "metrics" ? hasMetrics : false);
   // agent 用 saos ui open --tabs 为这类系统选的标签页和顺序；没选时用默认顺序 / tabs the agent chose for this kind of system, else the default
@@ -754,19 +771,33 @@ function renderField(view) {
 // ---------------- 指标（按轮次）----------------
 
 function renderMetrics(view) {
-  const items = state.metric_items || (state.ui?.metrics || []).map((id) => ({ id }));
-  const rounds = (state.rounds || []).filter((r) => r.values);
-  if (!rounds.length) { view.innerHTML = `<div class="empty">${esc(t("metrics_none"))}</div>`; return; }
+  const items = state.metric_items || [];
+  const rounds = state.rounds || [];
+  if (!items.length) { view.innerHTML = `<div class="empty">${esc(t("metrics_none"))}</div>`; return; }
+  // 当前镜头的值：镜头改过（视图版本不同）或有操作在跑时标为过时 / live values: stale after a lens change or while an op runs
+  metricsSeen = JSON.stringify([state.metrics, state.metric_items, !!state.progress]);
+  const live = state.metrics || { items: {} };
+  const slow = new Set(live.slow || []);
+  const now = (id) => {
+    const e = live.items?.[id];
+    if (!e) return `<span class="stale" title="${esc(t("metric_pending"))}">–</span>`;
+    const stale = e.view !== live.view || !!state.progress;
+    const why = [stale ? t("metric_stale") : "", slow.has(id) ? t("metric_slow") : "", t("metric_src")[e.source] || e.source, e.error || ""].filter(Boolean).join(" · ");
+    const text = e.value == null ? t("metric_no_value") : sig(e.value, 5);
+    return `<span class="${stale ? "stale" : ""}" title="${esc(why)}">${esc(text)}${e.gap > 0 ? ` <span class="tag warn">${esc(fmtG(e.gap))}</span>` : e.gap === 0 ? ` <span class="tag ok">✓</span>` : ""}</span>`;
+  };
   const bounds = (b) => (!b ? [] : "equals" in b ? [b.equals] : [b.min, b.max].filter((v) => v != null));
   const boundText = (b) => (!b ? "" : "equals" in b ? `= ${sig(b.equals, 4)}${b.tol ? ` ± ${sig(b.tol, 3)}` : ""}` : [b.min != null ? `≥ ${sig(b.min, 4)}` : "", b.max != null ? `≤ ${sig(b.max, 4)}` : ""].filter(Boolean).join(" · "));
   view.innerHTML = `<div class="metric-grid">${items.map((m, k) => `<div class="card"><h3>${esc(m.id)}${m.unit ? ` <small>${esc(m.unit)}</small>` : ""}</h3>
       <p>${esc(m.missing ? t("metric_missing") : m.description || "")}${m.bound ? ` · ${esc(t("metric_bound"))} ${esc(boundText(m.bound))}` : ""}${m.direction ? ` · ${esc(m.direction)}` : ""}</p>
-      <div id="metric-plot-${k}"></div></div>`).join("")}</div>
+      <div class="metric-now">${now(m.id)}</div><div id="metric-plot-${k}"></div></div>`).join("")}</div>
     <div class="table-wrap"><table><tr><th>${esc(t("round"))}</th>${items.map((m) => `<th class="num">${esc(m.id)}</th>`).join("")}</tr>
+      <tr><td>${esc(t("live"))}</td>${items.map((m) => `<td class="num">${now(m.id)}</td>`).join("")}</tr>
       ${rounds.slice().reverse().map((r) => `<tr><td>${t("select_round", r.round)}</td>${items.map((m) => `<td class="num">${r.values[m.id] == null ? esc(t("metric_no_value")) : sig(r.values[m.id], 5)}</td>`).join("")}</tr>`).join("")}</table></div>
     <div class="foot">${esc(t("metrics_foot"))}</div>`;
   items.forEach((m, k) => {
     const host = $(`metric-plot-${k}`);
+    if (!rounds.some((r) => r.values[m.id] != null)) return;
     const xs = rounds.map((r) => r.round), ys = rounds.map((r) => r.values[m.id]);
     const lines = bounds(m.bound);
     const [lo, hi] = extent([...ys, ...lines]), padY = (hi - lo) * 0.08 || Math.abs(hi) * 0.05 || 1;
@@ -1479,7 +1510,8 @@ async function poll() {
       renderFlow();
       renderTabs();
       const liveChanged = tab === "layout" && roundShown === "live" && next.live !== liveSeen;
-      if ((roundsChanged || liveChanged || startsChanged) && tab !== "control") renderView();
+      const metricsChanged = tab === "metrics" && metricsSeen !== JSON.stringify([next.metrics, next.metric_items, !!next.progress]);
+      if ((roundsChanged || liveChanged || startsChanged || metricsChanged) && tab !== "control") renderView();
       if (modeChanged) { analyses = null; renderView(); }
     }
     renderTop();

@@ -40,6 +40,8 @@ SEALS_FILE = "seals.jsonl"
 PROGRESS_FILE = "progress.json"
 # 当前镜头的布局、Lens Data 和交叠检查，每次改动镜头后由后台进程重写，给 saos ui 显示 / the live view for saos ui
 VIEW_FILE = "view.json"
+# 当前镜头的评价函数值和需求各项的值，后台进程在回复之后自动测（saos.live）/ the live metrics, measured by the daemon after replying
+METRICS_FILE = "metrics.json"
 CANCEL_FILE = "cancel.request"
 # lenses/ 下的归档目录：工具写入一次，之后不再改 / archive folders under lenses/: written once by the tools
 ARCHIVE_LENS_DIRS = ("rounds", "captures")

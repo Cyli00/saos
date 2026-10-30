@@ -390,7 +390,8 @@ def dispatch(pool: Pool, job: jobs.Job, lens: Path | None, fn: str, script: Path
     main instance, so a detached scan can run it in a thread."""
     started = time.perf_counter()
     progress(f"parallel: starting {count} workers")
-    pool.select_backend(backend_for(job))
+    # worker 的后端跟着后台进程当前的后端走，由 daemon 切换时设定（ADR-0018）/ workers follow the daemon's active backend
+    jobs.require_zos_history(job.root)
     startup = pool.ensure(count)
     active = [w for w in pool.workers if w.alive][:count]
     temp = Path(tempfile.mkdtemp(prefix="saos-parallel-"))

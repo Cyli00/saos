@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: accepted; 第 1 条的刷新时机由 ADR-0019 修订
 ---
 
 # 建模过程在流程图窗口里看，不再强制 extension

@@ -83,7 +83,7 @@ def opticstudio_dir() -> str:
 
 
 def backend_name() -> str:
-    return os.environ.get("SAOS_BACKEND", "zos").strip().lower()
+    return os.environ.get("SAOS_BACKEND", "auto").strip().lower()
 
 
 def glass_dir() -> Path | None:
