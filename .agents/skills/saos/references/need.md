@@ -63,12 +63,6 @@ Show the demand in plain language with the feasibility verdicts. Go through ever
 
 If the user told you to proceed without confirmations, record that quote, and still send the verdicts, the directional-objective estimates, every weak-basis limit and every interpretation of yours in one `ui notify` message, and append them to `sources/interview.md`. The user can then object while the design is still cheap to change.
 
-`demand confirm` opens the workflow window (result field `ui`). It shows every tab that applies and every checked demand item, and the daemon refreshes the current lens, its merit value and its item values after each lens change by itself. When a few tabs or items matter most for this kind of system, order them with `uv run saos ui open --job J --tabs ... --metrics ...`, remembered for the job:
-
-- infinite-conjugate imaging lens: `spot,fan,field,mtf` with focal length, f-number or distortion items;
-- microscope objective: spot, MTF and field curvature with magnification, NA, working distance and parfocal length items;
-- illumination or non-sequential system: `detectors` with power or uniformity items.
-
-`--reset` restores the defaults; `ui open --job J` reopens a closed window.
+`demand confirm` opens the workflow window (result field `ui`). It shows every tab that applies and every checked demand item, and the daemon refreshes the current lens, its merit value and its item values after each lens change by itself. `uv run saos ui open --job J --tabs ... --metrics ...` puts the tabs and items that matter most for this kind of system first (remembered for the job; `--reset` restores the defaults); `ui open --job J` reopens a closed window.
 
 Which later changes need a new confirmation is stated in the format header. An edit to a check script that changes what an item covers (which parts count toward a mass, which surfaces toward a margin) is a demand change even when the YAML only changes in its description; fixing a check to follow the rules above (returning `inf` on a failed precondition) is not.
