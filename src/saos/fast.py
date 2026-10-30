@@ -79,14 +79,7 @@ class FastLens(KitMethods):
         waves = ([ctx.backend.primary_wave()] if wave is None else [int(wave)] if isinstance(wave, (int, np.integer))
                  else [int(w) for w in wave])
         rows = [(w, float(hx), float(hy), px, py) for hx, hy in fields for w in waves for px, py in [(0.0, 0.0), *pupil(grid)]]
-        mine, ref = self.trace(rows, to), ctx.trace(rows, to)
-        both = mine.ok & ref.ok
-        out: dict[str, Any] = {"rays": len(rows), "ok_rtc": int(mine.ok.sum()), "ok_opticstudio": int(ref.ok.sum()),
-                               "ok_one_side": int((mine.ok != ref.ok).sum())}
-        for k in ("x", "y", "z", "l", "m", "n"):
-            diff = np.abs(getattr(mine, k)[both] - getattr(ref, k)[both])
-            out[f"max_d{k}"] = float(diff.max()) if diff.size else None
-        return out
+        return agreement(self.trace(rows, to), ctx.trace(rows, to))
 
     def op(self, name, int1=0, int2=0, *data):
         raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"the rtc copy has no operands ({name}); use ctx.op on OpticStudio")
@@ -124,9 +117,7 @@ def from_context(ctx, freeze_solves: bool = False) -> FastLens:
     waves = list(range(1, backend.wavelength_count() + 1))
     diff = fast.compare(ctx, field_points(backend.lens), wave=waves, grid=5)
     fast.agreement = diff
-    worst_pos = max(diff[k] or 0.0 for k in ("max_dx", "max_dy", "max_dz"))
-    worst_dir = max(diff[k] or 0.0 for k in ("max_dl", "max_dm", "max_dn"))
-    if diff["ok_one_side"] or worst_pos > POSITION_TOL or worst_dir > DIRECTION_TOL:
+    if not within_tolerance(diff):
         raise SaosError(ErrorCode.VERIFY_FAILED, f"rtc traces this lens differently from OpticStudio: {diff}", {"agreement": diff})
     return fast
 
@@ -135,6 +126,25 @@ def from_context(ctx, freeze_solves: bool = False) -> FastLens:
 # tolerances of the build-time comparison: OpticStudio's own real-aiming error is about 6e-8 mm, one decade of margin
 POSITION_TOL = 1e-6
 DIRECTION_TOL = 1e-7
+
+
+def agreement(mine, ref) -> dict[str, Any]:
+    """同一批光线两次追迹（rtc 在前、OpticStudio 在后）的逐项最大偏差、两边可用光线数和只在一边可用的光线数。
+    The largest differences between two traces of the same rays (rtc first, OpticStudio second), the usable rays on
+    each side and those usable on one side only."""
+    both = mine.ok & ref.ok
+    out: dict[str, Any] = {"rays": int(len(mine.ok)), "ok_rtc": int(mine.ok.sum()), "ok_opticstudio": int(ref.ok.sum()),
+                           "ok_one_side": int((mine.ok != ref.ok).sum())}
+    for k in ("x", "y", "z", "l", "m", "n"):
+        diff = np.abs(getattr(mine, k)[both] - getattr(ref, k)[both])
+        out[f"max_d{k}"] = float(diff.max()) if diff.size else None
+    return out
+
+
+def within_tolerance(diff: dict[str, Any]) -> bool:
+    worst_pos = max(diff[k] or 0.0 for k in ("max_dx", "max_dy", "max_dz"))
+    worst_dir = max(diff[k] or 0.0 for k in ("max_dl", "max_dm", "max_dn"))
+    return not diff["ok_one_side"] and worst_pos <= POSITION_TOL and worst_dir <= DIRECTION_TOL
 
 
 def field_points(lens) -> list[tuple[float, float]]:
