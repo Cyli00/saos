@@ -1,6 +1,6 @@
 # saos
 
-saos（simulate any optical system）让 AI agent 替你做光学设计。你用自己的话说清要什么（可以不懂光学），agent 通过访谈把它整理成需求单，选结构、建模，在 Zemax OpticStudio 中一轮轮优化、诊断和实测，最后交给你一份镜头文件和一份 HTML 报告，报告里的每个数值都有实测依据，达不到的目标写明差多少。
+saos（simulate any optical system）让 AI agent 替你做光学设计。你用自己的话说清要什么（可以不懂光学），agent 通过访谈把它整理成需求单，选结构、建模，一轮轮优化、诊断和实测，最后交给你一份镜头文件和一份 HTML 报告。报告里的数值都由 Zemax OpticStudio 实测，达不到的目标写明差多少。
 
 目标范围是 OpticStudio 2024 R1 Premium 能建模的系统：序列、非序列和多重结构。工具尚未接入的功能会明确报告能力缺口。
 
@@ -25,7 +25,7 @@ saos（simulate any optical system）让 AI agent 替你做光学设计。你用
    cd saos
    ```
 
-2. 安装依赖。Python 固定在 3.12，OpticStudio 固定在 2024 R1.00；不再依赖 Optiland 或 PyTorch。脚本的 rtc（ray tracing core）快速副本（ADR-0014）以路径依赖引用并列存放的 `../rtc` 仓库，先把它克隆到 saos 旁边。
+2. 安装依赖。Python 固定在 3.12，OpticStudio 固定在 2024 R1.00；不再依赖 Optiland 或 PyTorch。需求访谈和设计轮次所用的 rtc（ray tracing core）以路径依赖引用并列存放的 `../rtc` 仓库，先把它克隆到 saos 旁边。
 
    ```bash
    uv sync
@@ -43,7 +43,7 @@ saos（simulate any optical system）让 AI agent 替你做光学设计。你用
 
 ### 开始一个设计
 
-1. 启动后台进程。它在内存里持有当前镜头，所有计算命令都转发给它；启动即建立 ZOS standalone 会话。agent 发现它没启动时也会提醒你或自己启动。
+1. 启动后台进程。它在内存里持有当前镜头，所有计算命令都转发给它；按流程阶段在 rtc 与 OpticStudio 之间自己切换，第一次需要 OpticStudio 时才启动它（ADR-0018）。agent 发现它没启动时也会提醒你或自己启动。
 
    ```bash
    uv run saos daemon start
@@ -67,7 +67,7 @@ agent 自己决定结构、变量、优化算法和实验，只在下面三处�
 
 ### 看进度
 
-- **流程窗口**：确认需求后自动打开的本机小窗口，显示流程走到哪一步、当前镜头的布局和 Lens Data、结构交叠检查，以及每轮的点列图、MTF 等。关掉后，到需要你确认的节点会重新打开；也可以手动打开：
+- **流程窗口**：确认需求后自动打开的本机小窗口，显示流程走到哪一步、当前镜头的布局、Lens Data、结构交叠检查、评价函数值与需求各项的值（后台进程在镜头改动后自动更新），以及每轮的点列图、MTF 等。关掉后，到需要你确认的节点会重新打开；也可以手动打开：
 
   ```bash
   uv run saos ui open --job <任务>
@@ -92,14 +92,14 @@ agent 自己决定结构、变量、优化算法和实验，只在下面三处�
 
 ```bash
 uv run saos daemon stop          # 有未保存的修改时需要 --discard
-uv run saos daemon list --all    # 本机所有实例的 daemon（每个都占一份 OpticStudio 许可）
+uv run saos daemon list --all    # 本机所有实例的 daemon（启动过 OpticStudio 的各占一份许可）
 uv run saos daemon stop --all    # 逐个停止它们，并清掉已退出进程留下的状态文件
 ```
 
 ## 注意事项
 
-- **数值以 OpticStudio 为准**：从建模、初筛到最终报告均使用同一后端；不再经过跨后端重建与对比。需求访谈阶段的可行性核算可以用 `uv run saos daemon start --backend rtc` 启动的 rtc 实例，不占许可，确认需求后换回 OpticStudio。
-- **OpticStudio 许可证**：同时最多 8 个 OpticStudio 实例，包括你自己打开的窗口。daemon 启动即占一个许可；并发计算默认使用 4 个常驻 worker，起点生成另用一个独占会话。
+- **数值以 OpticStudio 为准**：需求访谈和设计轮次在 rtc 上算，不占许可；建模、模型确认和交付在 OpticStudio 上做，交付的那一轮先在 OpticStudio 上复测，报告只用复测数值（ADR-0017）。没有 OpticStudio 的机器可以用 `uv run saos daemon start --backend rtc` 只跑 rtc。
+- **OpticStudio 许可证**：同时最多 8 个 OpticStudio 实例，包括你自己打开的窗口。daemon 第一次用到 OpticStudio 时占一个许可，之后一直占着；并发计算默认使用 4 个常驻 worker，起点生成另用一个独占会话。
 - **OpticStudio 弹出对话框会卡住计算**：例如自动保存恢复提示，saos 遇到时返回 `UI_BLOCKED`，需要你手动关掉。`Documents/Zemax/Autosave/Recovered` 里的旧恢复文件会让每个新实例都弹提示。
 - **长任务在后台跑**：命令超时不代表计算失败，不要让 agent 重新提交同一项计算。要中断用 `uv run saos job cancel <任务>`，已完成的部分会保留。
 - **不要手改工具写入的文件**：任务目录里工具写入的文件记录了哈希，改动或删除后 `saos report` 会拒绝生成报告（`uv run saos job verify <任务>` 列出问题）。你可以自由看，也可以往 `sources/` 里放资料。

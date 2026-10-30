@@ -4,7 +4,7 @@
 
 ## 落地情况（2026-10-29）
 
-- **已落地**：`saos daemon start --backend rtc`（或 `SAOS_BACKEND=rtc`）启动不连 OpticStudio 的实例；`lens build|load|save` 由处方或 `.zmx` 建 rtc 镜头，保存为 OpticStudio 24.1 行格式的 UTF-16 `.zmx`（`src/saos/backend/rtc_lens.py`）；每次改动后按 OpticStudio 规则重算边缘光线高度求解（MAZH）与自动半口径。
+- **已落地**：`saos daemon start --backend rtc`（或 `SAOS_BACKEND=rtc`）启动不连 OpticStudio 的实例；`lens build|load|save` 由处方或 `.zmx` 建 rtc 镜头，保存为 OpticStudio 24.1 行格式的 UTF-16 `.zmx`（`src/saos/backend/rtc_lens.py`）；每次改动后按 OpticStudio 规则重算边缘光线高度求解（MAZH）与自动半口径（物面除外，保留文件里的值；OpticStudio 在物距无穷时给 inf、有限物距时的值与布局差异未核对，交接不比它，见 ADR-0018）。
 - **操作数**：光线类 REAX/Y/Z/R/A/B/C、RAGX/Y/Z/A/B/C、RANG、RAID；系统类 EFFL、WFNO、ISFN、TOTR、TTHI、EPDI、ENPP、EXPP、EXPD、PETZ、INDX、SSAG、CONF（`src/saos/backend/rtc.py`，一阶量在 `../rtc/src/rtc/firstorder.py`）；`quick_focus` 用闭式 RMS² 极小。其余报 `BACKEND_UNSUPPORTED`。
 - **有限物距、物方 NA、物高视场**：rtc 加了 `allow_unverified` 开关，只在 rtc 实例上打开；这些路径的结果在 `computed_by` 里列为未对账。`ctx.fast()` 副本仍拒绝它们。
 - **门禁**：daemon 的 `OPTICSTUDIO_ONLY` 当初拒绝建模说明与确认、分析、评价函数与优化、`check`、`scan`、`round`；ADR-0017 起设计轮次也在 rtc 实例上做，现行门禁见 [rtc-design-stage.md](rtc-design-stage.md)。
@@ -27,8 +27,8 @@
 
 ## saos 侧集成
 
-1. **处方直接建 rtc 镜头**：`saos lens new` 的处方 JSON → rtc 系统，复用 `prescription.py` 的校验。rtc 无法复现的处方项报 `BACKEND_UNSUPPORTED`，范围与 ADR-0014 的拒绝清单一致，随准入逐步放开。
-2. **无 ZOS 的实例**：新增 `SAOS_BACKEND=rtc`，`make_backend` 返回一个实现 `Backend` 子集的 rtc 后端，未实现的方法一律报 `BACKEND_UNSUPPORTED`。实际做法：rtc 实例与之后的 OpticStudio 实例共用同一 `SAOS_INSTANCE`，需求确认后 `daemon stop` 再 `daemon start`。
+1. **处方直接建 rtc 镜头**：`saos lens build` 的处方 JSON → rtc 系统，复用 `prescription.py` 的校验。rtc 无法复现的处方项报 `BACKEND_UNSUPPORTED`，范围与 ADR-0014 的拒绝清单一致，随准入逐步放开。
+2. **无 ZOS 的实例**：新增 `SAOS_BACKEND=rtc`，`make_backend` 返回一个实现 `Backend` 子集的 rtc 后端，未实现的方法一律报 `BACKEND_UNSUPPORTED`。当初的做法是 rtc 实例与之后的 OpticStudio 实例共用同一 `SAOS_INSTANCE`，需求确认后 `daemon stop` 再 `daemon start`；ADR-0018 起默认的后台进程同时持有两个后端，按阶段自己切换，`--backend rtc` 只用于没有 OpticStudio 的机器。
 3. **操作数分派**：`operand(name, int1, int2, data)` 调用 rtc；准入表尚未细分到操作数，来源改由 `exec` 结果的 `computed_by` 标注（用到的未对账操作数与路径）。
 4. **门禁**：第一批时 rtc 实例上的 `saos check`、`round`、`opt`、`scan`、`report` 一律拒绝；ADR-0017 起改为只拒绝建模说明、OpticStudio 窗口、`round --confirm` 与公差扫描（[rtc-design-stage.md](rtc-design-stage.md)）。
 5. **玻璃目录**：实际做法是读 `SAOS_GLASSCAT`，未设时用 rtc 的默认 `Documents/Zemax/Glasscat`（与 OpticStudio 同一份 AGF）。

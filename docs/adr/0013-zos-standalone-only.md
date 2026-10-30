@@ -1,5 +1,5 @@
 ---
-status: accepted; ADR-0014 adds the rtc exploration copy; ADR-0016 lets need-stage feasibility use admitted rtc values; ADR-0017 moves design rounds to the rtc instance, re-measured on OpticStudio before delivery
+status: accepted; ADR-0014 adds the rtc exploration copy; ADR-0016 lets need-stage feasibility use admitted rtc values; ADR-0017 moves design rounds to the rtc instance, re-measured on OpticStudio before delivery; ADR-0018 puts both backends in one daemon, switching by workflow stage
 ---
 
 # 计算统一在 ZOS standalone，光学数值只由计算后端算
