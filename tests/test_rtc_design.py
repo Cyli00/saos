@@ -205,3 +205,146 @@ def test_the_delivered_round_is_the_achieved_one_with_the_smallest_shortfall():
               _round(3, shortfall=0.1, model_glass=[2])]
     assert ledger.deliver_round(window)["round"] == 2
     assert ledger.deliver_round([_round(0, shortfall=math.inf)])["round"] == 0
+
+
+@pytest.mark.parametrize("op, expected", [("SUMM", 3.0), ("DIFF", 3.0), ("PROD", 0.0)])
+def test_arithmetic_with_a_zero_second_operand(op, expected):
+    row = rtc_merit.Row(op, [1, 2, 0, 0, 0, 0, 0, 0])
+    assert rtc_merit.Evaluator._arithmetic(row, [3.0, 0.0]) == expected
+    row.type = "DIVI"
+    with pytest.raises(ZeroDivisionError):
+        rtc_merit.Evaluator._arithmetic(row, [3.0, 0.0])
+
+
+@needs_glass
+@pytest.mark.parametrize("column", [0, 6, 7])
+@pytest.mark.parametrize("value", [math.nan, math.inf, -math.inf])
+def test_nonfinite_merit_input_is_rejected_without_replacing_the_lens(tmp_path, column, value):
+    from rtc.textio import decode_text
+
+    backend = _loaded()
+    original = backend.lens
+    numbers = [0.0] * 10
+    numbers[column] = value
+    text = decode_text((CASES / "sequential.zmx").read_bytes())
+    path = tmp_path / "invalid.zmx"
+    path.write_bytes(b"\xff\xfe" + (text + "\nCONS " + " ".join(map(str, numbers)) + "\n").encode("utf-16-le"))
+    with pytest.raises(SaosError, match=f"column {column + 1}") as error:
+        backend.load(path)
+    assert error.value.code == ErrorCode.BAD_ARGS
+    assert backend.lens is original
+
+
+@needs_glass
+def test_continuously_varied_model_glass_does_not_grow_the_shared_cache():
+    from rtc.material import Model
+
+    backend = _loaded()
+    size = len(backend._media)
+    for i in range(100):
+        backend.set_param("1.material", {"nd": 1.5 + i * 1e-5, "vd": 60.0})
+        backend._system(2)
+    assert len(backend._media) == size
+    assert all(not isinstance(key[0], Model) for key in backend._media)
+    assert backend.operand("INDX", 1, 2, []) > 1.5
+
+
+@needs_glass
+def test_batched_ray_operands_match_individual_operands(monkeypatch):
+    from rtc import trace as trace_module
+    from saos.ctx.rows import compile_rows
+
+    backend = _loaded()
+    specs = [{"type": op, "int1": surface, "int2": 2, "data": [0, 0.6, 0, py], "weight": 1}
+             for surface in (1, 3, 4) for py in (-0.5, 0.0, 0.5) for op in ("REAX", "REAY", "REAC", "RAID")]
+    expected = [backend.operand(s["type"], s["int1"], s["int2"], s["data"]) for s in specs]
+    rows = rtc_merit.from_specs(compile_rows(specs, 1))
+    evaluator = rtc_merit.Evaluator(backend, rows)
+    calls = []
+    trace = trace_module.trace
+
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return trace(*args, **kwargs)
+
+    monkeypatch.setattr(trace_module, "trace", counted)
+    for _ in range(2):
+        result = evaluator.evaluate()
+        assert not result.failed
+        assert result.values == pytest.approx(expected, abs=1e-12)
+    assert len(calls) == 2
+
+
+@needs_glass
+def test_wavefront_evaluation_uses_one_trace_per_field_and_wavelength(monkeypatch):
+    from rtc import trace as trace_module
+    from rtc.psf import opd_rays
+
+    backend = _loaded()
+    rows = rtc_merit.wizard_rows(backend.lens, {"rings": 3, "arms": 6, "reference": "Chief Ray"})
+    evaluator = rtc_merit.Evaluator(backend, rows)
+    expected = []
+    for row in rows:
+        if row.type == "OPDC":
+            opd, ok = opd_rays(backend._system(row.int2), [row.data[2]], [row.data[3]], *row.data[:2])
+            assert ok[0]
+            expected.append(opd[0] / (backend.lens.active_wavelengths[row.int2 - 1][0] * 1e-3))
+    trace = trace_module.trace
+    calls = []
+
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return trace(*args, **kwargs)
+
+    monkeypatch.setattr(trace_module, "trace", counted)
+    result = evaluator.evaluate()
+    assert [v for row, v in zip(rows, result.values) if row.type == "OPDC"] == pytest.approx(expected, abs=1e-9)
+    assert len(calls) == len(backend.lens.fields) * len(backend.lens.active_wavelengths)
+
+
+@needs_glass
+@pytest.mark.parametrize("stop", ["cancel", "timeout", "error"])
+def test_optimisation_restores_the_accepted_point_when_interrupted_during_differences(monkeypatch, stop):
+    import time
+    import numpy as np
+    from saos.backend import rtc_optim
+
+    backend = _designed()
+    problem = backend._problem()
+    initial = problem.values()
+    evaluate = problem.evaluator.evaluate
+    measurements = []
+    clock = [0.0]
+    monkeypatch.setattr(time, "monotonic", lambda: clock[0])
+
+    def interrupted():
+        measurements.append(problem.values())
+        result = evaluate()
+        if len(measurements) == 2:
+            clock[0] = 2.0
+            if stop == "error":
+                raise RuntimeError("求值中断")
+        return result
+
+    monkeypatch.setattr(problem.evaluator, "evaluate", interrupted)
+    if stop == "error":
+        with pytest.raises(RuntimeError, match="求值中断"):
+            rtc_optim.local(problem, iterations=5)
+    else:
+        result = rtc_optim.local(problem, iterations=5, deadline=1.0 if stop == "timeout" else None,
+                                 should_cancel=lambda: stop == "cancel" and len(measurements) >= 2)
+        assert result["stopped_by"] == stop
+    assert len(measurements) == 2
+    np.testing.assert_array_equal(problem.values(), initial)
+
+
+@pytest.mark.parametrize("achieved", [False, True])
+def test_disagreed_confirmation_returns_to_design_even_at_the_round_limit(achieved):
+    rows = [_round(0), _round(1, achieved=not achieved),
+            {**_round(2, achieved=achieved), "tier": ledger.CONFIRM, "confirm_of": 0, "agrees": False, "backend": "zos"}]
+    stop = {"rel": 0.01, "max_rounds": 1, "tiers": ["local"]}
+    rounds = ledger.effective(rows)
+    assert ledger.confirmation_failure(rounds)["round"] == 0
+    decision = ledger.decide(rounds, stop)
+    assert decision["status"] == "continue" and decision["confirm_failed"] == 0
+    assert ledger.confirmation_failure(rounds + [_round(3)]) is None

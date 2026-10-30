@@ -19,6 +19,7 @@
 ## 评价函数
 
 - **值**：MF² = ΣW·(V−T)²/ΣW，只计 W > 0 的行。边界类操作数满足时值取目标，越界时取实际值（同 OpticStudio，`saos.ctx.rows` 的实测说明）。有正权重的行算不出时为 inf。
+- **求值复用**：一次优化只编译一次结构分段、光瞳点和质心分组；每次测量只重算数值。像差行与普通光线操作数共享批量追迹，波前从同一批结果取光程与主光线，不再另追。导入行中的非有限数值按行号、列号报错，省略列仍补零。材料缓存跨系统保留目录玻璃与空气；连续变化的模型玻璃每次即时计算，不进缓存。
 - **rtc 能算的行**：BLNK、DMFS、CONF；边界类 CTGT/CTLT、CVGT/CVLT、COGT/COLT、PMGT/PMLT、OPGT/OPLT，MNCT/MXCT、MNCG/MXCG、MNCA/MXCA、MNET/MXET、MNEG/MXEG、MNEA/MXEA；镜头数据 CTVA、CVVA、COVA、PMVA；算术 OPVA、SUMM、DIFF、PROD、DIVI、ABSO、SQRT、CONS；像差 TRAR、TRAX、TRAY、TRAC、TRCX、TRCY、OPDC、OPDX、OPDM；以及 `RtcBackend.operand` 的全部操作数。其余（ETGT、STHI、STRH、EERA、RWCE 等）整批拒绝，评价函数不变。
 - **像差行的约定**：Int1 = 0、Int2 = 波长（≥ 1），Data1–4 = Hx、Hy、Px、Py。相对质心的行（TRAC、TRCX、TRCY、OPDX、OPDM）按“连续出现、同一操作数、同一波长、同一视场”分组，组内按行权重求参考：质心，或 OPDX 的 piston 与倾斜、OPDM 的均值。OPD 以波长为单位，参考球心在主光线像点、半径为出瞳距离。
 - **范围类边界**：Int1、Int2 为首末面（都为 0 时为全部面），面后是玻璃、空气或任意介质。边缘厚度取两面半口径的较大值处，只支持 zone 0。
@@ -30,6 +31,7 @@
 - 每步求解 min ½‖J·d + r‖² + ½μ·dᵀD·d，满足 g_A + G_A·d = 0。D 为 JᵀJ 的对角（Marquardt 缩放）。有效集法：乘子为负的约束释放，线性化后被违背最多的约束加入，最多 3p+5 次增删。
 - 接受准则：违背不增加且残差平方和下降，或者当前有违背时违背至少减小 0.1%。接受后 μ ÷ 3，否则 μ × 10，每次迭代最多加大 12 次。连续 2 次接受的相对下降都小于 1e-10，且解可行时，算作收敛。
 - 雅可比用前向差分，追迹失败时改用后向差分。步长让矢高或折射率变化约 1e-7：曲率 2e-7/h²，EVENASPH 第 n 项 1e-7/h^(2n)，h 为半口径。
+- 每次求值前检查预算与取消；异常、取消和超时都恢复最后接受点。
 - `cycles`：auto → 至多 200 次迭代，1/5/10/50 → 同数迭代。`algorithm` 只有 dls。
 - 实测（`tests/fixtures/cases/sequential.zmx`，三个曲率变量，向导 3 环 6 臂，玻璃 [1, 10, 1]、空气 [0.5, 50, 0.5]，94 行）：评价函数 61.76 → 0.631，15 次迭代、80 次求值，用时 0.52 s；初始违背 0.95，结束时 9.8e-10。
 
@@ -37,7 +39,7 @@
 
 - Hammer：在当前最好解附近扰动（σ = 0.5 × 典型幅度），有换料变量时以 0.5 的概率随机换一面玻璃，再局部优化 40 次迭代，更好就留下。
 - 全局搜索：从起点大幅扰动（σ = 2），所有换料面同时随机换，局部优化，保留评价函数最小的 10 个。
-- 两者都只比较满足全部约束的解，到 `max_seconds` 或取消为止；结束时镜头是最好解，没有可行解时回到起点。
+- 两者都只比较满足全部约束的解，到 `max_seconds` 或取消为止；结束（含异常）时镜头是最好解，没有可行解时回到起点。
 - 换料候选：所选目录（空为全部在用目录）里 nd、νd 离当前玻璃最近的 8 种（距离按 Δnd/0.03、Δνd/6 计），含当前玻璃。OpticStudio 是在整个目录里换。
 - 找到的系统写在镜头文件旁（全局 `GLOPT_NNNN.zmx` 按评价函数从小到大，Hammer `<镜头>_0000_HAMMER.zmx`），由 daemon 归档到 `lenses/<kind>/NNN/`，与 OpticStudio 相同。
 - 实测（同上镜头，两面换料）：Hammer 8 s 试了 26 个系统，0.6309 → 0.6177（换成 P-BK7、N-SF19）；全局搜索 8 s 试了 12 个系统，0.6177 → 0.5827。
@@ -50,11 +52,11 @@
 
 ## 复测（`saos round --confirm`）
 
-1. 在 OpticStudio 实例上运行，不需要先加载镜头。默认复测 `saos report` 会交付的那一轮（`ledger.deliver_round`），`--of N` 指定。
+1. 在 OpticStudio 实例上运行，不需要先加载镜头；结束（含失败）时恢复入口镜头：没有未保存修改就重载原文件；有则加载临时快照，修改保留，但后端文件路径停在快照上，Hammer 与全局搜索要先 `saos lens save`。默认复测 `saos report` 会交付的那一轮（`ledger.deliver_round`），`--of N` 指定。
 2. 加载那一轮的归档镜头，核对模型确认（OpticStudio 的完整指纹，含 rtc 读不出的三项），按当前判定测量，检查判定没有改动镜头，查零件交叠。
 3. 追加 `tier: confirm` 的记录：`confirm_of`、`agrees`、`verdict`（两边的达成与可交付）、`diffs`（逐项 rtc 与 OpticStudio 值）。达成、`hard_failing` 或可交付性不同则 `agrees: false`。
 4. `ledger.load` 默认返回 `effective` 之后的轮次：复测数值换进第 N 轮（`confirmed_by`、`measured_on: zos`，原值在 `rtc`）。终止判断、流程图窗口和报告都用它；`raw=True` 给编号新记录用。
-5. `saos report` 拒绝没有复测的 rtc 轮次。复测结论不同时，终止判断按 OpticStudio 的数重新给出（通常回到 `continue`），回到 rtc 实例继续设计。
+5. `saos report` 拒绝没有复测的 rtc 轮次。最近一次复测不符、之后没有新设计轮次时，判定返回 `continue`（`confirm_failed`），报告也拒绝，回到 rtc 实例继续设计；用户已停止时停止优先，报告照常生成，数值是复测后的 OpticStudio 值。重复复测始终与原始 rtc 结果比较。
 
 ## 未对账（交付前复测兜底）
 

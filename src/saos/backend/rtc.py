@@ -176,6 +176,7 @@ class RtcBackend(Backend):
         one system per wavelength; standalone also recomputes solves and automatic semi-diameters. Nothing is kept on failure."""
         from saos.backend import rtc_merit
 
+        merit = rtc_merit.from_lens(lens)
         previous = (self.lens, self.config, dict(self.held), set(self.unverified_paths))
         self.lens, self.config, self.held = lens, lens.current_config, {}
         self.unverified_paths.clear()
@@ -188,7 +189,7 @@ class RtcBackend(Backend):
             self.lens, self.config, self.held, self.unverified_paths = previous
             self._systems.clear()
             raise
-        self.merit, self.material_vars = rtc_merit.from_lens(lens), {}
+        self.merit, self.material_vars = merit, {}
 
     def _check_lens(self) -> None:
         model = self.model
@@ -612,6 +613,9 @@ class RtcBackend(Backend):
         self._adopt(rtc_lens.from_prescription(prescription))
         self.path, self._dirty, self._carried = None, True, None
 
+    def native_file(self) -> Path | None:
+        return self.path
+
     def needs_save(self) -> bool:
         return self._dirty
 
@@ -889,21 +893,27 @@ class RtcBackend(Backend):
         raise AssertionError(op)
 
     def _ray_operand(self, op: str, surf: int, wave: int, data: list[float]) -> float:
-        from rtc.trace import _launch, trace
+        from rtc.trace import trace
 
         hx, hy, px, py = (list(data) + [0.0] * 4)[:4]
-        index = self._index(surf)
-        if index < 1:
-            raise SaosError(ErrorCode.BAD_ARGS, f"{op}: rays start at surface 1, got {surf}")
         system = self._system(wave)
         block = trace(system, [px], [py], [hx], [hy])
-        error = int(block.error[0])
+        return self._ray_value(op, self._index(surf), system, block, 0, (hx, hy, px, py))
+
+    def _ray_value(self, op: str, index: int, system, block, ray: int, coords: tuple) -> float:
+        """已追迹光线块中第 ray 条光线在面 index 上的光线操作数；coords 为 (Hx, Hy, Px, Py)。"""
+        from rtc.trace import _launch
+
+        if index < 1:
+            raise SaosError(ErrorCode.BAD_ARGS, f"{op}: rays start at surface 1, got {index}")
+        hx, hy, px, py = coords
+        error = int(block.error[ray])
         if error and abs(error) <= index:
             how = "is totally internally reflected" if error < 0 else "misses"
             raise SaosError(ErrorCode.BAD_ARGS, f"{op}: the ray (Hx {hx}, Hy {hy}, Px {px}, Py {py}) {how} at surface {abs(error)}")
         k = block.surface_index.index(index)
-        x, y, z = (float(v[0, k]) for v in (block.x, block.y, block.z))
-        l, m, n = (float(v[0, k]) for v in (block.l, block.m, block.n))
+        x, y, z = (float(v[ray, k]) for v in (block.x, block.y, block.z))
+        l, m, n = (float(v[ray, k]) for v in (block.l, block.m, block.n))
         vertex = system.items[k].vertex_z
         values = {"REAX": x, "REAY": y, "REAZ": z, "REAR": math.hypot(x, y), "REAA": l, "REAB": m, "REAC": n,
                   "RAGX": x, "RAGY": y, "RAGZ": z + vertex, "RAGA": l, "RAGB": m, "RAGC": n,
@@ -912,9 +922,12 @@ class RtcBackend(Backend):
         if op != "RAID":
             return values[op]
         if k > 0:
-            d = np.array([block.l[0, k - 1], block.m[0, k - 1], block.n[0, k - 1]])
+            d = np.array([block.l[ray, k - 1], block.m[ray, k - 1], block.n[ray, k - 1]])
         elif system.lens.ray_aiming == 0 or system.stop is None:
-            d = np.asarray(_launch(system, np.array([px]), np.array([py]), np.array([hx]), np.array([hy]))[3]).reshape(3)
+            try:
+                d = np.asarray(_launch(system, np.array([px]), np.array([py]), np.array([hx]), np.array([hy]))[3]).reshape(3)
+            except NotImplementedError as exc:
+                raise _unsupported(f"rtc: {exc}") from exc
         else:
             raise _unsupported("RAID at surface 1 with ray aiming needs the aimed launch direction, which rtc does not expose")
         _, zx, zy = system.items[k].shape.sag(np.array([x]), np.array([y]))
@@ -1214,7 +1227,7 @@ class RtcBackend(Backend):
 
         self._designing("the merit function")
         self._used.update(r.type for r in self.merit if r.type not in rtc_merit.INERT)
-        return rtc_merit.Evaluator(self).evaluate(self.merit)
+        return rtc_merit.Evaluator(self, self.merit).evaluate()
 
     def merit_wizard(self, settings: dict[str, Any]) -> int:
         """rtc 的序列优化向导（rtc_merit.wizard_rows）；start_at 之前的行保留，其后换成向导的行（同 OpticStudio）。"""
@@ -1225,7 +1238,7 @@ class RtcBackend(Backend):
         if isinstance(start_at, bool) or not isinstance(start_at, int) or not 1 <= start_at <= len(self.merit) + 1:
             raise SaosError(ErrorCode.BAD_ARGS, f"optimization wizard start_at must be 1–{len(self.merit) + 1}, got {start_at!r}")
         rows = self.merit[:start_at - 1] + rtc_merit.wizard_rows(lens, settings)
-        rtc_merit.Evaluator(self).check(rows)
+        rtc_merit.Evaluator.check(rows)
         self.merit, self._dirty = rows, True
         return len(self.merit)
 
@@ -1246,7 +1259,7 @@ class RtcBackend(Backend):
             raise SaosError(ErrorCode.BAD_ARGS, f"merit rows: {exc}") from exc
         added = rtc_merit.from_specs(specs)
         merged = self.merit[:position] + added + self.merit[position:]
-        rtc_merit.Evaluator(self).check(merged)
+        rtc_merit.Evaluator.check(merged)
         self.merit, self._dirty = merged, True
         return list(range(position + 1, position + 1 + len(added)))
 

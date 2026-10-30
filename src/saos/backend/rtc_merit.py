@@ -17,6 +17,7 @@ when met and their actual value otherwise. Row values computed by rtc are not ye
 from __future__ import annotations
 
 import math
+import operator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -42,6 +43,7 @@ BOUNDARY = {
 }
 LENS_DATA = frozenset({"CTVA", "CVVA", "COVA", "PMVA"})
 ARITHMETIC = frozenset({"OPVA", "SUMM", "DIFF", "PROD", "DIVI", "ABSO", "SQRT", "CONS"})
+BINARY = {"SUMM": operator.add, "DIFF": operator.sub, "PROD": operator.mul, "DIVI": operator.truediv}
 # 相对主光线（逐条有定义）与相对质心（按同组行求质心）的像差行 / aberrations about the chief ray and about the group centroid
 CHIEF_ABERRATIONS = frozenset({"TRAR", "TRAX", "TRAY", "OPDC"})
 GROUP_ABERRATIONS = frozenset({"TRAC", "TRCX", "TRCY", "OPDX", "OPDM"})
@@ -91,12 +93,15 @@ def from_specs(specs: list[dict[str, Any]]) -> list[Row]:
 def from_lens(lens) -> list[Row]:
     """rtc.zmx.Lens 的 MFE 行（数值列 Int1 Int2 D1–D4 Target Weight D5 D6）→ 行。"""
     out = []
-    for raw in lens.mfe:
+    for k, raw in enumerate(lens.mfe, 1):
         op = raw.op.upper()
         if op == "BLNK":
             out.append(Row("BLNK", comment=raw.raw[4:].strip()))
             continue
-        n = [v if math.isfinite(v) else 0.0 for v in (list(raw.numbers) + [0.0] * 10)[:10]]
+        n = (list(raw.numbers) + [0.0] * 10)[:10]
+        for column, value in enumerate(n, 1):
+            if not math.isfinite(value):
+                raise SaosError(ErrorCode.BAD_ARGS, f"merit row {k} {op}, column {column}: expected a finite number, got {value}")
         out.append(Row(op, [n[0], n[1], n[2], n[3], n[4], n[5], n[8], n[9]], n[6], n[7]))
     return out
 
@@ -137,15 +142,53 @@ class Result:
     contributions: list[float]
 
 
+@dataclass
+class Segment:
+    lo: int
+    hi: int
+    groups: dict[int, list[int]]
+    pupils: dict[tuple, tuple[np.ndarray, np.ndarray, dict]]
+    wavefront: set[tuple]
+
+
 class Evaluator:
     """在 RtcBackend 上逐行求值；CONF 行切换后面各行的结构，结束时回到原结构。
     Evaluates rows on an RtcBackend; a CONF row switches the configuration of the rows after it."""
 
-    def __init__(self, backend):
+    def __init__(self, backend, rows: list[Row]):
+        self.check(rows)
         self.backend = backend
+        self.rows = rows
+        self.segments = []
+        lo = 0
+        for k in range(len(rows) + 1):
+            if k == len(rows) or rows[k].type == "CONF":
+                self.segments.append(self._compile(rows, lo, k))
+                lo = k + 1
+
+    def _key(self, row):
+        return (row.int2 or self.backend.lens.primary_wave, float(row.params[2]), float(row.params[3]))
+
+    def _compile(self, rows, lo, hi):
+        from saos.backend.rtc import RAY_OPERANDS
+
+        wanted, wavefront = {}, set()
+        for row in rows[lo:hi]:
+            if row.type in ABERRATIONS or row.type in RAY_OPERANDS:
+                key = self._key(row)
+                points = wanted.setdefault(key, {(0.0, 0.0): 0})
+                point = (float(row.params[4]), float(row.params[5]))
+                if point not in points:
+                    points[point] = len(points)
+                if row.type in WAVEFRONT:
+                    wavefront.add(key)
+        pupils = {key: (np.array([p[0] for p in points]), np.array([p[1] for p in points]), points)
+                  for key, points in wanted.items()}
+        return Segment(lo, hi, _groups(rows, lo, hi), pupils, wavefront)
 
     # 每次求值前检查一遍能不能算，免得优化跑到一半才发现 / checked once before evaluating, not mid-optimisation
-    def check(self, rows: list[Row]) -> None:
+    @staticmethod
+    def check(rows: list[Row]) -> None:
         from saos.backend.rtc import RAY_OPERANDS, SYSTEM_OPERANDS
 
         known = INERT | {"CONF"} | set(BOUNDARY) | LENS_DATA | ARITHMETIC | ABERRATIONS | RAY_OPERANDS | SYSTEM_OPERANDS | {"TTHI", "TOTR"}
@@ -169,37 +212,41 @@ class Evaluator:
             if any(not 1 <= ref < k for ref in refs):
                 raise SaosError(ErrorCode.BAD_ARGS, f"row {k} {r.type} refers to rows {refs}; it may only refer to rows before it")
 
-    def evaluate(self, rows: list[Row]) -> Result:
+    def evaluate(self) -> Result:
+        rows = self.rows
         backend = self.backend
         start = backend.config
         values: list[float | None] = [None] * len(rows)
         actual: dict[int, list[tuple[str, float]]] = {}
         failed: dict[int, str] = {}
         try:
-            segment_start = 0
-            for k in range(len(rows) + 1):
-                if k == len(rows) or rows[k].type == "CONF":
-                    self._segment(rows, segment_start, k, values, actual, failed)
-                    if k < len(rows):
-                        values[k] = 0.0
-                        backend.select_configuration(rows[k].int1)
-                    segment_start = k + 1
+            for segment in self.segments:
+                self._segment(rows, segment, values, actual, failed)
+                if segment.hi < len(rows):
+                    values[segment.hi] = 0.0
+                    backend.select_configuration(rows[segment.hi].int1)
         finally:
             backend.select_configuration(start)
         merit, contributions = merit_value(rows, values)
         return Result(values, actual, failed, merit, contributions)
 
-    def _segment(self, rows, lo, hi, values, actual, failed) -> None:
+    def _segment(self, rows, segment, values, actual, failed) -> None:
         """一个结构内的一段行：先把光线类行按 (波长, 视场) 合并追迹，再逐行求值。"""
-        traces = self._traces(rows, lo, hi)
-        groups = _groups(rows, lo, hi)
-        for k in range(lo, hi):
+        from saos.backend.rtc import RAY_OPERANDS
+
+        traces = self._traces(segment)
+        for k in range(segment.lo, segment.hi):
             r = rows[k]
             try:
                 if r.type in INERT:
                     values[k] = 0.0
                 elif r.type in ABERRATIONS:
-                    values[k] = self._aberration(rows, k, traces, groups)
+                    values[k] = self._aberration(rows, k, traces, segment.groups)
+                elif r.type in RAY_OPERANDS:
+                    entry = traces[self._key(r)]
+                    ray = entry["index"][(float(r.params[4]), float(r.params[5]))]
+                    values[k] = self.backend._ray_value(r.type, self.backend._index(r.int1), entry["system"], entry["block"], ray,
+                                                        tuple(r.params[2:6]))
                 elif r.type in BOUNDARY:
                     how, direction = BOUNDARY[r.type]
                     found = self._actual(how, r, values)
@@ -225,30 +272,18 @@ class Evaluator:
 
     # ---- 光线 / rays ----
 
-    def _traces(self, rows, lo, hi) -> dict[tuple, dict[str, Any]]:
+    def _traces(self, segment) -> dict[tuple, dict[str, Any]]:
         """(波长, Hx, Hy) → 这一视场所需全部光瞳点的追迹结果（像面坐标、OPD）。"""
-        from rtc.psf import opd_rays
+        from rtc.psf import opd_from_trace
         from rtc.trace import trace
 
-        wanted: dict[tuple, dict[tuple[float, float], None]] = {}
-        wavefront: set[tuple] = set()
-        for k in range(lo, hi):
-            r = rows[k]
-            if r.type in ABERRATIONS:
-                key = (r.int2, float(r.data[0]), float(r.data[1]))
-                wanted.setdefault(key, {})[(float(r.data[2]), float(r.data[3]))] = None
-                if r.type in WAVEFRONT:
-                    wavefront.add(key)
         out = {}
         backend = self.backend
         waves = len(backend.lens.active_wavelengths)
-        for key, points in wanted.items():
+        for key, (px, py, points) in segment.pupils.items():
             wave, hx, hy = key
             if not 1 <= wave <= waves:
                 raise SaosError(ErrorCode.BAD_ARGS, f"merit rows use wavelength {wave}; the lens has 1–{waves}")
-            pupil = list(points)
-            px = np.array([0.0] + [p[0] for p in pupil])
-            py = np.array([0.0] + [p[1] for p in pupil])
             system = backend._system(wave)
             try:
                 block = trace(system, px, py, hx, hy)
@@ -256,11 +291,11 @@ class Evaluator:
                 raise unsupported(f"rtc: {exc}") from exc
             image = len(system.items) - 1
             ok = (block.error == 0) & (block.vig == 0)
-            entry = {"index": {p: i + 1 for i, p in enumerate(pupil)}, "x": block.x[:, image], "y": block.y[:, image], "ok": ok,
+            entry = {"index": points, "block": block, "system": system, "x": block.x[:, image], "y": block.y[:, image], "ok": ok,
                      "chief_ok": bool(ok[0])}
-            if key in wavefront:
+            if key in segment.wavefront:
                 try:
-                    opd, good = opd_rays(system, px, py, hx, hy)
+                    opd, good = opd_from_trace(system, block, chief_index=0)
                 except NotImplementedError as exc:
                     raise unsupported(f"rtc: {exc}") from exc
                 except ValueError as exc:
@@ -273,7 +308,7 @@ class Evaluator:
 
     def _aberration(self, rows, k, traces, groups) -> float:
         r = rows[k]
-        key = (r.int2, float(r.data[0]), float(r.data[1]))
+        key = self._key(r)
         entry = traces[key]
         i = entry["index"][(float(r.data[2]), float(r.data[3]))]
         if r.type in WAVEFRONT:
@@ -363,7 +398,7 @@ class Evaluator:
         if r.type == "SQRT":
             return math.sqrt(v(r.int1))
         a, b = v(r.int1), v(r.int2)
-        return {"SUMM": a + b, "DIFF": a - b, "PROD": a * b, "DIVI": a / b}[r.type]
+        return BINARY[r.type](a, b)
 
 
 def _groups(rows, lo, hi) -> dict[int, list[int]]:
