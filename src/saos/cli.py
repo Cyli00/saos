@@ -308,9 +308,9 @@ def cmd_round(args: argparse.Namespace) -> Any:
     if args.confirm:
         if args.tier or args.note or args.merit is not None:
             raise SaosError(ErrorCode.BAD_ARGS, "--confirm re-measures a recorded round; it takes --of, not --tier, --note or --merit")
-        return _send("round.confirm", args, {"job": args.job, "of": args.of, "viz": not args.no_viz}, args.timeout)
-    if args.of is not None:
-        raise SaosError(ErrorCode.BAD_ARGS, "--of goes with --confirm")
+        return _send("round.confirm", args, {"job": args.job, "of": args.of, "viz": not args.no_viz, "discard": args.discard}, args.timeout)
+    if args.of is not None or args.discard:
+        raise SaosError(ErrorCode.BAD_ARGS, "--of and --discard go with --confirm")
     return _send("round.record", args, {"job": args.job, "tier": args.tier, "note": args.note, "merit": args.merit, "viz": not args.no_viz},
                  args.timeout)
 
@@ -525,6 +525,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-viz", action="store_true", help="skip the layout / spot / ray fan / field / MTF export for saos ui (evaluations/NNN/viz.json)")
     p.add_argument("--confirm", action="store_true", help="on an OpticStudio instance: re-measure a round recorded on the rtc instance before delivery")
     p.add_argument("--of", type=int, default=None, help="with --confirm: the round to re-measure (default: the round saos report would deliver)")
+    p.add_argument("--discard", action="store_true", help="with --confirm: discard unsaved changes of the current lens, as lens load --discard")
     p.add_argument("--detach", action="store_true", help="return at once; a detached process waits for the daemon and writes the response to the job's runs/NNN-<op>.json (saos job show lists it). Use it for anything that may outlast your own command time limit")
     p.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     p.set_defaults(func=cmd_round)

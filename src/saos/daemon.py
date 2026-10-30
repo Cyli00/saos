@@ -43,7 +43,8 @@ LONG_OPS = frozenset({"opt.local", "opt.hammer", "opt.global", "script.exec", "r
 REFRESH_AFTER = frozenset({"lens.load", "lens.set", "lens.build", "opt.local", "opt.hammer", "opt.global", "script.exec", "round.record"})
 # 优化运行中多久给流程图窗口推一次当前镜头（只有几何，不带光线）/ how often a running optimisation updates the live view
 VIEW_DURING_OPT_S = 5.0
-# Hammer、全局搜索运行中在镜头文件旁写出的系统（文件名模式）/ systems Hammer and global search write next to the lens file
+# 全局搜索与 rtc 的 Hammer 在镜头文件旁写出的系统（文件名模式；OpticStudio 的 Hammer 实测不写文件）
+# systems global search and rtc's Hammer write next to the lens file (OpticStudio's Hammer writes none, measured)
 SEARCH_FILES = {"hammer": "{stem}_*_HAMMER.zmx", "global": "GLOPT_*.zmx"}
 # 距上次记轮次累计到这么多次优化（或脚本）时，结果里提醒记一轮：执行记录很多而账本几乎空着，停止判断就没有依据
 # (nightvision 任务 59 个脚本后账本只有第 0 轮，2026-10-19)
@@ -925,10 +926,11 @@ class Daemon:
         return self._run_budgeted_optimization(job, loaded, args, run)
 
     def op_search(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Hammer 或全局搜索。两者都不会自己结束，必须给 max_seconds。OpticStudio 运行中把找到的系统写在镜头文件旁边，
-        结束后移到 lenses/<kind>/NNN/，不留在工作镜头的目录里。
-        Hammer or global search. Neither ends on its own, so max_seconds is required. OpticStudio writes the systems it
-        finds next to the lens file while running; they are moved to lenses/<kind>/NNN/ afterwards."""
+        """Hammer 或全局搜索。两者都不会自己结束，必须给 max_seconds。全局搜索（和 rtc 的 Hammer）运行中把找到的系统写在
+        镜头文件旁边，结束后移到 lenses/<kind>/NNN/；OpticStudio 的 Hammer 只把最好的系统留在内存里。
+        Hammer or global search. Neither ends on its own, so max_seconds is required. Global search (and rtc's Hammer)
+        writes the systems it finds next to the lens file, moved to lenses/<kind>/NNN/ afterwards; OpticStudio's Hammer
+        only leaves the best system in memory."""
         job = self._job(args)
         loaded = self._require_loaded(job)
         if args.get("method") is not None:
@@ -1042,13 +1044,21 @@ class Daemon:
             merit=_arg(args, "merit", (int, float), default=None), viz=_arg(args, "viz", bool, default=True)))
 
     def op_confirm(self, args: dict[str, Any]) -> dict[str, Any]:
-        """在 OpticStudio 上复测 rtc 实例记下的一轮（ADR-0017）。不要求先加载镜头：复测加载归档镜头，结束后回到原来加载的镜头。
-        Re-measure an rtc round on OpticStudio. No lens needs to be loaded: the archive is loaded and the previous lens restored."""
+        """在 OpticStudio 上复测 rtc 实例记下的一轮（ADR-0017）。不要求先加载镜头：复测加载归档镜头，结束后从文件重载原来的镜头，
+        后端的文件路径不变。换镜头前同 lens load：未保存修改要先保存或 discard，窗口里的未保存内容先存副本。
+        Re-measure an rtc round on OpticStudio. No lens needs to be loaded: the archive is loaded, then the previous lens is
+        reloaded from its file. As with lens load, unsaved changes must be saved or discarded first."""
         job = self._job(args)
-        if self.loaded is not None:
-            self._require_loaded(job)
+        loaded = self._require_loaded(job) if self.loaded is not None else None
+        captured = self._before_replace(job, bool(args.get("discard", False)), "re-measuring a round")
         ctx = scripting.ScriptContext(self, job, {})
-        return workflow.confirm_round(ctx, _arg(args, "of", int, default=None), viz=_arg(args, "viz", bool, default=True))
+        try:
+            result = workflow.confirm_round(ctx, _arg(args, "of", int, default=None), viz=_arg(args, "viz", bool, default=True))
+        finally:
+            if loaded is not None:
+                self.backend.load(loaded.path)
+                loaded.dirty = False
+        return {**result, "captured": captured}
 
     def op_operand(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))

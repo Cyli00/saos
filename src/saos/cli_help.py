@@ -277,9 +277,10 @@ COMMANDS.update({
         "  numbers into round N (confirmed_by, rtc keeps the old ones). agrees is false\n"
         "  when achieved, hard_failing or deliverability differ: the decision returns\n"
         "  continue with confirm_failed and saos report refuses until a new round is\n"
-        "  recorded or the user stops. The lens loaded before is restored afterwards;\n"
-        "  with unsaved edits it comes from a temporary copy, so lens save before opt\n"
-        "  hammer/global.\n"
+        "  recorded or the user stops. As with lens load, unsaved changes are refused\n"
+        "  (UNSAVED_CHANGES; --discard drops them) and unsaved window content is saved\n"
+        "  to lenses/captures/ (captured); the lens loaded before is reloaded from its\n"
+        "  file afterwards.\n"
         "  saos report refuses an rtc round that is not confirmed.\n"
         "  Saves lenses/rounds/rNNN.zmx only after checks prove the lens unchanged;\n"
         "  evaluations/NNN/result.json is authoritative and ledger.jsonl commits the\n"
@@ -314,7 +315,7 @@ COMMANDS.update({
         "  invalidate the recorded round. MTF falls back to per-field calculation when\n"
         "  a chief ray fails; errors.FftMtf explains missing fields. StandardSpot traces\n"
         "  fewer rays for wavelength weights <1, so its GEO may understate point extent.",
-        "DEMAND_NOT_CONFIRMED, DEMAND_BLOCKED, MODEL_NOT_APPROVED, LENS_MODIFIED_BY_CHECK, DUPLICATE_ROUND, SPEC_CHANGED, BACKEND_UNSUPPORTED, BAD_ARGS"),
+        "DEMAND_NOT_CONFIRMED, DEMAND_BLOCKED, MODEL_NOT_APPROVED, LENS_MODIFIED_BY_CHECK, DUPLICATE_ROUND, SPEC_CHANGED, BACKEND_UNSUPPORTED, UNSAVED_CHANGES, BAD_ARGS"),
     "rule-out": (
         "Exclude strategy tiers using evidence for the current demand version locally.",
         "Requires an existing round in this demand version. --tier repeats or uses\n"
@@ -385,8 +386,8 @@ for _name, _purpose, _details in (
      "Requires --max-seconds. The ten best systems are archived under lenses/global/NNN/."),
 ):
     if _name != "local":
-        _details += (" Refused with BAD_ARGS while the lens in memory comes from a temporary copy (after ctx.restored(), an expert "
-                     "run, or round --confirm on a lens with unsaved edits); lens save first.")
+        _details += (" Refused with BAD_ARGS while the lens in memory comes from a temporary copy (after ctx.restored() or an "
+                     "expert run); lens save first.")
     COMMANDS[f"opt {_name}"] = (
         _purpose, _details + "\n"
         "The command budget includes initial measurements and final review. "

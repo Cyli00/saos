@@ -41,7 +41,7 @@
 - 全局搜索：从起点大幅扰动（σ = 2），所有换料面同时随机换，局部优化，保留评价函数最小的 10 个。
 - 两者都只比较满足全部约束的解，到 `max_seconds` 或取消为止；结束（含异常）时镜头是最好解，没有可行解时回到起点。
 - 换料候选：所选目录（空为全部在用目录）里 nd、νd 离当前玻璃最近的 8 种（距离按 Δnd/0.03、Δνd/6 计），含当前玻璃。OpticStudio 是在整个目录里换。
-- 找到的系统写在镜头文件旁（全局 `GLOPT_NNNN.zmx` 按评价函数从小到大，Hammer `<镜头>_0000_HAMMER.zmx`），由 daemon 归档到 `lenses/<kind>/NNN/`，与 OpticStudio 相同。
+- 找到的系统写在镜头文件旁（全局 `GLOPT_NNNN.zmx` 按评价函数从小到大，Hammer `<镜头>_0000_HAMMER.zmx`），由 daemon 归档到 `lenses/<kind>/NNN/`。全局搜索与 OpticStudio 相同；OpticStudio 的 Hammer 经 API 实测不写文件，结果只在内存里（2026-10-30）。
 - 实测（同上镜头，两面换料）：Hammer 8 s 试了 26 个系统，0.6309 → 0.6177（换成 P-BK7、N-SF19）；全局搜索 8 s 试了 12 个系统，0.6177 → 0.5827。
 
 ## 结构确认与 .zmx 往返
@@ -52,7 +52,7 @@
 
 ## 复测（`saos round --confirm`）
 
-1. 在 OpticStudio 实例上运行，不需要先加载镜头；结束（含失败）时恢复入口镜头：没有未保存修改就重载原文件；有则加载临时快照，修改保留，但后端文件路径停在快照上，Hammer 与全局搜索要先 `saos lens save`。默认复测 `saos report` 会交付的那一轮（`ledger.deliver_round`），`--of N` 指定。
+1. 在 OpticStudio 实例上运行，不需要先加载镜头。换镜头前同 `lens load`：未保存修改报 `UNSAVED_CHANGES`（`--discard` 放弃），窗口里的未保存内容先存到 `lenses/captures/`；结束（含失败）时从文件重载原来的镜头，后端文件路径不变。默认复测 `saos report` 会交付的那一轮（`ledger.deliver_round`），`--of N` 指定。
 2. 加载那一轮的归档镜头，核对模型确认（OpticStudio 的完整指纹，含 rtc 读不出的三项），按当前判定测量，检查判定没有改动镜头，查零件交叠。
 3. 追加 `tier: confirm` 的记录：`confirm_of`、`agrees`、`verdict`（两边的达成与可交付）、`diffs`（逐项 rtc 与 OpticStudio 值）。达成、`hard_failing` 或可交付性不同则 `agrees: false`。
 4. `ledger.load` 默认返回 `effective` 之后的轮次：复测数值换进第 N 轮（`confirmed_by`、`measured_on: zos`，原值在 `rtc`）。终止判断、流程图窗口和报告都用它；`raw=True` 给编号新记录用。

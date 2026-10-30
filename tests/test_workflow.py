@@ -170,7 +170,7 @@ def call(daemon, op, **args):
 
 
 @pytest.mark.parametrize("fail", [False, True])
-def test_round_confirmation_restores_unsaved_changes_and_blocks_a_disagreed_report(setup, monkeypatch, fail):
+def test_round_confirmation_handles_unsaved_changes_like_lens_load_and_blocks_a_disagreed_report(setup, monkeypatch, fail):
     daemon, job = setup
     write_demand(job, DEMAND)
     recorded = call(daemon, "round.record", job=job.id, viz=False)["result"]["record"]
@@ -178,27 +178,28 @@ def test_round_confirmation_restores_unsaved_changes_and_blocks_a_disagreed_repo
     raw = ledger.load(path, raw=True)
     raw[0].update(backend="rtc", achieved=True)
     path.write_text("".join(json.dumps(r) + "\n" for r in raw), encoding="utf-8")
-    call(daemon, "lens.set", job=job.id, surface=1, param="radius", value=75.0)
-    before = daemon.backend.surfaces()
+    saved = daemon.backend.surfaces()
     loaded = daemon.loaded
-    assert loaded.dirty
+    call(daemon, "lens.set", job=job.id, surface=1, param="radius", value=75.0)
+    edited = daemon.backend.surfaces()
+    # 同 lens load：未保存修改要先保存或放弃 / as with lens load, unsaved changes are saved or discarded first
+    refused = call(daemon, "round.confirm", job=job.id, of=recorded["round"], viz=False)["error"]
+    assert refused["code"] == ErrorCode.UNSAVED_CHANGES
+    assert daemon.backend.surfaces() == edited and loaded.dirty and len(ledger.load(path, raw=True)) == 1
     if fail:
         def broken(*args, **kwargs):
             raise RuntimeError("复测中断")
         monkeypatch.setattr(workflow.demand, "evaluate", broken)
-    result = call(daemon, "round.confirm", job=job.id, of=recorded["round"], viz=False)
-    assert daemon.backend.surfaces() == before
-    assert daemon.loaded is loaded and loaded.dirty
-    # 有未保存修改时从临时副本恢复，后端的文件路径停在副本上：Hammer 先拒绝，保存后才回到任务文件
-    # restored from a temporary copy: the backend's file is that copy, so search is refused until the lens is saved
-    assert not same_path(daemon.backend.native_file(), loaded.path)
-    refused = call(daemon, "opt.hammer", job=job.id, max_seconds=5)["error"]
-    assert refused["code"] == ErrorCode.BAD_ARGS and "native_file" in refused["details"]
+    result = call(daemon, "round.confirm", job=job.id, of=recorded["round"], viz=False, discard=True)
+    # 结束（含失败）时从文件重载原镜头，后端的文件路径不变 / the lens is reloaded from its file, also on failure
+    assert daemon.backend.surfaces() == saved
+    assert daemon.loaded is loaded and not loaded.dirty
+    assert same_path(daemon.backend.native_file(), loaded.path)
     if fail:
         assert not result["ok"]
         assert len(ledger.load(path, raw=True)) == 1
     else:
-        assert result["ok"] and not result["result"]["agrees"]
+        assert result["ok"] and not result["result"]["agrees"] and result["result"]["captured"] is None
         assert result["result"]["decision"]["status"] == "continue"
         with pytest.raises(SaosError, match="return to design"):
             report.build(job)
@@ -208,8 +209,6 @@ def test_round_confirmation_restores_unsaved_changes_and_blocks_a_disagreed_repo
         ledger.record_stop(job.root, demand.compute_digest(demand.validate(DEMAND)), "复测不符，按现结构交付", "就交付这一版")
         built = report.build(job)
         assert built["decision"]["status"] == "stopped" and built["deliver"]["confirmed_by"] is not None
-    assert call(daemon, "lens.save", job=job.id)["ok"]
-    assert same_path(daemon.backend.native_file(), daemon.loaded.path)
 
 
 def test_round_confirmation_reloads_a_clean_lens_from_its_own_file(setup):
@@ -225,6 +224,19 @@ def test_round_confirmation_reloads_a_clean_lens_from_its_own_file(setup):
     assert call(daemon, "round.confirm", job=job.id, of=recorded["round"], viz=False)["ok"]
     assert daemon.loaded is loaded and not loaded.dirty
     assert same_path(daemon.backend.native_file(), loaded.path)
+
+
+def test_search_waits_for_a_save_after_a_restore_from_a_temporary_copy(setup):
+    daemon, job = setup
+    write_demand(job, DEMAND)
+    source = "def run(ctx):\n    with ctx.restored():\n        pass\n"
+    assert call(daemon, "script.exec", job=job.id, name="restore", source=source, args={})["ok"]
+    # 后端的文件路径停在 %TEMP% 的副本上：搜索结果会写到任务目录之外 / the backend's file is the copy outside the job
+    assert not same_path(daemon.backend.native_file().parent, daemon.loaded.path.parent)
+    refused = call(daemon, "opt.hammer", job=job.id, max_seconds=5)["error"]
+    assert refused["code"] == ErrorCode.BAD_ARGS and "native_file" in refused["details"]
+    assert call(daemon, "lens.save", job=job.id)["ok"]
+    assert same_path(daemon.backend.native_file(), daemon.loaded.path)
 
 
 def test_workflow_rounds_until_achieved_and_report(setup):

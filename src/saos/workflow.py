@@ -372,10 +372,10 @@ CONFIRM_PURPOSE = "confirm"
 def confirm_round(ctx, of: int | None = None, viz: bool = True) -> dict[str, Any]:
     """在 OpticStudio 上复测一个 rtc 轮次的归档镜头（ADR-0017），记一条 tier 为 confirm 的记录；读 ledger 时它的数值换进那一轮。
     不给 of 时复测报告要交付的那一轮。判定结论（达成、硬条件、可交付）与 rtc 不同时 agrees 为 False，回到设计阶段。
-    结束时重新加载复测前的镜头（有的话）。
+    换镜头前的未保存修改与复测后重载原镜头由 daemon.op_confirm 负责（同 lens load）。
     Re-measure the archived lens of an rtc round on OpticStudio and record a confirmation; reading the ledger puts its
     numbers into that round. Without of, the round a report would deliver. agrees is False when the verdict (achieved,
-    hard limits, deliverable) differs from rtc's, which sends the job back to design. The lens loaded before is reloaded."""
+    hard limits, deliverable) differs from rtc's, which sends the job back to design. daemon.op_confirm handles unsaved changes and reloads the lens."""
     if ctx.backend.identity().get("backend") == "rtc":
         raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, "round --confirm re-measures on OpticStudio; run it on an OpticStudio instance")
     h, sha, confirmation = preflight(ctx.job.root)
@@ -398,21 +398,18 @@ def confirm_round(ctx, of: int | None = None, viz: bool = True) -> dict[str, Any
     if ledger.version(target) != (sha, method_sha):
         raise SaosError(ErrorCode.SPEC_CHANGED, f"round {target['round']} was judged under another demand or check version; "
                         "record a new round on the rtc instance first", {"round": target["round"]})
-    from saos.kit import restored
-
-    with restored(ctx, reload_clean=True):
-        ctx.job.write_progress(stage=f"confirm r{int(target['round']):03d}")
-        ctx.backend.load(ctx.path(f"lenses/{target['file']}"))
-        desc, lens_sha = lens_state(ctx)
-        approved = model_gate.require_approved(ctx.job, desc)
-        ev = demand.evaluate(ctx, h, scripts, lens={"file": target["file"], "round": target["round"], "purpose": CONFIRM_PURPOSE})
-        desc_after, _ = lens_state(ctx)
-        clash = parts_clash(ctx)
-        try:
-            merit = float(ctx.backend.merit_value())
-        except Exception:  # noqa: BLE001 - 没有评价函数时只是不记录 / no merit function: just not recorded
-            merit = None
-        view = export_viz(ctx, ev["evidence_dir"]) if viz else None
+    ctx.job.write_progress(stage=f"confirm r{int(target['round']):03d}")
+    ctx.backend.load(ctx.path(f"lenses/{target['file']}"))
+    desc, lens_sha = lens_state(ctx)
+    approved = model_gate.require_approved(ctx.job, desc)
+    ev = demand.evaluate(ctx, h, scripts, lens={"file": target["file"], "round": target["round"], "purpose": CONFIRM_PURPOSE})
+    desc_after, _ = lens_state(ctx)
+    clash = parts_clash(ctx)
+    try:
+        merit = float(ctx.backend.merit_value())
+    except Exception:  # noqa: BLE001 - 没有评价函数时只是不记录 / no merit function: just not recorded
+        merit = None
+    view = export_viz(ctx, ev["evidence_dir"]) if viz else None
     if lens_changes(desc, desc_after):
         raise SaosError(ErrorCode.LENS_MODIFIED_BY_CHECK, f"a check changed the lens of round {target['round']} while re-measuring it; "
                         "make the checks read-only", {"evaluation": ev["evidence_dir"]})
