@@ -1,10 +1,10 @@
 # Recipe (draft): side-viewing imaging-fibre probes
 
-Use this when the job designs a sub-millimetre side-viewing probe: imaging fibre face → lenses → 45° fold prism → glass tube wall → tissue, at 488 nm (excitation, focusing) and 532 nm (emission reference). For a fibre-delivered excitation probe (a fibre point source focused through lenses and a tube wall into tissue, such as a two-photon zoom probe), use the backend status, the diffraction bounds and the starting forms below, and measure the PSF with the diffraction kit ([scripting.md](../scripting.md#scripts)); the side-view measurement library does not cover it.
+Use this when the job designs a sub-millimetre side-viewing probe: imaging fibre face → lenses → 45° fold prism → glass tube wall → tissue, at 488 nm (excitation, focusing) and 532 nm (emission reference). For a fibre-delivered excitation probe (a fibre point source focused through lenses and a tube wall into tissue, such as a two-photon zoom probe), use the backend status, the diffraction bounds and the starting forms below, and build the checks from `saos.micro` ([scripting.md](../scripting.md#micro-optics-measurements)): focus depth in the medium, sample-side NA, zoom travel, gaps and housing clearance, PSF widths. The side-view library below assumes the fold and the tube comments and does not fit it.
 
 Not covered: the proximal side (beam splitter, relay, camera), volume scattering, tolerancing.
 
-**Draft.** No fibre job has been delivered. The measurement library was lifted from six jobs that copied the same check helpers (`fiber-air`, `fiber-water`, `fiber-grin`, `fiber-grin-no1b`, `fiber-grin-edmund`, `fiber-printed-relay`). Their answers are not defaults for a new user.
+**Draft.** No fibre job has been delivered. The side-view library (`saos.recipes.fiber.side_view`, on top of `saos.micro`) was lifted from six jobs that copied the same check helpers (`fiber-air`, `fiber-water`, `fiber-grin`, `fiber-grin-no1b`, `fiber-grin-edmund`, `fiber-printed-relay`). Their answers are not defaults for a new user.
 
 ## Backend status
 
@@ -28,6 +28,7 @@ Before a PSF width becomes a `must`, write its diffraction floor at the NA the s
 
 ## Stage 1: questions for the demand
 
+- For a forward-viewing or zoom probe, how the sample-side NA is defined. Three zoom jobs used three definitions: the marginal height over the focus depth, n·sin u of the marginal ring (`micro.marginal_na`), and half the angle between opposite marginal rays. Over which part of the travel it must hold matters too, at the far end or everywhere.
 - Which part of the fibre face is imaged (the jobs used the centre 400 µm circle), and how the image size on the sample is measured (four-direction minimum diameter of edge image centroids, or both spans).
 - The working distance window outside the tube and whether the focus must be real in tissue. The jobs first used (0, 30] µm, then the user set 0 ≤ WD ≤ 0.5 ℓs with ℓs = 1/µs ≈ 47 µm, giving 0–23.5 µm. That ℓs is the Yona et al. (2016) estimate for mouse cortex slices at 473 nm: not a general brain-tissue value and not measured at 488/532 nm. Ask which tissue the probe is for.
 - Allowed focus shift between excitation and emission (jobs: ≤ 20 µm).
@@ -65,7 +66,7 @@ def run(ctx):
 | `collect_center`, `collect_mid`, `collect_edge` | geometric collection fraction of 4π |
 
 - Every measurement first checks part geometry (thickness along propagation, surfaces defined at their semi-diameters, edge thickness) and returns `inf` when it fails. A parallel beam, or fewer than 3 usable rays, has no focus and also returns `inf`.
-- `psf_z` is the slowest item: 31–61 Huygens PSFs per field at about 0.175 s each, 6.8–27 s per evaluation on the printed lenses. Keep it out of search objectives. In the daemon it spreads its five fields over the worker pool, starting it if needed and leaving 2 licences free; a detached scan holding the pool makes it run serially.
+- `psf_z` is the slowest item: 31–61 Huygens PSFs per field at about 0.175 s each, 6.8–27 s per evaluation on the printed lenses. Keep it out of search objectives. `layout=Layout(psf_z_scan="outward")` computes only the planes around the focus (offline, 7–9 instead of 31 for a single peak), a different definition: run both on the job's lens once and keep outward only when they agree. In the daemon it spreads its five fields over the worker pool, starting it if needed and leaving 2 licences free; a detached scan holding the pool makes it run serially.
 - None of these include absorption or fluorescence (the material AGFs carry refractive index only); say so in the report.
 
 ## Stage 2: modelling conventions

@@ -94,10 +94,10 @@ class ScriptContext(KitMethods):
         marginal_ray_height(height=0, zone=0)（厚度）、f_number(value)（半径）。返回回读的求解。
         Set the solve of one surface cell; returns the solve read back."""
         from saos import kit
-        from saos.backend.base import PAR_RE
+        from saos.lensdata import PAR_RE, parse_key
 
         self._editing("solve")
-        what, ref, param = kit.parse_key(key)
+        what, ref, param = parse_key(key)
         if what != "surface" or not (param in ("radius", "thickness", "conic") or PAR_RE.match(param)):
             raise SaosError(ErrorCode.BAD_ARGS, f"solves are set on <surface>.radius|thickness|conic|par<N>, got {key!r}")
         allowed = SOLVE_PARAMETERS.get(kind)
@@ -260,6 +260,16 @@ class ScriptContext(KitMethods):
         from saos import parallel
 
         return parallel.run_map(self, fn, items, workers, reset, args)
+
+    def spare_map(self, fn: str, items: list[Any], keep_free: int = 2, min_workers: int = 2, label: str = "spare") -> dict[str, Any] | None:
+        """有空闲许可证才在 worker 池上跑 "saos.<模块>:<函数>"（当前内存状态的副本，不必先保存）；借不到时为 None，自己串行算。
+        判定库用它把可拆开的慢测量（逐视场 PSF）分出去（saos.micro.pooled）。
+        Run "saos.<module>:<function>" on the worker pool only when licences are free (on a copy of the in-memory state,
+        no save needed); None when it cannot borrow the pool, so compute serially. Measurement libraries use it through
+        saos.micro.pooled for slow measurements that split by field."""
+        from saos import parallel
+
+        return parallel.spare_map(self, fn, items, keep_free=keep_free, min_workers=min_workers, label=label)
 
     def pool_close(self) -> dict[str, Any]:
         """立即关闭 worker 池、释放许可证（否则空闲 SAOS_POOL_IDLE_S 秒后自动关闭）。

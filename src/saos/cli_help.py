@@ -516,13 +516,21 @@ Sequential rays, analyses and focus
     scans and field sweeps in one session (each session opens an analysis window).
     kit.psf_widths(p, n_photon=1, ee=0.8): fwhm_x/fwhm_y through the peak and
     ee_diameter about the centroid. kit.psf_axial(peak_at, step_um, reaches=(15, 30),
-    n_photon=1): peak_at(k) gives the peak k steps out of focus (move and restore
-    the plane yourself); returns fwhm_um, peak_offset_um, reach, curve or None.
-    ctx.wavefront_rms(field, wave=None): ray-integrated RMS to centroid, waves.
+    n_photon=1, scan="window"): peak_at(k) gives the peak k steps out of focus (move
+    and restore the plane yourself); returns fwhm_um, peak_offset_um, reach, planes,
+    curve or None. scan="outward" stops once both sides fall below half: far fewer
+    planes, but a higher peak farther out is missed (a different definition).
+    ctx.wavefront_rms(field, wave=None): ray-integrated RMS to centroid, waves; a
+    list of fields gives a list from one analysis.
     ctx.aperture(surface): the surface aperture. rtc: huygens and wavefront_rms
     are BACKEND_UNSUPPORTED until reconciled with OpticStudio (ADR-0020).
   from saos import kit: global_matrix, sag, pupil, best_focus, material_nd
     (model glass uses its solve's nd), profile, fwhm. Optical evaluations use ZOS-API.
+  from saos import micro: micro-optics measurements (focus depth in a medium,
+    marginal NA, part gaps and housing clearance, collection, PSF widths, zoom
+    travel); DesignFailure means inf through micro.guarded. Definitions are in
+    each function's docstring. ctx.spare_map(fn, items, keep_free=2) runs fn
+    ("saos.<module>:<function>") on the pool only when licences are free, else None.
 
 Extrema and sampling coverage
   ctx.cra(direction=(0,1), wave=None, n=33, refine=2, to=None): actual chief-ray

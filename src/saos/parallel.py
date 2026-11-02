@@ -321,6 +321,51 @@ class Pool:
         self.cap = None
 
 
+def spare_map(ctx, fn: str, items: list[Any], *, keep_free: int = 2, min_workers: int = 2, label: str = "spare") -> dict[str, Any] | None:
+    """有余量时才借池：已开着的 worker 照用，新开的只用许可证余量减去 keep_free（留给用户的窗口和别的实例），凑不出 min_workers
+    个 worker、池正被分离扫描占用、或后端导不出当前内存状态的副本（export_native）时返回 None，由调用方自己串行算。
+    worker 拿到的是主实例当前内存状态的副本，所以未保存的修改、rebase 时装着的归档镜头都照样测；不写 parallel/ 归档。
+    fn 是 "saos.<模块>:<函数>"。返回值同 dispatch。
+    Borrow the pool only when there is room: running workers are used, new ones only from the free licences minus
+    keep_free; None when fewer than min_workers fit, the pool is busy with a detached scan, or the backend cannot export
+    a copy of its in-memory state (export_native), and the caller then computes serially. Workers get a copy of the main
+    instance's state, so unsaved changes and the archived lens of a rebase are measured as they are; nothing is archived
+    under parallel/. fn is "saos.<module>:<function>". Returns what dispatch returns."""
+    from saos import client
+
+    if not (isinstance(fn, str) and fn.startswith("saos.") and ":" in fn):
+        raise SaosError(ErrorCode.BAD_ARGS, f"spare_map runs a saos module function (saos.<module>:<function>), got {fn!r}")
+    if not isinstance(items, list) or not items:
+        raise SaosError(ErrorCode.BAD_ARGS, "items must be a non-empty list of JSON-able values")
+    pool = getattr(getattr(ctx, "_daemon", None), "pool", None)
+    export = getattr(ctx.backend, "export_native", None)
+    if pool is None or export is None:
+        return None
+    alive = sum(1 for w in pool.workers if w.alive)
+    free = config.LICENSED_INSTANCES - len(client.process_pids("OpticStudio.exe"))
+    count = min(len(items), config.compute_cores(), alive + max(0, free - int(keep_free)))
+    if count < int(min_workers) or not pool.lock.acquire(blocking=False):
+        return None
+    folder: Path | None = None
+    try:
+        # 取得锁之后的每一步都在 try 里，出任何错都会释放锁，池不会一直被占着
+        # everything after taking the lock sits in the try, so any failure releases it and the pool is never left held
+        folder = Path(tempfile.mkdtemp(prefix="saos-spare-"))
+        snapshot = folder / "lens.zmx"
+        try:
+            export(snapshot)
+        except Exception:  # noqa: BLE001 - 存不出副本就让调用方串行 / no copy: the caller measures serially
+            return None
+        if not snapshot.is_file():
+            return None
+        return dispatch(pool, ctx.job, snapshot, fn, None, items, count, True, None,
+                        progress=lambda stage: ctx.job.write_progress(stage=f"{label} {stage}"), cancelled=lambda: False)
+    finally:
+        pool.lock.release()
+        if folder is not None:
+            shutil.rmtree(folder, ignore_errors=True)
+
+
 def run_map(ctx, fn: str, items: list[Any], workers: int | None = None, reset: bool = True, args: dict[str, Any] | None = None,
             archive: bool = True) -> dict[str, Any]:
     """把 items 分给池里的 worker 并发执行 fn(w, item)，按条目顺序返回结果。
