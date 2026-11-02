@@ -531,6 +531,9 @@ Sequential rays, analyses and focus
     travel); DesignFailure means inf through micro.guarded. Definitions are in
     each function's docstring. ctx.spare_map(fn, items, keep_free=2) runs fn
     ("saos.<module>:<function>") on the pool only when licences are free, else None.
+  from saos import library: shared reference data. library.catalog() lists the
+    libraries; library.find(name, text, **fields) returns entries with their
+    sources; library.index(material_id, wavelength_nm) never extrapolates.
 
 Extrema and sampling coverage
   ctx.cra(direction=(0,1), wave=None, n=33, refine=2, to=None): actual chief-ray

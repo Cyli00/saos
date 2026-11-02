@@ -3,31 +3,16 @@
 import argparse
 import csv
 import json
-import math
 from pathlib import Path
+
+from saos.library import refractive_index  # 色散计算只有这一份实现 / the one dispersion implementation
+from saos.protocol import SaosError
 
 ROOT = Path(__file__).resolve().parent
 
 
 def load():
     return json.loads((ROOT / 'catalog.json').read_text(encoding='utf-8'))
-
-
-def refractive_index(material, wavelength_nm):
-    model = material['dispersion']
-    if model is None:
-        raise ValueError(f"{material['id']} 缺少可用色散模型，不能计算指定波长折射率")
-    lo, hi = model['valid_range_nm']
-    if not math.isfinite(wavelength_nm) or not lo <= wavelength_nm <= hi:
-        raise ValueError(f"波长必须在 {lo}–{hi} nm 内，禁止外推")
-    coefficients = model['coefficients']
-    if model['formula'] == 'cauchy_nm':
-        a, b, c = coefficients
-        return a + b / wavelength_nm**2 + c / wavelength_nm**4
-    if model['formula'] == 'sellmeier1_um':
-        w2 = (wavelength_nm / 1000)**2
-        return math.sqrt(1 + sum(coefficients[i] * w2 / (w2 - coefficients[i+1]) for i in (0, 2, 4)))
-    raise ValueError(f"不支持的色散公式：{model['formula']}")
 
 
 def export_agf(materials):
@@ -87,7 +72,7 @@ def main():
             parser.error('材料 ID 不存在；省略参数可查看列表')
         try:
             values = {str(w): refractive_index(material, w) for w in args.wavelength}
-        except ValueError as exc:
+        except SaosError as exc:
             parser.error(str(exc))
         print(json.dumps({'id': material['id'], 'n_by_wavelength_nm': values,
                           'basis': material['dispersion'], 'notes': material['notes']}, ensure_ascii=False, indent=2))

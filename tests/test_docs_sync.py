@@ -33,9 +33,10 @@ REMOVED = {"probe", "reverify"}
 HISTORY_MARKS = ("原", "并入", "取消", "旧", "removed", "folded", "former")
 SKILL_DOCS = tuple(name for name in DOCS if name.startswith(".agents/"))
 # agent 脚本里直接调用的 Python 包；包内新增的子模块自动纳入核对
-AGENT_PACKAGES = ("saos.ctx", "saos.starts", "saos.search", "saos.micro")
+AGENT_PACKAGES = ("saos.ctx", "saos.starts", "saos.search", "saos.micro", "saos.library")
 # 有意不写进技能的接口：内部辅助、只靠命令帮助说明的命令。新增接口要么写进技能文档，要么加在这里
 INTERNAL = {
+    "saos.library.root",
     "ctx.analysis", "ctx.child", "ctx.configurations", "ctx.describe", "ctx.detector", "ctx.dirty", "ctx.lens", "ctx.lib", "ctx.mark_dirty",
     "ctx.memo", "ctx.nsc_trace", "ctx.object_index", "ctx.objects", "ctx.op", "ctx.path", "ctx.quick_focus", "ctx.ray_hits", "ctx.save_as",
     "ctx.show", "ctx.spot", "ctx.surface", "ctx.trace", "ctx.values", "ctx.zosapi",

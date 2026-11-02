@@ -39,6 +39,8 @@ The unoptimised pass only shows whether a start traces and fits together; choosi
 
 ## Record material sources
 
+Shared reference data (materials, coatings, thermal dn/dT, mechanics, glass catalogs, patents, starts, microscope objectives) is read through `saos.library`. `library.catalog()` lists each library with its entry count, fields and specification search. `library.find("materials", "NOA", category="adhesive")` returns the entries containing the text with equal fields, each with the sources it cites (`total` plus the first `limit`). `library.index(id, wavelength_nm)` gives a materials-library index and refuses wavelengths outside the model's range; `refractive_index(record, wavelength_nm)` does the same for a record in hand. Read the library's README before using its numbers: it states versions, source grades and limits.
+
 Every material needs a source in `sources/materials.yaml` (format in `saos.materials_record`, fields as in `library/materials`). The model page distinguishes source found, data complete, backend supported and actually loaded; without the record, "source found" is unknown. A model glass (`nd`/`Vd` only) is fine for exploration; rounds and reports mark it as not deliverable.
 
 ## Describe the model

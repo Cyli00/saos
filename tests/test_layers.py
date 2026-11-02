@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1] / "src" / "saos"
 
 # saos.ctx.rows 是评价函数行的构造与校验，没有依赖，后端编译评价函数行时要用 / no dependencies; backends compile merit rows with it
-BASE = {"protocol", "config", "budget", "lensdata", "geometry", "prescription", "lens_files", "glasscat", "native_ui", "ctx", "ctx.rows"}
+BASE = {"protocol", "config", "budget", "lensdata", "geometry", "prescription", "lens_files", "glasscat", "library", "native_ui", "ctx", "ctx.rows"}
 MEASURE = {"kit", "fast", "search", "micro"}
 # 只含测量函数的配方库与测量库同层：判定脚本导入它们，它们不得伸进执行层 / measurement-only recipe libraries sit with kit
 MEASURE_RECIPES = ("recipes.fiber",)

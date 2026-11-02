@@ -10,7 +10,7 @@
 |---|---|
 | [catalog.json](catalog.json) | 主数据：材料、固化状态、来源、折射率、公式、单位、波段和缺项 |
 | [summary.csv](summary.csv) | 可用表格软件打开的汇总；488/532 nm 列明确为模型计算值 |
-| [catalog.py](catalog.py) | 标准库实现的查询与导出工具，不需要连接 OpticStudio |
+| [catalog.py](catalog.py) | 查询与导出工具，色散计算用 `saos.library.refractive_index`，不需要连接 OpticStudio |
 | [SAOS_MICRO_20261014.AGF](SAOS_MICRO_20261014.AGF) | 9 条具有色散模型的自定义 Zemax 材料；仅用于折射率与色散计算 |
 | [sources/darus-6471/manifest.json](sources/darus-6471/manifest.json) | 研究数据原文件的下载地址、版本、许可及 SHA-256 |
 | `catalog.json` 中的 `sources` | 厂家 TDS/PDS 的来源链接及下载时 SHA-256；PDF 已删除，不在项目内保存 |
