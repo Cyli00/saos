@@ -104,14 +104,16 @@ def viz_of(job: jobs.Job, number: int) -> dict[str, Any]:
     return _with_section(json.loads(path.read_text(encoding="utf-8")))
 
 
-def gate_of(job: jobs.Job) -> dict[str, Any]:
+def gate_of(job: jobs.Job, current: str | None = None) -> dict[str, Any]:
     """窗口里要用户点确认的关卡：当前步骤是确认需求时给出需求单（demand.confirm_gate），是确认建模说明时给出那份说明
     （model_gate.approval_gate）；都不是时两项为 None。
     The gate the window asks the user to press: the demand (demand.confirm_gate) at demand_confirm, the description
-    (model_gate.approval_gate) at model_approve; both None otherwise."""
+    (model_gate.approval_gate) at model_approve; both None otherwise. current is the snapshot's step when the caller
+    already has it, which spares a second snapshot on every poll."""
     from saos import demand, model_gate
 
-    current = stage.snapshot(job)["current"]
+    if current is None:
+        current = stage.snapshot(job)["current"]
     return {"step": current, "demand": demand.confirm_gate(job.root) if current == "demand_confirm" else None,
             "model": model_gate.approval_gate(job) if current == "model_approve" else None}
 
@@ -231,7 +233,9 @@ class Handler(BaseHTTPRequestHandler):
             self.server.seen[job.id] = time.monotonic()
             _mark_closed(job.id, False)
             (self.server.hidden.add if args.get("hidden") == "1" else self.server.hidden.discard)(job.id)
-            return {**stage.snapshot(job), "notice": self.server.notices.get(job.id)}
+            snap = stage.snapshot(job)
+            # 关卡内容随状态一起给，窗口不用每次轮询再要一遍 / the gate comes with the state, so the window needs no second request
+            return {**snap, "gate": gate_of(job, snap["current"]), "notice": self.server.notices.get(job.id)}
         if path == "/api/notice" and method == "POST":
             # agent 停下来问用户时留的话（saos ui notify），用户在窗口里点掉 / what the agent left when it stopped to ask
             message = str(args.get("message") or "").strip()

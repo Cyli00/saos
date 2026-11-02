@@ -174,7 +174,7 @@ def _report_current(root) -> bool:
     return all(made >= p.stat().st_mtime for p in inputs if p.is_file())
 
 
-def pending_revisions(job: jobs.Job, sha: str, d: dict[str, Any]) -> list[dict[str, Any]]:
+def pending_revisions(job: jobs.Job, sha: str, demand_confirmed: bool) -> list[dict[str, Any]]:
     """用户在窗口里对当前版本提出、还没处理的修改意见：需求单还是那一版且未确认，或建模说明还是最新一份且未确认。
     出了新版本（或用户后来还是确认了），请求就不再列出。
     Change requests the user made on the current versions and not yet answered: the same demand version, unconfirmed,
@@ -183,7 +183,7 @@ def pending_revisions(job: jobs.Job, sha: str, d: dict[str, Any]) -> list[dict[s
     models = sorted(p for p in (root / "models").glob("*/model.json")) if (root / "models").is_dir() else []
     latest = models[-1].parent if models else None
     open_targets = set()
-    if demand.confirmation_for(root, sha, d) is None:
+    if not demand_confirmed:
         open_targets.add(("demand", sha))
     if latest is not None and not (latest / model_gate.APPROVAL_FILE).is_file():
         open_targets.add(("model", latest.relative_to(root).as_posix()))
@@ -239,8 +239,9 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
     # 版本（轮次、停止、排除、报告）用计算层哈希；确认用确认层哈希 / versions use the compute layer; confirmation uses the confirmation layer
     csha = demand.compute_digest(d)
     status["interview"] = "done"
-    out["revisions"] = pending_revisions(job, sha, d)
-    if demand.confirmation_for(root, sha, d) is None:
+    confirmed = demand.confirmation_for(root, sha, d) is not None
+    out["revisions"] = pending_revisions(job, sha, confirmed)
+    if not confirmed:
         status["demand_confirm"] = "waiting"
         # 确认过旧版本：需求改过，要重新确认 / an older version was confirmed: the demand changed and needs confirming again
         detail["demand_confirm"] = "reconfirm" if demand.confirmations(root) else "first"

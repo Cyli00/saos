@@ -1507,7 +1507,7 @@ function renderRounds(view) {
 // the user confirms the demand and approves a model here; the CLI's --quote only works when the window cannot be used
 let gateKey = null;
 
-async function renderGate() {
+function renderGate() {
   const el = $("gate");
   // 自主任务：只说明谁在过关卡，并给用户一个改为参与的按钮（反过来只能在建任务时定，ADR-0021）
   // an autonomous job: say who passes the gates and offer the switch to interactive (the reverse is set at job creation only)
@@ -1525,8 +1525,7 @@ async function renderGate() {
   if (!["demand_confirm", "model_approve"].includes(state.current) || !["waiting", "blocked"].includes(step?.status)) {
     el.hidden = true; el.innerHTML = ""; gateKey = null; return;
   }
-  let g;
-  try { g = await api("gate"); } catch { return; }
+  const g = state.gate || { demand: null, model: null };
   // 内容没变就不重画：重画会清掉用户正在打的备注 / redraw only on a change, or the note being typed is lost
   const key = JSON.stringify([g, state.revisions]);
   if (key === gateKey) return;
@@ -1603,7 +1602,7 @@ async function poll() {
       if (modeChanged) { analyses = null; renderView(); }
     }
     renderTop();
-    await renderGate();
+    renderGate();
   } catch (e) {
     // 服务重启后沿用同一端口和令牌，继续轮询就能重连 / a restarted service keeps the port and token: keep polling
     $("mode-chip").textContent = e instanceof TypeError ? t("disconnected") : e.message;
