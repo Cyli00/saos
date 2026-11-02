@@ -94,8 +94,25 @@ def _load_zosapi(root: str):
     clr.AddReference(os.path.join(root, "ZOSAPI_Interfaces.dll"))
     import ZOSAPI
 
+    _pin_invariant_culture()
     _ZOSAPI = ZOSAPI
     return ZOSAPI
+
+
+def _pin_invariant_culture() -> None:
+    """调用 ZOS-API 的线程固定用不变区域。OpticStudio 的数值 setter 按调用线程区域转文本再解析：de-DE、fr-FR 下写
+    97.50674204580584 实际存成 97.0、9.0 或 inf（2026-11-02 真机实测），saos 的字符串补写与分析文本解析也都假定小数点。
+    standalone 在本进程内运行，这里设当前线程和之后新建线程的默认区域；extension 模式按 OpticStudio 进程自己的区域，管不到。
+    Calls into ZOS-API run under the invariant culture: OpticStudio's numeric setters format and parse in the calling
+    thread's culture (de-DE / fr-FR stored 97.0, 9.0 or inf for 97.50674204580584), and saos assumes a decimal point."""
+    from System.Globalization import CultureInfo
+    from System.Threading import Thread
+
+    invariant = CultureInfo.InvariantCulture
+    CultureInfo.DefaultThreadCurrentCulture = invariant
+    CultureInfo.DefaultThreadCurrentUICulture = invariant
+    Thread.CurrentThread.CurrentCulture = invariant
+    Thread.CurrentThread.CurrentUICulture = invariant
 
 
 def par_cell(zosapi, row, index: int, param: str):
@@ -233,6 +250,35 @@ def cell_value(cell) -> Any:
     return float(cell.DoubleValue) if kind == "Double" else int(cell.IntegerValue) if kind == "Integer" else str(cell.Value)
 
 
+def exact_double(cell, value: float, actual: float) -> float:
+    """数值写入之后补齐末位，返回最终读回值。OpticStudio 24.1 的数值 setter（row.Thickness、DoubleValue）把值舍成 15 位有效数字
+    （2026-11-02 实测 30/30，-0.020209160377426934 → -0.0202091603774269），经 Value 写往返字符串则逐位保留（5/5）。
+    只在没有求解（Fixed、Variable）的单元格上补写，补写后求解类型或读回值不对就退回数值写入的结果，交给调用方的容差核对。
+    After a numeric write, restore the last digits: numeric setters round to 15 significant digits, a round-trip
+    string through Value keeps the bits. Only on cells without a solve; anything unexpected falls back to the numeric write."""
+    if cell is None or actual == value or not math.isfinite(value):
+        return actual
+    try:
+        solve = str(cell.GetSolveData().Type)
+    except Exception:  # noqa: BLE001 - 没有求解数据的单元格不补写 / a cell without solve data is left as written
+        return actual
+    if solve not in ("Fixed", "Variable"):
+        return actual
+    for text in (repr(value), format(value, ".17g")):
+        try:
+            cell.Value = text
+            ok = float(cell.DoubleValue) == value and str(cell.GetSolveData().Type) == solve
+        except Exception:  # noqa: BLE001 - 字符串写入不被接受时退回数值写入 / fall back to the numeric write
+            ok = False
+        if ok:
+            return value
+    # 退回数值写入，并恢复求解类型（字符串写入可能改了它）/ back to the numeric write, solve type restored
+    if str(cell.GetSolveData().Type) != solve:
+        cell.MakeSolveVariable() if solve == "Variable" else cell.MakeSolveFixed()
+    cell.DoubleValue = value
+    return float(cell.DoubleValue)
+
+
 def set_cell(cell, value: Any, label: str) -> None:
     """按单元格的数据类型（Double、Integer、String）写值并回读核对。/ Write a value by the cell's data type and read it back."""
     if cell.IsReadOnly:
@@ -246,7 +292,7 @@ def set_cell(cell, value: Any, label: str) -> None:
     before = cell_value(cell)
     if kind == "Double":
         cell.DoubleValue = float(value)
-        actual: Any = float(cell.DoubleValue)
+        actual: Any = exact_double(cell, float(value), float(cell.DoubleValue))
         applied = same_number(actual, float(value))
     elif kind == "Integer":
         if value != int(value):
@@ -1295,7 +1341,7 @@ class ZosBackend(Backend):
             cell = self._par_cell(surf, index, param)
             target = parse_numeric(param, value)
             cell.DoubleValue = target
-            if not same_number(float(cell.DoubleValue), target):
+            if not same_number(exact_double(cell, target, float(cell.DoubleValue)), target):
                 raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"surface {index} {param} did not take the requested value; a solve may override it",
                                 {"requested": target, "actual": float(cell.DoubleValue), "solve": str(cell.GetSolveData().Type)})
             return {**self._surface_dict(surf, index), param: float(cell.DoubleValue), "header": str(cell.Header)}
@@ -1311,6 +1357,8 @@ class ZosBackend(Backend):
 
         setattr(surf, attr, target)
         actual = getattr(surf, attr)
+        if param in NUMERIC_PARAMS:
+            actual = exact_double(getattr(surf, f"{attr}Cell", None), target, float(actual))
         applied = same_number(float(actual), target) if param in NUMERIC_PARAMS else str(actual) == target
         if not applied:
             cell = getattr(surf, f"{attr}Cell")

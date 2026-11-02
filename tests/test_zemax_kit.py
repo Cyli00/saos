@@ -121,3 +121,34 @@ def test_detached_scan_on_opticstudio_while_the_main_instance_answers(daemon):
     done = scan.show(job)
     assert done["finished"] and done["valid"] == 20 and done["errors"] == {}
     print({k: done[k] for k in ("elapsed_s", "valid")}, done["best"]["set"])
+
+
+def test_parameter_writes_and_kept_restore_every_bit(daemon):
+    # OpticStudio 的数值 setter 舍成 15 位有效数字（2026-11-02 实测）；saos 写参数与 kept 恢复须逐位保留，变量状态不变
+    import math
+
+    from saos import kit
+
+    job = jobs.create_job("bits")
+    assert daemon.handle({"op": "lens.import", "args": {"job": job.id, "src": str(SAMPLE), "name": "cooke.zmx"}})["ok"]
+    assert daemon.handle({"op": "lens.load", "args": {"job": job.id, "file": "cooke.zmx"}})["ok"]
+    ctx = ScriptContext(daemon, job, {})
+    lde = daemon.backend.system.LDE
+    free = [i for i in range(1, int(lde.NumberOfSurfaces) - 1)
+            if str(lde.GetSurfaceAt(i).ThicknessCell.GetSolveData().Type) in ("Fixed", "Variable")]
+    assert free
+    key = f"{free[0]}.thickness"
+    solve = str(lde.GetSurfaceAt(free[0]).ThicknessCell.GetSolveData().Type)
+    x = kit.get(ctx, key)
+    while float(f"{x:.15g}") == x:          # 一个 15 位表示不了的值 / a value 15 digits cannot hold
+        x = math.nextafter(x, math.inf)
+    kit.set(ctx, {key: x})
+    assert kit.get(ctx, key) == x
+    with kit.kept(ctx, [key]):
+        kit.set(ctx, {key: x * 1.01})
+    assert kit.get(ctx, key) == x
+    assert str(lde.GetSurfaceAt(free[0]).ThicknessCell.GetSolveData().Type) == solve
+    # -inf 会被读回成 +inf：报错，且原值逐位留在镜头里 / -inf reads back as +inf: refused, the old value kept
+    with pytest.raises(Exception, match="did not take"):
+        kit.set(ctx, {key: -math.inf})
+    assert kit.get(ctx, key) == x

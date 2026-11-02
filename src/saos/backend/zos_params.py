@@ -15,7 +15,7 @@ from typing import Any
 
 from saos import lensdata
 from saos.backend import nsc
-from saos.backend.zos import _load_zosapi, catalog_constants, cell_value, par_cell, set_cell
+from saos.backend.zos import _load_zosapi, catalog_constants, cell_value, exact_double, par_cell, set_cell
 from saos.lensdata import INT_RE, PAR_RE
 from saos.protocol import ErrorCode, SaosError
 
@@ -23,6 +23,12 @@ _ROW_ATTRS = {"radius": "Radius", "thickness": "Thickness", "conic": "Conic", "s
               "mech_semi_diameter": "MechanicalSemiDiameter"}
 _OBJECT_ATTRS = {"x": "XPosition", "y": "YPosition", "z": "ZPosition", "tilt_x": "TiltAboutX", "tilt_y": "TiltAboutY", "tilt_z": "TiltAboutZ"}
 _FACE_KEY_RE = re.compile(r"^face(\d+)\.(is|coating|fraction|sigma|rays)$", re.IGNORECASE)
+
+
+def _same(actual: float, target: float) -> bool:
+    """回读核对：相等，或都有限且相对差在 1e-12 内；-inf 读回 +inf 不算写进去（inf - -inf 的差也是 inf，原式会放过）。
+    Read-back check: equal, or both finite within 1e-12 relative; -inf read back as +inf did not take."""
+    return actual == target or (math.isfinite(actual) and math.isfinite(target) and abs(actual - target) <= 1e-12 * max(1.0, abs(target)))
 
 
 def _config_cell(sysm, param: str):
@@ -244,7 +250,7 @@ def _set_object(b, ref: Any, param: str, value: Any) -> None:
             k = _vp_param(impl, param[3:], number)
             impl.SetParameterValue(k, target)
             actual = float(impl.GetParameterValue(k))
-        if not (actual == target or abs(actual - target) <= 1e-12 * max(1.0, abs(target))):
+        if not _same(actual, target):
             raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"object {number} {param} did not take {target}", {"requested": target, "actual": actual})
         return
     set_cell(nsc.param_cell(zosapi, o, f"object {number}", param), value, f"object {number} {param}")
@@ -331,12 +337,22 @@ def put(b, key: str, value: Any) -> None:
         target, param = (math.inf if target == 0 else 1.0 / target), "radius"
     if PAR_RE.match(param):
         cell = par_cell(_load_zosapi(b.root), row, index, param)
-        cell.DoubleValue = target
-        actual = float(cell.DoubleValue)
+
+        def write(v: float) -> float:
+            cell.DoubleValue = v
+            return exact_double(cell, v, float(cell.DoubleValue))
+        before = float(cell.DoubleValue)
     else:
         attr = _ROW_ATTRS[param]
-        setattr(row, attr, target)
-        actual = float(getattr(row, attr))
-    if not (actual == target or abs(actual - target) <= 1e-12 * max(1.0, abs(target))):
+        row_cell = getattr(row, f"{attr}Cell", None)
+
+        def write(v: float) -> float:
+            setattr(row, attr, v)
+            return exact_double(row_cell, v, float(getattr(row, attr)))
+        before = float(getattr(row, attr))
+    actual = write(target)
+    if not _same(actual, target):
+        if actual != before:
+            write(before)   # 没写进去的值（如 -inf 读回 +inf）不留在镜头里 / a value that did not take is not left in the lens
         raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"surface {index} {param} did not take {target}; a solve or pickup may override it",
-                        {"requested": target, "actual": actual})
+                        {"requested": target, "actual": actual, "previous": before})

@@ -163,6 +163,8 @@ def lens_state(ctx) -> tuple[dict[str, Any], str]:
 # 判定前后的镜头在这个容差内一致就算没改：检查把参数写回原值时，OpticStudio 舍到 15 位有效数字，末位会变
 # （2026-10-18 fiber-printed：−0.020209160377426934 → −0.0202091603774269，下游全局顶点差约 1e-17 mm）
 # within these the lens is unchanged: a check writing a value back gets it rounded to 15 significant digits by OpticStudio
+# 2026-11-02 起 saos 的参数写入经 backend.zos.exact_double 用往返字符串补齐末位，Fixed、Variable 单元格逐位恢复；
+# 有求解的单元格和字符串写入失败时仍是 15 位，容差保留 / since 2026-11-02 saos writes keep the bits on cells without a solve
 LENS_RTOL = 1e-12
 LENS_ATOL = 1e-15
 
