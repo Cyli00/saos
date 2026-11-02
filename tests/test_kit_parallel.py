@@ -146,6 +146,19 @@ def test_psf_axial_widens_once_reusing_planes_and_reports_the_peak_offset():
     assert kit.psf_axial(peak_at(40), step, (15, 30)) is None
 
 
+def test_the_outward_axial_scan_matches_a_single_peak_with_far_fewer_planes_but_misses_a_higher_far_one():
+    single = lambda k: math.exp(-(k - 2) ** 2 / (2 * 2.5 ** 2))  # noqa: E731
+    window, outward = kit.psf_axial(single, 4.0, (15, 30)), kit.psf_axial(single, 4.0, (15, 30), scan="outward")
+    assert outward["fwhm_um"] == pytest.approx(window["fwhm_um"], rel=1e-12) and outward["peak_offset_um"] == window["peak_offset_um"]
+    assert window["planes"] == 31 and outward["planes"] < 12
+    # 窗口里远处还有更高的峰：整窗看得到，外扩在主峰两侧降到半高就停了——这是两种定义 / two definitions
+    twin = lambda k: single(k) + 1.5 * math.exp(-(k - 12) ** 2 / 2)  # noqa: E731
+    assert kit.psf_axial(twin, 4.0, (15, 30))["peak_offset_um"] == 48.0
+    assert kit.psf_axial(twin, 4.0, (15, 30), scan="outward")["peak_offset_um"] == 8.0
+    with pytest.raises(SaosError):
+        kit.psf_axial(single, 4.0, (15, 30), scan="fast")
+
+
 # ---------- ctx.measure 与判定共享 cache / ctx.measure and the shared check cache ----------
 
 def test_checks_share_one_cache_and_measure_matches_check(setup):

@@ -2,21 +2,19 @@ from __future__ import annotations
 
 import math
 import os
-import re
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+from saos import lensdata
+from saos.lensdata import PAR_RE
 from saos.protocol import ErrorCode, SaosError
 
 # mech_semi_diameter：零件外缘（Lens Data 的 Mech Semi-Dia 列），交叠检查按它取零件边缘 / the part edge the interference check uses
 NUMERIC_PARAMS = ("radius", "thickness", "conic", "semi_diameter", "mech_semi_diameter")
 TEXT_PARAMS = ("material", "comment")
 SURFACE_PARAMS = NUMERIC_PARAMS + TEXT_PARAMS
-# 面型参数列（非球面系数、坐标断点的偏心和倾斜、菲涅尔基底等），按 Lens Data 的 Par 列号
-# surface-type parameter columns (aspheric terms, coordinate-break decenters and tilts, …) by their Lens Data Par number
-PAR_RE = re.compile(r"^par([1-9]\d{0,2})$")
 MATERIAL_MODES = ("model", "substitute")
 # 不指定目录时玻璃替换用的目录：成都光明的在产牌号（2026-10-19 用户决定）/ the default catalog for glass substitution
 DEFAULT_SUBSTITUTE_CATALOG = "SAOS_CDGM_INPROD"
@@ -71,6 +69,13 @@ def check_size(param: str, number: float) -> None:
 
 def same_path(a: str | Path, b: str | Path) -> bool:
     return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
+
+def needs_opticstudio(backend, what: str) -> SaosError:
+    """只有 OpticStudio 才有的功能：rtc 上算作当前后端算不了（判定的 backend_unsupported），其他后端仍是参数错。
+    A feature only OpticStudio has: a backend gap on rtc (backend_unsupported in checks), a bad call elsewhere."""
+    code = ErrorCode.BACKEND_UNSUPPORTED if backend.identity().get("backend") == "rtc" else ErrorCode.BAD_ARGS
+    return SaosError(code, f"{what} needs OpticStudio; {type(backend).__name__} has none")
 
 
 def same_number(a: float, b: float) -> bool:
@@ -152,28 +157,61 @@ class Backend(ABC):
         """单个面参数的当前值（含 par<N> 面型参数）。/ The current value of one surface parameter (par<N> included)."""
         return self.surfaces()[index].get(param)
 
+    def surface_count(self) -> int:
+        """面数（含物面与像面）。/ The number of surfaces, object and image included."""
+        return len(self.surfaces())
+
+    def surface_comments(self) -> dict[str, int]:
+        """注释 → 面序号（重名时取第一个，空注释不列）。/ comment → surface index (the first on repeats; empty ones left out)."""
+        found: dict[str, int] = {}
+        for s in self.surfaces():
+            found.setdefault(str(s.get("comment", "")), int(s["index"]))
+        found.pop("", None)
+        return found
+
     def get_param(self, key: str) -> Any:
-        from types import SimpleNamespace
-
-        from saos.kit import parse_key, surface
-
-        kind, ref, param = parse_key(key)
+        kind, ref, param = lensdata.parse_key(key)
         if kind != "surface":
             raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} cannot read {key}")
-        value = self.surface_value(surface(SimpleNamespace(backend=self), ref), "radius" if param == "curvature" else param)
+        value = self.surface_value(lensdata.surface(self, ref), "radius" if param == "curvature" else param)
         return (0.0 if value == 0 or math.isinf(value) else 1.0 / value) if param == "curvature" else value
 
     def set_param(self, key: str, value: Any) -> None:
-        from types import SimpleNamespace
-
-        from saos.kit import parse_key, surface
-
-        kind, ref, param = parse_key(key)
+        kind, ref, param = lensdata.parse_key(key)
         if kind != "surface":
             raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} cannot write {key}")
         if param == "curvature":
             param, value = "radius", math.inf if float(value) == 0 else 1.0 / float(value)
-        self.set_surface(surface(SimpleNamespace(backend=self), ref), param, value)
+        self.set_surface(lensdata.surface(self, ref), param, value)
+
+    # ---- 只有 OpticStudio 有的 / OpticStudio only ----
+
+    def zosapi(self):
+        """ZOS-API 模块（脚本直接调 ZOS-API 时用）。/ The ZOS-API module, for scripts that call ZOS-API directly."""
+        raise needs_opticstudio(self, "zosapi")
+
+    def surface_params(self, ref: int | str) -> list[dict[str, Any]]:
+        """该面型的参数列：par、name、value、read_only。/ The surface type's parameter columns."""
+        raise needs_opticstudio(self, "surface_params")
+
+    def object_index(self, ref: int | str) -> int:
+        """非序列物体的序号（序号或注释，混合模式写 <物体>@<面号>）。/ A non-sequential object's number."""
+        raise needs_opticstudio(self, "object")
+
+    def nsc_objects(self) -> list[dict[str, Any]]:
+        """纯非序列系统的物体表；序列系统报 BAD_ARGS。/ The objects of a pure non-sequential system."""
+        raise needs_opticstudio(self, "objects")
+
+    def nsc_trace(self, **options: Any) -> dict[str, Any]:
+        """非序列追迹，参数与返回值同 saos.backend.nsc.trace。/ A non-sequential trace, as saos.backend.nsc.trace."""
+        raise needs_opticstudio(self, "nsc_trace")
+
+    def detector(self, ref: int | str, grid: bool = False) -> dict[str, Any]:
+        raise needs_opticstudio(self, "detector")
+
+    def ray_hits(self, zrd: str, refs: list[int | str], ray_filter: str = "", max_rays: int | None = None) -> dict[str, list]:
+        """读光线数据库（相对路径以镜头文件所在目录为准），返回各列表与 rays_read。/ Read a ray database."""
+        raise needs_opticstudio(self, "ray_hits")
 
     def trace_batch(self, rays, to: int):
         raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} has no real ray tracer")
@@ -273,16 +311,16 @@ class Backend(ABC):
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support zernike")
 
     def huygens(self, wave: int, pupil: int, image: int) -> Any:
-        """Huygens PSF 会话：psf(field, delta_um) 返回 (行优先强度表, dx_um, dy_um) 或 None（分析没有数据），close() 结束。
+        """Huygens PSF 会话：psf(field, delta_um) 返回 (ny×nx 的 numpy 强度数组, dx_um, dy_um) 或 None（分析没有数据），close() 结束。
         field 为视场号，或镜头视场单位下的 (x, y)（会话期间追加到视场表，close 时删掉）。强度不归一化，同一会话内可比。
-        A Huygens PSF session: psf(field, delta_um) gives (row-major intensities, dx_um, dy_um) or None (no data), close()
+        A Huygens PSF session: psf(field, delta_um) gives (an ny×nx numpy intensity array, dx_um, dy_um) or None (no data), close()
         ends it. field is a field number or (x, y) in the lens's field units (appended for the session). Intensities are
         not normalised and compare within one session."""
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support huygens")
 
-    def wavefront_rms(self, wave: int, field: int | tuple[float, float]) -> float | None:
-        """光线积分的 RMS 波前误差（波长，参考质心即扣除平移与倾斜）；算不出时为 None。field 同 huygens。
-        RMS wavefront error from ray integration (waves, to centroid: piston and tilt removed); None when not computable."""
+    def wavefront_rms(self, wave: int, fields: list[int | tuple[float, float]]) -> list[float | None]:
+        """各视场光线积分的 RMS 波前误差（波长，参考质心即扣除平移与倾斜）；算不出的为 None。视场写法同 huygens。
+        RMS wavefront error from ray integration per field (waves, to centroid: piston and tilt removed); None where not computable."""
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support wavefront_rms")
 
     def surface_aperture(self, index: int) -> dict[str, Any]:

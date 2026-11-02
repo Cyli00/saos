@@ -1,22 +1,15 @@
-"""ZOS-API 常用操作的通用函数，省去每个任务重写同一批封装（ADR-0013：数值都由计算后端算，这里只做调用和统计）。
-Reusable ZOS-API helpers, so that jobs stop rewriting the same wrappers (ADR-0013: the backend computes every number;
-this module only calls it and does bookkeeping and statistics on what it returns).
+"""测量库：经 Backend 协议调用计算后端的通用函数，省去每个任务重写同一批封装（ADR-0013：数值都由计算后端算，
+这里只做调用和统计）。本模块不导入任何具体后端；只有 OpticStudio 能做的功能由后端自己报 needs OpticStudio。
+The measurement library: reusable helpers that call the backend through the Backend protocol, so that jobs stop
+rewriting the same wrappers (ADR-0013: the backend computes every number; this module only calls it and does
+bookkeeping and statistics on what it returns). It imports no concrete backend; OpticStudio-only features are refused
+by the backend itself.
 
 exec 脚本的 ctx、ctx.map 的 worker 上下文和判定脚本的 ctx 都带同名方法（ctx.set(...)、ctx.spot(...)），也可以直接调用
 kit.<函数>(ctx, ...)。/ ctx in exec scripts, ctx.map workers and check scripts carry these as methods (ctx.set(...),
 ctx.spot(...)); kit.<function>(ctx, ...) works as well.
 
-参数键 / parameter keys:
-    "<面>.<参数>"   面是序号（"3"、"-1" 为像面）或 Lens Data 的注释（"lens1 back"）；
-                    参数：radius、curvature（1/R，0 为平面）、thickness、conic、semi_diameter、mech_semi_diameter（零件外缘）、
-                    material、comment、nd、vd、dpgf、par<N>
-    "aperture"      系统孔径值 / the system aperture value
-    "field.<n>.x"、"field.<n>.y"、"wave.<n>"   第 n 个视场坐标、第 n 个波长（µm）/ field n coordinates, wavelength n (µm)
-    "config.<c>.<r>" 多重结构第 r 行在结构 c 的值（变焦间隔、温度等）/ multi-configuration row r in configuration c
-    "object.<物体>.<参数>" 非序列物体：物体是序号或注释；参数为 x、y、z、tilt_x、tilt_y、tilt_z、material、comment、
-                    par<N> 或参数列标题（"Z Length"）、mean_path（体散射平均自由程）、vp.<DLL 参数名>（"vp.g"）
-                    / a non-sequential object by number or comment: position, tilt, material, comment, a parameter by
-                    par<N> or column header, mean_path, or vp.<DLL parameter name>
+参数键的写法见 saos.lensdata 模块说明。/ The parameter-key grammar is in saos.lensdata's module docstring.
 
 非序列系统：ctx.nsc_trace(...) 追迹（默认分裂、散射、偏振都开，留 2 个逻辑核），ctx.detector(物体) 读探测器，
 ctx.objects() 列出物体。/ Non-sequential systems: ctx.nsc_trace(...), ctx.detector(object), ctx.objects().
@@ -30,7 +23,6 @@ from __future__ import annotations
 
 import math
 import os
-import re
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -39,19 +31,10 @@ from typing import Any, Callable, Iterable, Iterator, Sequence
 
 import numpy as np
 
-from saos.backend.base import PAR_RE
+from saos import lensdata
+# 参数键、追迹结果与光瞳采样定义在 lensdata（后端也用），这里照原名导出 / defined in lensdata, exported here under their names
+from saos.lensdata import PAR_RE, PARAMS, Rays, parse_key, pupil  # noqa: F401
 from saos.protocol import ErrorCode, SaosError, finite
-
-PARAMS = ("radius", "curvature", "thickness", "conic", "semi_diameter", "mech_semi_diameter", "material", "comment", "nd", "vd", "dpgf")
-_ROW_ATTRS = {"radius": "Radius", "thickness": "Thickness", "conic": "Conic", "semi_diameter": "SemiDiameter",
-              "mech_semi_diameter": "MechanicalSemiDiameter"}
-_INT_RE = re.compile(r"^-?\d+$")
-_SYSTEM_RE = re.compile(r"^(aperture|wave\.(\d+)|field\.(\d+)\.([xy])|config\.(\d+)\.(\d+))$")
-_OBJECT_ATTRS = {"x": "XPosition", "y": "YPosition", "z": "ZPosition", "tilt_x": "TiltAboutX", "tilt_y": "TiltAboutY", "tilt_z": "TiltAboutZ"}
-_FACE_KEY_RE = re.compile(r"^face(\d+)\.(is|coating|fraction|sigma|rays)$", re.IGNORECASE)
-# ReadNextResult 的返回：(成功, 光线号, 错误, 渐晕, X, Y, Z, L, M, N, l2, m2, n2, opd, 强度)
-# ReadNextResult returns (ok, ray number, error, vignette, X, Y, Z, L, M, N, l2, m2, n2, opd, intensity)
-_READ_ARGS = (0, 0, 0, *([0.0] * 11))
 
 
 # ---------- 系统对象 / system objects ----------
@@ -63,57 +46,21 @@ def system(ctx):
 
 
 def zosapi(ctx):
-    from saos.backend.zos import _load_zosapi
-
-    return _load_zosapi(ctx.backend.root)
-
-
-def _need_system(ctx, what: str):
-    sysm = system(ctx)
-    if sysm is None:
-        # rtc 上算作当前后端算不了（判定的 backend_unsupported），其他后端仍是参数错 / on rtc a backend gap, elsewhere a bad call
-        code = ErrorCode.BACKEND_UNSUPPORTED if ctx.backend.identity().get("backend") == "rtc" else ErrorCode.BAD_ARGS
-        raise SaosError(code, f"{what} needs OpticStudio; {type(ctx.backend).__name__} has none")
-    return sysm
+    """ZOS-API 模块；只有 OpticStudio 后端有。/ The ZOS-API module; OpticStudio backends only."""
+    return ctx.backend.zosapi()
 
 
 # ---------- 面与参数 / surfaces and parameters ----------
 
 def surfaces_by_comment(ctx) -> dict[str, int]:
     """注释 → 面序号（重名时取第一个）。/ comment → surface index (the first one when a comment repeats)."""
-    sysm = system(ctx)
-    found: dict[str, int] = {}
-    if sysm is None:
-        for s in ctx.backend.surfaces():
-            found.setdefault(str(s.get("comment", "")), int(s["index"]))
-    else:
-        lde = sysm.LDE
-        for i in range(lde.NumberOfSurfaces):
-            found.setdefault(str(lde.GetSurfaceAt(i).Comment), i)
-    found.pop("", None)
-    return found
-
-
-def _count(ctx) -> int:
-    sysm = system(ctx)
-    return int(sysm.LDE.NumberOfSurfaces) if sysm is not None else len(ctx.backend.surfaces())
+    return ctx.backend.surface_comments()
 
 
 def surface(ctx, ref: int | str, _names: dict[str, int] | None = None) -> int:
     """面序号：整数原样（负数从像面倒数，-1 为像面），字符串按注释查找。
     Surface index: an int as is (negative counts back from the image, -1 is the image), a string by its comment."""
-    count = _count(ctx)
-    if isinstance(ref, str) and _INT_RE.match(ref.strip()):
-        ref = int(ref)
-    if isinstance(ref, int) and not isinstance(ref, bool):
-        index = ref + count if ref < 0 else ref
-        if not 0 <= index < count:
-            raise SaosError(ErrorCode.BAD_ARGS, f"surface {ref} out of range 0–{count - 1}")
-        return index
-    names = surfaces_by_comment(ctx) if _names is None else _names
-    if ref not in names:
-        raise SaosError(ErrorCode.BAD_ARGS, f"no surface has the comment {ref!r}", {"comments": sorted(names)})
-    return names[ref]
+    return lensdata.surface(ctx.backend, ref, _names)
 
 
 def info(ctx) -> dict[str, Any]:
@@ -124,364 +71,15 @@ def info(ctx) -> dict[str, Any]:
 def surface_params(ctx, ref: int | str) -> list[dict[str, Any]]:
     """该面型的参数列：列号、列标题、按单元格类型读出的值、是否只读，与 objects() 的 params 同形。数值列用 ctx.set({"<面>.par<N>": 值}) 写。
     The surface type's parameter columns with number, header, value by cell type and read-only flag, shaped like objects()'s params."""
-    from saos.backend.zos import cell_value, param_cells
-
-    sysm = _need_system(ctx, "surface_params")
-    row = sysm.LDE.GetSurfaceAt(surface(ctx, ref))
-    return [{"par": n, "name": str(c.Header), "value": cell_value(c), "read_only": bool(c.IsReadOnly)}
-            for n, c in param_cells(zosapi(ctx), row).items()]
-
-
-def parse_key(key: str) -> tuple[str, Any, str]:
-    """("system", 名, 序号) 或 ("surface", 面, 参数)。/ ("system", name, n) or ("surface", ref, param)."""
-    key = str(key).strip()
-    if key.startswith("object."):
-        ref, sep, param = key[len("object."):].partition(".")
-        if not sep or not ref or not param:
-            raise SaosError(ErrorCode.BAD_ARGS, f"parameter key {key!r}: use object.<number or comment>.<param>")
-        return "object", ref, param
-    m = _SYSTEM_RE.match(key)
-    if m:
-        if m.group(1) == "aperture":
-            return "system", "aperture", ""
-        if m.group(2):
-            return "system", "wave", m.group(2)
-        if m.group(5):
-            return "system", "config", f"{m.group(5)}.{m.group(6)}"
-        return "system", f"field_{m.group(4)}", m.group(3)
-    ref, sep, param = key.rpartition(".")
-    if not sep or not ref or not (param in PARAMS or PAR_RE.match(param)):
-        raise SaosError(ErrorCode.BAD_ARGS, f"parameter key {key!r}: use <surface>.<param> with param in {PARAMS} or par<N>, "
-                                            "or aperture, field.<n>.x|y, wave.<n>, config.<c>.<row>")
-    return "surface", ref, param
-
-
-def _par_cell(ctx, row, param: str, index: int):
-    from saos.backend.zos import par_cell
-
-    return par_cell(zosapi(ctx), row, index, param)
-
-
-def _config_cell(sysm, param: str):
-    """多重结构第 r 行在结构 c 的单元格。/ The cell of row r in configuration c."""
-    c, r = (int(x) for x in param.split("."))
-    mce = sysm.MCE
-    count, rows = int(mce.NumberOfConfigurations), int(mce.NumberOfOperands)
-    if count < 2 or not (1 <= c <= count and 1 <= r <= rows):
-        raise SaosError(ErrorCode.BAD_ARGS, f"config.{c}.{r}: the lens has {count} configuration(s) and {rows} multi-configuration row(s)")
-    return mce, c, mce.GetOperandAt(r).GetOperandCell(c)
+    return ctx.backend.surface_params(ref)
 
 
 def object_index(ctx, ref: int | str) -> int:
     """非序列物体的序号：整数原样，字符串按注释查找（重名时取第一个）。混合模式里写 <物体>@<NonSequential 面号> 选组，
-    只有一个组时可以省略；查找前把该组设为当前组（NCE.SetActiveSurface）。
+    只有一个组时可以省略。
     An object number, or the first object with this comment. In mixed mode <object>@<NonSequential surface> picks the
-    group (optional when there is only one); the group is made current before the lookup."""
-    from saos.backend import nsc
-
-    sysm = _need_system(ctx, "object")
-    group = None
-    if isinstance(ref, str) and "@" in ref:
-        ref, _, g = ref.rpartition("@")
-        if not _INT_RE.match(g.strip()):
-            raise SaosError(ErrorCode.BAD_ARGS, f"object key: after @ comes the number of a NonSequential surface, got {g!r}")
-        group = int(g)
-    if not nsc.is_nsc(sysm):
-        found = nsc.groups(sysm)
-        if not found:
-            raise SaosError(ErrorCode.BAD_ARGS, "the lens has no non-sequential objects (no NonSequential surface)")
-        if group is None:
-            if len(found) > 1:
-                raise SaosError(ErrorCode.BAD_ARGS, f"the lens has several NonSequential surfaces {found}; write <object>@<surface>", {"groups": found})
-            group = found[0]
-        nsc.select_group(sysm, group)
-    elif group is not None:
-        raise SaosError(ErrorCode.BAD_ARGS, "a pure non-sequential system has one group; leave out @<surface>")
-    nce = sysm.NCE
-    count = int(nce.NumberOfObjects)
-    if isinstance(ref, str) and _INT_RE.match(ref.strip()):
-        ref = int(ref)
-    if isinstance(ref, int) and not isinstance(ref, bool):
-        if not 1 <= ref <= count:
-            raise SaosError(ErrorCode.BAD_ARGS, f"object {ref} out of range 1–{count}")
-        return ref
-    names = {}
-    for i in range(1, count + 1):
-        names.setdefault(str(nce.GetObjectAt(i).Comment), i)
-    if ref not in names:
-        raise SaosError(ErrorCode.BAD_ARGS, f"no object has the comment {ref!r}", {"comments": sorted(n for n in names if n)})
-    return names[ref]
-
-
-def _vp_settings(obj, param: str):
-    vp = obj.VolumePhysicsData
-    if str(vp.Model) == "None":
-        raise SaosError(ErrorCode.BAD_ARGS, f"object {obj.ObjectNumber} has no volume physics model for {param}")
-    return getattr(vp.ModelSettings, "__implementation__", vp.ModelSettings)
-
-
-def _vp_param(impl, name: str, number: int) -> int:
-    names = [str(impl.GetParameterName(i)) for i in range(int(impl.NumberOfParameters))]
-    for k, n in enumerate(names):
-        if n.strip().lower() == name.strip().lower():
-            return k
-    raise SaosError(ErrorCode.BAD_ARGS, f"object {number}: {impl.DLL} has no parameter {name!r}", {"parameters": names})
-
-
-def _glass(sysm, cell, material: str, label: str) -> dict[str, float]:
-    """一种材料的 nd、vd、ΔPgF：模型玻璃读求解数据，目录玻璃查在用目录（ΔPgF 记 0）。空气、MIRROR、ABSORB 没有。
-    nd, vd and ΔPgF of a material: a model glass from its solve, a catalog glass from the catalogs in use (ΔPgF 0)."""
-    from saos.backend.zos import catalog_constants
-
-    solve = cell.GetSolveData()
-    if str(solve.Type) == "MaterialModel":
-        d = solve._S_MaterialModel
-        return {"nd": float(d.IndexNd), "vd": float(d.AbbeVd), "dpgf": float(d.dPgF)}
-    name = material.strip().upper()
-    found = catalog_constants(sysm, name) if name and name not in ("MIRROR", "ABSORB") else None
-    if found is None:
-        raise SaosError(ErrorCode.BAD_ARGS, f"{label}: {name or 'air'} has no nd/vd to read or perturb")
-    return {"nd": float(found[0]), "vd": float(found[1]), "dpgf": 0.0}
-
-
-def _material_value(cell, material) -> str | dict[str, float]:
-    """材料参数的读数：模型玻璃为 {nd, vd, dpgf}（可原样写回 material），其余为牌号文字。
-    The material value: {nd, vd, dpgf} for a model glass (writable back as material), else the name."""
-    solve = cell.GetSolveData()
-    if str(solve.Type) == "MaterialModel":
-        d = solve._S_MaterialModel
-        return {"nd": float(d.IndexNd), "vd": float(d.AbbeVd), "dpgf": float(d.dPgF)}
-    return str(material)
-
-
-def _set_glass(ctx, sysm, cell, material: str, param: str, value: Any, label: str) -> None:
-    """改 nd、vd 或 dpgf：把材料换成模型玻璃（其余两项取当前值；目录玻璃的 ΔPgF 记 0），用于折射率、阿贝数公差。
-    Set nd, vd or dpgf by turning the material into a model glass (the other two keep their current values; a catalog
-    glass's ΔPgF counts as 0): for index and Abbe tolerances."""
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-        raise SaosError(ErrorCode.BAD_ARGS, f"{label}.{param} needs a number, got {value!r}")
-    now = _glass(sysm, cell, material, label)
-    now[param] = float(value)
-    _set_model_material(ctx, cell, now, label)
-
-
-def _set_model_material(ctx, cell, value: dict, label: str) -> None:
-    if not {"nd", "vd"} <= value.keys() or value.keys() - {"nd", "vd", "dpgf"}:
-        raise SaosError(ErrorCode.BAD_ARGS, f"{label}: model material needs nd/vd and optional dpgf")
-    values = {"nd": value["nd"], "vd": value["vd"], "dpgf": value.get("dpgf", 0.0)}
-    if any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in values.values()) or values["nd"] <= 0:
-        raise SaosError(ErrorCode.BAD_ARGS, f"{label}: model material needs finite numbers and nd > 0")
-    solve = cell.CreateSolveType(zosapi(ctx).Editors.SolveType.MaterialModel)
-    data = solve._S_MaterialModel
-    data.IndexNd, data.AbbeVd, data.dPgF = values["nd"], values["vd"], values["dpgf"]
-    cell.SetSolveData(solve)
-    got = cell.GetSolveData()._S_MaterialModel
-    for name, attr in (("nd", "IndexNd"), ("vd", "AbbeVd"), ("dpgf", "dPgF")):
-        actual = float(getattr(got, attr))
-        if not math.isfinite(actual) or abs(actual - values[name]) > 1e-9 * max(1.0, abs(values[name])):
-            raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"{label}: model material {name} did not take {values[name]}")
-
-
-def _face(o, number: int, n: int):
-    cs = o.CoatScatterData
-    if not bool(cs.IsCoatScatterAvailable) or not 0 <= n < int(cs.NumberOfFaces):
-        count = int(cs.NumberOfFaces) if bool(cs.IsCoatScatterAvailable) else 0
-        raise SaosError(ErrorCode.BAD_ARGS, f"object {number} ({o.TypeName}) has {count} face(s), no face {n}")
-    return cs.GetFaceData(n)
-
-
-def _get_face(o, number: int, n: int, what: str) -> Any:
-    from saos.backend import nsc
-
-    data = nsc.read_face(_face(o, number, n))
-    if what == "is":
-        return data["is"]
-    if what == "coating":
-        return data.get("coating", "")
-    if what not in data["scatter"]:
-        raise SaosError(ErrorCode.BAD_ARGS, f"object {number} face {n}: the {data['scatter']['model']} scatter model has no {what}")
-    return data["scatter"][what]
-
-
-def _set_face(ctx, o, number: int, n: int, what: str, value: Any) -> None:
-    """改一个面的一项：is、coating 直接写；fraction、sigma、rays 在当前散射模型上改这一项，其余字段照旧。"""
-    from saos.backend import nsc
-    from saos.prescription import FACE_IS
-
-    face = _face(o, number, n)
-    label = f"object {number} face {n}"
-    if what == "is":
-        if value not in FACE_IS:
-            raise SaosError(ErrorCode.BAD_ARGS, f"{label}.is must be one of {list(FACE_IS)}, got {value!r}")
-        spec: dict[str, Any] = {"is": value}
-    elif what == "coating":
-        spec = {"coating": str(value or "NONE").strip().upper()}
-    else:
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-            raise SaosError(ErrorCode.BAD_ARGS, f"{label}.{what} needs a number, got {value!r}")
-        scatter = dict(nsc.read_face(face)["scatter"])
-        if what not in scatter:
-            raise SaosError(ErrorCode.BAD_ARGS, f"{label}: the {scatter['model']} scatter model has no {what}")
-        scatter[what] = int(value) if what == "rays" else float(value)
-        spec = {"scatter": scatter}
-    nsc.set_face(zosapi(ctx), face, spec, label)
-
-
-def _get_object(ctx, sysm, ref: Any, param: str) -> Any:
-    from saos.backend import nsc
-    from saos.backend.zos import cell_value
-
-    number = object_index(ctx, ref)
-    o = sysm.NCE.GetObjectAt(number)
-    m = _FACE_KEY_RE.match(param)
-    if m:
-        return _get_face(o, number, int(m.group(1)), m.group(2).lower())
-    if param in _OBJECT_ATTRS:
-        return float(getattr(o, _OBJECT_ATTRS[param]))
-    if param == "material":
-        return _material_value(o.MaterialCell, o.Material)
-    if param == "comment":
-        return str(o.Comment)
-    if param in ("nd", "vd", "dpgf"):
-        return _glass(sysm, o.MaterialCell, str(o.Material), f"object {number}")[param]
-    if param == "mean_path":
-        return float(_vp_settings(o, param).MeanPath)
-    if param.startswith("vp."):
-        impl = _vp_settings(o, param)
-        return float(impl.GetParameterValue(_vp_param(impl, param[3:], number)))
-    return cell_value(nsc.param_cell(zosapi(ctx), o, f"object {number}", param))
-
-
-def _set_object(ctx, sysm, ref: Any, param: str, value: Any) -> None:
-    from saos.backend import nsc
-    from saos.backend.zos import set_cell
-
-    number = object_index(ctx, ref)
-    o = sysm.NCE.GetObjectAt(number)
-    m = _FACE_KEY_RE.match(param)
-    if m:
-        _set_face(ctx, o, number, int(m.group(1)), m.group(2).lower(), value)
-        return
-    if param == "comment":
-        if nsc.type_files(o):
-            raise SaosError(ErrorCode.BAD_ARGS, f"object {number} ({o.TypeName}) keeps its file name in the comment column; writing it would change the file")
-        o.Comment = "" if value is None else str(value)
-        return
-    if param == "material":
-        if isinstance(value, dict):
-            _set_model_material(ctx, o.MaterialCell, value, f"object {number}")
-            return
-        name = str(value).strip().upper()
-        o.Material = name if name in ("", "ABSORB") else ctx.backend._check_material(name)
-        return
-    if param in ("nd", "vd", "dpgf"):
-        _set_glass(ctx, sysm, o.MaterialCell, str(o.Material), param, value, f"object {number}")
-        return
-    if param in _OBJECT_ATTRS or param == "mean_path" or param.startswith("vp."):
-        target = float(value)
-        if param in _OBJECT_ATTRS:
-            setattr(o, _OBJECT_ATTRS[param], target)
-            actual = float(getattr(o, _OBJECT_ATTRS[param]))
-        elif param == "mean_path":
-            impl = _vp_settings(o, param)
-            impl.MeanPath = target
-            actual = float(impl.MeanPath)
-        else:
-            impl = _vp_settings(o, param)
-            k = _vp_param(impl, param[3:], number)
-            impl.SetParameterValue(k, target)
-            actual = float(impl.GetParameterValue(k))
-        if not (actual == target or abs(actual - target) <= 1e-12 * max(1.0, abs(target))):
-            raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"object {number} {param} did not take {target}", {"requested": target, "actual": actual})
-        return
-    set_cell(nsc.param_cell(zosapi(ctx), o, f"object {number}", param), value, f"object {number} {param}")
-
-
-def _get_zos(ctx, sysm, kind: str, ref: Any, param: str, names: dict[str, int]) -> Any:
-    if kind == "object":
-        return _get_object(ctx, sysm, ref, param)
-    if kind == "system":
-        sd = sysm.SystemData
-        if ref == "config":
-            from saos.backend.zos import cell_value
-
-            return cell_value(_config_cell(sysm, param)[2])
-        if ref == "aperture":
-            return float(sd.Aperture.ApertureValue)
-        if ref == "wave":
-            return float(sd.Wavelengths.GetWavelength(int(param)).Wavelength)
-        field = sd.Fields.GetField(int(param))
-        return float(field.X if ref == "field_x" else field.Y)
-    index = surface(ctx, ref, names)
-    row = sysm.LDE.GetSurfaceAt(index)
-    if param == "curvature":
-        r = float(row.Radius)
-        return 0.0 if r == 0 or math.isinf(r) else 1.0 / r
-    if PAR_RE.match(param):
-        return float(_par_cell(ctx, row, param, index).DoubleValue)
-    if param == "material":
-        return _material_value(row.MaterialCell, row.Material)
-    if param == "comment":
-        return str(row.Comment)
-    if param in ("nd", "vd", "dpgf"):
-        return _glass(sysm, row.MaterialCell, str(row.Material), f"surface {index}")[param]
-    return float(getattr(row, _ROW_ATTRS[param]))
-
-
-def _set_zos(ctx, sysm, kind: str, ref: Any, param: str, value: Any, names: dict[str, int]) -> None:
-    if kind == "object":
-        _set_object(ctx, sysm, ref, param, value)
-        return
-    if kind == "system":
-        sd = sysm.SystemData
-        if ref == "config":
-            from saos.backend.zos import set_cell
-
-            mce, c, cell = _config_cell(sysm, param)
-            if isinstance(value, str) and mce.GetOperandAt(int(param.split(".")[1])).TypeName == "GLSS":
-                value = ctx.backend._check_material(value)
-            set_cell(cell, value, f"config.{param}")
-            if c == int(mce.CurrentConfiguration):
-                # 改的是当前结构：重新套用，镜头才跟着变 / the current configuration: re-apply it so the lens follows
-                mce.SetCurrentConfiguration(c)
-            return
-        if ref == "aperture":
-            sd.Aperture.ApertureValue = float(value)
-        elif ref == "wave":
-            sd.Wavelengths.GetWavelength(int(param)).Wavelength = float(value)
-        else:
-            field = sd.Fields.GetField(int(param))
-            setattr(field, "X" if ref == "field_x" else "Y", float(value))
-        return
-    index = surface(ctx, ref, names)
-    row = sysm.LDE.GetSurfaceAt(index)
-    if param == "material":
-        if isinstance(value, dict):
-            _set_model_material(ctx, row.MaterialCell, value, f"surface {index}")
-            return
-        # 材料走后端的目录校验 / materials go through the backend's catalog check
-        ctx.backend.set_surface(index, "material", value)
-        return
-    if param == "comment":
-        row.Comment = "" if value is None else str(value)
-        return
-    if param in ("nd", "vd", "dpgf"):
-        _set_glass(ctx, sysm, row.MaterialCell, str(row.Material), param, value, f"surface {index}")
-        return
-    target = float(value)
-    if param == "curvature":
-        target, param = (math.inf if target == 0 else 1.0 / target), "radius"
-    if PAR_RE.match(param):
-        cell = _par_cell(ctx, row, param, index)
-        cell.DoubleValue = target
-        actual = float(cell.DoubleValue)
-    else:
-        attr = _ROW_ATTRS[param]
-        setattr(row, attr, target)
-        actual = float(getattr(row, attr))
-    if not (actual == target or abs(actual - target) <= 1e-12 * max(1.0, abs(target))):
-        raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"surface {index} {param} did not take {target}; a solve or pickup may override it",
-                        {"requested": target, "actual": actual})
+    group (optional when there is only one)."""
+    return ctx.backend.object_index(ref)
 
 
 def get(ctx, key: str) -> Any:
@@ -562,12 +160,7 @@ def restored(ctx) -> Iterator[None]:
 def objects(ctx) -> list[dict[str, Any]]:
     """非序列物体表：序号、类型、注释、参考物体、Inside Of、位置、倾斜、材料、参数、体散射、各波长折射率、全局变换。
     The non-sequential objects with type, comment, references, placement, material, parameters, volume physics and indices."""
-    from saos.backend import nsc
-
-    sysm = _need_system(ctx, "objects")
-    if not nsc.is_nsc(sysm):
-        raise SaosError(ErrorCode.BAD_ARGS, "objects: the lens is sequential")
-    return nsc.objects(zosapi(ctx), sysm)
+    return ctx.backend.nsc_objects()
 
 
 def nsc_trace(ctx, *, split: bool = True, scatter: bool = True, polarization: bool = True, ignore_errors: bool = True,
@@ -581,43 +174,28 @@ def nsc_trace(ctx, *, split: bool = True, scatter: bool = True, polarization: bo
     are on by default (Fresnel reflection and TIR need them) and 2 logical cores are left to the user; a fixed seed makes
     the result reproducible, so checks should fix it. dead_ray_errors is the energy of rays OpticStudio reports as errors;
     it grows when rays hit the segment limit, so checks should treat it as a precondition."""
-    from saos.backend import nsc
-
-    sysm = _need_system(ctx, "nsc_trace")
-    if not nsc.is_nsc(sysm):
-        raise SaosError(ErrorCode.BAD_ARGS, "nsc_trace: the lens is sequential; use trace or spot")
     if cores is None:
         cores = max(1, (os.cpu_count() or 4) - 2)
     report = getattr(ctx, "progress", None)
     cancel = getattr(ctx, "cancel_requested", None)
-    return nsc.trace(sysm, split=split, scatter=scatter, polarization=polarization, ignore_errors=ignore_errors, seed=seed, cores=cores,
-                     clear=clear, save_rays=save_rays, zrd_format=zrd_format, ray_filter=ray_filter, max_seconds=max_seconds,
-                     on_progress=(lambda pct: report("nsc_trace", percent=pct)) if callable(report) else None,
-                     should_cancel=cancel if callable(cancel) else None)
+    return ctx.backend.nsc_trace(split=split, scatter=scatter, polarization=polarization, ignore_errors=ignore_errors, seed=seed,
+                                 cores=cores, clear=clear, save_rays=save_rays, zrd_format=zrd_format, ray_filter=ray_filter,
+                                 max_seconds=max_seconds,
+                                 on_progress=(lambda pct: report("nsc_trace", percent=pct)) if callable(report) else None,
+                                 should_cancel=cancel if callable(cancel) else None)
 
 
 def detector(ctx, ref: int | str, grid: bool = False) -> dict[str, Any]:
     """探测器读数（上一次追迹留下的）：power（W）、hits、peak_pixel_power、pixels；grid 时另有逐像素功率和照度。
     Detector readings left by the last trace: power (W), hits, peak_pixel_power, pixels; with grid also per-pixel power and irradiance."""
-    from saos.backend import nsc
-
-    sysm = _need_system(ctx, "detector")
-    return nsc.detector(zosapi(ctx), sysm, object_index(ctx, ref), grid=grid)
+    return ctx.backend.detector(ref, grid)
 
 
 def ray_hits(ctx, zrd: str, objects: Iterable[int | str], ray_filter: str = "", max_rays: int | None = None) -> dict[str, Any]:
     """读 nsc_trace(save_rays=...) 存下的光线数据库，取光线到达这些物体（序号或注释）的各段：x、y、z、l、m、n、intensity、
     wave（波长序号）、object、ray，均为 numpy 数组；rays_read 是读过的光线数。zrd 是文件名（在镜头文件旁边）或完整路径。
     Read a ray database saved by nsc_trace(save_rays=...) and return the segments where rays reach these objects as numpy arrays."""
-    from saos.backend import nsc
-
-    sysm = _need_system(ctx, "ray_hits")
-    path = Path(zrd)
-    if not path.is_absolute():
-        path = Path(str(sysm.SystemFile)).parent / path
-    if not path.is_file():
-        raise SaosError(ErrorCode.FILE_NOT_FOUND, f"no ray database {path}")
-    raw = nsc.ray_hits(zosapi(ctx), sysm, str(path), [object_index(ctx, o) for o in objects], ray_filter, max_rays)
+    raw = ctx.backend.ray_hits(str(zrd), list(objects), ray_filter, max_rays)
     rays_read = raw.pop("rays_read")[0]
     out: dict[str, Any] = {k: np.asarray(v, dtype=int if k in ("wave", "object", "ray") else float) for k, v in raw.items()}
     out["rays_read"] = rays_read
@@ -682,12 +260,15 @@ class Psf:
     """一张 Huygens PSF：values[行 y][列 x] 为不归一化的强度（同一会话内可比），dx、dy 为像元间距（µm）。
     One Huygens PSF: values[row y][column x] are unnormalised intensities (comparable within a session); dx, dy in µm."""
 
-    values: list[list[float]]
+    values: np.ndarray
     dx: float
     dy: float
 
+    def __post_init__(self) -> None:
+        self.values = np.asarray(self.values, dtype=float)
+
     def peak(self, n_photon: int = 1) -> float:
-        return _photons(max(max(row) for row in self.values), n_photon)
+        return _photons(float(self.values.max()), n_photon)
 
 
 def _photon_order(n_photon: Any) -> int:
@@ -698,9 +279,10 @@ def _photon_order(n_photon: Any) -> int:
 
 def _photons(v: float, n_photon: int) -> float:
     # 逐次相乘而不是 v ** n：双光子与原先手写的 v * v 逐位相同 / repeated products, so two-photon matches a hand-written v * v bit for bit
+    # out = out * v 而不是 *=：v 是数组时不能改动调用方的数据 / not *=, which would change the caller's array
     out = v
     for _ in range(_photon_order(n_photon) - 1):
-        out *= v
+        out = out * v
     return out
 
 
@@ -763,36 +345,55 @@ def psf_widths(p: Psf, n_photon: int = 1, ee: float = 0.8) -> dict[str, float | 
     Values that cannot be found are None."""
     if not 0 < float(ee) <= 1:
         raise SaosError(ErrorCode.BAD_ARGS, f"ee must be a fraction in (0, 1], got {ee!r}")
-    n = _photon_order(n_photon)
-    rows = [[_photons(v, n) for v in row] for row in p.values]
-    iy, ix = max(((r, c) for r in range(len(rows)) for c in range(len(rows[0]))), key=lambda rc: rows[rc[0]][rc[1]])
-    out: dict[str, float | None] = {"fwhm_x": fwhm(rows[iy], p.dx), "fwhm_y": fwhm([row[ix] for row in rows], p.dy), "ee_diameter": None}
+    a = _photons(p.values, _photon_order(n_photon))
+    ny, nx = a.shape
+    iy, ix = divmod(int(np.argmax(a)), nx)
+    out: dict[str, float | None] = {"fwhm_x": fwhm(a[iy].tolist(), p.dx), "fwhm_y": fwhm(a[:, ix].tolist(), p.dy), "ee_diameter": None}
+    # 求和用内置 sum、按原来的顺序（逐行再累加；3.12 起是补偿求和），半径用 math.hypot：与逐元素的写法逐位相同
+    # built-in sum in the original order (per row, then across rows; compensated from 3.12) and math.hypot keep the
+    # numbers bit-identical to the element-by-element version
+    rows = a.tolist()
     total = sum(map(sum, rows))
     if not total > 0:
         return out
-    cx = sum(v * c for row in rows for c, v in enumerate(row)) / total
-    cy = sum(v * r for r, row in enumerate(rows) for v in row) / total
-    pix = sorted(((math.hypot((c - cx) * p.dx, (r - cy) * p.dy), v) for r, row in enumerate(rows) for c, v in enumerate(row)))
-    acc = 0.0
-    for rad, v in pix:
-        acc += v
-        if acc >= float(ee) * total:
-            out["ee_diameter"] = 2 * rad
-            break
+    r, c = np.indices(a.shape)
+    cx = sum((a * c).ravel().tolist()) / total
+    cy = sum((a * r).ravel().tolist()) / total
+    rad = np.array(list(map(math.hypot, ((c - cx) * p.dx).ravel().tolist(), ((r - cy) * p.dy).ravel().tolist())))
+    flat = a.ravel()
+    order = np.lexsort((flat, rad))   # 先按半径、再按强度，同原来对 (半径, 强度) 排序 / by radius, then intensity
+    reached = np.flatnonzero(np.cumsum(flat[order]) >= float(ee) * total)
+    if reached.size:
+        out["ee_diameter"] = 2 * float(rad[order[reached[0]]])
     return out
 
 
-def psf_axial(peak_at: Callable[[int], float], step_um: float, reaches: Sequence[int] = (15, 30), *, n_photon: int = 1) -> dict[str, Any] | None:
+AXIAL_SCANS = ("window", "outward")
+
+
+def psf_axial(peak_at: Callable[[int], float], step_um: float, reaches: Sequence[int] = (15, 30), *, n_photon: int = 1,
+              scan: str = "window") -> dict[str, Any] | None:
     """轴向宽度：peak_at(k) 给出离焦 k 步（k·step_um）处 PSF 的峰值（单光子强度，调用方负责移像面并在之后恢复），
     取 n_photon 次方后在 −reach…reach 步上求半高全宽；半高不在窗口内时换下一个 reach（已算的离焦面复用），都不够时为 None。
     peak_offset_um 是采样中首个最大值的离焦量，分辨率为一步。
     Axial width: peak_at(k) is the PSF peak (single-photon intensity) k steps of step_um out of focus; the caller moves
     the plane and restores it afterwards. Raised to n_photon, the FWHM is taken over −reach…reach steps; when a
     half-maximum crossing falls outside, the next reach is tried, reusing planes already computed; None when none
-    suffices. peak_offset_um is the defocus of the first sampled maximum, resolved to one step."""
+    suffices. peak_offset_um is the defocus of the first sampled maximum, resolved to one step.
+
+    scan="outward"：从 k=0 起只向还没降到半高以下的一侧逐步外扩（以已算离焦面的最大值为准，最多到最大的 reach），
+    两侧都降到半高以下就停。离焦面少得多（单峰时约为 FWHM/step 加几步，整窗是 2·reach+1），但外扩范围以外比主峰更高的
+    次峰看不到，所以是另一种测量定义，换用前要和整窗结果对比。planes 是实际算过的离焦面数。
+    scan="outward": from k=0, extend one step at a time on each side that has not yet fallen below half of the largest
+    value computed so far (up to the largest reach), and stop once both sides have. Far fewer planes (about FWHM/step plus
+    a few for a single peak, against 2·reach+1), but a higher secondary peak beyond the explored range goes unseen: it is
+    a different measurement definition, to be compared with the window result before switching. planes counts the
+    planes computed."""
     n = _photon_order(n_photon)
     if not (math.isfinite(float(step_um)) and float(step_um) > 0) or not reaches:
         raise SaosError(ErrorCode.BAD_ARGS, "psf_axial needs a positive step_um and at least one reach")
+    if scan not in AXIAL_SCANS:
+        raise SaosError(ErrorCode.BAD_ARGS, f"scan must be one of {AXIAL_SCANS}")
     cache: dict[int, float] = {}
 
     def value(k: int) -> float:
@@ -800,77 +401,63 @@ def psf_axial(peak_at: Callable[[int], float], step_um: float, reaches: Sequence
             cache[k] = _photons(float(peak_at(k)), n)
         return cache[k]
 
-    for reach in reaches:
-        ks = list(range(-int(reach), int(reach) + 1))
-        curve = [value(k) for k in ks]
+    def result(ks: list[int], curve: list[float], reach: int) -> dict[str, Any] | None:
         width = fwhm(curve, step_um)
-        if width is not None:
-            j = max(range(len(curve)), key=lambda i: curve[i])
-            return {"fwhm_um": width, "peak_offset_um": ks[j] * float(step_um), "reach": int(reach),
-                    "curve": [(k * float(step_um), v) for k, v in zip(ks, curve)]}
-    return None
+        if width is None:
+            return None
+        j = max(range(len(curve)), key=lambda i: curve[i])
+        return {"fwhm_um": width, "peak_offset_um": ks[j] * float(step_um), "reach": reach, "planes": len(cache),
+                "curve": [(k * float(step_um), v) for k, v in zip(ks, curve)]}
+
+    if scan == "window":
+        for reach in reaches:
+            ks = list(range(-int(reach), int(reach) + 1))
+            got = result(ks, [value(k) for k in ks], int(reach))
+            if got is not None:
+                return got
+        return None
+    limit = max(int(r) for r in reaches)
+    lo = hi = 0
+    while True:
+        ks = list(range(lo, hi + 1))
+        curve = [value(k) for k in ks]
+        peak = max(curve)
+        j = curve.index(peak)
+        # fwhm 从首个最大值向两侧走到第一次低于半高处；某侧有低于半高的点，那一侧的交点就在已算范围内
+        # fwhm walks from the first maximum to the first value below half: one such value on a side puts that crossing inside
+        left = peak > 0 and any(v < peak / 2 for v in curve[:j])
+        right = peak > 0 and any(v < peak / 2 for v in curve[j + 1:])
+        if left and right:
+            return result(ks, curve, max(-lo, hi))
+        grew = False
+        if not left and lo > -limit:
+            lo -= 1
+            grew = True
+        if not right and hi < limit:
+            hi += 1
+            grew = True
+        if not grew:
+            return None
 
 
-def wavefront_rms(ctx, field: int | tuple[float, float], wave: int | None = None) -> float | None:
-    """光线积分的 RMS 波前误差（波长，参考质心：扣除平移与倾斜，默认主波长）；field 同 huygens 的 psf()；算不出时为 None。
+def wavefront_rms(ctx, field: Any, wave: int | None = None) -> Any:
+    """光线积分的 RMS 波前误差（波长，参考质心：扣除平移与倾斜，默认主波长）；field 同 huygens 的 psf()，算不出时为 None。
+    给一组视场（列表）时返回同样顺序的列表，OpticStudio 上只开一个分析窗口，多个视场要一起给。
     RMS wavefront error from ray integration (waves, to centroid: piston and tilt removed; primary wave by default);
-    field as in huygens' psf(); None when not computable."""
-    return ctx.backend.wavefront_rms(primary_wave(ctx) if wave is None else int(wave), field)
+    field as in huygens' psf(), None when not computable. A list of fields gives a list in the same order and runs one
+    analysis on OpticStudio, so pass several fields together."""
+    many = isinstance(field, list)
+    got = ctx.backend.wavefront_rms(primary_wave(ctx) if wave is None else int(wave), field if many else [field])
+    return got if many else got[0]
 
 
 # ---------- 光线 / rays ----------
-
-@dataclass
-class Rays:
-    """批量追迹的结果，每个量是一维数组；坐标在目标面的局部坐标系、镜头单位。ok = 没有错误、没有渐晕、数值有限。
-    Batch trace results, one array per quantity; coordinates in the target surface's local frame, lens units.
-    ok = no error, not vignetted, finite."""
-
-    wave: np.ndarray
-    hx: np.ndarray
-    hy: np.ndarray
-    px: np.ndarray
-    py: np.ndarray
-    error: np.ndarray
-    vignette: np.ndarray
-    x: np.ndarray
-    y: np.ndarray
-    z: np.ndarray
-    l: np.ndarray  # noqa: E741 - 方向余弦沿用 ZOS-API 的名字 / direction cosines keep the ZOS-API names
-    m: np.ndarray
-    n: np.ndarray
-    intensity: np.ndarray
-    surface: int
-
-    @classmethod
-    def from_rows(cls, rays: np.ndarray, rows: np.ndarray, surface: int) -> Rays:
-        return cls(wave=rays[:, 0].astype(int), hx=rays[:, 1], hy=rays[:, 2], px=rays[:, 3], py=rays[:, 4],
-                   error=rows[:, 0].astype(int), vignette=rows[:, 1].astype(int), x=rows[:, 2], y=rows[:, 3], z=rows[:, 4],
-                   l=rows[:, 5], m=rows[:, 6], n=rows[:, 7], intensity=rows[:, 8], surface=surface)
-
-    @property
-    def ok(self) -> np.ndarray:
-        finite = np.isfinite(self.x) & np.isfinite(self.y) & np.isfinite(self.z) & np.isfinite(self.l) & np.isfinite(self.m) & np.isfinite(self.n)
-        return (self.error == 0) & (self.vignette == 0) & finite
-
-    def select(self, mask: np.ndarray) -> Rays:
-        return Rays(**{k: (getattr(self, k)[mask] if k != "surface" else self.surface) for k in self.__dataclass_fields__})
-
-
-def pupil(n: int = 21) -> list[tuple[float, float]]:
-    """单位圆内的 n×n 方格光瞳采样点（归一化坐标）。/ An n×n square grid of normalised pupil points inside the unit circle."""
-    if n < 2:
-        return [(0.0, 0.0)]
-    # 与各任务原有的写法逐位一致：-1 + 2i/(n-1)，外层 px / bit-identical to the jobs' own grids: -1 + 2i/(n-1), px outer
-    grid = [-1 + 2 * i / (n - 1) for i in range(n)]
-    return [(px, py) for px in grid for py in grid if px * px + py * py <= 1 + 1e-12]
-
 
 def trace(ctx, rays: Iterable[Iterable[float]], to: int | str | None = None) -> Rays:
     """归一化坐标的批量实际光线追迹。rays：(wave, hx, hy, px, py) 的序列；to：目标面，默认像面。
     Batch real-ray trace in normalised coordinates. rays: (wave, hx, hy, px, py) rows; to: target surface, default the image."""
     arr = np.asarray(rays if isinstance(rays, (np.ndarray, list, tuple)) else list(rays), dtype=float).reshape(-1, 5)
-    target = _count(ctx) - 1 if to is None else surface(ctx, to)
+    target = ctx.backend.surface_count() - 1 if to is None else surface(ctx, to)
     return ctx.backend.trace_batch(arr, target)
 
 
@@ -1074,7 +661,7 @@ def cra(ctx, direction: Iterable[float] = (0.0, 1.0), wave: int | Iterable[int] 
     found = profile(evaluate, 0.0, 1.0, n, find="max", refine=refine)
     return {"quantity": "chief ray angle", "unit": "deg",
             "definition": "angle between the real chief ray (px=py=0) and the target surface's local z axis, largest over the wavelengths",
-            "direction": [dx, dy], "waves": waves, "surface": surface(ctx, to) if to is not None else _count(ctx) - 1,
+            "direction": [dx, dy], "waves": waves, "surface": surface(ctx, to) if to is not None else ctx.backend.surface_count() - 1,
             "per_wave_at_extreme": dict(zip(waves, per_wave.get(found["at"], []))) if found["at"] is not None else None, **found}
 
 

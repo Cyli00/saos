@@ -638,11 +638,11 @@ class Daemon:
         return None
 
     def _switch(self, want: str, op: str, args: dict[str, Any]) -> None:
-        """换到 want 后端。当前镜头没有未保存修改时由另一边从文件加载，两边逐值比对（saos.backend.handover）；rtc 复现不了的镜头
+        """换到 want 后端。当前镜头没有未保存修改时由另一边从文件加载，两边逐值比对（saos.handover）；rtc 复现不了的镜头
         留在 OpticStudio 上算。换镜头的操作（REPLACING）不交接旧镜头。
         Switch to the want backend. A lens without unsaved changes is loaded from its file by the other side and both are
         compared value by value; a lens rtc cannot reproduce stays on OpticStudio. Ops that replace the lens hand nothing over."""
-        from saos.backend import handover
+        from saos import handover
 
         source = self.active
         loaded = self.loaded

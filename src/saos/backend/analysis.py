@@ -16,6 +16,34 @@ from saos.protocol import ErrorCode, SaosError
 MAX_GRID = 256
 
 
+def net_doubles(values, ny: int, nx: int):
+    """.NET 的 double[ny, nx] 数组 → numpy（行 iy、列 ix）。钉住数组后整块复制（Ansys ZOS-API Python 示例的做法），
+    不逐个下标经 pythonnet 取值；复制的是同一块内存，数值逐位相同。取不到指针（不是 .NET 数组）时逐个取。
+    A .NET double[ny, nx] as numpy (row iy, column ix): pin it and copy the block (as Ansys' ZOS-API Python samples do)
+    instead of one pythonnet index call per element; the same memory, so the values are identical. Falls back to
+    indexing when no pointer can be had (not a .NET array)."""
+    import ctypes
+
+    import numpy as np
+
+    try:
+        from System.Runtime.InteropServices import GCHandle, GCHandleType
+
+        # 只有 double[,] 能按 8 字节浮点整块读；别的元素类型逐个取 / only a double[,] reads as a block of 8-byte floats
+        shape_ok = (str(values.GetType().GetElementType().FullName) == "System.Double" and int(values.Rank) == 2
+                    and (int(values.GetLength(0)), int(values.GetLength(1))) == (ny, nx))
+        handle = GCHandle.Alloc(values, GCHandleType.Pinned) if shape_ok else None
+    except Exception:  # noqa: BLE001 - 退回逐个取值，结果相同只是慢 / fall back to indexing: same values, slower
+        handle = None
+    if handle is None:
+        return np.array([[float(values[iy, ix]) for ix in range(nx)] for iy in range(ny)], dtype=float).reshape(ny, nx)
+    try:
+        block = (ctypes.c_double * (ny * nx)).from_address(int(handle.AddrOfPinnedObject().ToInt64()))
+        return np.frombuffer(block, dtype=np.float64).reshape(ny, nx).copy()
+    finally:
+        handle.Free()
+
+
 def zernike_values(text: str, terms: tuple[int, ...]) -> dict[int, float]:
     """读取分析导出的系数与光线积分统计；不以系数统计冒充光线统计。"""
     number = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[EeDd][-+]?\d+)?"
@@ -176,9 +204,8 @@ def _grid(g) -> dict[str, Any]:
     if g is None or g.Values is None:
         raise SaosError(ErrorCode.ZOS_ERROR, "OpticStudio returned a data grid without values")
     nx, ny = int(g.Nx), int(g.Ny)
-    values = g.Values
     step = max(1, math.ceil(max(nx, ny) / MAX_GRID))
-    rows = [[_finite(float(values[iy, ix])) for ix in range(0, nx, step)] for iy in range(0, ny, step)]
+    rows = [[_finite(v) for v in row] for row in net_doubles(g.Values, ny, nx)[::step, ::step].tolist()]
     flat = [v for row in rows for v in row if v is not None]
     return {
         "description": str(g.Description),

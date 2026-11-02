@@ -190,6 +190,7 @@ def test_paraxial_conic_reads_as_opticstudio_does():
 
     backend = _built({"title": "paraxial source", "aperture": {"type": "entrance_pupil_diameter", "value": 1.0},
                       "fields": {"type": "angle", "y": [0]}, "wavelengths": {"um": [0.92]},
+                      "object": {"thickness": "inf"},
                       "surfaces": [{"type": "paraxial", "focal_length": 4.0, "thickness": 4.0, "stop": True}]})
     assert math.isinf(backend.surfaces()[1]["conic"])
     assert math.isinf(backend.get_param("1.conic"))

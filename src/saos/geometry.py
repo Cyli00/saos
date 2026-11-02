@@ -343,14 +343,71 @@ def merge_configurations(results: list[dict[str, Any]]) -> dict[str, Any]:
     return out
 
 
+# ---- 非序列物体的轮廓 / outlines of non-sequential objects ----
+
+def _nsc_circle(r: float, z: float, n: int = 32, ry: float | None = None) -> list[list[float]]:
+    ry = r if ry is None else ry
+    return [[r * math.cos(2 * math.pi * k / n), ry * math.sin(2 * math.pi * k / n), z] for k in range(n + 1)]
+
+
+def _nsc_rect(hx: float, hy: float, z: float) -> list[list[float]]:
+    return [[-hx, -hy, z], [hx, -hy, z], [hx, hy, z], [-hx, hy, z], [-hx, -hy, z]]
+
+
+def object_outline(item: dict[str, Any]) -> dict[str, Any] | None:
+    """常见物体在局部坐标里的轮廓线：edges 给 3D，section 是局部 YZ 面（x = 0）上的截线。不认识的类型返回 None（列在表里，不画）。
+    Outlines of common objects in local coordinates: edges for 3D, section on the local YZ plane. None for other types."""
+    p = {str(q["name"]).strip().lower(): q["value"] for q in item["params"] if isinstance(q["value"], (int, float))}
+    t = item["type"]
+    if t in ("CylinderVolume", "CylinderPipe", "Cylinder2Volume", "Cylinder2Pipe"):
+        rf, length, rb = p.get("front r", 0.0), p.get("z length", 0.0), p.get("back r", p.get("front r", 0.0))
+        edges = [_nsc_circle(rf, 0.0), _nsc_circle(rb, length)] + [[[rf * c, rf * s, 0.0], [rb * c, rb * s, length]] for c, s in ((1, 0), (0, 1), (-1, 0), (0, -1))]
+        section = [[[0.0, -rf, 0.0], [0.0, rf, 0.0], [0.0, rb, length], [0.0, -rb, length], [0.0, -rf, 0.0]]]
+        return {"edges": edges, "section": section, "closed": True}
+    if t in ("RectangularVolume", "DetectorVolume"):
+        if t == "DetectorVolume":
+            hx, hy, hz = p.get("x half width", 0.0), p.get("y half width", 0.0), p.get("z half width", 0.0)
+            z0, z1, hx2, hy2 = -hz, hz, hx, hy
+        else:
+            hx, hy, z1 = p.get("x1 half width", 0.0), p.get("y1 half width", 0.0), p.get("z length", 0.0)
+            hx2, hy2, z0 = p.get("x2 half width", hx), p.get("y2 half width", hy), 0.0
+        front, back = _nsc_rect(hx, hy, z0), _nsc_rect(hx2, hy2, z1)
+        edges = [front, back] + [[a, b] for a, b in zip(front[:4], back[:4])]
+        section = [[[0.0, -hy, z0], [0.0, hy, z0], [0.0, hy2, z1], [0.0, -hy2, z1], [0.0, -hy, z0]]]
+        return {"edges": edges, "section": section, "closed": True}
+    if t in ("SourceVolumeCylindrical", "SourceVolumeRectangular", "SourceVolumeElliptical"):
+        hx, hy, hz = p.get("x half width", 0.0), p.get("y half width", 0.0), p.get("z half width", 0.0)
+        if t == "SourceVolumeRectangular":
+            front, back = _nsc_rect(hx, hy, -hz), _nsc_rect(hx, hy, hz)
+            edges = [front, back] + [[a, b] for a, b in zip(front[:4], back[:4])]
+        else:
+            edges = [_nsc_circle(hx, -hz, ry=hy), _nsc_circle(hx, hz, ry=hy)] + [[[hx * c, hy * s, -hz], [hx * c, hy * s, hz]] for c, s in ((1, 0), (0, 1), (-1, 0), (0, -1))]
+        section = [[[0.0, -hy, -hz], [0.0, hy, -hz], [0.0, hy, hz], [0.0, -hy, hz], [0.0, -hy, -hz]]]
+        return {"edges": edges, "section": section, "closed": True}
+    if t in ("DetectorRectangle", "SourceRectangle", "Rectangle"):
+        hx, hy = p.get("x half width", 0.0), p.get("y half width", 0.0)
+        return {"edges": [_nsc_rect(hx, hy, 0.0)], "section": [[[0.0, -hy, 0.0], [0.0, hy, 0.0]]], "closed": False}
+    if t in ("SourcePoint", "SourceTwoAngle", "SourceGaussian", "SourceDiode", "SourceEllipse"):
+        hx, hy = p.get("x half width", 0.0), p.get("y half width", 0.0)
+        if hx or hy:
+            return {"edges": [_nsc_rect(hx, hy, 0.0)], "section": [[[0.0, -hy, 0.0], [0.0, hy, 0.0]]], "closed": False}
+        return {"edges": [], "section": [], "point": [0.0, 0.0, 0.0], "closed": False}
+    return None
+
+
+def to_global(points: list[list[float]], tf: dict[str, Any]) -> list[list[float]]:
+    """物体局部坐标的点 → 全局坐标；tf 是物体表里的 global（rotation 为 3×3 行优先，offset）。/ Local object points to global."""
+    rot, off = tf["rotation"], tf["offset"]
+    return [[rot[0] * x + rot[1] * y + rot[2] * z + off[0], rot[3] * x + rot[4] * y + rot[5] * z + off[1],
+             rot[6] * x + rot[7] * y + rot[8] * z + off[2]] for x, y, z in points]
+
+
 def nsc_overlaps(items: list[dict[str, Any]]) -> dict[str, Any]:
     """非序列物体的交叠检查：两个体物体（不含光源、探测器）的轮廓包围盒在三个方向都重叠超过 TOL，彼此没有 Inside Of 关系，
     且编号大的不是整个在编号小的里面（OpticStudio 的嵌套规则），就记为穿插。包围盒对倾斜或弯曲的物体偏保守（可能多报）；画不出轮廓的类型列在 unchecked。items 是 backend.nsc.objects 的结果。
     Interference of non-sequential objects: two volume objects (not sources or detectors) whose outline bounding boxes
     overlap by more than TOL on all three axes, and neither nested in the other via Inside Of. Boxes are conservative
     for tilted or curved objects; types without an outline are listed as unchecked."""
-    from saos.backend import nsc
-
     parents = {it["index"]: it.get("inside_of", 0) for it in items}
 
     def ancestors(i: int) -> set[int]:
@@ -366,7 +423,7 @@ def nsc_overlaps(items: list[dict[str, Any]]) -> dict[str, Any]:
     for it in items:
         if it["kind"] != "object":
             continue
-        shape = nsc.outline(it)
+        shape = object_outline(it)
         if (shape is None or not shape.get("closed") or not it.get("global")) and it.get("mesh_box"):
             # 没有解析轮廓的物体用导出网格的包围盒 / objects without an analytic outline use their exported mesh's box
             lo, hi = it["mesh_box"]
@@ -375,7 +432,7 @@ def nsc_overlaps(items: list[dict[str, Any]]) -> dict[str, Any]:
         if shape is None or not shape.get("closed") or not it.get("global"):
             unchecked.append(it["index"])
             continue
-        pts = [p for e in shape["edges"] for p in nsc.to_global(e, it["global"])]
+        pts = [p for e in shape["edges"] for p in to_global(e, it["global"])]
         boxes[it["index"]] = ([min(p[k] for p in pts) for k in range(3)], [max(p[k] for p in pts) for k in range(3)], it.get("comment", ""))
     overlaps = []
     keys = sorted(boxes)
@@ -467,19 +524,17 @@ def detector_spill(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], l
     Detectors reaching outside the volume that holds their centre (the highest-numbered one) at a point not inside an
     absorber: light leaking out of that volume elsewhere can land on them. Returns the findings and the detectors that
     could not be checked."""
-    from saos.backend import nsc
-
     volumes = [it for it in items if it["kind"] == "object"]
     found, unchecked = [], []
     for det in items:
         if det["kind"] != "detector" or not det.get("global"):
             continue
-        shape = nsc.outline(det)
+        shape = object_outline(det)
         if shape is None:
             unchecked.append(det["index"])
             continue
-        pts = [q for e in shape["edges"] for q in nsc.to_global(e, det["global"])]
-        center = nsc.to_global([[0.0, 0.0, 0.0]], det["global"])[0]
+        pts = [q for e in shape["edges"] for q in to_global(e, det["global"])]
+        center = to_global([[0.0, 0.0, 0.0]], det["global"])[0]
         holders = []
         unknown = False
         for v in volumes:
@@ -511,6 +566,16 @@ _BICONIC = {"BICONIC", "BICONICX", "BICONICZ", "BICONICZERNIKE"}
 _TOROIDAL = {"TOROIDAL"}
 
 
+def _kind(type_name: Any) -> str:
+    return str(type_name or "").upper().replace(" ", "").replace("_", "")
+
+
+def rotational(type_name: Any) -> bool:
+    """面型的矢高只随半径变（Standard、偶次与奇次非球面；OpticStudio 与 rtc 的类型名都认）。
+    Whether a surface type's sag depends on the radius alone (Standard, even and odd asphere; OpticStudio or rtc names)."""
+    return _kind(type_name) in _ROTATIONAL
+
+
 def undefined_surfaces(rows: list[dict[str, Any]], param: Any) -> list[dict[str, Any]]:
     """矢高公式的平方根在零件外缘内没有实数解的面：1 − (1+k)c²r² < 0。OpticStudio 和 rtc 都不报错，超出部分返回边界上的值，
     采样矢高看不出来，只能按面型参数解析地查（fiber-var-zoom 第 16 轮的 S4 实数定义域只有 4.4/6.7 µm，半口径却是 125 µm）。
@@ -520,7 +585,7 @@ def undefined_surfaces(rows: list[dict[str, Any]], param: Any) -> list[dict[str,
     rows are a backend's surfaces(); param(index, n) reads parameter n. The edge is the mechanical semi-diameter, else the clear one."""
     out = []
     for s in rows[1:-1]:
-        kind = str(s.get("type", "")).upper().replace(" ", "").replace("_", "")
+        kind = _kind(s.get("type"))
         if kind not in _ROTATIONAL | _BICONIC | _TOROIDAL:
             continue
         edge = s.get("mech_semi_diameter") or s.get("semi_diameter") or 0.0

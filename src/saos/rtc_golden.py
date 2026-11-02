@@ -60,14 +60,12 @@ def _in_range(medium, wavelength: float) -> bool:
 
 
 def collect(output: Path, catalogs: list[str], *, max_cases: int = 20000) -> dict:
-    from types import SimpleNamespace
-
     from rtc import zmx
     from rtc.material import Catalog, Environment, GlassCatalog, MaterialInvalid, MaterialUnsupported, Model, resolve
 
     from saos import prescription
     from saos.backend.zos import ZosBackend
-    from saos.kit import _set_model_material
+    from saos.backend.zos_params import set_model_material
 
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -99,8 +97,8 @@ def collect(output: Path, catalogs: list[str], *, max_cases: int = 20000) -> dic
                          "surfaces": [{"radius": "inf", "thickness": 1.0, "material": spec.name if isinstance(spec, Catalog) else "", "stop": True}]}
                 backend.build(prescription.normalize(build))
                 if isinstance(spec, Model):
-                    _set_model_material(SimpleNamespace(backend=backend), backend.system.LDE.GetSurfaceAt(1).MaterialCell,
-                                        asdict(spec), "surface 1")
+                    set_model_material(backend.zosapi(), backend.system.LDE.GetSurfaceAt(1).MaterialCell,
+                                       asdict(spec), "surface 1")
                 report["samples"].append({"material": asdict(spec), **metadata})
                 for env_number, (t, p, adjust) in enumerate(ENVIRONMENTS):
                     snapshot = output / f"sample-{sample_number:02d}-environment-{env_number:02d}.zmx"

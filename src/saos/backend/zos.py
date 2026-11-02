@@ -21,7 +21,6 @@ from saos.backend.base import (
     DEFAULT_SUBSTITUTE_CATALOG,
     MATERIAL_MODES,
     NUMERIC_PARAMS,
-    PAR_RE,
     Backend,
     check_field,
     check_param,
@@ -30,6 +29,7 @@ from saos.backend.base import (
     parse_numeric,
     same_number,
 )
+from saos.lensdata import PAR_RE
 from saos.prescription import (
     AFOCAL_UNITS,
     APERTURES,
@@ -99,8 +99,8 @@ def _load_zosapi(root: str):
 
 
 def par_cell(zosapi, row, index: int, param: str):
-    """面型参数列 par<N>；该面型没有这一列、列标为 unused 或不是数值时报错，不读写无效单元格。后端和 saos.kit 共用。
-    The par<N> cell of a row; refuses a column this surface type lacks, marks unused, or that holds no number. Shared with saos.kit."""
+    """面型参数列 par<N>；该面型没有这一列、列标为 unused 或不是数值时报错，不读写无效单元格。后端内部共用（zos_params）。
+    The par<N> cell of a row; refuses a column this surface type lacks, marks unused, or that holds no number. Shared with zos_params."""
     n = int(PAR_RE.match(param).group(1))
     col = getattr(zosapi.Editors.LDE.SurfaceColumn, f"Par{n}", None)
     cell = None
@@ -301,9 +301,9 @@ def _named(label: str):
 
 
 def catalog_constants(system, name: str) -> tuple[float, float] | None:
-    """启用目录里牌号 name 的 nd、νd（材料目录工具，按目录里的原写法选牌号）；不在任何启用目录里时为 None。后端和 saos.kit 共用。
+    """启用目录里牌号 name 的 nd、νd（材料目录工具，按目录里的原写法选牌号）；不在任何启用目录里时为 None。后端内部共用（zos_params）。
     nd and Vd of glass name from the catalogs in use (materials catalog tool, selected by the catalog's own spelling);
-    None when no catalog in use has it. Shared with saos.kit."""
+    None when no catalog in use has it. Shared with zos_params."""
     catalogs = system.SystemData.MaterialCatalogs
     for catalog in catalogs.GetCatalogsInUse():
         # 在用目录列表里可能有空名，它的牌号表是 None（实测 ["SCHOTT", ""]）/ the list may hold an empty name whose material list is None
@@ -368,7 +368,7 @@ class _HuygensSession:
             raise
         self._run, self._s = run, s
 
-    def psf(self, field: int | tuple[float, float], delta_um: float) -> tuple[list[list[float]], float, float] | None:
+    def psf(self, field: int | tuple[float, float], delta_um: float):
         field = check_field(field)
         delta = float(delta_um)
         if not (math.isfinite(delta) and delta > 0):
@@ -386,8 +386,9 @@ class _HuygensSession:
         if r is None or int(r.NumberOfDataGrids) < 1:
             return None
         g = r.GetDataGrid(0)
-        nx, ny, values = int(g.Nx), int(g.Ny), g.Values
-        return [[float(values[iy, ix]) for ix in range(nx)] for iy in range(ny)], float(g.Dx), float(g.Dy)
+        from saos.backend.analysis import net_doubles
+
+        return net_doubles(g.Values, int(g.Ny), int(g.Nx)), float(g.Dx), float(g.Dy)
 
     def close(self) -> None:
         self._stack.close()
@@ -395,24 +396,62 @@ class _HuygensSession:
 
 class ZosBackend(Backend):
     def get_param(self, key: str) -> Any:
-        from types import SimpleNamespace
+        from saos.backend import zos_params
 
-        from saos.kit import _get_zos, parse_key, surfaces_by_comment
-
-        ctx = SimpleNamespace(backend=self)
-        kind, ref, param = parse_key(key)
-        names = surfaces_by_comment(ctx) if kind == "surface" and not str(ref).lstrip("-").isdigit() else {}
-        return _get_zos(ctx, self.system, kind, ref, param, names)
+        return zos_params.get(self, key)
 
     def set_param(self, key: str, value: Any) -> None:
-        from types import SimpleNamespace
+        from saos.backend import zos_params
 
-        from saos.kit import _set_zos, parse_key, surfaces_by_comment
+        zos_params.put(self, key, value)
 
-        ctx = SimpleNamespace(backend=self)
-        kind, ref, param = parse_key(key)
-        names = surfaces_by_comment(ctx) if kind == "surface" and not str(ref).lstrip("-").isdigit() else {}
-        _set_zos(ctx, self.system, kind, ref, param, value, names)
+    def surface_count(self) -> int:
+        # 直接读 LDE：surfaces() 每面要读约 20 个属性，纯非序列系统还返回空 / LDE directly: surfaces() is slow and empty for NSC
+        return int(self.system.LDE.NumberOfSurfaces)
+
+    def surface_comments(self) -> dict[str, int]:
+        lde = self.system.LDE
+        found: dict[str, int] = {}
+        for i in range(lde.NumberOfSurfaces):
+            found.setdefault(str(lde.GetSurfaceAt(i).Comment), i)
+        found.pop("", None)
+        return found
+
+    def zosapi(self):
+        return _load_zosapi(self.root)
+
+    def surface_params(self, ref: int | str) -> list[dict[str, Any]]:
+        from saos import lensdata
+
+        row = self.system.LDE.GetSurfaceAt(lensdata.surface(self, ref))
+        return [{"par": n, "name": str(c.Header), "value": cell_value(c), "read_only": bool(c.IsReadOnly)}
+                for n, c in param_cells(self.zosapi(), row).items()]
+
+    def object_index(self, ref: int | str) -> int:
+        from saos.backend import zos_params
+
+        return zos_params.object_index(self, ref)
+
+    def nsc_objects(self) -> list[dict[str, Any]]:
+        if not nsc.is_nsc(self.system):
+            raise SaosError(ErrorCode.BAD_ARGS, "objects: the lens is sequential")
+        return nsc.objects(self.zosapi(), self.system)
+
+    def nsc_trace(self, **options: Any) -> dict[str, Any]:
+        if not nsc.is_nsc(self.system):
+            raise SaosError(ErrorCode.BAD_ARGS, "nsc_trace: the lens is sequential; use trace or spot")
+        return nsc.trace(self.system, **options)
+
+    def detector(self, ref: int | str, grid: bool = False) -> dict[str, Any]:
+        return nsc.detector(self.zosapi(), self.system, self.object_index(ref), grid=grid)
+
+    def ray_hits(self, zrd: str, refs: list[int | str], ray_filter: str = "", max_rays: int | None = None) -> dict[str, list]:
+        path = Path(zrd)
+        if not path.is_absolute():
+            path = Path(str(self.system.SystemFile)).parent / path
+        if not path.is_file():
+            raise SaosError(ErrorCode.FILE_NOT_FOUND, f"no ray database {path}")
+        return nsc.ray_hits(self.zosapi(), self.system, str(path), [self.object_index(o) for o in refs], ray_filter, max_rays)
 
     def global_matrix(self, index: int):
         import numpy as np
@@ -439,7 +478,7 @@ class ZosBackend(Backend):
     def trace_batch(self, rays, to: int):
         import numpy as np
 
-        from saos.kit import Rays
+        from saos.lensdata import Rays
 
         arr = np.asarray(list(rays), dtype=float).reshape(-1, 5)
         out = np.zeros((len(arr), 9), dtype=float)
@@ -450,12 +489,15 @@ class ZosBackend(Backend):
                 raise SaosError(ErrorCode.ZOS_ERROR, "cannot open batch ray trace; another tool is open")
             try:
                 batch = tool.CreateNormUnpol(len(arr), rt.RaysType.Real, to)
+                # ZOS-API 只有逐条读写；方法先绑定，省去 pythonnet 每次调用的属性解析
+                add, no_opd = batch.AddRay, getattr(rt.OPDMode, "None")
                 for wave, hx, hy, px, py in arr.tolist():
-                    batch.AddRay(int(wave), hx, hy, px, py, getattr(rt.OPDMode, "None"))
+                    add(int(wave), hx, hy, px, py, no_opd)
                 tool.RunAndWaitForCompletion()
                 batch.StartReadingResults()
+                read, blank = batch.ReadNextResult, (0, 0, 0, *([0.0] * 11))
                 for i in range(len(arr)):
-                    row = batch.ReadNextResult(0, 0, 0, *([0.0] * 11))
+                    row = read(*blank)
                     out[i] = (row[2] if row[0] else -1, row[3], *row[4:10], row[14])
             finally:
                 tool.Close()
@@ -1759,11 +1801,44 @@ class ZosBackend(Backend):
             raise SaosError(ErrorCode.BAD_ARGS, "Zernike terms must be integers from -8; samp must be 1–5")
         count = max(11, max_term, *terms)
         size = 32 * 2 ** (samp - 1)
-        with tempfile.TemporaryDirectory(prefix="saos-zernike-", ignore_cleanup_errors=True) as folder:
-            path = Path(folder) / "coefficients.txt"
-            self.analysis("ZernikeStandardCoefficients", {"Field": field, "Wavelength": wave,
-                          "SampleSize": f"S_{size}x{size}", "MaximumNumberOfTerms": count}, path)
-            return zernike_values(_read_text_export(path), terms)
+        text = self._analysis_texts("ZernikeStandardCoefficients", [{"Field": field, "Wavelength": wave,
+                                    "SampleSize": f"S_{size}x{size}", "MaximumNumberOfTerms": count}])[0]
+        return zernike_values(text, terms)
+
+    def _analysis_texts(self, name: str, settings: list[dict[str, Any]]) -> list[str]:
+        """同一个分析依次套用每组设置、各导出一次文本，只开一个分析窗口。只要文本的测量（Zernike 系数、波前 RMS）走这里：
+        通用的 analysis() 每次还读整份系统信息、提取全部数据序列与网格，这些测量用不上。没有结果时同 analysis() 报 ZOS_ERROR；
+        文本导出失败的那一组给空串。
+        One analysis, each settings group applied in turn with one text export each, in a single analysis window. For
+        measurements that need the text only (Zernike terms, RMS wavefront): the generic analysis() also reads the whole
+        system and extracts every series and grid. No results raise ZOS_ERROR as analysis() does; a failed export gives ''."""
+        from saos.backend import analysis
+
+        run = self.system.Analyses.New_Analysis(analysis.idm(_load_zosapi(self.root), name))
+        texts = []
+        try:
+            impl = analysis.settings_of(run)
+            # 读完就删；OpticStudio 偶尔还占着文件时不让清理失败打断测量 / a file OpticStudio still holds must not fail the measurement
+            with tempfile.TemporaryDirectory(prefix="saos-text-", ignore_cleanup_errors=True) as folder:
+                path = Path(folder) / "export.txt"
+                for values in settings:
+                    analysis.apply_settings(impl, values)
+                    message = run.ApplyAndWaitForCompletion()
+                    results = run.GetResults()
+                    if results is None:
+                        raise SaosError(ErrorCode.ZOS_ERROR, f"{name} returned no results",
+                                        {"kind": "no_results", "message": str(message) if message else None,
+                                         "settings": analysis.describe_settings(impl)})
+                    # 上一组的文件不能冒充这一组的导出 / the previous group's file must not pass for this export
+                    path.unlink(missing_ok=True)
+                    try:
+                        exported = bool(results.GetTextFile(str(path)))
+                    except Exception:  # noqa: BLE001 - 同 analysis()：导出失败记为没有文本 / as analysis(): no text
+                        exported = False
+                    texts.append(_read_text_export(path) if exported else "")
+        finally:
+            run.Close()
+        return texts
 
     # ---- 衍射 PSF 与波前 / diffraction PSF and wavefront ----
 
@@ -1781,21 +1856,21 @@ class ZosBackend(Backend):
     def huygens(self, wave: int, pupil: int, image: int) -> _HuygensSession:
         return _HuygensSession(self, wave, pupil, image)
 
-    def wavefront_rms(self, wave: int, field: int | tuple[float, float]) -> float | None:
+    def wavefront_rms(self, wave: int, fields: list[int | tuple[float, float]]) -> list[float | None]:
         from saos.backend.analysis import zernike_values
 
-        field = check_field(field)
+        fields = [check_field(f) for f in fields]
         with self._added_fields() as add:
-            number = field if isinstance(field, int) else add(*field)
-            # 读完就删；OpticStudio 偶尔还占着文件时不让清理失败打断测量 / a file OpticStudio still holds must not fail the measurement
-            with tempfile.TemporaryDirectory(prefix="saos-wfe-", ignore_cleanup_errors=True) as folder:
-                path = Path(folder) / "z.txt"
-                self.analysis("ZernikeStandardCoefficients", {"Field": number, "Wavelength": int(wave)}, path)
-                text = _read_text_export(path)
-        try:
-            return zernike_values(text, (-4,))[-4]
-        except SaosError:
-            return None
+            # 先把按坐标给的视场都加上，再开分析：一个 Zernike 分析依次测各视场 / add every coordinate field first, then one analysis
+            numbers = [f if isinstance(f, int) else add(*f) for f in fields]
+            texts = self._analysis_texts("ZernikeStandardCoefficients", [{"Field": n, "Wavelength": int(wave)} for n in numbers])
+        out: list[float | None] = []
+        for text in texts:
+            try:
+                out.append(zernike_values(text, (-4,))[-4])
+            except SaosError:
+                out.append(None)
+        return out
 
     def surface_aperture(self, index: int) -> dict[str, Any]:
         lde = self.system.LDE
@@ -2236,14 +2311,15 @@ class ZosBackend(Backend):
         tool = (system or self.system).Tools.OpenBatchRayTrace()
         try:
             batch = tool.CreateNormUnpol(len(rays), rt.RaysType.Real, to_surface)
-            none_mode = getattr(rt.OPDMode, "None")
+            add, none_mode = batch.AddRay, getattr(rt.OPDMode, "None")
             for wave, hx, hy, px, py in rays:
-                batch.AddRay(int(wave), float(hx), float(hy), float(px), float(py), none_mode)
+                add(int(wave), float(hx), float(hy), float(px), float(py), none_mode)
             tool.RunAndWaitForCompletion()
             batch.StartReadingResults()
             out = []
+            read, blank = batch.ReadNextResult, (0, 0, 0, *([0.0] * 11))
             for _ in rays:
-                r = batch.ReadNextResult(0, 0, 0, *([0.0] * 11))
+                r = read(*blank)
                 out.append((int(r[2]), int(r[3]), *(float(v) for v in r[4:10])))
             return out
         finally:

@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 from saos import fast
-from saos.kit import pupil
+from saos.lensdata import pupil
 
 
 def compare(rtc, zos) -> dict[str, Any]:

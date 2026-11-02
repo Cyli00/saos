@@ -19,6 +19,7 @@ import re
 import time
 from typing import Any, Callable
 
+from saos import geometry
 from saos.protocol import ErrorCode, SaosError
 
 # 处方写法 → ZOS-API 的体散射模型名
@@ -834,75 +835,19 @@ def check_model_index(system, number: int, spec: dict[str, Any], primary_um: flo
 
 # ---------- 轮廓 / outlines ----------
 
-def _circle(r: float, z: float, n: int = 32, ry: float | None = None) -> list[list[float]]:
-    ry = r if ry is None else ry
-    return [[r * math.cos(2 * math.pi * k / n), ry * math.sin(2 * math.pi * k / n), z] for k in range(n + 1)]
-
-
-def _rect(hx: float, hy: float, z: float) -> list[list[float]]:
-    return [[-hx, -hy, z], [hx, -hy, z], [hx, hy, z], [-hx, hy, z], [-hx, -hy, z]]
-
-
-def outline(item: dict[str, Any]) -> dict[str, Any] | None:
-    """常见物体在局部坐标里的轮廓线：edges 给 3D，section 是局部 YZ 面（x = 0）上的截线。不认识的类型返回 None（列在表里，不画）。
-    Outlines of common objects in local coordinates: edges for 3D, section on the local YZ plane. None for other types."""
-    p = {str(q["name"]).strip().lower(): q["value"] for q in item["params"] if isinstance(q["value"], (int, float))}
-    t = item["type"]
-    if t in ("CylinderVolume", "CylinderPipe", "Cylinder2Volume", "Cylinder2Pipe"):
-        rf, length, rb = p.get("front r", 0.0), p.get("z length", 0.0), p.get("back r", p.get("front r", 0.0))
-        edges = [_circle(rf, 0.0), _circle(rb, length)] + [[[rf * c, rf * s, 0.0], [rb * c, rb * s, length]] for c, s in ((1, 0), (0, 1), (-1, 0), (0, -1))]
-        section = [[[0.0, -rf, 0.0], [0.0, rf, 0.0], [0.0, rb, length], [0.0, -rb, length], [0.0, -rf, 0.0]]]
-        return {"edges": edges, "section": section, "closed": True}
-    if t in ("RectangularVolume", "DetectorVolume"):
-        if t == "DetectorVolume":
-            hx, hy, hz = p.get("x half width", 0.0), p.get("y half width", 0.0), p.get("z half width", 0.0)
-            z0, z1, hx2, hy2 = -hz, hz, hx, hy
-        else:
-            hx, hy, z1 = p.get("x1 half width", 0.0), p.get("y1 half width", 0.0), p.get("z length", 0.0)
-            hx2, hy2, z0 = p.get("x2 half width", hx), p.get("y2 half width", hy), 0.0
-        front, back = _rect(hx, hy, z0), _rect(hx2, hy2, z1)
-        edges = [front, back] + [[a, b] for a, b in zip(front[:4], back[:4])]
-        section = [[[0.0, -hy, z0], [0.0, hy, z0], [0.0, hy2, z1], [0.0, -hy2, z1], [0.0, -hy, z0]]]
-        return {"edges": edges, "section": section, "closed": True}
-    if t in ("SourceVolumeCylindrical", "SourceVolumeRectangular", "SourceVolumeElliptical"):
-        hx, hy, hz = p.get("x half width", 0.0), p.get("y half width", 0.0), p.get("z half width", 0.0)
-        if t == "SourceVolumeRectangular":
-            front, back = _rect(hx, hy, -hz), _rect(hx, hy, hz)
-            edges = [front, back] + [[a, b] for a, b in zip(front[:4], back[:4])]
-        else:
-            edges = [_circle(hx, -hz, ry=hy), _circle(hx, hz, ry=hy)] + [[[hx * c, hy * s, -hz], [hx * c, hy * s, hz]] for c, s in ((1, 0), (0, 1), (-1, 0), (0, -1))]
-        section = [[[0.0, -hy, -hz], [0.0, hy, -hz], [0.0, hy, hz], [0.0, -hy, hz], [0.0, -hy, -hz]]]
-        return {"edges": edges, "section": section, "closed": True}
-    if t in ("DetectorRectangle", "SourceRectangle", "Rectangle"):
-        hx, hy = p.get("x half width", 0.0), p.get("y half width", 0.0)
-        return {"edges": [_rect(hx, hy, 0.0)], "section": [[[0.0, -hy, 0.0], [0.0, hy, 0.0]]], "closed": False}
-    if t in ("SourcePoint", "SourceTwoAngle", "SourceGaussian", "SourceDiode", "SourceEllipse"):
-        hx, hy = p.get("x half width", 0.0), p.get("y half width", 0.0)
-        if hx or hy:
-            return {"edges": [_rect(hx, hy, 0.0)], "section": [[[0.0, -hy, 0.0], [0.0, hy, 0.0]]], "closed": False}
-        return {"edges": [], "section": [], "point": [0.0, 0.0, 0.0], "closed": False}
-    return None
-
-
-def to_global(points: list[list[float]], tf: dict[str, Any]) -> list[list[float]]:
-    rot, off = tf["rotation"], tf["offset"]
-    return [[rot[0] * x + rot[1] * y + rot[2] * z + off[0], rot[3] * x + rot[4] * y + rot[5] * z + off[1],
-             rot[6] * x + rot[7] * y + rot[8] * z + off[2]] for x, y, z in points]
-
-
 def drawing(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """界面用的物体轮廓（全局坐标）。/ Object outlines for the window, in global coordinates."""
     out = []
     for item in items:
-        shape = outline(item)
+        shape = geometry.object_outline(item)
         entry = {"index": item["index"], "type": item["type"], "type_label": item["type_label"], "kind": item["kind"],
                  "comment": item["comment"], "material": item["material"]}
         if shape is not None and item.get("global"):
-            entry["edges"] = [to_global(e, item["global"]) for e in shape["edges"]]
-            entry["section"] = [to_global(e, item["global"]) for e in shape["section"]]
+            entry["edges"] = [geometry.to_global(e, item["global"]) for e in shape["edges"]]
+            entry["section"] = [geometry.to_global(e, item["global"]) for e in shape["section"]]
             entry["closed"] = shape["closed"]
             if "point" in shape:
-                entry["point"] = to_global([shape["point"]], item["global"])[0]
+                entry["point"] = geometry.to_global([shape["point"]], item["global"])[0]
         elif item.get("mesh_edges"):
             # 网格轮廓已在系统坐标里 / mesh outlines are already in system coordinates
             entry.update(edges=item["mesh_edges"], section=item["mesh_section"], closed=True, mesh=True)
@@ -986,14 +931,17 @@ def ray_hits(zosapi, system, zrd: str, objects: list[int], ray_filter: str = "",
             raise SaosError(ErrorCode.ZOS_ERROR, f"cannot read {zrd}: {reader.ErrorMessage}")
         res = reader.GetResults()
         status = zosapi.Tools.RayTrace.RayStatus(0)
+        # 没有整块读取的接口；方法先绑定，省去 pythonnet 每次调用的属性解析
+        next_ray, next_segment = res.ReadNextResult, res.ReadNextSegmentFull
+        blank = (*([0] * 5), status, *([0.0] * 14), 0, 0, *([0.0] * 7))
         rays = 0
         while max_rays is None or rays < max_rays:
-            r = res.ReadNextResult(0, 0, 0.0, 0)
+            r = next_ray(0, 0, 0.0, 0)
             if not r[0]:
                 break
             rays += 1
             for _ in range(int(r[4])):
-                g = res.ReadNextSegmentFull(*([0] * 5), status, *([0.0] * 14), 0, 0, *([0.0] * 7))
+                g = next_segment(*blank)
                 if int(g[3]) in wanted:
                     for k, v in zip(("x", "y", "z", "l", "m", "n"), g[7:13]):
                         out[k].append(float(v))
@@ -1014,7 +962,9 @@ def _param(zosapi, obj, header: str) -> float:
 
 
 def _grid(arr) -> list[list[float]]:
-    return [[float(arr[i, j]) for j in range(arr.GetLength(1))] for i in range(arr.GetLength(0))]
+    from saos.backend.analysis import net_doubles
+
+    return net_doubles(arr, int(arr.GetLength(0)), int(arr.GetLength(1))).tolist()
 
 
 def detector(zosapi, system, number: int, grid: bool = False) -> dict[str, Any]:
@@ -1172,7 +1122,7 @@ def attach_meshes(system, items: list[dict[str, Any]]) -> None:
     import json
     import tempfile
 
-    todo = [it for it in items if outline(it) is None]
+    todo = [it for it in items if geometry.object_outline(it) is None]
     if not todo:
         return
     with tempfile.TemporaryDirectory(prefix="saos-mesh-") as folder:

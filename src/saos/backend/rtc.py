@@ -19,7 +19,6 @@ import time
 from dataclasses import replace
 from functools import lru_cache
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -142,7 +141,7 @@ class RtcBackend(Backend):
         self._media: dict = {}
         # 建立时 OpticStudio INDX 逐值确认过的 (材料描述, 波长)：未准入的材料路径只在这些点上可用
         self.confirmed: set = set()
-        # 与 OpticStudio 交接这份镜头时的逐值比对（saos.backend.handover），换镜头时清空
+        # 与 OpticStudio 交接这份镜头时的逐值比对（saos.handover），换镜头时清空
         # the value-by-value comparison made when this lens was handed over with OpticStudio, cleared with the lens
         self.handover: dict[str, Any] | None = None
         # 被求解锁住的参数：键 → 求解类型 / parameters held by a solve: key → solve type
@@ -987,7 +986,7 @@ class RtcBackend(Backend):
         # rtc.psf.psf_huygens exists, but its exit pupil is not reconciled with OpticStudio (anamorphic surfaces differ)
         raise _unsupported("rtc: the Huygens PSF is not reconciled with OpticStudio yet (ADR-0020); measure it on OpticStudio")
 
-    def wavefront_rms(self, wave: int, field: int | tuple[float, float]) -> float | None:
+    def wavefront_rms(self, wave: int, fields: list[int | tuple[float, float]]) -> list[float | None]:
         raise _unsupported("rtc: the RMS wavefront error is not reconciled with OpticStudio yet (ADR-0020); measure it on OpticStudio")
 
     def _vertex_z(self) -> dict[int, float]:
@@ -1005,7 +1004,7 @@ class RtcBackend(Backend):
         each field about its own centroid); closed form per step for straight rays, up to 5 steps for a curved image."""
         from rtc.trace import trace
 
-        from saos import kit
+        from saos.lensdata import pupil
 
         lens = self._need_lens()
         index = len(lens.surfaces) - 2
@@ -1014,7 +1013,7 @@ class RtcBackend(Backend):
         if any(r.op == "THIC" and r.surface == index for r in lens.mce):
             raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"surface {index} thickness comes from a multi-configuration row")
         before = lens.thickness(index, self.config)
-        grid = np.asarray(kit.pupil(21), dtype=float)
+        grid = np.asarray(pupil(21), dtype=float)
         sx, sy = self._system(lens.primary_wave)._field_scale()
         for _ in range(5):
             num = den = 0.0
@@ -1071,7 +1070,7 @@ class RtcBackend(Backend):
         return out
 
     def vary(self, surface: int, param: str, on: bool, mode: str | None = None, catalog: str | None = None) -> str:
-        from saos.kit import PAR_RE
+        from saos.lensdata import PAR_RE
 
         lens = self._designing("saos opt vary")
         if param not in ("radius", "curvature", "thickness", "conic", "material") and not PAR_RE.match(param):
@@ -1642,12 +1641,12 @@ class RtcBackend(Backend):
     # ---- 参数 / parameters ----
 
     def _index(self, ref: Any) -> int:
-        from saos.kit import surface
+        from saos.lensdata import surface
 
-        return surface(SimpleNamespace(backend=self), ref)
+        return surface(self, ref)
 
     def get_param(self, key: str) -> Any:
-        from saos.kit import PAR_RE, parse_key
+        from saos.lensdata import PAR_RE, parse_key
 
         kind, ref, param = parse_key(key)
         lens = self.lens
@@ -1685,7 +1684,7 @@ class RtcBackend(Backend):
         raise _unsupported(f"rtc cannot read {param}")
 
     def set_param(self, key: str, value: Any) -> None:
-        from saos.kit import PAR_RE, parse_key
+        from saos.lensdata import PAR_RE, parse_key
 
         kind, ref, param = parse_key(key)
         lens = self.lens
@@ -1792,7 +1791,7 @@ class RtcBackend(Backend):
     def trace_batch(self, rays, to: int):
         from rtc.trace import trace
 
-        from saos.kit import Rays
+        from saos.lensdata import Rays
 
         arr = np.asarray(list(rays) if not isinstance(rays, np.ndarray) else rays, dtype=float).reshape(-1, 5)
         if not 1 <= to < len(self.lens.surfaces):
