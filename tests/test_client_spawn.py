@@ -120,10 +120,11 @@ def _machine(tmp_path, monkeypatch):
 def test_all_daemons_adds_registered_homes_outside_work(tmp_path, monkeypatch):
     work, registry, elsewhere = _machine(tmp_path, monkeypatch)
     found = client.all_daemons()
-    assert [(d["instance"], d["alive"]) for d in found] == [("a", True), ("b", False), (None, True), (None, False)]
-    assert found[2]["home"] == str(elsewhere) and not found[2]["current"]
+    # 登记按 pid 数值排：4 总在父进程之前，与父进程 pid 的位数、首位无关
+    assert [(d["instance"], d["alive"]) for d in found] == [("a", True), ("b", False), (None, False), (None, True)]
+    assert found[3]["home"] == str(elsewhere) and not found[3]["current"]
     # pid 4 是系统进程：仍然存在，但它的 home 没有指向它的状态文件，所以不算活着
-    assert found[3]["pid"] == 4 and not found[3]["alive"]
+    assert found[2]["pid"] == 4 and not found[2]["alive"]
 
 
 def test_stop_all_stops_live_ones_and_clears_leftovers(tmp_path, monkeypatch):

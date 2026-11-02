@@ -240,7 +240,9 @@ def all_daemons() -> list[dict[str, Any]]:
     known = {item["home"].lower() for item in found}
     current = str(config.saos_home()).lower()
     registry = config.daemon_registry_dir()
-    for entry in sorted(registry.glob("*.json")) if registry.is_dir() else []:
+    # 登记文件名是 pid：按数值排，否则 "4.json" 与 "51234.json" 的先后随字符串比较而变
+    by_pid = lambda p: (0, int(p.stem), "") if p.stem.isdigit() else (1, 0, p.stem)  # noqa: E731
+    for entry in sorted(registry.glob("*.json"), key=by_pid) if registry.is_dir() else []:
         try:
             data = json.loads(entry.read_text(encoding="utf-8"))
             home, pid = str(data["home"]), int(data["pid"])
