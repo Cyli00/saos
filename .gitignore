@@ -17,3 +17,5 @@ coverage.xml
 *.bak
 *.orig
 archived/
+# 专利 .seq 原文件：出处与再分发条款未核实，只留在本地 / patent .seq sources stay local until their terms are checked
+library/patents/seq/
