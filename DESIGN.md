@@ -54,11 +54,11 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
   - `ctx.AsphereExpert` / `ctx.GlassExpert` 是当前 ZOS 或 rtc 实例镜头的非球面选面与材料搜索类（`saos.ctx.experts`）。只对纯序列、单结构镜头工作；分析恢复入口，接受态标未保存，保存仍经 ctx。项目物理过滤、Q 型列映射和持久斜率约束必须明确提供，不能用缺失数据猜测。接口、算法与待验收项见 `docs/plans/optical-experts.md`。
 - **统一处方骨架与非序列支持**：序列与纯非序列系统（`"mode": "non_sequential"`）共用同一套处方入口、建模确认、结构指纹、判定和轮次；saos 只校验系统设置、通用面属性和多重结构骨架，具体面型和参数按 OpticStudio 原名透传。非序列能力随真实任务逐步扩展。
 - **窗口、资源与未保存修改保护**：
-  - 用户通过流程图窗口（`saos ui`）查看进度、当前镜头视图（`view.json`）与当前镜头指标（`metrics.json`）及每轮导出的点列图/MTF（`viz.json`），避免重复计算占许可；两者由后台进程在每次改动镜头、回复之后自动刷新（ADR-0019），不靠 agent 调命令；窗口尊重用户关闭选择，仅在需要查看的节点通知置顶且不抢键盘焦点；前端随包分发，不引入 Node 构建链。
-  - 显性调试（Extension 模式连接桌面 OpticStudio 窗口）为可选（ADR-0011）。长操作期间暂停实时刷新以防异步重算与 API 竞争（见 `saos lens view --help`、`saos lens analysis --help`）。替换窗口内容前一律先将窗口中的未保存状态存为副本（`lenses/captures/`），不替用户丢弃修改。
+  - 用户通过流程图窗口（`saos ui`）查看进度、当前镜头视图（`view.json`）与当前镜头指标（`metrics.json`）及每轮导出的点列图/MTF（`viz.json`）。后台进程在镜头改动后自动刷新；rtc 的目录指标另由专用进程读取完整镜头快照，在优化进度回调与空闲刷新时计算，只保留最新待算快照，正式判定仍走 check/round（ADR-0022）。追加展示选择存在 `metric_selection.json`，不参与判定；窗口尊重用户关闭选择，仅在需要查看的节点通知置顶且不抢键盘焦点；前端随包分发，不引入 Node 构建链。
+  - 显性调试（Extension 模式连接桌面 OpticStudio 窗口）为可选（ADR-0011）。OpticStudio 长操作期间暂停实时测量，避免与原生工具竞争 API；rtc 的目录指标在独立副本上计算，不适用这一限制（ADR-0022）。替换窗口内容前一律先将窗口中的未保存状态存为副本（`lenses/captures/`），不替用户丢弃修改。
   - 计算后端固定版本（见 [README](./README.md)）并用双精度；长时间进程降低优先级并默认预留 2 个逻辑核，许可证并发预算计入用户已打开的窗口（见 `saos --help` 与 `saos opt local --help`）。
 - **代码三层结构与上收原则**：分为固定 CLI 命令、库函数（`saos.kit`、`saos.search`、`saos.starts`、配方库）和任务内脚本（ADR-0007）。同一段代码在第二个任务中被复用时即上收为库函数或配方草稿，上收前后同一批镜头的计算数值必须逐项一致。测试只测工具，不测 Agent 的设计能力。
-- **模块分层**（2026-11-02 用户决定，参照 ripgrep 各 crate 单向依赖）：L0 基础约定（`protocol`、参数键与追迹结果 `lensdata`、`geometry`、`prescription`、文件与目录、共享参考库的只读入口 `library`）→ L1 计算后端（`saos.backend`，OpticStudio 的参数读写在 `backend/zos_params.py`）→ L2 测量库（`saos.kit`、微光学测量 `saos.micro`、`saos.fast`、`saos.search`、专家类，以及只含测量函数的配方库如 `saos.recipes.fiber`）→ 任务、需求、轮次、扫描、worker 池、后台进程与窗口。配方只保留布局约定，可拆开的慢测量经 `ctx.spare_map` 借空闲许可证，不直接碰 worker 池。下层不导入上层，函数内的延迟导入也算，由 `tests/test_layers.py` 检查；测量库只经 `Backend` 协议调用后端，只有 OpticStudio 能做的功能由后端自己报错。
+- **模块分层**（2026-11-02 用户决定，参照 ripgrep 各 crate 单向依赖）：L0 基础约定（`protocol`、参数键与追迹结果 `lensdata`、`geometry`、`prescription`、文件与目录、共享参考库的只读入口 `library`）→ L1 计算后端（`saos.backend`，OpticStudio 的参数读写在 `backend/zos_params.py`）→ L2 测量库（`saos.kit`、指标目录 `saos.metrics`、微光学测量 `saos.micro`、`saos.fast`、`saos.search`、专家类，以及只含测量函数的配方库如 `saos.recipes.fiber`）→ 任务、需求、轮次、扫描、worker 池、后台进程与窗口。配方只保留布局约定，可拆开的慢测量经 `ctx.spare_map` 借空闲许可证，不直接碰 worker 池。下层不导入上层，L0–L2 之间也不成环（只有完全落在同一包内的环除外，经过同包模块绕回的跨包环照样算），函数内的延迟导入和相对导入也算，由 `tests/test_layers.py` 检查；最上层相当于 ripgrep 的 core，是把流程粘起来的胶水，内部模块可以互相引用；测量库只经 `Backend` 协议调用后端，只有 OpticStudio 能做的功能由后端自己报错。
 
 ## 核心术语对照
 
@@ -85,14 +85,14 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 | **建模说明** | Model Description | 优化前供用户核对的 HTML 页面：各面实物含义、材料来源、一阶分析、有效性检查与下一步预算（*勿称：模型报告*） |
 | **模型确认** | Model Approval | 用户对建模说明的认可记录，绑定结构指纹（*勿称：模型审批*） |
 | **当前镜头视图** | Live View (`view.json`) | 流程图窗口实时展示的镜头布局、Lens Data 与结构交叠检查（*勿称：预览*） |
-| **当前镜头指标** | Live Metrics (`metrics.json`) | 后台进程在镜头改动后自动测的评价函数值与需求各项的值，限时测量，带测量时的视图版本；不是证据，不进 `evaluations/` |
+| **当前镜头指标** | Live Metrics (`metrics.json`) | 带视图版本的评价函数值、需求项与追加展示指标；rtc 目录指标在完整快照副本上计算，其他判定保留正式测量值，OpticStudio 使用原有限时刷新；不是正式证据 |
 | **结构交叠** | Interference | 零件在几何上相交或穿过（如负边厚、负空气间隔），按零件外缘或显式孔径计算（*勿称：干涉、碰撞*） |
 | **调试轮次** | Round | 一次优化、换材或改结构后记录的检查点，含镜头快照、全项实测值与手段层级（*勿称：迭代、调整轮次*） |
 | **目标差距** | Shortfall | 各带界限项超出界限的量与 `minimize`/`maximize` 距离归一化加权之和，用于跨轮比较（*勿与优化评价函数 merit 混淆*） |
 | **手段层级** | Strategy Tier | 轮次所用的手段级别：`local`、`variables`、`materials`、`global`、`structure`（*勿称：优化阶段*） |
 | **无法再优化** | Exhausted (`exhausted`) | 自上次明显进步以来，允许的各手段层级均已尝试或带证据排除仍无进展的终止状态（*勿称：停滞、卡住*） |
 | **扫描 / 扰动诊断** | Scan / Probe (`saos scan`) | 在 Worker 池上并发评估候选结构（`candidates`）、参数网格、单变量扰动灵敏度（`probes`）或公差（`tolerance`）（*勿单称 map 或 sweep*） |
-| **交付报告** | Delivery Report (`report/index.html`) | 汇总实测值、达标状态、材料与计算后端的 HTML 报告，只交付满足全部可交付条件的轮次（*勿称：验收报告*） |
+| **交付报告** | Delivery Report (`report/index.html`) | 汇总实测值、达标状态、材料与计算后端的 HTML 报告；只把满足全部可交付条件的轮次称为交付镜头，没有时写明原因并只作诊断展示差距最小的轮次（*勿称：验收报告*） |
 | **诊断量** | Diagnostic | 随报告输出、帮助解释结果但不决定是否达标的光学量，如 Strehl 比（*勿称：附加指标*） |
 | **隐式运行 / 显性调试** | Headless Run / Explicit Debugging | 默认无界面运行 vs 通过 Interactive Extension 连接用户桌面 OpticStudio 窗口调试（*勿称：后台模式 / 窗口模式*） |
 | **配方** | Recipe (`.agents/skills/saos/references/recipes/<系统>.md`) | 针对一类光学系统、由入口技能在访谈确定系统类别后路由过去的参考文档与配套工具库，从真实任务中提炼（*勿称：模板、插件、子技能*） |
@@ -115,7 +115,7 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 | 根目录 | 只有 `README.md`、`DESIGN.md`、`TODO.md`、`AGENTS.md`、`pyproject.toml`、`uv.lock`、`.gitignore`，以及 `.agents/`（技能源文件）和 `.claude/skills/saos`（指向 `.agents/skills/saos` 的链接）；`ref`（联接到 zea 参考资料）和 `work/` 不入库 |
 | `src/saos/` | 核心工具代码。不依赖任何配方，仅 `cli.py` 注册配方命令 |
 | `src/saos/recipes/<配方>/` | 配方配套代码 |
-| `.agents/skills/saos/` | 光学设计工作流技能：`SKILL.md` 入口（定位阶段、各阶段关卡与出口）、`references/` 按阶段的细节与按时机读取的通用参考（`session.md` 会话与长运行、`scripting.md` 脚本与 rtc 副本、`files.md` 任务目录）、`references/recipes/<配方>.md` 按《配方编写规范》（`references/recipes/README.md`）编写的配方 |
+| `.agents/skills/saos/` | 光学设计工作流技能：`SKILL.md` 入口（定位阶段、各阶段关卡与出口）、`references/` 按阶段的细节与按时机读取的通用参考（`session.md` 会话与长运行、`scripting.md` 脚本与 rtc 实例、`rtc-copy.md` OpticStudio 上的 rtc 副本、`micro.md` 微光学测量、`files.md` 任务目录）、`references/recipes/<配方>.md` 按《配方编写规范》（`references/recipes/README.md`）编写的配方 |
 | `docs/` | 跨任务文档：`workflow.drawio`（工作流图）、`adr/NNNN-*.md`、`plans/*.md` |
 | `docs/recipes/<配方>/` | 配方的中文长篇说明：规格与验收口径、入库流程、上收比对记录 |
 | `library/<库>/` | 跨任务共享参考数据（均含 `README.md` 说明来源与用法）：`materials/`、`glasscat/`、`thermal/`、`mechanics/`、`coatings/`、`starts/`、`patents/`、`microscope/`；脚本经 `saos.library` 统一查询。`patents/seq/` 原文件出处与再分发条款未核实，只留本地不入库 |
@@ -129,4 +129,6 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 
 ## 工作流窗口的维护边界
 
-流程状态由 `src/saos/ui/stage.py` 统一生成，`ui/static/app.js` 负责中英文本与节点展示，`app.css` 维护现有视觉变量。保留布局、点列、光线扇、场曲、MTF、指标、轮次和起点标签页；主流程为访谈、需求确认、建模初筛、模型确认、设计轮次、报告交付；报告交付在报告晚于轮次、停止、排除记录和所引用的公差扫描时才算完成。
+流程状态由 `src/saos/ui/stage.py` 统一生成，`ui/static/app.js` 负责中英文本与节点展示，`app.css` 维护 ayu Dark 视觉变量（2026-11-03 用户决定：只做深色，保留中英文）。版面为卡片式：顶部流程弧线；镜头卡常驻布局，Lens Data 独立成卡；点列、光线扇、场曲、MTF、指标、轮次和起点为分析卡的标签页，可放大；判定圆环、需求趋势与底部轮次时间轴跟随时间轴选中的轮次或当前镜头。主流程为访谈、需求确认、建模初筛、模型确认、设计轮次、报告交付；报告交付在报告晚于轮次、停止、排除记录和所引用的公差扫描时才算完成。
+
+交付报告（`report.py`）第 1 页是 `report_sheet.py` 生成的单页总览，纸面浅色、按 A3 横向打印：剖面、处方、点列、MTF 取交付轮导出的 `viz.json`，折转系统沿用 `ui/section.py` 的对称平面；判定、目标差距趋势和“未验证与风险”取自报告数据，未做 OpticStudio 复测或公差时必须列出。第 2 页（`#full`）是完整记录。报告与窗口一样不自行计算光学数值。

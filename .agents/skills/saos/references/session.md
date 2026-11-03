@@ -35,5 +35,11 @@ The workflow window is how the user normally watches. When the user also wants t
 - saos opens Lens Data and a layout window: the cross-section, or the 3D viewer when OpticStudio cannot draw one (`layout.fallback_reason` says why). `lens view --analysis TYPE` adds an analysis worth watching; `--viewer cross-section|3d|shaded` picks another layout. `lens screenshot` captures PNGs.
 - On `UI_BLOCKED`, ask the user to close the named dialog.
 - Before `lens load`, `unload` or `build` replace the window content, saos saves unsaved user content to `lenses/captures/NNN-unsaved.zmx` (returned as `captured`); tell the user where their work went. `ctx.load` in scripts does the same; call `ctx.capture_window()` first in a script that replaces the window content. Your own unsaved changes are refused until you `lens save` or pass `--discard`.
-- Long operations pause window updates and refresh once at the end, because live updates once made an evaluation 4.5 times slower. `exec --live` or `SAOS_UI_LIVE=1` keeps them live when the user wants to watch.
+- Long operations on OpticStudio pause window updates and refresh once at the end, because live updates once made an evaluation 4.5 times slower. `exec --live` or `SAOS_UI_LIVE=1` keeps them live when the user wants to watch.
 - Open one analysis per measurement and recompute it: in extension mode every new analysis opens and closes a window, and about a hundred in a row crashed OpticStudio.
+
+## Live catalog metrics
+
+On rtc, the daemon hands a full `.zmx` snapshot of the lens to a dedicated rtc process at optimiser progress callbacks and at the idle refresh after a lens change; the loaded lens keeps its path and unsaved mark. The process uses no worker or licence, keeps only the newest pending snapshot and promises no update per step. It computes the demand's catalog items and the selected extras ([scripting.md](scripting.md#the-metric-catalog)); operand, analysis and script items keep their last formal measurement, and a formal measurement supersedes older live frames. Live numbers are previews, not evidence; each item's `view` names the lens state it belongs to.
+
+`SAOS_LIVE_FRAME_S` (default 10 s) bounds a whole frame: on timeout the process is killed and the error published, and the next snapshot starts afresh; a frame is never retried. `SAOS_LIVE_S=0` or `SAOS_VIEW=0` turns the rtc submissions off. OpticStudio starts no live process and keeps its bounded measurement after each reply (`SAOS_LIVE_S`). Formats: `docs/adr/0022-metric-catalog-and-live-metrics.md`.

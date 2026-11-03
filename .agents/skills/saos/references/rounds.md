@@ -23,7 +23,7 @@ Tools: `opt vary --param radius|curvature|thickness|conic|par<N>|material`, `opt
 - `ctx.GlassExpert` in an `exec` script is the `materials` tier done glass by glass: in-production neighbours by working-band n/V, anomalous-dispersion glasses first, each trial re-optimised. `surfaces="model"` replaces every model glass, which a patent start always has (its glass codes), before delivery.
 - `ctx.AsphereExpert(...).rank()` predicts which spherical surfaces gain most from an asphere and leaves the lens as it was. `.run(nas)` changes surface types, which changes the approved structure: show the ranking to the user, run, describe the model again and get `saos lens approve` before `saos round --tier structure`.
 - Options, and how to keep an expert's result, are in [scripting.md](scripting.md#expert-search-classes).
-- Your own `saos.search` loops run on `ctx`, which is rtc in this stage ([scripting.md](scripting.md#choose-where-a-loop-runs)). After `saos daemon use zos`, loops on the rtc copy follow [scripting.md](scripting.md#the-rtc-copy).
+- Where your own `saos.search` loops run: [scripting.md](scripting.md#choose-where-a-loop-runs).
 
 Read the result, not just the merit:
 
@@ -40,7 +40,7 @@ When you optimise outside the lens's merit function (your own `exec` loop), reco
 - **Wizard.** RMS only, Gaussian quadrature, `start_at` keeps the rows before it.
 - **`opt local`.** Damped least squares where boundary rows are exact constraints, not penalties (after CODE V): read `constraints`, `violation.after` and `violated_after`. A start where a weighted row cannot be computed (a ray misses) is refused with the failing rows; diagnose it first. `--algorithm dls` only; `cycles` count iterations, `auto` stops at convergence or 200. Cancellation and time limits are checked before each evaluation; cancellation or an exception restores the last accepted point.
 - **`opt hammer|global`.** Same budget rules as OpticStudio; unlike OpticStudio's, rtc's Hammer archives the systems it finds to `lenses/hammer/NNN/`. Only solutions meeting every constraint compete. Substitution picks among the 8 glasses of the catalog nearest in nd/νd to the current one, not the whole catalog. Material variables live in memory only: after `lens load`, run `opt vary --param material` again.
-- **Plots.** Round plots are rtc's spot, ray fan and FFT MTF; `lens analysis` has `FftMtf` only.
+- **Plots.** Round plots are rtc's spot, ray fan and FFT MTF.
 - **Rounds** carry `backend: rtc` and `provenance` (paths and operands not reconciled with OpticStudio). Judge and stop on them as usual; delivery re-measures the delivered round ([delivery.md](delivery.md#re-measure-on-opticstudio)).
 
 ## Record rounds

@@ -1,6 +1,6 @@
 # Recipe (draft): side-viewing imaging-fibre probes
 
-Use this when the job designs a sub-millimetre side-viewing probe: imaging fibre face → lenses → 45° fold prism → glass tube wall → tissue, at 488 nm (excitation, focusing) and 532 nm (emission reference). For a fibre-delivered excitation probe (a fibre point source focused through lenses and a tube wall into tissue, such as a two-photon zoom probe), use the backend status, the diffraction bounds and the starting forms below, and build the checks from `saos.micro` ([scripting.md](../scripting.md#micro-optics-measurements)): focus depth in the medium, sample-side NA, zoom travel, gaps and housing clearance, PSF widths. The side-view library below assumes the fold and the tube comments and does not fit it.
+Use this when the job designs a sub-millimetre side-viewing probe: imaging fibre face → lenses → 45° fold prism → glass tube wall → tissue, at 488 nm (excitation, focusing) and 532 nm (emission reference). For a fibre-delivered excitation probe (a fibre point source focused through lenses and a tube wall into tissue, such as a two-photon zoom probe), use the backend status, the diffraction bounds and the starting forms below, and build the checks from `saos.micro` ([micro.md](../micro.md)): focus depth in the medium, sample-side NA, zoom travel, gaps and housing clearance, PSF widths. The side-view library below assumes the fold and the tube comments and does not fit it.
 
 Not covered: the proximal side (beam splitter, relay, camera), volume scattering, tolerancing.
 

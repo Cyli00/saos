@@ -12,10 +12,10 @@
 # must. ideal is the best reachable value: default 0 for minimize, required for maximize.
 # Weights: origin user defaults to 1, agent to 0.3; an agent objective never outweighs the lightest user
 # one; weight overrides only a bounded or directional objective.
-# check is exactly one of {operand: {type, int1, int2, data}}, {analysis: {type, settings, path}} or
-# {script: checks/<file>.py}; a script defines run(ctx) and returns one number (inf when a precondition
-# fails). "As small as possible" is minimize, never must: {max: 0} (refused). An unknown real-world fact
-# is an open_question, never a variable.
+# check is one of {operand: {type, int1, int2, data}}, {analysis: {type, settings, path}},
+# {metric: {id, params?, pick?}} (see saos metrics list) or {script: checks/<file>.py} defining run(ctx),
+# which returns inf when a precondition fails. "As small as possible" is minimize, never must: {max: 0}
+# (refused). An unknown real-world fact is an open_question, never a variable.
 
 schema: 2
 

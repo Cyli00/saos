@@ -18,7 +18,7 @@ Each job runs one of two workflows, fixed by `saos job create --mode` and shown 
 
 Create an interactive job unless the user asked for an exercise or a test run. Only the user turns an autonomous job interactive, in the window; no job becomes autonomous later. In an interactive job, "go ahead without asking" leaves the mode as it is: the gates still need the user's click, and their words can go in its note.
 
-Run commands from the repository root as `uv run saos ...`. Every command prints one JSON object; `uv run saos <command> --help` documents arguments, results and error codes. `DESIGN.md` defines the terms.
+Run commands from the repository root as `uv run saos ...`. Every command prints one JSON object; `uv run saos <command> --help` documents arguments, results and error codes. Terms: the table 核心术语对照 in `DESIGN.md`.
 
 ## Start a session
 
@@ -36,13 +36,15 @@ Run commands from the repository root as `uv run saos ...`. Every command prints
 Read these when their condition first holds:
 
 - a recipe, as soon as the interview shows the system belongs to its family, since its sections feed every stage: [microscope objectives](references/recipes/microscope.md), [side-viewing fibre probes](references/recipes/fiber.md). A recipe is experience; the gates and these rules stand over it;
-- [scripting.md](references/scripting.md) before you write an `exec` script or any loop of many evaluations: the rtc copy, the worker pool, the `ctx` API and the expert classes;
+- [scripting.md](references/scripting.md) before you write an `exec` script or any loop of many evaluations: the worker pool, the `ctx` API, the metric catalog and the expert classes;
+- [rtc-copy.md](references/rtc-copy.md) before you call `ctx.fast()`;
+- [micro.md](references/micro.md) when checks measure a fibre probe, endoscope, fibre-tip lens or miniature objective;
 - [diagnosis.md](references/diagnosis.md) when a round `brief` sets `review`, progress stalls, or a `must` misses by a multiple of its pass line;
 - [files.md](references/files.md) before you first write into the job directory.
 
 ## Rules in every stage
 
-- **Measured evidence.** Every optical number you decide on comes from a saos backend (operand, ray trace, analysis, check), and every number you deliver comes from OpticStudio. Hand estimates guide reasoning and are labelled as estimates; never write your own ray tracer, paraxial or aberration calculator or surrogate (ADR-0013). rtc is the one other tracer. The daemon computes stages 1 to 3 on it ([session.md](references/session.md#two-backends-in-one-daemon)); those rounds carry `backend: rtc`, and the round you deliver is re-measured on OpticStudio first ([delivery.md](references/delivery.md#re-measure-on-opticstudio)). On OpticStudio, the rtc copy (`ctx.fast()`) steers loops with numbers labelled `rtc`; its result reaches a decision only after you push it and close with `opt local` on the lens's merit function, since the copy kept solves frozen and never saw the merit function.
+- **Measured evidence.** Every optical number you decide on comes from a saos backend (operand, ray trace, analysis, check), and every number you deliver comes from OpticStudio. Hand estimates guide reasoning and are labelled as estimates; never write your own ray tracer, paraxial or aberration calculator or surrogate (ADR-0013). rtc is the one other tracer. The daemon computes stages 1 to 3 on it ([session.md](references/session.md#two-backends-in-one-daemon)), and the round you deliver is re-measured on OpticStudio first ([delivery.md](references/delivery.md#re-measure-on-opticstudio)). A number from the rtc copy (`ctx.fast()`) decides nothing until it goes back to OpticStudio ([rtc-copy.md](references/rtc-copy.md)).
 - **One definition per number.** Optimisation targets, script objectives and first-order estimates use the demand checks' definition, or are compared with them on the same lens before you draw a conclusion.
 - **No silent relaxing.** A goal that cannot be met is reported with its gap. Changing what the demand judges (the full list is in the [format](demand.example.yaml) header) goes back to the user for a new confirmation.
 - **Sourced materials in delivery.** Model glasses are for exploration only.

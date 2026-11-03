@@ -25,6 +25,7 @@ Use commands to create or update these; find paths in command results and `job s
 | Location | Content |
 |---|---|
 | `job.json`, `log.jsonl`, `progress.json`, `view.json`, `metrics.json` | job state, every command with its arguments and success or error (not its result), running progress, the current lens and its merit and item values for the workflow window (not evidence) |
+| `metric_selection.json` | display-only catalog metrics chosen for the window (`saos metrics select`); never judged, not evidence |
 | `confirmations.jsonl`, `models/NNN-<lens>/` (with `approval.json`) | the approvals of demand and model: `via` window or cli (the user), or auto (yours, with `reason`, in an autonomous job) |
 | `revisions.jsonl` | changes the user asked for at a gate in the window, with the version they saw; `job show` lists the unanswered ones as `workflow.revisions` |
 | `evaluations/NNN/` | every check or round: snapshot, `support/` copy of `checks/`, exports, authoritative `result.json`, `viz.json` |

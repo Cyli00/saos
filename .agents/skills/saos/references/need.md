@@ -48,6 +48,8 @@ Read the user's requirements as written:
 
 ## Write checks that measure the real quantity
 
+When the catalog has the quantity, check it there instead of writing a script: `check: {metric: {id: spot, params: {fields: [[0, 0]], wave: 1, grid: 21}, pick: rms_radius}}` ([scripting.md](scripting.md#the-metric-catalog) has the ids, parameters and scalars). Validity conditions the catalog lacks stay checks of their own; a curve shown in the window is not a check.
+
 Checks live in `checks/` with every helper module or data file they use; recipe libraries and `saos.kit` they import count too. Any change to them starts a new comparison window (see [rounds.md](rounds.md)).
 
 - Measure the real quantity. Never special-case a surface type or setting to skip a measurement.

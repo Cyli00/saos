@@ -1,4 +1,4 @@
-# Scripts, loops and the rtc copy
+# Scripts, loops and the rtc instance
 
 How to run many evaluations and edit the lens from your own scripts. Command details: `uv run saos exec --help`, `uv run saos scan --help`; how to run them without losing work is in [session.md](session.md).
 
@@ -7,38 +7,8 @@ How to run many evaluations and edit the lens from your own scripts. Command det
 A loop of many evaluations (a scan of a few variables, multi-starts, a sensitivity table, a refocus per point) runs on the backend computing now (`backend_switch` and `job show` name it):
 
 - **On rtc** (every stage before delivery), run it on `ctx` itself ([The rtc instance](#the-rtc-instance)), or on the worker pool for many points at once; `ctx.fast()` is refused there.
-- **On OpticStudio**, use the rtc copy (`ctx.fast()`, next section) when the objective is a ray quantity (ray positions and angles, spot statistics, chief ray angle, pass rate) and the copy builds for this lens. It costs no licence and no worker start.
+- **On OpticStudio**, use the rtc copy (`ctx.fast()`, [rtc-copy.md](rtc-copy.md)) when the objective is a ray quantity (ray positions and angles, spot statistics, chief ray angle, pass rate) and the copy builds for this lens. It costs no licence and no worker start.
 - **The worker pool** when the loop needs operands, analyses or the demand checks, or the copy refuses the lens. `saos scan --plan` covers grids, point lists, `minimize`, `probes`, `candidates` and `tolerance` plans, measures every point with the demand checks, ranks by shortfall and keeps the best lenses in `lenses/scans/NNN/`; prefer a plan to a script. In a script, `ctx.map("fn", items, workers=N)` runs `fn(w, item)` in a worker that reloads a copy of the saved lens before every item (`"explore/x.py:fn"` for a function in another job file); results and the script copy go to `parallel/NNN/`. Workers run the backend the daemon computes on, default four; OpticStudio workers are standalone instances that count against the licence (see [session.md](session.md#preconditions)). They close after 10 idle minutes, when the daemon switches backend, or at once with `ctx.pool_close()`.
-
-## The rtc copy
-
-`fast = ctx.fast()` (also `w.fast()` in a worker) is an in-memory copy of the current lens, unsaved changes included, traced by rtc in float64 (ADR-0014 holds the design and the measured agreement and speed). It has the kit methods `set`, `get`, `values`, `kept`, `trace`, `spot`, `cra`, `field_profile` and `configuration`, running the same kit code as `ctx`; operands, analyses, `measure` and checks are not there, and check scripts cannot call `ctx.fast()`. rtc traces with a compiled kernel: the first trace after rtc's code changes compiles it (about 6 s, once), later processes load it from cache (about 1 s on the first trace).
-
-```python
-from saos import search
-
-def run(ctx):
-    fast = ctx.fast(freeze_solves=True)
-    steps = {"2.radius": 0.5, "3.radius": 1.0, "3.thickness": 0.2}
-
-    def worst_rms(x):
-        fast.set(x)
-        rows = fast.spot([(0, 0), (0, 0.7), (0, 1)], wave=[1, 2, 3], grid=15, refocus=True)
-        values = [r.get("rms_radius_best") for r in rows]
-        return None if None in values else max(values)
-
-    found = search.minimize(worst_rms, fast.values(steps), steps, max_seconds=60, should_stop=ctx.cancel_requested)
-    fast.set(found["best"])
-    fast.push(ctx)
-    return {"built": fast.agreement, "rtc": found["best_f"], "opticstudio": ctx.measure(["spot"])}
-```
-
-- **It is checked against OpticStudio when it is built.** `ctx.fast()` first compares every parameter and the index of every medium at every wavelength, then traces the chief ray and a 5×5 pupil at every field and wavelength on both sides; a ray usable on one side only, or a difference beyond 1e-6 mm or 1e-7 in direction, raises `VERIFY_FAILED`. `fast.agreement` keeps that comparison. `fast.compare(ctx, fields, wave, grid)` repeats it for other rays while both sides hold the same parameters (after `push`).
-- **What it cannot reproduce, it refuses.** Apertures other than EPD, mirrors, coordinate breaks and tilts/decenters, diffractive and Fresnel surfaces, a finite object distance, paraxial aiming, non-angle fields, field vignetting factors, live multi-configuration operands other than THIC, and surface apertures other than circular/floating raise `BACKEND_UNSUPPORTED`. Materials follow the admission table `src/saos/backend/rtc_admitted.json`: a dispersion formula and environment path listed there is usable everywhere, and any other material only at the wavelengths whose OpticStudio INDX matched when the copy was built. A material change or a new wavelength is checked at every active wavelength before it is applied; a refused change leaves the copy as it was. A glass name missing from the lens's catalogs and an invalid nd/vd are `BAD_ARGS`. On a refusal, move that step to the worker pool; never substitute an approximate number.
-- **Solves stay at their saved values.** Pickups, marginal ray height and F-number solves are not recomputed. While the lens has one, changes are refused; `ctx.fast(freeze_solves=True)` keeps their saved values (fine for a focus solve when the objective refocuses, as above), `fast.held` lists them, and writing a held cell raises `VALUE_NOT_APPLIED`.
-- **Results go back through `push`.** `fast.push(ctx)` writes every parameter changed through `fast.set` to the OpticStudio lens; OpticStudio then re-solves, and a closing `opt local` on the merit function comes before `saos check` or `saos round` judges it (SKILL.md, measured evidence); until an OpticStudio optimisation completes, their results carry a warning saying so. A number from the copy is labelled `rtc` wherever you write it and never stands in for a measurement.
-
-Material keys are `material`, `nd`, `vd` and `dpgf`. Writing `nd`, `vd` or `dpgf` of a catalog glass turns it into a model glass (ΔPgF 0 for a catalog glass, as on OpticStudio); `with fast.kept(["1.material"]): ...` restores the catalog glass itself. A model glass reads back as `{"nd", "vd", "dpgf"}` on both `ctx` and the copy and can be written back as it is; `fast.push(ctx)` writes nd/vd/dpgf changes of a surface as that whole dictionary, so OpticStudio cannot fill in a value of its own.
 
 ## The rtc instance
 
@@ -64,23 +34,21 @@ What `ctx` (and a worker `w`) already provides:
 
 `analysis` returns `status` `ok`, `partial` or `empty` with `problems`, and when not `ok` the head of the text export: read them to tell a model without a result from an interface limit before you rerun anything.
 
-## Micro-optics measurements
-
-`from saos import micro` holds the layout-free measurements of fibre probes, endoscopes, fibre-tip printed lenses and miniature objectives, lifted from the fibre recipe and three zoom-probe jobs. Build a job's checks from them instead of copying recipe internals: a zoom-probe job that imported a recipe's private helper broke when the recipe changed. Each function's docstring has its exact definition.
-
-- **Validity:** a physically invalid state raises `micro.DesignFailure`; wrap a check in `micro.guarded(fn)` so it returns inf. `micro.once(ctx, key, compute)` is `ctx.memo` that also remembers a failure; put your own namespace first in `key`.
-- **Rays and focus:** `micro.trace`, `field_hits(ctx, fields, wave, n)` and `axis_hits` (cached per evaluation), `field_hits_raw` (uncached, after moving the plane), `ray_arrays`, `best_focus_dz(hits)`, `rms_radius(hits, dz)`, `centroid(hits)`.
-- **The medium before the image:** `micro.medium(ctx, surface)` returns a `Medium` whose `distance`, `place(ctx, d)` and `depth(ctx, dz)` count the travelled distance, also after a fold (`sign=-1`). `focus_depth(ctx, med, wave)` is the on-axis best-focus depth; positive means a real focus. `marginal_na(ctx, wave, to)` is the smallest n·sin u of a ring of on-axis marginal rays, one of several sample-side NA definitions the jobs used (marginal height over depth, half the angle between opposite rays). Settle which one the demand means before writing it as a check.
-- **Parts:** `require_defined(ctx, rows)` (sag at each semi-diameter), `is_coordinate_break`, `sag`, `part_radius`, `transform`, `Axis` and `axis_through(ctx, a, b)` with `radial_extent(ctx, rows, axis)` for the clearance to a tube or housing, and `min_gap(ctx, front)` for the sampled gap between adjacent coaxial surfaces (per configuration inside `ctx.configuration(c)`).
-- **Collection:** `collection_fraction(ctx, fields, wave, n)`, the geometric solid angle over 4π without Fresnel loss or absorption.
-- **Diffraction:** `psf(hug, field, delta_um)`, `psf_pixel_um` (window about 4 RMS spot diameters), `lateral_widths(p, n_photon)`, `axial_fwhm_um(ctx, hug, med, focus, field, delta_um, step_um, reaches, scan)`, `worst_wavefront(ctx, fields, wave)`.
-- **Zoom travel:** `focus_travel(ctx, apply, lo, hi, depth)` sweeps a motion q, with `apply(q)` changing the lens inside your `kit.kept`. It refines both ends and returns `near`, `far`, `span`, `monotonic` and `coverage_ok`. A `span` is only a check value when `coverage_ok` is true.
-- **Spare licences:** `micro.pooled(ctx, "saos.<module>:<function>", items)` splits a slow per-field measurement over the worker pool through `ctx.spare_map` when licences are free. It leaves 2 for the user and copies the in-memory lens, so no save is needed. It returns only the finished items; compute the rest yourself. `ctx.spare_map` returns None when it cannot borrow the pool, unlike `ctx.map`, which archives under `parallel/` and needs a saved lens.
+## Search helpers
 
 `saos.search` has `grid`, `root` (scan then Brent, skipping invalid points) and `minimize` (Nelder–Mead or Powell with budget and cancel). Per-point work that searches, such as a best-focus solve, uses `search.root` rather than a coarse scan plus bisection; it took 58 % fewer evaluations for the same answer in the measured example.
 
 A reduced model (paraxial surfaces, a coarse grid, one field) states which constraints it drops, and its key prediction is tested on the real lens before you act on it.
 
+## The metric catalog
+
+`uv run saos metrics list --job J` lists the catalog on the current backend: parameters with their bounds, the scalars a check may pick, and units. `available` means the computation path exists, not that the lens is valid or the metric reconciled with OpticStudio. `saos metrics get <id> --job J --param KEY=JSON` and `ctx.metric(id, **params)` (workers too; `ctx.metrics()` returns the catalog) give scalars, curves or a table, never evidence.
+
+A demand item checks a metric with `check: {metric: {id, params, pick}}`. `pick` defaults to `value` and takes only a scalar the catalog declares. An MTF check needs `params.frequency` (cycles/mm) and takes the minimum over the chosen fields' curves, the diffraction limit excluded. A check or round archives the full result, and the catalog code counts toward the check version, like `saos.kit`.
+
+`saos metrics select --job J --file PATH` saves display-only extras for the window, e.g. `[{"key": "watch_mtf", "id": "mtf", "params": {"frequency": 50}}]`; `[]` clears them, and a key may not reuse a demand item id. Extras never judge. How the window computes them during optimisation: [session.md](session.md#live-catalog-metrics).
+
+`field_focus` is the geometric RMS best-focus curve, not tangential or sagittal field curvature and not a diffraction depth of focus.
 ## Editing the lens from a script
 
 Merit rows, solves and new surfaces have `ctx` methods; reach for `ctx.system` only for what they do not cover.
