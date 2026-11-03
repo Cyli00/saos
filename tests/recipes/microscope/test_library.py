@@ -111,7 +111,7 @@ def test_verify_preserves_dirty_lens_unless_discard_is_explicit(lib, saos_home, 
     from saos.protocol import ErrorCode, SaosError
 
     backend = FakeBackend()
-    daemon = Daemon(backend, backend.start(), "standalone")
+    daemon = Daemon(backend, backend.start())
     current = jobs.create_job("current")
     target = jobs.create_job("verify") if other_job else current
     daemon.op_import({"job": current.id, "src": str(fake_lens_file), "name": "original.zmx"})

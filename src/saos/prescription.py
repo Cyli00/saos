@@ -1299,8 +1299,7 @@ Non-sequential fields and constraints
     uv run saos lens describe --help.
 
 Results and files
-  Saves and loads lenses/<--as>.zmx. Extension mode first captures unsaved window
-  content in lenses/captures/; captured names that copy. --overwrite is required
+  Saves and loads lenses/<--as>.zmx. --overwrite is required
   for an existing destination; --discard drops the agent's own unsaved changes.
 
 Common errors

@@ -38,7 +38,7 @@ def predict(backend, *, rings: int = 3, arms: int = 8, should_cancel=None) -> di
             raise SaosError(ErrorCode.CANCELLED, "starting-design prediction cancelled")
 
     def failed(key, exc):
-        if isinstance(exc, SaosError) and exc.code in (ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.UI_BLOCKED, ErrorCode.CANCELLED):
+        if isinstance(exc, SaosError) and exc.code in (ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.CANCELLED):
             raise exc
         out["errors"][key] = f"{type(exc).__name__}: {exc}"
 

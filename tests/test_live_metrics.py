@@ -37,7 +37,7 @@ def read(job, name):
 @pytest.fixture
 def loaded(saos_home, fake_lens_file):
     backend = FakeBackend()
-    daemon = Daemon(backend, backend.start(), "standalone")
+    daemon = Daemon(backend, backend.start())
     job = jobs.create_job("live")
     assert call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx")["ok"]
     assert call(daemon, "lens.load", job=job.id, file="a.zmx")["ok"]

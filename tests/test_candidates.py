@@ -69,7 +69,7 @@ def explore(saos_home, fake_lens_file):
     """四个镜头：a 是基线；b 只改半径（结构与 a 相同）；c 第一面换成空气；d 第一面不是光阑。
     Four lenses: a the baseline; b only a different radius (same structure as a); c air at the first surface; d no stop."""
     backend = FakeBackend()
-    daemon = Daemon(backend, backend.start(), "standalone")
+    daemon = Daemon(backend, backend.start())
     job = jobs.create_job("explore")
     base = json.loads(fake_lens_file.read_text(encoding="utf-8"))
 

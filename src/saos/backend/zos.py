@@ -102,7 +102,7 @@ def _load_zosapi(root: str):
 def _pin_invariant_culture() -> None:
     """调用 ZOS-API 的线程固定用不变区域。OpticStudio 的数值 setter 按调用线程区域转文本再解析：de-DE、fr-FR 下写
     97.50674204580584 实际存成 97.0、9.0 或 inf（2026-11-02 真机实测），saos 的字符串补写与分析文本解析也都假定小数点。
-    standalone 在本进程内运行，这里设当前线程和之后新建线程的默认区域；extension 模式按 OpticStudio 进程自己的区域，管不到。
+    standalone 在本进程内运行，这里设当前线程和之后新建线程的默认区域。
     Calls into ZOS-API run under the invariant culture: OpticStudio's numeric setters format and parse in the calling
     thread's culture (de-DE / fr-FR stored 97.0, 9.0 or inf for 97.50674204580584), and saos assumes a decimal point."""
     from System.Globalization import CultureInfo
@@ -388,10 +388,10 @@ GRIN_SLICES = 8
 
 
 class _HuygensSession:
-    """整个会话只开一个 Huygens PSF 分析，换视场、像元间距或镜头参数后重新计算：extension 模式下每新建一个分析都会在界面
-    开关一个窗口，连续上百次会使 OpticStudio 崩溃（2026-10-16 实测）。
-    One Huygens PSF analysis per session, recomputed for each field, pixel pitch or lens change: in extension mode every
-    new analysis opens and closes a window, and a few hundred in a row crashed OpticStudio (measured 2026-10-16)."""
+    """整个会话只开一个 Huygens PSF 分析，换视场、像元间距或镜头参数后重新计算：连续新建上百个分析曾使 OpticStudio 崩溃
+    （2026-10-16 实测）。
+    One Huygens PSF analysis per session, recomputed for each field, pixel pitch or lens change: a few hundred new
+    analyses in a row crashed OpticStudio (measured 2026-10-16)."""
 
     def __init__(self, backend: ZosBackend, wave: int, pupil: int, image: int):
         self._stack = ExitStack()
@@ -549,13 +549,9 @@ class ZosBackend(Backend):
                 tool.Close()
         return Rays.from_rows(arr, out, to)
 
-    def __init__(self, mode: str = "standalone"):
-        if mode not in ("standalone", "extension"):
-            raise SaosError(ErrorCode.BAD_ARGS, f"unknown connection mode: {mode}")
-        self.mode = mode
+    def __init__(self):
         self.root = config.opticstudio_dir()
         self.app = None
-        self.extension_ui: dict[str, Any] | None = None
         self._material_cache: dict[tuple[str, ...], set[str]] = {}
         # 目录 → {牌号: 状态}，取自 AGF 文件 / catalog → {name: status}, read from the AGF files
         self._glass_status: dict[str, dict[str, str]] = {}
@@ -565,30 +561,16 @@ class ZosBackend(Backend):
     def start(self) -> dict[str, Any]:
         zosapi = _load_zosapi(self.root)
         conn = zosapi.ZOSAPI_Connection()
-        if self.mode == "standalone":
-            app = conn.CreateNewApplication()
-        else:
-            from saos.native_ui import ensure_extension
-
-            self.extension_ui = ensure_extension()
-            app = conn.ConnectAsExtension(self.extension_ui["instance"])
-        hint = "in OpticStudio click Programming → Interactive Extension so that it waits for a connection" if self.mode == "extension" else ""
+        app = conn.CreateNewApplication()
         if app is None:
-            raise SaosError(ErrorCode.ZOS_ERROR, f"cannot connect to OpticStudio ({self.mode}). {hint}")
-        if self.mode == "extension" and not self._extension_ready(app):
-            # 实测 2024 R1：上一个扩展客户端断开后，窗口退出扩展状态，ConnectAsExtension 仍返回对象，
-            # 但没有 PrimarySystem，许可检查为 False，ProgramDir 抛 ArgumentNullException
-            raise SaosError(ErrorCode.ZOS_ERROR, f"the OpticStudio window is not in Interactive Extension mode. {hint}; this is needed again after every daemon exit")
+            raise SaosError(ErrorCode.ZOS_ERROR, "cannot start a standalone OpticStudio instance")
         self.app = app
         version = (int(app.ZOSMajorVersion), int(app.ZOSMinorVersion), int(app.ZOSSPVersion))
         info = {
-            "mode": self.mode,
             "version": ".".join(map(str, version)),
             "license": str(app.LicenseStatus),
             "program_dir": str(app.ProgramDir),
         }
-        if self.mode == "extension":
-            info.update(extension_ui=self.extension_ui, initial_file=str(app.PrimarySystem.SystemFile), initial_needs_save=bool(app.PrimarySystem.NeedsSave))
         if not app.IsValidLicenseForAPI:
             self.close()
             raise SaosError(ErrorCode.ZOS_LICENSE, "the license does not allow ZOS-API", info)
@@ -602,36 +584,9 @@ class ZosBackend(Backend):
     def identity(self) -> dict[str, Any]:
         return dict(getattr(self, "_identity", None) or {"backend": "zos", "version": None, "precision": None})
 
-    @contextmanager
-    def activity(self, label: str, quiet: bool):
-        app = self.app if self.mode == "extension" else None
-        if app is None:
-            yield
-            return
-        try:
-            app.ProgressMessage = label
-            app.ShowChangesInUI = not quiet
-        except Exception:
-            pass
-        try:
-            yield
-        finally:
-            try:
-                app.ShowChangesInUI = True
-                app.ProgressMessage = ""
-            except Exception:
-                pass
-
-    @staticmethod
-    def _extension_ready(app) -> bool:
-        try:
-            return app.PrimarySystem is not None and bool(app.IsValidLicenseForAPI)
-        except Exception:
-            return False
-
     def close(self) -> None:
         app, self.app = self.app, None
-        if app is not None and self.mode == "standalone":
+        if app is not None:
             try:
                 app.CloseApplication()
             except Exception:
@@ -656,9 +611,6 @@ class ZosBackend(Backend):
     def needs_save(self) -> bool:
         return bool(self.system.NeedsSave)
 
-    def has_unsaved_changes(self) -> bool:
-        return self.mode == "extension" and self.needs_save()
-
     # ---- 分析导出 ----
 
     def analysis_types(self) -> list[str]:
@@ -666,7 +618,7 @@ class ZosBackend(Backend):
 
         return analysis.analysis_names(_load_zosapi(self.root))
 
-    def analysis(self, name: str, settings: dict[str, Any], text_path: Path, keep_open: bool = False) -> dict[str, Any]:
+    def analysis(self, name: str, settings: dict[str, Any], text_path: Path) -> dict[str, Any]:
         from saos.backend import analysis
 
         zosapi = _load_zosapi(self.root)
@@ -697,147 +649,8 @@ class ZosBackend(Backend):
                 out["text_head"] = _read_text_export(text_path)[:TEXT_HEAD_CHARS]
             return out
         finally:
-            # 显性调试时可以留下窗口给用户看；隐式运行一律关闭，避免分析对象越积越多
-            if not (keep_open and self.mode == "extension"):
-                run.Close()
-
-    # ---- 显性调试的观察窗口 ----
-
-    # 布局窗口（System Viewer）的几种：剖面图、3D 视图、实体模型；Lens Data 编辑器总是打开
-    VIEWERS = {"cross-section": "Draw2D", "3d": "Draw3D", "shaded": "ShadedModel"}
-    DEFAULT_WATCH = {"viewer": "cross-section", "analysis": None, "settings": {}}
-
-    def _require_extension(self) -> None:
-        if self.mode != "extension":
-            raise SaosError(ErrorCode.BAD_ARGS, "explicit debugging windows need extension mode (saos daemon start --mode extension)")
-
-    def _open_analyses(self) -> dict[str, Any]:
-        system = self.system
-        found = {}
-        for i in range(1, system.Analyses.NumberOfAnalyses + 1):
-            analysis = system.Analyses.Get_AnalysisAtIndex(i)
-            found.setdefault(str(analysis.AnalysisType), analysis)
-        return found
-
-    def _cross_section_blocker(self) -> str | None:
-        """剖面图只能画序列、轴对称的系统，不能画时返回原因。
-        实测 2024 R1：折转的光纤模型导出剖面图报 "Cannot perform 2D Layout on non-axial system!"。"""
-        system = self.system
-        if str(system.Mode) != "Sequential":
-            return "non-sequential system"
-        if bool(system.IsNonAxial):
-            return "non-axial system (tilts, decenters or non-rotational surfaces)"
-        return None
-
-    @staticmethod
-    def _failure(message) -> str | None:
-        """ApplyAndWaitForCompletion 返回的 IMessage：不是 Success 时返回其内容。"""
-        if message is None:
-            return None
-        try:
-            code = str(message.ErrorCode)
-        except Exception:  # noqa: BLE001 - 读不到错误码时按成功处理，窗口内容仍可见
-            return None
-        return None if code == "Success" else f"{code}: {message.Text}"
-
-    def _show_layout(self, wanted: str, opened: dict[str, Any], zosapi) -> dict[str, Any]:
-        """打开布局窗口；要剖面图而系统画不了时，关掉剖面图窗口，改开 3D 视图。"""
-        from saos.backend import analysis as an
-
-        system = self.system
-        reason = self._cross_section_blocker() if wanted == "cross-section" else None
-        viewer = "3d" if reason else wanted
-        new = []
-        for _ in range(2):
-            name = self.VIEWERS[viewer]
-            run = opened.get(name)
-            if run is None:
-                run = system.Analyses.New_Analysis(an.idm(zosapi, name))
-                opened[name] = run
-                new.append(name)
-            failure = self._failure(run.ApplyAndWaitForCompletion())
-            if failure is None or viewer != "cross-section":
-                break
-            reason, viewer = failure, "3d"
-        if viewer != "cross-section" and reason and "Draw2D" in opened:
-            opened.pop("Draw2D").Close()
-            new = [n for n in new if n != "Draw2D"]
-        return {"viewer": viewer, "fallback_reason": reason, "new": new}
-
-    def show_windows(self, viewer: str | None = None, analysis: str | None = None, settings: dict[str, Any] | None = None) -> dict[str, Any]:
-        """显性调试：总是打开 Lens Data 和一个布局窗口（默认剖面图，画不了时用 3D 视图），按需再开一个像质分析；
-        已打开的复用，关掉的重新打开，并按当前镜头刷新。"""
-        from saos.backend import analysis as an
-
-        self._require_extension()
-        zosapi = _load_zosapi(self.root)
-        # 先在副本上改并校验，出错时保留上一次的选择 / change a copy and validate it, so an error keeps the previous choice
-        watch = dict(getattr(self, "watch", self.DEFAULT_WATCH))
-        if viewer is not None:
-            if viewer not in self.VIEWERS:
-                raise SaosError(ErrorCode.BAD_ARGS, f"viewer must be one of {list(self.VIEWERS)}")
-            watch["viewer"] = viewer
-        if analysis is not None:
-            an.idm(zosapi, analysis)
-            watch["analysis"], watch["settings"] = analysis, dict(settings or {})
-        elif settings:
-            watch["settings"] = dict(settings)
-        self.watch = watch
-        system = self.system
-        self.app.ShowChangesInUI = True
-        opened = self._open_analyses()
-        if str(system.Mode) == "Sequential":
-            system.LDE.ShowLDE()
-        else:
-            system.NCE.ShowNCE()
-        layout = self._show_layout(watch["viewer"], opened, zosapi)
-        message = None
-        if watch["analysis"]:
-            run = opened.get(watch["analysis"])
-            if run is None:
-                run = system.Analyses.New_Analysis(an.idm(zosapi, watch["analysis"]))
-                layout["new"].append(watch["analysis"])
-            an.apply_settings(an.settings_of(run), watch["settings"])
-            message = run.ApplyAndWaitForCompletion()
-        # 只让 OpticStudio 自动更新编辑器；分析窗口由 saos 在每次改动后显式刷新。
-        # 实测 AllWindows 会在改动后异步重算分析窗口，与 API 读取竞争：读到 None，或与等待循环互相卡住
-        system.UpdateMode = zosapi.LensUpdateMode.EditorsOnly
-        self.app.ProgressMessage = f"saos: lens data + {layout['viewer']}" + (f" + {watch['analysis']}" if watch["analysis"] else "")
-        return {"watch": watch, "layout": {k: layout[k] for k in ("viewer", "fallback_reason")}, "opened": layout["new"],
-                "message": str(message) if message else None, "update_mode": str(system.UpdateMode), "windows": self.window_list()}
-
-    def window_list(self) -> list[dict[str, str]]:
-        return [{"type": str(a.AnalysisType), "title": str(a.Title)} for a in self._open_analyses().values()]
-
-    def refresh_windows(self) -> dict[str, Any] | None:
-        """改动镜头后刷新已打开的分析窗口；用户关掉的窗口不重开，下次 lens view 时再打开。"""
-        if self.mode != "extension" or self.app is None:
-            return None
-        refreshed, failed = [], []
-        for name, run in self._open_analyses().items():
-            try:
-                run.ApplyAndWaitForCompletion()
-                refreshed.append(name)
-            except Exception as exc:  # noqa: BLE001 - 窗口可能刚被用户关闭
-                failed.append({"type": name, "error": str(exc)[:200]})
-        return {"refreshed": refreshed, "failed": failed}
-
-    def blocking_dialogs(self) -> list[str]:
-        """显性调试：挡住 OpticStudio 的模态对话框。被挡住时分析会停在 Working 0%，请求会一直挂起。"""
-        if self.mode != "extension" or not (self.extension_ui or {}).get("pid"):
-            return []
-        from saos import native_ui
-
-        return native_ui.blocking_dialogs(int(self.extension_ui["pid"]))
-
-    def screenshots(self, folder: Path, prefix: str) -> list[str]:
-        from saos import native_ui
-
-        self._require_extension()
-        pid = (self.extension_ui or {}).get("pid")
-        if not pid:
-            raise SaosError(ErrorCode.ZOS_ERROR, "unknown OpticStudio window process")
-        return native_ui.capture_windows(int(pid), folder, prefix)
+            # 一律关闭，避免分析对象越积越多 / always close, so analyses do not pile up
+            run.Close()
 
     # ---- 文件 ----
 

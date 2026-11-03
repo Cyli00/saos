@@ -37,7 +37,7 @@ def _daemon():
         return stand_in, {"backend": "zos", "version": "stand-in"}
 
     rtc = RtcBackend(None, standalone=True)
-    return Daemon(rtc, rtc.identity(), "standalone", start_zos), stand_in, started
+    return Daemon(rtc, rtc.identity(), start_zos), stand_in, started
 
 
 def call(daemon, op, **args):
@@ -147,11 +147,11 @@ def test_the_object_semi_diameter_is_left_to_the_ray_comparison(saos_home, monke
 
 def test_an_rtc_only_daemon_still_refuses_opticstudio_operations(saos_home):
     rtc = RtcBackend(None, standalone=True)
-    daemon = Daemon(rtc, rtc.identity(), "standalone")
+    daemon = Daemon(rtc, rtc.identity())
     assert not daemon.dual and daemon.rtc_instance
     job = jobs.create_job("rtc-only")
     _built(daemon, job)
-    assert call(daemon, "lens.view", job=job.id)["error"]["code"] == ErrorCode.BACKEND_UNSUPPORTED
+    assert call(daemon, "lens.describe", job=job.id)["error"]["code"] == ErrorCode.BACKEND_UNSUPPORTED
     assert call(daemon, "daemon.use", backend="zos")["error"]["code"] == ErrorCode.BAD_ARGS
 
 

@@ -130,7 +130,7 @@
         <mxCell id="a5" value="&lt;b&gt;建模前确认计算环境&lt;/b&gt;&lt;br&gt;ZOS standalone 常驻会话；确认材料目录&lt;br&gt;许可不足或功能未接入时明确报告" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
           <mxGeometry x="490" y="910.0" width="320" height="70" as="geometry" />
         </mxCell>
-        <mxCell id="t3" value="&lt;b&gt;saos ui 当前镜头视图（任何模式）&lt;/b&gt;&lt;br&gt;每条改镜头的命令后写 view.json：布局 2D/3D · Lens Data · 交叠检查&lt;br&gt;没在轮询就重开；用户关掉的等需求待确认 / 建模说明 / round 再开&lt;br&gt;extension 模式可选（SAOS_UI_PID）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
+        <mxCell id="t3" value="&lt;b&gt;saos ui 当前镜头视图&lt;/b&gt;&lt;br&gt;每条改镜头的命令后写 view.json：布局 2D/3D · Lens Data · 交叠检查&lt;br&gt;没在轮询就重开；用户关掉的等需求待确认 / 建模说明 / round 再开" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" parent="1" vertex="1">
           <mxGeometry x="980" y="906.0" width="400" height="86" as="geometry" />
         </mxCell>
         <mxCell id="a6" value="&lt;b&gt;建模&lt;/b&gt;&lt;br&gt;lens import / lens build / exec 脚本 + ctx.save_as" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
@@ -387,7 +387,7 @@
         <mxCell id="p3" value="&lt;b style=&quot;font-size:14px&quot;&gt;何时停下来问用户&lt;/b&gt;&lt;br&gt;&lt;br&gt;• 需求自相矛盾，或常量 / 范围 / 达标线依据不足&lt;br&gt;• 测量口径有多种读法且影响结果&lt;br&gt;• 可行性判断或一阶分析表明结构达不到目标，或某项 must 差通过线好几倍&lt;br&gt;• 已有结果不支持继续当前策略（brief.review）&lt;br&gt;• 结构要改成用户没见过的样子&lt;br&gt;&lt;br&gt;会改变需求的问题写成 open_questions（blocking: true），未答时 round / opt local / hammer / global 拒绝运行&lt;br&gt;停下来之前先 saos ui notify，窗口顶部写明要用户看什么" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#fffdf0;strokeColor=#d6b656;" parent="1" vertex="1">
           <mxGeometry x="1450" y="720" width="400" height="250" as="geometry" />
         </mxCell>
-        <mxCell id="p4" value="&lt;b style=&quot;font-size:14px&quot;&gt;计算后端与长任务&lt;/b&gt;&lt;br&gt;&lt;br&gt;交付之前各阶段用 rtc；固定后端只在当时阶段有效&lt;br&gt;建模说明页面及交付复测使用 ZOS standalone&lt;br&gt;daemon 持有一个会话，worker 默认 4 个&lt;br&gt;许可预算包含用户窗口及起点生成会话&lt;br&gt;worker 池空闲后关闭，复用已启动的会话&lt;br&gt;scan / ctx.map / detach 保留&lt;br&gt;job show 查看进度；job cancel 请求安全中断&lt;br&gt;客户端超时不代表后台失败，不重复提交&lt;br&gt;extension 仅用于用户需要的显性调试" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f3faf1;strokeColor=#82b366;" parent="1" vertex="1">
+        <mxCell id="p4" value="&lt;b style=&quot;font-size:14px&quot;&gt;计算后端与长任务&lt;/b&gt;&lt;br&gt;&lt;br&gt;交付之前各阶段用 rtc；固定后端只在当时阶段有效&lt;br&gt;建模说明页面及交付复测使用 ZOS standalone&lt;br&gt;daemon 持有一个会话，worker 默认 4 个&lt;br&gt;许可预算包含用户窗口及起点生成会话&lt;br&gt;worker 池空闲后关闭，复用已启动的会话&lt;br&gt;scan / ctx.map / detach 保留&lt;br&gt;job show 查看进度；job cancel 请求安全中断&lt;br&gt;客户端超时不代表后台失败，不重复提交" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f3faf1;strokeColor=#82b366;" parent="1" vertex="1">
           <mxGeometry x="1450" y="990" width="400" height="450" as="geometry" />
         </mxCell>
         <mxCell id="p5" value="&lt;b style=&quot;font-size:14px&quot;&gt;封存与恢复&lt;/b&gt;&lt;br&gt;&lt;br&gt;判定、轮次、模型、扫描和报告编号副本写入 seals.jsonl&lt;br&gt;已有完整匹配模型确认可继续使用&lt;br&gt;job verify 显示改动；证据损坏时报告拒绝生成&lt;br&gt;旧双后端任务只读保留，另建任务重建和实测&lt;br&gt;不改旧账本，不继承旧后端指标" style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=6;fontSize=12;arcSize=4;fillColor=#f5f5f5;strokeColor=#666666;" parent="1" vertex="1">
@@ -474,7 +474,7 @@
         <mxCell id="a0" value="&lt;b&gt;会话开始：环境预检&lt;/b&gt;&lt;br&gt;缺什么在第一条回复里就说" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
           <mxGeometry x="490" y="60" width="320" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="t0" value="&lt;b&gt;saos daemon status&lt;/b&gt;&lt;br&gt;environment：各实例后台进程 · 模式 · 在跑任务&lt;br&gt;OpticStudio 进程 / 许可余量（上限 8）· 可见窗口 · extension 能否启动" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" vertex="1" parent="1">
+        <mxCell id="t0" value="&lt;b&gt;saos daemon status&lt;/b&gt;&lt;br&gt;environment：各实例后台进程 · 在跑任务&lt;br&gt;OpticStudio 进程 / 许可余量（上限 8）" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontFamily=Consolas;" vertex="1" parent="1">
           <mxGeometry x="980" y="52" width="400" height="66" as="geometry" />
         </mxCell>
         <mxCell id="e0a" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#82b366;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="a0" target="t0">

@@ -1,11 +1,11 @@
-"""saos ui 的本机 HTTP 服务：只读任务目录给出流程状态和每轮可视化数据；显性调试时把几个只看不改的窗口操作转给后台进程。
-Local HTTP service of saos ui: serves the workflow state and per-round visual data from the job folder (read only);
-in explicit debugging it forwards a few view-only window operations to the daemon.
+"""saos ui 的本机 HTTP 服务：只读任务目录给出流程状态和每轮可视化数据，并把指标查询与选择转给后台进程。
+Local HTTP service of saos ui: serves the workflow state and per-round visual data from the job folder (read only)
+and forwards metric queries and selections to the daemon.
 
 与持有 OpticStudio 的后台进程分开运行，界面轮询不占后台进程。后台进程一次只处理一个请求，
-它正在跑长操作时，转发的窗口操作会排队到它结束。
-Runs apart from the daemon that holds OpticStudio. The daemon serves one request at a time, so a forwarded window
-operation waits until a running long operation ends.
+它正在跑长操作时，转发的请求返回 BUSY。
+Runs apart from the daemon that holds OpticStudio. The daemon serves one request at a time; a forwarded request
+returns BUSY while a long operation runs.
 
 只监听 127.0.0.1；/api/ 要带启动时生成的令牌（X-Saos-Token），并核对 Host，防止其他网页借浏览器调用。
 Listens on 127.0.0.1 only; /api/ needs the token made at start (X-Saos-Token) and a matching Host header.
@@ -37,11 +37,6 @@ STATIC_TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=
                 ".svg": "image/svg+xml"}
 # 窗口每 1.5 s 轮询一次；这么久没有请求说明窗口已关，服务自行退出 / no request for this long means the window is closed
 IDLE_EXIT_S = 900
-# 显性调试面板可开的分析窗口（AnalysisIDM 名），与后台进程报告的可用类型取交集
-# analysis windows the explicit panel offers (AnalysisIDM names), intersected with what the daemon reports
-ANALYSES = ("StandardSpot", "FftMtf", "RayFan", "FieldCurvatureAndDistortion", "WavefrontMap", "LongitudinalAberration",
-            "LateralColor", "SeidelDiagram", "FftPsf", "HuygensPsf", "FootprintSettings")
-VIEWERS = ("cross-section", "3d", "shaded")
 
 
 def state_file() -> Path:
@@ -77,14 +72,6 @@ def read_state() -> dict[str, Any] | None:
         return json.loads(state_file().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-
-
-def _explicit() -> None:
-    mode = stage._daemon()
-    if not mode["running"]:
-        raise SaosError(ErrorCode.DAEMON_NOT_RUNNING, "the daemon is not running")
-    if mode["mode"] != "extension":
-        raise SaosError(ErrorCode.BAD_ARGS, "window controls need the daemon in extension mode (explicit debugging)")
 
 
 def live_of(job: jobs.Job) -> dict[str, Any]:
@@ -283,25 +270,6 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 raise SaosError(ErrorCode.BAD_ARGS, "round must be an integer") from exc
             return viz_of(job, number)
-        if path == "/api/system":
-            _explicit()
-            return client.request("lens.info", {"job": job.id}, queue=True)
-        if path == "/api/analyses":
-            _explicit()
-            available = set(client.request("lens.analysis", {"job": job.id, "list": True}, queue=True)["types"])
-            return {"analyses": [a for a in ANALYSES if a in available]}
-        if path == "/api/view" and method == "POST":
-            _explicit()
-            payload: dict[str, Any] = {"job": job.id}
-            if args.get("viewer") is not None:
-                if args["viewer"] not in VIEWERS:
-                    raise SaosError(ErrorCode.BAD_ARGS, f"viewer must be one of {VIEWERS}")
-                payload["viewer"] = args["viewer"]
-            if args.get("analysis") is not None:
-                if args["analysis"] not in ANALYSES:
-                    raise SaosError(ErrorCode.BAD_ARGS, f"analysis must be one of {ANALYSES}")
-                payload["analysis"] = args["analysis"]
-            return client.request("lens.view", payload, queue=True)
         raise SaosError(ErrorCode.BAD_ARGS, f"unknown endpoint {method} {path}")
 
     def do_GET(self) -> None:  # noqa: N802

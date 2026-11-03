@@ -34,8 +34,8 @@ def daemon(saos_home, monkeypatch):
     monkeypatch.setenv("SAOS_BACKEND", "zos")
     from saos.backend.zos import ZosBackend
 
-    backend = ZosBackend("standalone")
-    d = Daemon(backend, backend.start(), "standalone")
+    backend = ZosBackend()
+    d = Daemon(backend, backend.start())
     yield d
     d.pool.close()
     backend.close()

@@ -96,7 +96,7 @@ def _main(connection):
     from saos.backend import make_backend
     from saos.parallel import WorkerContext
 
-    backend = make_backend("standalone", "rtc")
+    backend = make_backend("rtc")
     try:
         backend.start()
         connection.send({"ready": True})

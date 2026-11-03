@@ -97,7 +97,6 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .pill.metric .k { color: var(--text-3); font-family: var(--font); font-size: 11.5px; }
 .pill.metric.ok { border-color: #aad94c55; color: var(--sage); }
 .pill.metric.stale { opacity: .55; }
-.pill.explicit { color: var(--gold); border-color: #e6b45055; }
 .pill.rtc { color: var(--mint); }
 
 /* 里程表：数字逐位滚动 */
@@ -299,12 +298,6 @@ th, .tag { white-space: nowrap; }
 .cards .card, .metric-grid .card { padding: 10px 12px; overflow: visible; }
 .cards .card h3, .metric-grid .card h3 { margin: 0 0 8px; font-size: 12.5px; display: flex; justify-content: space-between; align-items: center; }
 .cards .card p, .metric-grid .card p { margin: 0 0 8px; color: var(--text-2); font-size: 12px; }
-.btn-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
-.btn { border: 1px solid var(--edge-2); background: var(--card-2); border-radius: 8px; padding: 6px 10px; cursor: pointer; text-align: left; display: flex; flex-direction: column; gap: 1px; transition: border-color .15s, background .15s; }
-.btn small { color: var(--text-3); font-family: var(--mono); font-size: 10px; }
-.btn:hover:not(:disabled) { border-color: var(--gold); background: var(--gold-soft); }
-.btn:disabled { opacity: .5; cursor: progress; }
-.link { border: 0; background: none; color: var(--gold); cursor: pointer; font-size: 12px; padding: 0; }
 table { border-collapse: collapse; width: 100%; font-size: 12px; }
 th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid #ffffff08; }
 th { color: var(--text-3); font-weight: 500; border-bottom-color: var(--edge); }

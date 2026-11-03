@@ -181,9 +181,9 @@ def _kill_tree(pid: int) -> None:
     subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, check=False)
 
 
-def _spawn(mode: str, token: str, backend: str | None = None) -> subprocess.Popen:
+def _spawn(token: str, backend: str | None = None) -> subprocess.Popen:
     config.daemon_dir().mkdir(parents=True, exist_ok=True)
-    cmd = [sys.executable, "-m", "saos", "daemon", "run", "--mode", mode, "--token", token, *(["--backend", backend] if backend else [])]
+    cmd = [sys.executable, "-m", "saos", "daemon", "run", "--token", token, *(["--backend", backend] if backend else [])]
     log_fh = config.daemon_log_file().open("ab")
     # DETACHED_PROCESS 只作用于 venv 启动器，其解释器子进程仍可能创建可见控制台。
     # CREATE_NO_WINDOW 让整条启动链继承无窗口控制台，不能与 DETACHED_PROCESS 混用。
@@ -224,7 +224,7 @@ def instance_daemons() -> list[dict[str, Any]]:
             continue
         pid = int(state.get("pid", 0))
         item = {"instance": home.name, "current": home.resolve() == current, "pid": pid, "alive": pid_alive(pid),
-                "mode": state.get("mode"), "started_at": state.get("started_at"),
+                "started_at": state.get("started_at"),
                 "running_jobs": [{k: r[k] for k in ("op", "detail", "started", "stage", "job")} for r in running_ops(pid, home)]}
         found.append(item)
     return found
@@ -257,7 +257,7 @@ def all_daemons() -> list[dict[str, Any]]:
         except (OSError, ValueError, TypeError):
             same = False
         found.append({"instance": None, "home": home, "current": home.lower() == current, "pid": pid, "alive": same and pid_alive(pid),
-                      "mode": data.get("mode"), "started_at": data.get("started_at"),
+                      "started_at": data.get("started_at"),
                       "running_jobs": [{k: r[k] for k in ("op", "detail", "started", "stage", "job")} for r in running_ops(pid, Path(home))]})
     return found
 
@@ -407,22 +407,17 @@ def detached_runs(job_root, last: int = 5) -> list[dict[str, Any]]:
 
 
 def environment() -> dict[str, Any]:
-    """会话开始时一次查清外部条件：各实例的后台进程、OpticStudio 进程占用的许可、可见主窗口、extension 能否启动。"""
-    from saos import native_ui
-
+    """会话开始时一次查清外部条件：各实例的后台进程与 OpticStudio 进程占用的许可。"""
     opticstudio = process_pids("OpticStudio.exe")
-    windows = native_ui.main_windows()
     return {
         "opticstudio_processes": opticstudio,
         "licence": {"limit": config.LICENSED_INSTANCES, "in_use": len(opticstudio),
                     "free": max(0, config.LICENSED_INSTANCES - len(opticstudio))},
-        "windows": [{"pid": w["pid"], "title": w["title"]} for w in windows],
-        "extension": native_ui.extension_readiness(windows),
         "instances": all_daemons(),
     }
 
 
-def start(mode: str, timeout: float = DEFAULT_START_TIMEOUT_S, backend: str | None = None) -> dict[str, Any]:
+def start(timeout: float = DEFAULT_START_TIMEOUT_S, backend: str | None = None) -> dict[str, Any]:
     current = status()
     if current.get("running"):
         raise SaosError(ErrorCode.DAEMON_ALREADY_RUNNING, "the daemon is already running", current)
@@ -432,7 +427,7 @@ def start(mode: str, timeout: float = DEFAULT_START_TIMEOUT_S, backend: str | No
     started = time.monotonic()
     # venv 的 python.exe 是启动器，真正的解释器是它的子进程，PID 对不上，所以用一次性令牌识别
     token = secrets.token_hex(8)
-    proc = _spawn(mode, token, backend)
+    proc = _spawn(token, backend)
     while time.monotonic() - started < timeout:
         if proc.poll() is not None:
             if error_file.is_file():

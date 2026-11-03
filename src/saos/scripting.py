@@ -43,7 +43,6 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
         self.job = job
         self.args = args
         self.backend = daemon.backend
-        self.captured: list[str] = []
         # 同一次判定内各判定脚本共享，见 kit.memo / shared by the check scripts of one evaluation, see kit.memo
         self.cache: dict[Any, Any] = {} if cache is None else cache
         # 本次执行的脚本副本，ctx.map("fn", …) 在 worker 里从这里找函数 / the running script copy; ctx.map("fn", …) finds fn here
@@ -202,15 +201,8 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
         every command push it on their own."""
         return self._daemon.export_view()
 
-    def capture_window(self) -> str | None:
-        """换掉窗口内容之前调用：窗口有未保存内容时存成 lenses/captures/ 下的副本，返回其路径。"""
-        rel = self._daemon.capture_window(self.job)
-        if rel:
-            self.captured.append(rel)
-        return rel
-
     def load(self, name: str) -> str:
-        """加载本任务 lenses/ 下的文件；agent 自己的未保存修改由脚本负责，窗口里的未保存内容先存副本。"""
+        """加载本任务 lenses/ 下的文件；agent 自己的未保存修改由脚本负责。"""
         from saos.daemon import Loaded
 
         path = self.job.resolve_lens(name, must_exist=True)
@@ -218,7 +210,6 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
 
         jobs.require_zos_history(self.job.root)
         require_native(path)
-        self.capture_window()
         self.backend = self._daemon.backend
         self._daemon.loaded = None
         self.backend.load(path)
@@ -241,7 +232,6 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
         # 另存不改变镜头内容：未收尾的 rtc 结果仍未收尾 / saving does not change the lens, so unclosed rtc results stay unclosed
         previous = self._daemon.loaded
         self._daemon.loaded = Loaded(self.job, target, rtc_unclosed=bool(previous is not None and previous.rtc_unclosed))
-        self._daemon.window_unsaved = False
         rel = self.job.relative_lens(target)
         self.job.update_state(current_lens=rel, last_saved=rel)
         return rel
@@ -335,8 +325,6 @@ def execute(daemon: Daemon, job: jobs.Job, name: str, source: str, args: dict[st
             record["computed_by"] = out["computed_by"] = provenance()
         if hints:
             out["hints"] = hints
-        if ctx.captured:
-            record["captured"] = out["captured"] = ctx.captured
         return out
     except SaosError as exc:
         record.update(ok=False, error=exc.to_dict())

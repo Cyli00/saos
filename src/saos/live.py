@@ -110,8 +110,7 @@ def measure(daemon: Any, job: jobs.Job, view: str) -> dict[str, Any]:
     slow = [s["id"] for s in specs if (finite((items.get(s["id"]) or {}).get("duration_s")) or 0.0) > budget]
     order = sorted((s["id"] for s in specs if s["id"] not in slow), key=lambda i: (items.get(i) or {}).get("t", 0.0))
     before = backend.surfaces()
-    with backend.activity("saos live metrics", True):
-        res = demand.quick(scripting.ScriptContext(daemon, job, {}), order, deadline=started + budget)
+    res = demand.quick(scripting.ScriptContext(daemon, job, {}), order, deadline=started + budget)
     changed = workflow.lens_changes(before, backend.surfaces())
     if changed:
         if daemon.loaded is not None:

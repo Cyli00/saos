@@ -25,7 +25,7 @@ DEMAND = {"schema": 2, "constants": [{"id": "lens", "description": "the sample s
 @pytest.fixture
 def setup(saos_home, fake_lens_file):
     backend = FakeBackend()
-    daemon = Daemon(backend, backend.start(), "extension")
+    daemon = Daemon(backend, backend.start())
     job = jobs.create_job("kit")
     daemon.handle({"op": "lens.import", "args": {"job": job.id, "src": str(fake_lens_file), "name": "a.zmx"}})
     daemon.handle({"op": "lens.load", "args": {"job": job.id, "file": "a.zmx"}})

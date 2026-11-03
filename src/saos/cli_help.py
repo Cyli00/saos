@@ -47,11 +47,9 @@ Environment
   SAOS_INSTANCE: work/<instance> (default main); isolates jobs and daemon state.
   SAOS_HOME: explicit runtime directory, overriding SAOS_INSTANCE.
   SAOS_LANG: zh/en for human outputs; command help/errors always English.
-  SAOS_UI=0: disable automatic workflow windows. SAOS_UI_LIVE=1: live extension
-    updates (slower); long operations normally refresh once at completion.
+  SAOS_UI=0: disable automatic workflow windows.
   SAOS_LIVE_S: seconds the daemon spends measuring the live metrics after each
     lens change (default 3; 0 off).
-  SAOS_UI_PID: select an OpticStudio window for extension mode when several exist.
   SAOS_POOL_IDLE_S: worker idle lifetime, default 600 seconds.
   SAOS_OPTICSTUDIO_DIR: OpticStudio installation; SAOS_BACKEND: auto (default), zos or rtc as
     daemon start --backend, fake for tool tests; SAOS_GLASSCAT: AGF folder for rtc,
@@ -66,7 +64,7 @@ Help
 
 GROUPS = {
     "metrics": "Query the backend-neutral metric catalog and store display-only selections for a job.",
-    "daemon": 'Control the per-instance daemon holding rtc and the OpticStudio connection.\nStart defaults to standalone. Extension attaches to a user window and leaves it\nopen on exit. Jobs and daemon state use SAOS_INSTANCE (or SAOS_HOME).\n',
+    "daemon": 'Control the per-instance daemon holding rtc and a private standalone OpticStudio.\nJobs and daemon state use SAOS_INSTANCE (or SAOS_HOME).\n',
     "job": """Manage local job directories without contacting OpticStudio.
 Jobs live in work/<instance>/jobs/<job>. show, cancel and verify read/write job
 files directly and remain available while the daemon is busy.
@@ -76,11 +74,9 @@ files directly and remain available while the daemon is busy.
 names are relative to this job's lenses/. A missing lens gives NO_LENS_LOADED;
 a different job gives JOB_MISMATCH. Import copies files; build/load establish a
 working lens.
-Before load/unload/build replace extension window content, unsaved window content
-is saved to lenses/captures/NNN-unsaved.zmx (captured in the result). The agent's
-own unsaved edits still require lens save or --discard; --discard drops only
-those edits. Archived rounds cannot be overwritten. Extension mode is optional;
-the local workflow window shows modelling in either mode.
+Before load/unload/build replace the lens, the agent's unsaved edits require
+lens save or --discard. Archived rounds cannot be overwritten. The workflow
+window (saos ui) shows the current lens.
 """,
     "opt": 'Configure and run optimization on the loaded job lens: OpticStudio, or on an\nrtc instance damped least squares with boundary rows as exact constraints and\nrtc Hammer/global search (ADR-0017).\nlocal/hammer/global require the current demand to be confirmed and free of\nblocking questions. Model approval is required to record rounds. Geometry and\nmaterial changes require saving before worker scans; model glass is exploratory\nand cannot be delivered. Optimization keeps the best reached system in memory.\n',
     "demand": """Validate and confirm sources/demand.yaml locally, without OpticStudio.
@@ -107,7 +103,7 @@ COMMANDS = {
                     "Returns scalar, curves or table without creating evaluation evidence. Use demand metric checks for evidence.", "BAD_ARGS, BACKEND_UNSUPPORTED"),
     "metrics select": ("Replace the job's display-only metric selection.",
                        "Writes metric_selection.json. Keys must be unique and distinct from demand ids. Does not change judging.", "BAD_ARGS"),
-    "daemon start": ('Start the daemon with rtc and OpticStudio (2024 R1 Premium) as its two backends.', 'Each command runs on the backend of its job\'s workflow stage (ADR-0020):\n  rtc for every stage before delivery; OpticStudio for delivery, and always for\n  lens describe, view, screenshot, capture, round --confirm and tolerance scans. OpticStudio starts\n  the first time a command needs it (cold start 6-8 s) and stays up until the\n  daemon stops. A switch hands the loaded lens over through its file: unsaved\n  changes are refused (UNSAVED_CHANGES), then both sides are compared value by\n  value; results carry backend_switch (handover.agrees, mismatches, rays, or\n  stayed when rtc cannot reproduce the lens). Differences stay on the lens as\n  unverified provenance. saos daemon use pins a backend.\n  --backend auto (default, or SAOS_BACKEND) as above; zos connects OpticStudio at\n  start; rtc runs rtc only, without OpticStudio or licence, and refuses its\n  commands with BACKEND_UNSUPPORTED. standalone creates a private OpticStudio\n  instance. extension uses UI Automation to open/reuse Interactive Extension,\n  disable Auto Close on Disconnect and read its instance, and connects at start.\n  It refuses a window connected elsewhere; use SAOS_UI_PID for multiple windows.\n  Startup errors include details.log_tail. Background logs: daemon/daemon.log;\n  startup creates no console window.', 'DAEMON_ALREADY_RUNNING, DAEMON_START_FAILED, DAEMON_TIMEOUT, UI_BLOCKED, ZOS_LICENSE, ZOS_VERSION_MISMATCH, ZOS_ERROR'),
+    "daemon start": ('Start the daemon with rtc and OpticStudio (2024 R1 Premium) as its two backends.', 'Each command runs on the backend of its job\'s workflow stage (ADR-0020):\n  rtc for every stage before delivery; OpticStudio for delivery, and always for\n  lens describe, round --confirm and tolerance scans. OpticStudio starts\n  the first time a command needs it (cold start 6-8 s) and stays up until the\n  daemon stops. A switch hands the loaded lens over through its file: unsaved\n  changes are refused (UNSAVED_CHANGES), then both sides are compared value by\n  value; results carry backend_switch (handover.agrees, mismatches, rays, or\n  stayed when rtc cannot reproduce the lens). Differences stay on the lens as\n  unverified provenance. saos daemon use pins a backend.\n  --backend auto (default, or SAOS_BACKEND) as above; zos connects OpticStudio at\n  start; rtc runs rtc only, without OpticStudio or licence, and refuses its\n  commands with BACKEND_UNSUPPORTED. OpticStudio runs as a private standalone\n  instance. Startup errors include details.log_tail. Background logs: daemon/daemon.log;\n  startup creates no console window.', 'DAEMON_ALREADY_RUNNING, DAEMON_START_FAILED, DAEMON_TIMEOUT, ZOS_LICENSE, ZOS_VERSION_MISMATCH, ZOS_ERROR'),
     "daemon use": (
         "Pin the backend commands run on, or return to the workflow stage's choice.",
         "auto: by the job's workflow stage. rtc or zos: every command runs there, except\n"
@@ -120,27 +116,26 @@ COMMANDS = {
     "daemon stop": (
         "Stop this daemon; wait for it and its private OpticStudio process to exit.",
         "Unsaved agent edits require --discard. A detached scan must finish or be\n"
-        "  cancelled first. --force kills a process that cannot exit normally. An attached\n"
-        "  user window remains open; its extension dialog can be reused on reconnect.\n"
+        "  cancelled first. --force kills a process that cannot exit normally.\n"
         "  --all stops every daemon on the machine one by one under the same rules (one\n"
         "  that started OpticStudio holds a licence until it exits) and clears state files left by dead\n"
         "  ones; details list stopped, stale_removed and failed per instance.",
         "UNSAVED_CHANGES, BUSY, DAEMON_TIMEOUT"),
     "daemon list": (
         "List daemons from their state files, without contacting them.",
-        "Each row: instance (None outside work/), home, pid, alive, mode, started_at and\n"
+        "Each row: instance (None outside work/), home, pid, alive, started_at and\n"
         "  running jobs. Works while a daemon is busy. --all lists every daemon on the\n"
         "  machine: instances under work/ and ones registered elsewhere (test homes).",
         "BAD_ARGS"),
     "daemon status": (
         "Inspect this instance and, once per session, the machine's optical environment.",
         "Returns connection/current lens plus environment: all instance daemons and\n"
-        "  running jobs, OpticStudio processes vs the 8-instance limit, visible windows\n"
-        "  and extension readiness. --no-env reports only this daemon.", "DAEMON_TIMEOUT"),
+        "  running jobs and OpticStudio processes vs the 8-instance limit. --no-env\n"
+        "  reports only this daemon.", "DAEMON_TIMEOUT"),
     "daemon run": (
         "Run the daemon in the foreground; internal entry point used by daemon start.",
         "Holds the connection until shutdown; logs under daemon/. Prefer daemon start\n"
-        "  for normal use. --mode selects standalone or extension.", "ZOS_LICENSE, ZOS_VERSION_MISMATCH, ZOS_ERROR"),
+        "  for normal use.", "ZOS_LICENSE, ZOS_VERSION_MISMATCH, ZOS_ERROR"),
     "job create": (
         "Create a job from --name; no daemon needed.",
         "Returns job, path, state. Creates a timestamp-name id, job.json, lenses/ and\n"
@@ -173,19 +168,13 @@ COMMANDS = {
         "Copy an external .zmx into the job's lenses/ without changing its source.",
         "SRC is an external path; --as chooses the destination name, default source\n"
         "  name. Existing files require --overwrite. Load the imported lens to use it.", "FILE_NOT_FOUND, FILE_EXISTS, PATH_OUTSIDE_JOB"),
-    "lens capture": (
-        "Save the attached window's current content as a job lens copy.",
-        "Requires extension mode. --as is relative to lenses/; neither the original\n"
-        "  file nor an existing destination is overwritten. Retains pre-connection edits.", "BAD_ARGS, FILE_EXISTS, UI_BLOCKED"),
     "lens load": (
         "Load FILE from this job's lenses/ into OpticStudio.",
-        "Unsaved agent changes require saving or --discard. Unsaved extension window\n"
-        "  content is captured separately first (result.captured). Updates current lens\n"
+        "Unsaved agent changes require saving or --discard. Updates current lens\n"
         "  state and view.json for the workflow window.", "FILE_NOT_FOUND, UNSAVED_CHANGES, ZOS_LOAD_FAILED, PATH_OUTSIDE_JOB"),
     "lens unload": (
         "Unload the current lens; --job must own it.",
-        "Save unsaved agent edits or pass --discard. Extension window content is\n"
-        "  captured before replacement; result.captured names the copy.", "JOB_MISMATCH, UNSAVED_CHANGES, ZOS_ERROR"),
+        "Save unsaved agent edits or pass --discard.", "JOB_MISMATCH, UNSAVED_CHANGES, ZOS_ERROR"),
     "lens info": (
         "Read the loaded job lens's system settings.",
         "Returns aperture, fields, wavelengths, catalogs, surface count and stop;\n"
@@ -238,22 +227,12 @@ COMMANDS = {
         "Run an OpticStudio analysis and export numeric and text results.",
         "TYPE is an AnalysisIDM name; --list lists available types. --set KEY=VALUE\n"
         "  uses settings object names; Field/Wavelength/Surface accept numbers or all,\n"
-        "  enums use member names. --keep-open retains the extension analysis window.\n"
+        "  enums use member names.\n"
         "  Writes analyses/NNN-TYPE.json and .txt; grids larger than 256x256 are reduced.\n"
         "  Response omits grid bodies but includes statistics, status ok/partial/empty\n"
         "  and problems (part, kind empty_series/extract_failed, message). Partial/empty\n"
         "  also include text_head. Inspect messages/settings/message before retrying.\n"
         "  No result object: ZOS_ERROR with details.kind=no_results and settings.", "BAD_ARGS, NO_LENS_LOADED, JOB_MISMATCH, ZOS_ERROR"),
-    "lens view": (
-        "Open and refresh Lens Data and a layout in extension mode.",
-        "Defaults to cross-section; non-axial/NSC systems fall back to 3D with\n"
-        "  layout.fallback_reason. --analysis selects an extra analysis; --set configures\n"
-        "  it. Choices persist, closed windows reopen, and lens-changing commands refresh\n"
-        "  them. Uses EditorsOnly update mode; analyses refresh explicitly after edits.", "BAD_ARGS (standalone mode), UI_BLOCKED, ZOS_ERROR"),
-    "lens screenshot": (
-        "Capture the OpticStudio windows as PNG in extension mode.",
-        "Writes screens/NNN-<label>-K.png via PrintWindow, including occluded windows;\n"
-        "  minimized windows are skipped. Returns the screenshot paths.", "BAD_ARGS, UI_BLOCKED, ZOS_ERROR"),
     "lens build": ("Build and save a sequential, mixed-mode or pure non-sequential lens from Prescription JSON.", "", "BAD_ARGS, FILE_EXISTS, UNSAVED_CHANGES, ZOS_ERROR"),
     "exec": ("Execute a Python script defining run(ctx) inside the daemon on this job.", "", "SCRIPT_ERROR, UNSAVED_CHANGES, JOB_MISMATCH, ZOS_CONNECTION_LOST"),
     "scan": (
@@ -309,9 +288,8 @@ COMMANDS.update({
         "  when achieved, hard_failing or deliverability differ: the decision returns\n"
         "  continue with confirm_failed and saos report refuses until a new round is\n"
         "  recorded or the user stops. As with lens load, unsaved changes are refused\n"
-        "  (UNSAVED_CHANGES; --discard drops them) and unsaved window content is saved\n"
-        "  to lenses/captures/ (captured); the lens loaded before is reloaded from its\n"
-        "  file afterwards.\n"
+        "  (UNSAVED_CHANGES; --discard drops them); the lens loaded before is reloaded\n"
+        "  from its file afterwards.\n"
         "  saos report refuses an rtc round that is not confirmed.\n"
         "  Saves lenses/rounds/rNNN.zmx only after checks prove the lens unchanged;\n"
         "  evaluations/NNN/result.json is authoritative and ledger.jsonl commits the\n"
@@ -462,8 +440,6 @@ Context and file operations
   ctx.job, ctx.args, ctx.lens (Path or None), ctx.dirty.
   ctx.path(rel): path contained in the job; ctx.mark_dirty(): record edits.
   ctx.load(name), ctx.save_as(name, overwrite=False): names relative to lenses/.
-  ctx.capture_window(): preserve unsaved extension content before direct window
-    replacement. ctx.load also captures automatically; result.captured lists copies.
   ctx.show(): push geometry/Lens Data/interference to the workflow window now;
     ctx.progress and the end of every command push it on their own.
   ctx.progress(stage, **numbers): report progress and refresh the window's current
@@ -623,10 +599,9 @@ Search control (from saos import search; evaluations still use ZOS-API)
 
 Results and files
   Seals scripts/NNN-<name>.py and .json for every execution. The response contains
-  the script result/archive references, and captured window copies when any.
+  the script result/archive references.
   NeedsSave after execution conservatively marks the lens dirty (even some
-  read-only analyses set it). Long operations pause extension refresh until the
-  end; --live or SAOS_UI_LIVE=1 keeps it live at a performance cost.
+  read-only analyses set it).
 
 Common errors
   SCRIPT_ERROR includes traceback and archive references; daemon stays alive.
@@ -727,7 +702,7 @@ ARGUMENT_HELP = {
     "name": "human-readable job name",
     "as_name": "destination file name relative to the job's lenses/",
     "overwrite": "allow replacing an existing destination (archived rounds remain protected)",
-    "discard": "discard the agent's unsaved lens edits; extension window content is still captured",
+    "discard": "discard the agent's unsaved lens edits",
     "src": "external source .zmx path",
     "prescription": "Prescription JSON file; sequential (including mixed mode) and pure non-sequential formats below",
     "surface": "Lens Data surface index",

@@ -39,7 +39,7 @@ def session(tmp_path_factory):
     backend = ZosBackend()
     daemon = None
     try:
-        daemon = Daemon(backend, backend.start(), "standalone")
+        daemon = Daemon(backend, backend.start())
         yield daemon, jobs.create_job("experts")
     finally:
         if daemon is not None:

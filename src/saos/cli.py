@@ -50,7 +50,7 @@ def _key_values(items: list[str], flag: str) -> dict[str, Any]:
 
 def cmd_daemon(args: argparse.Namespace) -> Any:
     if args.action == "start":
-        return client.start(args.mode, timeout=args.start_timeout, backend=args.backend)
+        return client.start(timeout=args.start_timeout, backend=args.backend)
     if args.action == "stop":
         if args.all:
             return client.stop_all(discard=args.discard, force=args.force)
@@ -105,8 +105,6 @@ def cmd_job(args: argparse.Namespace) -> Any:
 
 def cmd_lens(args: argparse.Namespace) -> Any:
     action = args.action
-    if action == "capture":
-        return _lens_request("lens.capture", args, {"file": args.as_name})
     if action == "import":
         payload: dict[str, Any] = {"src": str(Path(args.src).resolve()), "overwrite": args.overwrite}
         if args.as_name:
@@ -122,14 +120,7 @@ def cmd_lens(args: argparse.Namespace) -> Any:
         if not args.type:
             raise SaosError(ErrorCode.BAD_ARGS, "analysis type is required unless --list is given")
         settings = _key_values(args.set, "--set")
-        return _lens_request("lens.analysis", args, {"type": args.type, "settings": settings, "keep_open": args.keep_open})
-    if action == "view":
-        payload = {"viewer": args.viewer, "analysis": args.analysis}
-        if args.set:
-            payload["settings"] = _key_values(args.set, "--set")
-        return _lens_request("lens.view", args, payload)
-    if action == "screenshot":
-        return _lens_request("lens.screenshot", args, {"label": args.label})
+        return _lens_request("lens.analysis", args, {"type": args.type, "settings": settings})
     if action in ("info", "surfaces"):
         return _lens_request(f"lens.{action}", args, {})
     if action == "describe":
@@ -239,7 +230,7 @@ def cmd_exec(args: argparse.Namespace) -> Any:
         raise SaosError(ErrorCode.BAD_ARGS, "--args-file must contain a JSON object")
     script_args.update(_key_values(args.arg, "--arg"))
     name = args.name or "".join(ch if ch.isalnum() or ch in "-_" else "-" for ch in script.stem)[:48] or "script"
-    payload = {"job": args.job, "name": name, "source": source, "args": script_args, "live": args.live}
+    payload = {"job": args.job, "name": name, "source": source, "args": script_args}
     return _send("script.exec", args, payload, args.timeout)
 
 
@@ -379,7 +370,6 @@ def build_parser() -> argparse.ArgumentParser:
     daemon = sub.add_parser("daemon")
     dsub = daemon.add_subparsers(dest="action", required=True, parser_class=_Parser)
     start = dsub.add_parser("start")
-    start.add_argument("--mode", choices=("standalone", "extension"), default="standalone")
     start.add_argument("--backend", choices=("auto", "zos", "rtc"), default=None,
                        help="auto (default, or SAOS_BACKEND): rtc at once, OpticStudio started when first needed; zos: both, "
                             "OpticStudio connected at start; rtc: rtc only, no OpticStudio")
@@ -398,7 +388,6 @@ def build_parser() -> argparse.ArgumentParser:
     use.add_argument("--job", default=None, help="hand this job's loaded lens over now")
     use.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     run = dsub.add_parser("run")
-    run.add_argument("--mode", choices=("standalone", "extension"), default="standalone")
     run.add_argument("--backend", choices=("auto", "zos", "rtc"), default=None, help=argparse.SUPPRESS)
     run.add_argument("--token", default="", help=argparse.SUPPRESS)
     daemon.set_defaults(func=cmd_daemon)
@@ -433,19 +422,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("src")
     p.add_argument("--as", dest="as_name", help="file name inside lenses/")
     p.add_argument("--overwrite", action="store_true")
-    p = lens_cmd("capture")
-    p.add_argument("--as", dest="as_name", required=True)
-    p = lens_cmd("view")
-    p.add_argument("--viewer", choices=("cross-section", "3d", "shaded"),
-                   help="layout window (default cross-section; a system it cannot draw, e.g. non-axial or non-sequential, gets the 3D viewer)")
-    p.add_argument("--analysis", help="AnalysisIDM name of an analysis to keep open and refreshed (default none); pick what matters most for this system")
-    p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE", help="settings of that analysis")
-    p = lens_cmd("screenshot")
-    p.add_argument("--label", default="window", help="file name label")
     p = lens_cmd("analysis")
     p.add_argument("type", nargs="?", help="AnalysisIDM name, e.g. StandardSpot, FftMtf, RayFan, WavefrontMap")
     p.add_argument("--set", action="append", default=[], metavar="KEY=VALUE", help="analysis setting, e.g. Field=all, Wavelength=1, SampleSize=S_64x64")
-    p.add_argument("--keep-open", action="store_true", help="keep the analysis window open in extension mode")
     p.add_argument("--list", action="store_true", help="list the available analysis types")
     p = lens_cmd("load")
     p.add_argument("file", help="file name relative to lenses/")
@@ -490,7 +469,6 @@ def build_parser() -> argparse.ArgumentParser:
     ex.add_argument("--name", help="archive name (default: the script file name)")
     ex.add_argument("--arg", action="append", default=[], metavar="KEY=VALUE", help="passed in ctx.args; VALUE is parsed as JSON, else kept as a string")
     ex.add_argument("--args-file", help="JSON object file used as the initial ctx.args")
-    ex.add_argument("--live", action="store_true", help="in extension mode, update the OpticStudio windows while the script runs (slower; by default they refresh once at the end)")
     ex.add_argument("--detach", action="store_true", help="return at once; a detached process waits for the daemon and writes the response to the job's runs/NNN-<op>.json (saos job show lists it). Use it for anything that may outlast your own command time limit")
     ex.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
     ex.set_defaults(func=cmd_exec)
@@ -672,7 +650,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.backend:
             # 后台进程和它的 worker 都按这个后端启动 / the daemon and its workers start on this backend
             os.environ["SAOS_BACKEND"] = args.backend
-        return serve(args.mode, args.token)
+        return serve(args.token)
     if args.group == "ui" and args.action == "serve":
         from saos.ui.server import serve as serve_ui
 

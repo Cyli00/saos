@@ -20,16 +20,12 @@ const TEXT = {
     st_achieved: "已达成", st_exhausted: "无法再优化", st_limit: "达到轮次上限", st_stopped: "按用户决定停止",
     report_ready: "报告已生成", report_todo: "待生成报告", deliver_cmd: "saos scan（公差，按需）· saos report",
     back_demand: "需求变更", back_model: "结构或计算前提改变", back_reach: "结构不可达", feasibility: "质疑结构 · 核算界限", feasibility_rtc: "rtc 核算 · 不占许可", feasibility_written: "可行性记录已写",
-    explicit: "显式调试 · Interactive Extension", standalone: "后台运行 · standalone", rtc_instance: "rtc 实例 · 交付之前各阶段，不占许可", no_daemon: "后台进程未运行",
+    standalone: "后台运行 · standalone", rtc_instance: "rtc 实例 · 交付之前各阶段，不占许可", no_daemon: "后台进程未运行",
     rtc_dual: (started) => `rtc 计算 · OpticStudio ${started ? "待命" : "未启动"}`,
     rtc_switch: "后台进程只有 rtc（daemon start --backend rtc）；建模说明页面和交付需要 OpticStudio：存盘后 saos daemon stop，再 saos daemon start。",
-    tab_control: "窗口控制", tab_layout: "布局", tab_spot: "点列图", tab_mtf: "MTF", tab_rounds: "轮次",
+    tab_layout: "布局", tab_spot: "点列图", tab_mtf: "MTF", tab_rounds: "轮次",
     blocking: "blocking 待确认问题：",
-    viewer: "布局窗口", viewer_p: "切换 OpticStudio 的布局窗口。剖面图画不了的系统（非轴对称、非序列）会自动改用 3D Viewer。",
-    v_cross: "剖面图", v_3d: "3D Viewer", v_shaded: "实体模型",
-    analyses: "分析窗口", analyses_p: "Interactive Extension 连接期间，OpticStudio 的工具栏和 System Explorer 点不了。这里经后台进程打开分析窗口，之后每次改动镜头都会刷新；只看，不改镜头。后台进程正在跑长操作时，请求会排队到它结束。",
-    system: "系统设置（只读）", refresh: "刷新", loading: "读取中…", queued: "已发送，后台进程忙时会排队…",
-    opened: (n) => `已打开 ${n}`, failed: "失败", aperture: "孔径", units: "单位", stop: "光阑面", fields: "视场", waves: "波长", primary: "主",
+    loading: "读取中…", failed: "失败",
     no_viz: "第 0 轮记录后，这里显示该轮的布局、点列图和 MTF。", viz_missing: "这一轮没有可视化数据（用 --no-viz 记录，或记录早于 saos ui）。",
     viz_failed: "这一轮的可视化导出失败：", spot_foot: (ref) => `点：批量光线追迹，相对主波长主光线，未计被拦光线。RMS / GEO：OpticStudio Standard Spot（参考 ${ref}，全部波长），单位 µm。Standard Spot 每个波长追的光线数与波长权重成正比，权重小于 1 的波长常漏掉边缘光线，所以 GEO 可能小于图中最远的点。`,
     spot_foot_rtc: () => "点：rtc 批量光线追迹，相对主波长主光线，未计被拦光线。RMS / GEO：同一批点按波长权重合算，单位 µm；未与 OpticStudio Standard Spot 对账。",
@@ -104,16 +100,12 @@ const TEXT = {
     st_achieved: "achieved", st_exhausted: "exhausted", st_limit: "round limit", st_stopped: "stopped by user",
     report_ready: "report written", report_todo: "report pending", deliver_cmd: "saos scan (tolerance, if needed) · saos report",
     back_demand: "demand change", back_model: "revise model", back_reach: "unreachable", feasibility: "question · check bounds", feasibility_rtc: "rtc checks · no licence", feasibility_written: "feasibility recorded",
-    explicit: "Explicit · Interactive Extension", standalone: "Background · standalone", rtc_instance: "rtc instance · every stage before delivery, no licence", no_daemon: "daemon not running",
+    standalone: "Background · standalone", rtc_instance: "rtc instance · every stage before delivery, no licence", no_daemon: "daemon not running",
     rtc_dual: (started) => `rtc · OpticStudio ${started ? "standing by" : "not started"}`,
     rtc_switch: "The daemon holds rtc only (daemon start --backend rtc); the model page and delivery need OpticStudio: save, saos daemon stop, then saos daemon start.",
-    tab_control: "Window controls", tab_layout: "Layout", tab_spot: "Spot Diagram", tab_mtf: "MTF", tab_rounds: "Rounds",
+    tab_layout: "Layout", tab_spot: "Spot Diagram", tab_mtf: "MTF", tab_rounds: "Rounds",
     blocking: "Blocking questions:",
-    viewer: "Layout window", viewer_p: "Switch OpticStudio's layout window. Systems the cross-section cannot draw (non-axial, non-sequential) get the 3D Viewer.",
-    v_cross: "Cross-section", v_3d: "3D Viewer", v_shaded: "Shaded model",
-    analyses: "Analysis windows", analyses_p: "While Interactive Extension is connected, OpticStudio's ribbon and System Explorer are locked. These buttons open analysis windows through the daemon; they refresh after every lens change and never modify the lens. A busy daemon queues the request until its long operation ends.",
-    system: "System settings (read only)", refresh: "Refresh", loading: "loading…", queued: "sent; queued while the daemon is busy…",
-    opened: (n) => `opened ${n}`, failed: "failed", aperture: "Aperture", units: "Units", stop: "Stop surface", fields: "Fields", waves: "Wavelengths", primary: "primary",
+    loading: "loading…", failed: "failed",
     no_viz: "After round 0 is recorded, its layout, spot diagram and MTF appear here.", viz_missing: "This round has no visual data (recorded with --no-viz or before saos ui).",
     viz_failed: "The visual export of this round failed: ", spot_foot: (ref) => `Points: batch ray trace relative to the primary chief ray, vignetted rays left out. RMS / GEO: OpticStudio Standard Spot (reference ${ref}, all wavelengths), in µm. Standard Spot traces rays per wavelength in proportion to its weight, so wavelengths weighted below 1 often lose their rim rays and GEO can be smaller than the farthest point drawn.`,
     spot_foot_rtc: () => "Points: rtc batch ray trace relative to the primary chief ray, vignetted rays left out. RMS / GEO: the same points over all wavelengths by weight, in µm; not reconciled with OpticStudio's Standard Spot.",
@@ -176,13 +168,6 @@ const TEXT = {
     gate_ok: "Confirm", gate_note_short: "Note (required to ask for changes)", ld_objects: "Non-sequential objects", no_ld: "waiting for lens data",
   },
 };
-const ANALYSIS_NAMES = {
-  StandardSpot: ["点列图", "Spot Diagram"], FftMtf: ["FFT MTF", "FFT MTF"], RayFan: ["光线扇图", "Ray Fan"],
-  FieldCurvatureAndDistortion: ["场曲 / 畸变", "Field Curv. / Distortion"], WavefrontMap: ["波前图", "Wavefront Map"],
-  LongitudinalAberration: ["轴向像差", "Longitudinal Aberration"], LateralColor: ["垂轴色差", "Lateral Color"], SeidelDiagram: ["赛德尔图", "Seidel Diagram"],
-  FftPsf: ["FFT PSF", "FFT PSF"], HuygensPsf: ["惠更斯 PSF", "Huygens PSF"], FootprintSettings: ["光斑足迹图", "Footprint Diagram"],
-};
-const DEFAULT_ANALYSES = Object.keys(ANALYSIS_NAMES);
 // 每轮 viz.json 里的分析图：一处登记，标签、取数和画法都从这里来（借鉴 Optiland GUI 的 registry.py）。
 // key 是 viz.json 里的字段；某一轮没有这个字段时页面显示缺口，不在界面里补算
 // one registry for the per-round plots in viz.json (after the Optiland GUI's registry.py); a missing key is shown as a gap
@@ -215,7 +200,6 @@ let lensSig = null;
 let anaSig = null;
 let metricsSeen = null;
 let dim = Q.get("dim") === "2d" ? "2d" : "3d";
-let analyses = null;
 let needId = Q.get("need");
 let ldHover = null;
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -352,12 +336,12 @@ function renderTop() {
   $("job-title").textContent = state.name || "";
   $("job-title").title = state.name || "";
   const chip = $("mode-chip");
-  const mode = state.daemon.running ? state.daemon.mode : null;
-  const rtc = mode && state.daemon.backend === "rtc";
+  const running = state.daemon.running;
+  const rtc = running && state.daemon.backend === "rtc";
   chip.textContent = rtc ? (state.daemon.dual ? t("rtc_dual", state.daemon.zos_started) : t("rtc_instance"))
-    : mode === "extension" ? t("explicit") : mode ? t("standalone") : t("no_daemon");
+    : running ? t("standalone") : t("no_daemon");
   chip.title = chip.textContent;
-  chip.className = "pill" + (mode === "extension" ? " explicit" : rtc ? " rtc" : "");
+  chip.className = "pill" + (rtc ? " rtc" : "");
   const run = $("run-chip");
   if (state.progress) {
     run.hidden = false;
@@ -402,7 +386,6 @@ function renderNotes() {
 
 // ---------------- 选中的轮次与导出数据 ----------------
 
-const explicit = () => state?.daemon.running && state.daemon.mode === "extension";
 const vizRounds = () => (state?.rounds || []).filter((r) => r.viz);
 const latestRound = () => vizRounds().at(-1)?.round ?? null;
 // 跟随时：有当前镜头就看当前镜头，否则看最新一轮 / following: the live lens when there is one, else the latest round
@@ -464,11 +447,10 @@ async function renderLens(force = false) {
   if (isNscOf(v)) renderNscLayout(host); else renderLayout(host);
 }
 
-// 分析卡（以及放大层）的标签：点列图等只看轮次；指标、轮次、起点、窗口控制另有来源
-// tabs of the analysis card (and its enlarged copy): per-round plots, plus metrics, rounds, starts and window controls
+// 分析卡（以及放大层）的标签：点列图等只看轮次；指标、轮次、起点另有来源
+// tabs of the analysis card (and its enlarged copy): per-round plots, plus metrics, rounds and starts
 function tabList() {
   const list = [];
-  if (explicit()) list.push("control");
   const hasStarts = !!state?.steps?.find((s) => s.id === "modeling")?.detail?.starts;
   const hasMetrics = !!state?.metric_items?.length;
   const applies = (k) => k === "rounds" || (k === "detectors" ? isNsc() : ["spot", "fan", "field", "mtf"].includes(k) ? !isNsc()
@@ -492,7 +474,7 @@ function anaSignature() {
   const r = anaRound();
   const modeling = JSON.stringify(state?.steps?.find((x) => x.id === "modeling")?.detail ?? null);
   return JSON.stringify([tab, lang, r, roundOf(r)?.time ?? null, selected(), tab === "metrics" ? [state.metrics, state.metric_items, !!state.progress] : null,
-    tab === "rounds" ? state.rounds : null, tab === "starts" ? modeling : null, tab === "control" ? [state.daemon.mode, state.daemon.running] : null]);
+    tab === "rounds" ? state.rounds : null, tab === "starts" ? modeling : null]);
 }
 
 async function renderAna(force = false) {
@@ -513,7 +495,6 @@ function setZoom(open) {
 }
 
 async function renderTabInto(view) {
-  if (tab === "control") return renderControl(view);
   if (tab === "rounds") return renderRounds(view);
   if (tab === "starts") return renderStarts(view);
   if (tab === "metrics") return renderMetrics(view);
@@ -531,59 +512,6 @@ async function renderTabInto(view) {
 }
 
 
-// ---------------- 窗口控制（显性调试）----------------
-
-async function renderControl(view) {
-  const names = analyses || DEFAULT_ANALYSES;
-  const li = lang === "zh" ? 0 : 1;
-  view.innerHTML = `<div class="cards">
-    <div class="card"><h3>${esc(t("viewer"))}</h3><p>${esc(t("viewer_p"))}</p>
-      <div class="btn-grid">${[["cross-section", "v_cross"], ["3d", "v_3d"], ["shaded", "v_shaded"]].map(([v, k]) => `<button class="btn" data-viewer="${v}"><span>${esc(t(k))}</span><small>${v}</small></button>`).join("")}</div></div>
-    <div class="card"><h3>${esc(t("analyses"))}</h3><p>${esc(t("analyses_p"))}</p>
-      <div class="btn-grid">${names.map((a) => `<button class="btn" data-analysis="${a}"><span>${esc((ANALYSIS_NAMES[a] || [a, a])[li])}</span><small>${a}</small></button>`).join("")}</div></div>
-    <div class="card"><h3>${esc(t("system"))}<button class="link" id="sys-refresh">${esc(t("refresh"))}</button></h3><div id="sys-body" class="foot">${esc(t("loading"))}</div></div>
-  </div>`;
-  view.querySelectorAll("[data-viewer],[data-analysis]").forEach((b) => b.addEventListener("click", () => windowAction(b)));
-  $("sys-refresh").addEventListener("click", loadSystem);
-  loadSystem();
-  if (!analyses) api("analyses").then((r) => { analyses = r.analyses; if (tab === "control") renderControl(view); }).catch(() => {});
-}
-
-async function windowAction(btn) {
-  const body = btn.dataset.viewer ? { viewer: btn.dataset.viewer } : { analysis: btn.dataset.analysis };
-  btn.disabled = true;
-  toast(t("queued"));
-  try {
-    await api("view", {}, body);
-    toast(t("opened", btn.dataset.viewer || btn.dataset.analysis));
-  } catch (e) { toast(`${t("failed")}: ${e.message}`, true); }
-  btn.disabled = false;
-}
-
-async function loadSystem() {
-  const el = $("sys-body");
-  if (!el) return;
-  el.className = "foot"; el.textContent = t("loading");
-  try {
-    const r = await api("system");
-    const s = r.system;
-    if (s.mode === "non_sequential") {
-      el.className = "";
-      el.innerHTML = `<dl class="kv"><dt>${esc(t("units"))}</dt><dd>${esc(s.lens_units)}</dd></dl>
-        <table><tr><th>#</th><th>${esc(t("waves"))}</th><th class="num">µm</th><th class="num">w</th></tr>
-        ${s.wavelengths.map((w, i) => `<tr><td>${i + 1}</td><td>${w.primary ? `<span class="tag ok">${esc(t("primary"))}</span>` : ""}</td><td class="num">${sig(w.um, 6)}</td><td class="num">${sig(w.weight, 4)}</td></tr>`).join("")}</table>`;
-      return;
-    }
-    const unit = s.fields.type === "Angle" ? "°" : "";
-    el.className = "";
-    el.innerHTML = `<dl class="kv"><dt>${esc(t("aperture"))}</dt><dd>${esc(s.aperture.type)} = ${sig(s.aperture.value, 6)}</dd>
-      <dt>${esc(t("units"))}</dt><dd>${esc(s.lens_units)}</dd><dt>${esc(t("stop"))}</dt><dd>${s.stop_surface}</dd></dl>
-      <table><tr><th>#</th><th>${esc(t("fields"))} · ${esc(s.fields.type)}</th><th class="num">x</th><th class="num">y</th><th class="num">w</th></tr>
-      ${s.fields.items.map((f, i) => `<tr><td>${i + 1}</td><td></td><td class="num">${sig(f.x, 6)}${unit}</td><td class="num">${sig(f.y, 6)}${unit}</td><td class="num">${sig(f.weight, 4)}</td></tr>`).join("")}</table>
-      <table style="margin-top:8px"><tr><th>#</th><th>${esc(t("waves"))}</th><th class="num">µm</th><th class="num">w</th></tr>
-      ${s.wavelengths.map((w, i) => `<tr><td>${i + 1}</td><td>${w.primary ? `<span class="tag ok">${esc(t("primary"))}</span>` : ""}</td><td class="num">${sig(w.um, 6)}</td><td class="num">${sig(w.weight, 4)}</td></tr>`).join("")}</table>`;
-  } catch (e) { el.className = "foot warn"; el.textContent = e.message; }
-}
 
 // ---------------- 画布工具 ----------------
 
@@ -2219,7 +2147,7 @@ window.addEventListener("resize", () => {
     if (!state) return;
     renderArc(); renderTimeline(); renderNeed();
     if (renderLayout.redraw) renderLayout.redraw();
-    if (tab !== "control") renderAna(true);
+    renderAna(true);
   }, 150);
 });
 

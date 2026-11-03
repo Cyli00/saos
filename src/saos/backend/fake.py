@@ -195,19 +195,6 @@ class FakeBackend(Backend):
         row.setdefault("solves", {})[param] = solve
         return solve
 
-    def show_windows(self, viewer: str | None = None, analysis: str | None = None, settings: dict[str, Any] | None = None) -> dict[str, Any]:
-        """假窗口：记下每次要求打开的内容；镜头带 "non_axial": true 时模拟剖面图画不了、改用 3D 视图。"""
-        watch = getattr(self, "watch", {"viewer": "cross-section", "analysis": None, "settings": {}})
-        if viewer is not None:
-            watch["viewer"] = viewer
-        if analysis is not None:
-            watch["analysis"], watch["settings"] = analysis, dict(settings or {})
-        self.watch = watch
-        reason = "non-axial system" if watch["viewer"] == "cross-section" and (self.lens or {}).get("non_axial") else None
-        layout = {"viewer": "3d" if reason else watch["viewer"], "fallback_reason": reason}
-        self.shown = [*getattr(self, "shown", []), {"lens_data": True, **layout, "analysis": watch["analysis"]}]
-        return {"watch": dict(watch), "layout": layout, "opened": [], "windows": []}
-
     def quick_focus(self) -> dict[str, Any]:
         """假后端不对焦，只报告像面前一面的厚度。/ the fake backend does not refocus; it reports the thickness before the image."""
         lens = self._require()
@@ -218,7 +205,7 @@ class FakeBackend(Backend):
     def analysis_types(self) -> list[str]:
         return ["FakeCurve"]
 
-    def analysis(self, name: str, settings: dict[str, Any], text_path: Path, keep_open: bool = False) -> dict[str, Any]:
+    def analysis(self, name: str, settings: dict[str, Any], text_path: Path) -> dict[str, Any]:
         """假分析：一条以 TOTR 为斜率的直线，用来测试导出和存档流程。"""
         if name != "FakeCurve":
             raise SaosError(ErrorCode.BAD_ARGS, f"unknown analysis type {name!r}")

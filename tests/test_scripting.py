@@ -13,7 +13,7 @@ from saos.protocol import ErrorCode
 @pytest.fixture
 def daemon(saos_home):
     backend = FakeBackend()
-    return Daemon(backend, backend.start(), "standalone")
+    return Daemon(backend, backend.start())
 
 
 @pytest.fixture
@@ -106,33 +106,6 @@ def test_archives_keep_incrementing_past_three_digits(daemon, loaded, monkeypatc
     (analyses / "1000-FakeCurve.txt").write_text("保留失败请求的证据", encoding="utf-8")
     result = daemon.handle({"op": "lens.analysis", "args": {"job": loaded.id, "type": "FakeCurve"}})["result"]
     assert result["file"] == "analyses/1001-FakeCurve.json"
-    screens = loaded.root / "screens"
-    screens.mkdir()
-    (screens / "1000-window-1.png").write_bytes(b"old")
-
-    def screenshot(folder, prefix):
-        name = f"{prefix}-1.png"
-        (folder / name).write_bytes(b"new")
-        return [name]
-
-    monkeypatch.setattr(daemon.backend, "screenshots", screenshot)
-    for number in (1001, 1002):
-        result = daemon.handle({"op": "lens.screenshot", "args": {"job": loaded.id}})["result"]
-        assert result["files"] == [f"screens/{number}-window-1.png"]
-    assert (screens / "1000-window-1.png").read_bytes() == b"old"
-
-
-def test_context_load_captures_unsaved_window_content(daemon, loaded, monkeypatch):
-    daemon.zos = daemon.backend  # 窗口即已连接的 OpticStudio 会话 / the window is the connected OpticStudio session
-    unsaved = [True]
-    monkeypatch.setattr(daemon.backend, "has_unsaved_changes", lambda: unsaved[0])
-    load = daemon.backend.load
-    monkeypatch.setattr(daemon.backend, "load", lambda path: (load(path), unsaved.__setitem__(0, False)))
-    out = run(daemon, loaded, "def run(ctx):\n    ctx.load('a.zmx')\n    return ctx.load('a.zmx')\n")["result"]
-    assert out["result"] == "a.zmx" and out["captured"] == ["captures/001-unsaved.zmx"]
-    assert (loaded.lenses_dir / "captures/001-unsaved.zmx").is_file()
-    archived = json.loads(next((loaded.root / "scripts").glob("*.json")).read_text(encoding="utf-8"))
-    assert archived["captured"] == ["captures/001-unsaved.zmx"]
 
 
 def test_exec_api_hints_are_advisory_and_archived(daemon, loaded):

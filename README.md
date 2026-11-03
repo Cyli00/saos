@@ -100,10 +100,9 @@ uv run saos daemon stop --all    # 逐个停止它们，并清掉已退出进程
 
 - **数值以 OpticStudio 为准**：需求访谈和设计轮次在 rtc 上算，不占许可；建模、模型确认和交付在 OpticStudio 上做，交付的那一轮先在 OpticStudio 上复测，报告只用复测数值（ADR-0017）。没有 OpticStudio 的机器可以用 `uv run saos daemon start --backend rtc` 只跑 rtc。
 - **OpticStudio 许可证**：同时最多 8 个 OpticStudio 实例，包括你自己打开的窗口。daemon 第一次用到 OpticStudio 时占一个许可，之后一直占着；并发计算默认使用 4 个常驻 worker，起点生成另用一个独占会话。
-- **OpticStudio 弹出对话框会卡住计算**：例如自动保存恢复提示，saos 遇到时返回 `UI_BLOCKED`，需要你手动关掉。`Documents/Zemax/Autosave/Recovered` 里的旧恢复文件会让每个新实例都弹提示。
+- **OpticStudio 弹出对话框会卡住计算**：例如自动保存恢复提示。`Documents/Zemax/Autosave/Recovered` 里的旧恢复文件会让每个新启动的实例都弹提示，清掉它们就不会再弹。
 - **长任务在后台跑**：命令超时不代表计算失败，不要让 agent 重新提交同一项计算。要中断用 `uv run saos job cancel <任务>`，已完成的部分会保留。
 - **不要手改工具写入的文件**：任务目录里工具写入的文件记录了哈希，改动或删除后 `saos report` 会拒绝生成报告（`uv run saos job verify <任务>` 列出问题）。你可以自由看，也可以往 `sources/` 里放资料。
-- **想在 OpticStudio 窗口里看**：用 `uv run saos daemon start --mode extension` 启动，启动时连接你已打开的 OpticStudio 窗口（saos 自动打开窗口里的 Interactive Extension；有多个窗口时用 `SAOS_UI_PID` 指定）。实时刷新会明显拖慢计算，平时看流程窗口就够了。
 - **电脑资源**：长时间计算默认留出 2 个逻辑核并以低于正常的优先级运行。
 - **专用配方**：显微物镜和光纤侧视探头的既有 ZOS-API 测量库可从任务开始使用；具体模型的未验证范围仍见配方说明。
 

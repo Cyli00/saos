@@ -89,7 +89,7 @@ class Ctx(KitMethods):
 def zos():
     from saos.backend.zos import ZosBackend
 
-    backend = ZosBackend("standalone")
+    backend = ZosBackend()
     backend.start()
     yield backend
     backend.close()
@@ -168,7 +168,7 @@ def test_fast_copy_inside_the_daemon_and_on_a_worker(zos, saos_home, monkeypatch
     from saos.daemon import Daemon
 
     monkeypatch.setenv("SAOS_BACKEND", "zos")
-    daemon = Daemon(zos, {"mode": "standalone"}, "standalone")
+    daemon = Daemon(zos, {})
     try:
         job = jobs.create_job("rtc")
         built = daemon.handle({"op": "lens.build", "args": {"job": job.id, "prescription": doublet(True), "file": "doublet.zmx"}})

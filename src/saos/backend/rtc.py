@@ -645,9 +645,6 @@ class RtcBackend(Backend):
     def needs_save(self) -> bool:
         return self._dirty
 
-    def has_unsaved_changes(self) -> bool:
-        return False
-
     def describe_model(self, folder: Path | None, prefix: str = "layout") -> dict[str, Any]:
         """rtc 实例上镜头的描述数据，字段与 ZosBackend.describe_model(None) 相同，供结构指纹、逐轮材料记录和镜头哈希用；
         UNREAD_SETTINGS 列在 unread 里、不给值。给用户确认的建模说明页面（带布局图）仍在 OpticStudio 上做。
@@ -749,7 +746,7 @@ class RtcBackend(Backend):
     def analysis_types(self) -> list[str]:
         return ["FftMtf"]
 
-    def analysis(self, name: str, settings: dict[str, Any], text_path: Path, keep_open: bool = False) -> dict[str, Any]:
+    def analysis(self, name: str, settings: dict[str, Any], text_path: Path) -> dict[str, Any]:
         """rtc 能算的分析，结果形式同 ZosBackend.analysis（series、settings、status），不写文本导出。目前只有 FftMtf：
         设置 Field（0 为全部）、Wavelength（0 为全部，按权重）、MaximumFrequency（0 为到截止频率）、SampleSize（S_32x32…）、
         ShowDiffractionLimit；各波长以自己的主光线为参考（rtc.psf.mtf_fft），与 OpticStudio 未对账。

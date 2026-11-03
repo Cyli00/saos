@@ -151,7 +151,6 @@ TEXT: dict[str, tuple[str, str]] = {
     "h.evidence": ("实测依据", "Evidence"),
     "ev.analyses": ("分析导出（{n}）", "Analysis exports ({n})"),
     "ev.scripts": ("脚本执行（{n}）", "Script runs ({n})"),
-    "ev.screens": ("窗口截图", "Window screenshots"),
     "h.tolerance": ("公差", "Tolerances"),
     "tol.match": ("公差扫描 {scan} 在交付的第 {n} 轮镜头上做（镜头文件内容相同）：{samples} 个蒙特卡洛样本，种子 {seed}。",
                   "Tolerance scan {scan} ran on the lens of the delivered round {n} (identical file): {samples} Monte Carlo samples, seed {seed}."),
@@ -594,9 +593,6 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
         if files:
             links = "".join(f'<li><a href="../{folder}/{e(p.name)}">{e(p.name)}</a></li>' for p in files)
             evidence.append(f"<h3>{t(key, n=len(files))}</h3><ul>{links}</ul>")
-    shots = sorted((job.root / "screens").glob("*.png")) if (job.root / "screens").is_dir() else []
-    if shots:
-        evidence.append(f"<h3>{t('ev.screens')}</h3>" + "".join(f'<p><img src="../screens/{e(p.name)}" alt="{e(p.name)}"></p>' for p in shots[-4:]))
     untried = t("list_sep").join(t.tier(x) for x in decision["untried_tiers"]) or t("none")
     progress = (
         ""

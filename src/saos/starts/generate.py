@@ -129,8 +129,8 @@ def generate(job: jobs.Job, bindings: dict, *, short_seconds: float, prepare: st
     fallback_factory = None
     if backend_factory is None:
         from saos.backend import make_backend
-        backend_factory = lambda: make_backend("standalone", backend="rtc")
-        fallback_factory = lambda: make_backend("standalone", backend="zos")
+        backend_factory = lambda: make_backend("rtc")
+        fallback_factory = lambda: make_backend("zos")
     backend = backend_factory()
     fallback = None
     infinite = conjugate == "infinite"
@@ -207,7 +207,7 @@ def generate(job: jobs.Job, bindings: dict, *, short_seconds: float, prepare: st
                                    "constraints": {"tightest": entry["tightest"], "pressure": entry["pressure"], "extrapolation": entry["extrapolation"]}, "prediction": prediction})
             except Exception as exc:
                 from saos.protocol import MaterialError
-                if phase == "artifacts" or (isinstance(exc, SaosError) and exc.code in (ErrorCode.CANCELLED, ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.ZOS_LICENSE, ErrorCode.UI_BLOCKED)):
+                if phase == "artifacts" or (isinstance(exc, SaosError) and exc.code in (ErrorCode.CANCELLED, ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.ZOS_LICENSE)):
                     raise
                 verdict = ("library" if phase.startswith("library_") else "material" if isinstance(exc, MaterialError)
                            else "configuration" if isinstance(exc, SaosError) and exc.code in (ErrorCode.BAD_ARGS, ErrorCode.BACKEND_UNSUPPORTED)

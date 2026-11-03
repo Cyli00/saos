@@ -21,12 +21,12 @@ FINAL = ("achieved", "exhausted", "limit", "stopped")
 def _daemon() -> dict[str, Any]:
     state = client.read_state()
     if state is None or not client.pid_alive(int(state.get("pid", 0))):
-        return {"running": False, "mode": None, "backend": None}
+        return {"running": False, "backend": None}
     # 当前在哪个后端上算、是否两个后端都有（ADR-0018）：窗口据此标明数值来源和 OpticStudio 是否占着许可
     # which backend computes now and whether the daemon holds both: the window labels where numbers come from
     backends = state.get("backends") or {}
     backend = backends.get("active") or (state.get("opticstudio") or {}).get("backend") or "zos"
-    return {"running": True, "mode": state.get("mode"), "pid": state.get("pid"), "backend": backend,
+    return {"running": True, "pid": state.get("pid"), "backend": backend,
             "dual": bool(backends.get("dual")), "zos_started": bool(backends.get("zos_started", backend != "rtc"))}
 
 

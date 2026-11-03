@@ -141,7 +141,7 @@ def test_stop_rule_achieved_limit_and_demand_change():
 @pytest.fixture
 def setup(saos_home, fake_lens_file):
     backend = FakeBackend()
-    daemon = Daemon(backend, backend.start(), "extension")
+    daemon = Daemon(backend, backend.start())
     job = jobs.create_job("flow")
     daemon.handle({"op": "lens.import", "args": {"job": job.id, "src": str(fake_lens_file), "name": "a.zmx"}})
     daemon.handle({"op": "lens.load", "args": {"job": job.id, "file": "a.zmx"}})
@@ -202,7 +202,7 @@ def test_round_confirmation_handles_unsaved_changes_like_lens_load_and_blocks_a_
         assert not result["ok"]
         assert len(ledger.load(path, raw=True)) == 1
     else:
-        assert result["ok"] and not result["result"]["agrees"] and result["result"]["captured"] is None
+        assert result["ok"] and not result["result"]["agrees"]
         assert result["result"]["decision"]["status"] == "continue"
         with pytest.raises(SaosError, match="return to design"):
             report.build(job)
@@ -438,7 +438,7 @@ def test_connection_loss_during_check_does_not_record_an_infinite_round(setup, m
 def test_rounds_need_an_approved_model_matching_the_structure(saos_home, fake_lens_file):
     """模型确认关卡 / the model gate."""
     backend = FakeBackend()
-    daemon = Daemon(backend, backend.start(), "extension")
+    daemon = Daemon(backend, backend.start())
     job = jobs.create_job("gate")
     daemon.handle({"op": "lens.import", "args": {"job": job.id, "src": str(fake_lens_file), "name": "a.zmx"}})
     daemon.handle({"op": "lens.load", "args": {"job": job.id, "file": "a.zmx"}})
@@ -889,7 +889,7 @@ def test_bounds_tolerate_float_noise():
 
 
 def test_modelling_runs_in_standalone_and_the_live_view_shows_interference(saos_home, tmp_path):
-    """建模不再要求 extension：standalone 下改动镜头后写 view.json（布局、Lens Data、交叠检查），建模说明列出交叠。"""
+    """改动镜头后写 view.json（布局、Lens Data、交叠检查），建模说明列出交叠。"""
     from saos.backend.fake import fake_surface
 
     fixed = {"radius": "Fixed", "thickness": "Fixed", "material": "Fixed", "semi_diameter": "Fixed", "conic": "Fixed"}
@@ -900,7 +900,7 @@ def test_modelling_runs_in_standalone_and_the_live_view_shows_interference(saos_
     source = tmp_path / "two.zmx"
     source.write_text(json.dumps({"title": "two lenses", "surfaces": rows}), encoding="utf-8")
     backend = FakeBackend()
-    daemon = Daemon(backend, backend.start(), "standalone")
+    daemon = Daemon(backend, backend.start())
     job = jobs.create_job("background")
     write_demand(job, DEMAND)
     assert call(daemon, "lens.import", job=job.id, src=str(source), name="a.zmx")["ok"]
@@ -916,29 +916,6 @@ def test_modelling_runs_in_standalone_and_the_live_view_shows_interference(saos_
     assert out["ok"], out
     assert any("interpenetrate" in w for w in out["result"]["warnings"])
     assert call(daemon, "lens.approve", job=job.id, model=out["result"]["folder"], quote="好")["ok"]
-
-
-def test_modelling_keeps_lens_data_and_layout_open(saos_home, fake_lens_file, tmp_path):
-    """建模阶段每次改动镜头后都要打开 Lens Data 和布局窗口；剖面图画不了的系统改用 3D 视图；模型确认后只刷新。"""
-    backend = FakeBackend()
-    daemon = Daemon(backend, backend.start(), "extension")
-    job = jobs.create_job("windows")
-    write_demand(job, DEMAND)
-    folded = tmp_path / "folded.zmx"
-    folded.write_text(json.dumps({**json.loads(fake_lens_file.read_text(encoding="utf-8")), "non_axial": True}), encoding="utf-8")
-    call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx")
-    call(daemon, "lens.import", job=job.id, src=str(folded), name="folded.zmx")
-    assert call(daemon, "lens.load", job=job.id, file="a.zmx")["ok"]
-    assert backend.shown[-1] == {"lens_data": True, "viewer": "cross-section", "fallback_reason": None, "analysis": None}
-    assert call(daemon, "lens.load", job=job.id, file="folded.zmx")["ok"]
-    assert backend.shown[-1]["viewer"] == "3d" and backend.shown[-1]["fallback_reason"] == "non-axial system"
-    view = call(daemon, "lens.view", job=job.id, analysis="FakeCurve")["result"]
-    assert view["layout"]["viewer"] == "3d" and view["watch"]["analysis"] == "FakeCurve"
-    call(daemon, "lens.load", job=job.id, file="a.zmx")
-    approve_model(daemon, job)
-    shown = len(backend.shown)
-    assert call(daemon, "lens.set", job=job.id, surface=1, param="radius", value=60.0)["ok"]
-    assert len(backend.shown) == shown  # 模型确认后不再强制打开窗口
 
 
 def test_rounds_may_use_several_tiers_and_tiers_can_be_ruled_out():

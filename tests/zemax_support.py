@@ -70,7 +70,7 @@ def design_session(home: Path, monkeypatch, name: str = "accepted"):
     backend = ZosBackend()
     daemon = None
     try:
-        daemon = Daemon(backend, backend.start(), "standalone")
+        daemon = Daemon(backend, backend.start())
         job = jobs.create_job(name)
         assert call(daemon, "lens.build", job=job.id, prescription=TWO_GLASS, file="two_glass.zmx")["ok"]
         (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")

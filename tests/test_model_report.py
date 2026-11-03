@@ -107,7 +107,7 @@ def test_page_lists_materials_indices_fields_and_layout_both_languages():
 
 def test_describe_op_archives_page_json_and_returns_warnings(saos_home, fake_lens_file):
     backend = FakeBackend()
-    daemon = Daemon(backend, backend.start(), "extension")
+    daemon = Daemon(backend, backend.start())
     job = jobs.create_job("a")
     for op, args in (("lens.import", {"src": str(fake_lens_file), "name": "start.zmx"}), ("lens.load", {"file": "start.zmx"})):
         assert daemon.handle({"op": op, "args": {"job": job.id, **args}})["ok"]
@@ -340,7 +340,7 @@ def _describe(daemon, job, notes=None, lang="zh"):
 
 def _started_daemon(fake_lens_file, name):
     backend = FakeBackend()
-    daemon = Daemon(backend, backend.start(), "extension")
+    daemon = Daemon(backend, backend.start())
     job = jobs.create_job(name)
     for op, args in (("lens.import", {"src": str(fake_lens_file), "name": "start.zmx"}), ("lens.load", {"file": "start.zmx"})):
         assert daemon.handle({"op": op, "args": {"job": job.id, **args}})["ok"]

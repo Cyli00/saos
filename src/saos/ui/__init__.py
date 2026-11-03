@@ -284,8 +284,7 @@ def _guard_focus(before: int) -> None:
         subprocess.Popen(cmd, creationflags=flags, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
 
 
-# 窗口上方可选的标签页；control（显性调试的窗口控制）在 extension 模式下总在最前，不由这里选
-# tabs the window can show; control (explicit-debugging window controls) always leads in extension mode and is not chosen here
+# 窗口上方可选的标签页 / tabs the window can show
 TABS = ("layout", "spot", "fan", "field", "mtf", "detectors", "metrics", "rounds", "starts")
 
 
@@ -340,8 +339,8 @@ def configure(job: jobs.Job, *, tabs: str | None = None, metrics: str | None = N
 
 def open_window(job_id: str, *, window: bool = True, activate: bool = True, tab: str | None = None) -> dict[str, Any]:
     job = jobs.get_job(job_id)
-    if tab is not None and tab not in (*TABS, "control"):
-        raise SaosError(ErrorCode.BAD_ARGS, f"--tab must be one of {[*TABS, 'control']}")
+    if tab is not None and tab not in TABS:
+        raise SaosError(ErrorCode.BAD_ARGS, f"--tab must be one of {list(TABS)}")
     state = ensure_server()
     url = f"http://127.0.0.1:{state['port']}/?job={job.id}&t={state['token']}" + (f"&tab={tab}" if tab else "")
     opened, guarded = None, False

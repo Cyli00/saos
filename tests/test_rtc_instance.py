@@ -158,7 +158,7 @@ def test_operands_rtc_does_not_compute_are_refused():
 
 
 def test_rtc_instance_refuses_operations_that_need_opticstudio():
-    daemon = Daemon(RtcBackend(None, standalone=True), {"backend": "rtc"}, "standalone")
+    daemon = Daemon(RtcBackend(None, standalone=True), {"backend": "rtc"})
     for op in sorted(OPTICSTUDIO_ONLY):
         reply = daemon.handle({"op": op, "args": {}})
         assert reply["ok"] is False and reply["error"]["code"] == ErrorCode.BACKEND_UNSUPPORTED, op

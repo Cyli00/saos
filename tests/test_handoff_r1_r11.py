@@ -83,7 +83,7 @@ def test_r1_old_fingerprint_and_appended_sampling_need_no_reason():
 
 def test_r1_environment_declaration_change_needs_a_rebuild_reason(saos_home, fake_lens_file):
     backend = FakeBackend()
-    daemon = Daemon(backend, backend.start(), "extension")
+    daemon = Daemon(backend, backend.start())
     job = jobs.create_job("r1-environment")
     call = lambda op, **args: daemon.handle({"op": op, "args": args})
     call("lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx")
@@ -183,7 +183,7 @@ def test_r2_modern_bad_json_is_reported(saos_home):
 def test_r2_corrupt_earliest_approval_keeps_round_and_opt_working(saos_home, fake_lens_file):
     """最早确认损坏、最新确认完整：round、opt 和窗口仍使用最新完整确认，同时保留坏路径提示。"""
     backend = FakeBackend()
-    daemon = Daemon(backend, backend.start(), "extension")
+    daemon = Daemon(backend, backend.start())
     job = jobs.create_job("r2-integration")
     call = lambda op, **args: daemon.handle({"op": op, "args": args})
     call("lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx")

@@ -3,7 +3,6 @@ from __future__ import annotations
 import math
 import os
 from abc import ABC, abstractmethod
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -129,21 +128,12 @@ class Backend(ABC):
     @abstractmethod
     def operand(self, name: str, int1: int, int2: int, data: list[float]) -> float: ...
 
-    @contextmanager
-    def activity(self, label: str, quiet: bool):
-        """一次请求期间的界面提示与刷新控制；只在连接手动打开的窗口时起作用。"""
-        yield
-
     def native_file(self) -> Path | None:
         """后端自己记着的镜头文件（OpticStudio 的 SystemFile）。Hammer 与全局搜索把结果写在它旁边；从临时快照恢复后它指向快照。"""
         return None
 
     def needs_save(self) -> bool:
         """OpticStudio 的 NeedsSave 标志。实测只读的 Zernike 拟合、把参数写回相同的值也会让它置位。"""
-        return False
-
-    def has_unsaved_changes(self) -> bool:
-        """连接的窗口里有 saos 之外的未保存修改。只在 extension 模式下有意义。"""
         return False
 
     def metric_support(self, *, operand: str | None = None, analysis: str | None = None) -> str:
@@ -154,7 +144,7 @@ class Backend(ABC):
     def analysis_types(self) -> list[str]:
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} has no analyses")
 
-    def analysis(self, name: str, settings: dict[str, Any], text_path: Path, keep_open: bool = False) -> dict[str, Any]:
+    def analysis(self, name: str, settings: dict[str, Any], text_path: Path) -> dict[str, Any]:
         """运行一个 OpticStudio 分析，返回导出的序列、网格、点列图数据和表头；完整文本写到 text_path。"""
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} has no analyses")
 
@@ -279,22 +269,6 @@ class Backend(ABC):
         """把多重结构的格设为变量或固定；configs 为空时是全部结构。返回 {"<行>.<结构>": 求解类型}。
         Make multi-configuration cells variable or fixed; configs empty means every configuration."""
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} has no multiple configurations")
-
-    def show_windows(self, viewer: str | None = None, analysis: str | None = None, settings: dict[str, Any] | None = None) -> dict[str, Any]:
-        """显性调试：在连接的窗口中打开 Lens Data 和一个布局窗口（剖面图画不了时用 3D 视图），按需再开一个像质分析。"""
-        raise SaosError(ErrorCode.BAD_ARGS, f"{type(self).__name__} has no OpticStudio windows; use a ZOS session")
-
-    def refresh_windows(self) -> dict[str, Any] | None:
-        """改动镜头后刷新显性调试的窗口；隐式运行时什么也不做。"""
-        return None
-
-    def blocking_dialogs(self) -> list[str]:
-        """显性调试：当前挡住窗口的模态对话框标题；隐式运行时为空。"""
-        return []
-
-    def screenshots(self, folder: Path, prefix: str) -> list[str]:
-        """把连接的 OpticStudio 的可见窗口截成 PNG，返回文件名。"""
-        raise SaosError(ErrorCode.BAD_ARGS, f"{type(self).__name__} has no OpticStudio windows; use a ZOS session for screenshots")
 
     def describe_model(self, folder: Path | None, prefix: str = "layout") -> dict[str, Any]:
         """建模说明所需的全部数据（系统设置、逐面参数与材料、各波长折射率、孔径、求解）；folder 不为空时把布局图写到那里。

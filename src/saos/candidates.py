@@ -312,7 +312,7 @@ def _evaluate(w, item: dict[str, Any], row: dict[str, Any], temp: Path) -> None:
         except Exception as exc:
             from saos.protocol import MaterialError
 
-            if isinstance(exc, MaterialError) or (isinstance(exc, SaosError) and exc.code in (ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.UI_BLOCKED, ErrorCode.CANCELLED)):
+            if isinstance(exc, MaterialError) or (isinstance(exc, SaosError) and exc.code in (ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.CANCELLED)):
                 raise
             raise SaosError(ErrorCode.BAD_ARGS, f"prepare {plan['prepare']} 执行失败：{type(exc).__name__}: {exc}",
                             {"candidate_setup": True, "phase": "prepare", "cause_code": getattr(exc, "code", None)}) from exc
@@ -329,7 +329,7 @@ def _evaluate(w, item: dict[str, Any], row: dict[str, Any], temp: Path) -> None:
         try:
             row["prediction"] = predict(w.backend, should_cancel=w.cancel_requested)
         except Exception as exc:
-            if isinstance(exc, SaosError) and exc.code in (ErrorCode.CANCELLED, ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.UI_BLOCKED):
+            if isinstance(exc, SaosError) and exc.code in (ErrorCode.CANCELLED, ErrorCode.ZOS_CONNECTION_LOST):
                 raise
             row["prediction"] = {"errors": {"prediction": f"{type(exc).__name__}: {exc}"}}
     start = _state(w, plan)
@@ -402,7 +402,7 @@ def candidate(w, item: dict[str, Any]) -> dict[str, Any]:
             try:
                 _evaluate(w, item, row, temp)
             except Exception as exc:  # noqa: BLE001 - 一个候选的失败记为结论，不让 worker 退出；连接和界面阻塞交给后台进程
-                if isinstance(exc, SaosError) and exc.code in (ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.UI_BLOCKED, ErrorCode.CANCELLED):
+                if isinstance(exc, SaosError) and exc.code in (ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.CANCELLED):
                     raise
                 _failed(row, exc)
     finally:

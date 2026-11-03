@@ -42,7 +42,7 @@ def steps(job):
 @pytest.fixture
 def flow(saos_home, fake_lens_file):
     backend = FakeBackend()
-    daemon = Daemon(backend, backend.start(), "extension")
+    daemon = Daemon(backend, backend.start())
     job = jobs.create_job("ui")
     call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx")
     call(daemon, "lens.load", job=job.id, file="a.zmx")
@@ -165,9 +165,6 @@ def test_server_serves_state_and_viz_behind_the_token(ui):
     msg = get(srv, f"/api/viz?job={job.id}&round=0")[1]
     assert msg["ok"] and msg["result"]["surfaces"] and msg["result"]["spot"]["fields"]
     assert get(srv, f"/api/viz?job={job.id}&round=7")[1]["error"]["code"] == "BAD_ARGS"
-    # 后台进程没在跑：窗口控制直接拒绝，不会去连接 / no daemon: window controls are refused
-    refused = get(srv, f"/api/view?job={job.id}", data={"analysis": "StandardSpot"})[1]
-    assert refused["error"]["code"] == "DAEMON_NOT_RUNNING"
 
 
 def test_the_window_confirms_what_it_showed_once_and_the_report_says_how(ui):
@@ -210,7 +207,7 @@ def test_an_autonomous_job_passes_its_gates_with_reasons_and_the_report_says_so(
     from saos.protocol import SaosError
 
     backend = FakeBackend()
-    daemon = Daemon(backend, backend.start(), "extension")
+    daemon = Daemon(backend, backend.start())
     job = jobs.create_job("exercise", "autonomous")
     other = jobs.create_job("design")
     assert job.mode == "autonomous" and other.mode == "interactive"
@@ -280,18 +277,19 @@ def test_the_quote_fallback_is_refused_while_the_window_is_open(flow, monkeypatc
     assert report.TEXT["confirmed"][0].startswith("用户确认（非窗口确认）")
 
 
-def test_window_controls_only_forward_whitelisted_view_ops(ui, monkeypatch):
+def test_the_window_forwards_metric_queries_and_selections_to_the_daemon(ui, monkeypatch):
+    # 2026-11-03 验证：函数内重复导入 client 让它成了局部变量，其他接口一调用就 UnboundLocalError
+    # a function-local import once shadowed client, so every other endpoint raised UnboundLocalError
     (daemon, job), srv = ui
-    monkeypatch.setattr(stage, "_daemon", lambda: {"running": True, "mode": "extension"})
     sent = []
     monkeypatch.setattr(server.client, "request", lambda op, args, **kw: sent.append((op, args)) or {"done": op})
-    assert get(srv, f"/api/view?job={job.id}", data={"analysis": "FftMtf"})[1]["result"] == {"done": "lens.view"}
-    assert get(srv, f"/api/view?job={job.id}", data={"viewer": "3d"})[1]["ok"]
-    assert get(srv, f"/api/view?job={job.id}", data={"analysis": "../../evil"})[1]["error"]["code"] == "BAD_ARGS"
-    assert get(srv, f"/api/view?job={job.id}", data={"viewer": "x"})[1]["error"]["code"] == "BAD_ARGS"
-    assert sent == [("lens.view", {"job": job.id, "analysis": "FftMtf"}), ("lens.view", {"job": job.id, "viewer": "3d"})]
-    monkeypatch.setattr(stage, "_daemon", lambda: {"running": True, "mode": "standalone"})
-    assert get(srv, f"/api/view?job={job.id}", data={"viewer": "3d"})[1]["error"]["code"] == "BAD_ARGS"
+    assert get(srv, f"/api/metrics?job={job.id}")[1]["result"] == {"done": "metrics.list"}
+    items = [{"key": "watch", "id": "spot"}]
+    assert get(srv, f"/api/metrics?job={job.id}", data={"items": items})[1]["result"] == {"done": "metrics.select"}
+    assert get(srv, f"/api/metric?job={job.id}", data={"id": "spot", "params": {"grid": 9}})[1]["ok"]
+    assert get(srv, f"/api/state?job={job.id}")[1]["ok"]
+    assert sent == [("metrics.list", {"job": job.id}), ("metrics.select", {"job": job.id, "items": items}),
+                    ("metrics.get", {"job": job.id, "id": "spot", "params": {"grid": 9}})]
 
 
 def test_window_prefers_chrome_and_falls_back_to_the_default_browser(saos_home, tmp_path, monkeypatch):

@@ -40,7 +40,7 @@ INTERNAL = {
     "ctx.analysis", "ctx.child", "ctx.configurations", "ctx.describe", "ctx.detector", "ctx.dirty", "ctx.lens", "ctx.lib", "ctx.mark_dirty",
     "ctx.memo", "ctx.nsc_trace", "ctx.object_index", "ctx.objects", "ctx.op", "ctx.path", "ctx.quick_focus", "ctx.ray_hits", "ctx.save_as",
     "ctx.show", "ctx.spot", "ctx.surface", "ctx.trace", "ctx.values", "ctx.zosapi",
-    "saos daemon run", "saos job list", "saos lens analysis", "saos lens capture", "saos lens info", "saos lens operand",
+    "saos daemon run", "saos job list", "saos lens analysis", "saos lens info", "saos lens operand",
     "saos lens surfaces", "saos lens unload", "saos microscope adapt", "saos microscope perturb", "saos microscope repro", "saos ui serve",
     "saos.ctx.experts.ExpertMethods", "saos.ctx.experts.asphere.mfe_residual", "saos.ctx.experts.asphere.topology",
     "saos.ctx.experts.glass.GlassCandidate", "saos.ctx.experts.glass.candidate_window", "saos.ctx.experts.glass.special_glasses",

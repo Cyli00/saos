@@ -160,7 +160,7 @@ def worker_main(index: int) -> int:
         stream.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
     started = time.perf_counter()
     try:
-        backend = make_backend("standalone", os.environ.get("SAOS_WORKER_BACKEND"))
+        backend = make_backend(os.environ.get("SAOS_WORKER_BACKEND"))
         backend.start()
     except Exception as exc:  # noqa: BLE001 - 启动失败（如许可证）只让这个 worker 不可用 / a failed start makes only this worker unavailable
         _emit({"ready": False, "error": f"{type(exc).__name__}: {exc}"[:500]})

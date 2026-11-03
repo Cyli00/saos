@@ -12,7 +12,7 @@
 | .zmx 往返 | `src/saos/backend/rtc_lens.py` | 变量标记、评价函数行、公差行、多重结构行原样写回；文件头里 rtc 不建模的行原样带过去；不认识的面块行拒绝 |
 | FFT MTF | `../rtc/src/rtc/psf.py`（`opd_rays`、`otf_fft`、`mtf_fft`） | 多色复 OTF 按权重平均后取模 |
 | 复测 | `src/saos/workflow.py`（`confirm_round`）、`src/saos/ledger.py`（`effective`、`confirmed`、`deliver_round`） | `saos round --confirm [--of N]` |
-| 门禁 | `src/saos/daemon.py` | `OPTICSTUDIO_ONLY` = `lens.describe`、`lens.view`、`lens.screenshot`、`lens.capture`、`round.confirm`，与公差扫描一起总在 OpticStudio 上算（ADR-0018）；只有 rtc 的后台进程拒绝它们 |
+| 门禁 | `src/saos/daemon.py` | `OPTICSTUDIO_ONLY` = `lens.describe`、`round.confirm`，与公差扫描一起总在 OpticStudio 上算（ADR-0018）；只有 rtc 的后台进程拒绝它们 |
 | 专家类 | `src/saos/ctx/experts/` | rtc 实例上可用：`AsphereExpert(engine="rtc")` 直接用实例的镜头；`GlassExpert` 的牌号坐标全部在 rtc 材料层算 |
 | 界面 | `src/saos/ui/stage.py`、`src/saos/ui/static/app.js` | 轮次标 rtc / 已复测 / 复测不符；交付节点提示待复测；点列、光线扇、MTF 的 rtc 脚注 |
 
@@ -52,7 +52,7 @@
 
 ## 复测（`saos round --confirm`）
 
-1. 在 OpticStudio 实例上运行，不需要先加载镜头。换镜头前同 `lens load`：未保存修改报 `UNSAVED_CHANGES`（`--discard` 放弃），窗口里的未保存内容先存到 `lenses/captures/`；结束（含失败）时从文件重载原来的镜头，后端文件路径不变。默认复测 `saos report` 会交付的那一轮（`ledger.deliver_round`），`--of N` 指定。
+1. 在 OpticStudio 实例上运行，不需要先加载镜头。换镜头前同 `lens load`：未保存修改报 `UNSAVED_CHANGES`（`--discard` 放弃）；结束（含失败）时从文件重载原来的镜头，后端文件路径不变。默认复测 `saos report` 会交付的那一轮（`ledger.deliver_round`），`--of N` 指定。
 2. 加载那一轮的归档镜头，核对模型确认（OpticStudio 的完整指纹，含 rtc 读不出的三项），按当前判定测量，检查判定没有改动镜头，查零件交叠。
 3. 追加 `tier: confirm` 的记录：`confirm_of`、`agrees`、`verdict`（两边的达成与可交付）、`diffs`（逐项 rtc 与 OpticStudio 值）。达成、`hard_failing` 或可交付性不同则 `agrees: false`。
 4. `ledger.load` 默认返回 `effective` 之后的轮次：复测数值换进第 N 轮（`confirmed_by`、`measured_on: zos`，原值在 `rtc`）。终止判断、流程图窗口和报告都用它；`raw=True` 给编号新记录用。

@@ -55,7 +55,7 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 - **统一处方骨架与非序列支持**：序列与纯非序列系统（`"mode": "non_sequential"`）共用同一套处方入口、建模确认、结构指纹、判定和轮次；saos 只校验系统设置、通用面属性和多重结构骨架，具体面型和参数按 OpticStudio 原名透传。非序列能力随真实任务逐步扩展。
 - **窗口、资源与未保存修改保护**：
   - 用户通过流程图窗口（`saos ui`）查看进度、当前镜头视图（`view.json`）与当前镜头指标（`metrics.json`）及每轮导出的点列图/MTF（`viz.json`）。后台进程在镜头改动后自动刷新；rtc 的目录指标另由专用进程读取完整镜头快照，在优化进度回调与空闲刷新时计算，只保留最新待算快照，正式判定仍走 check/round（ADR-0022）。追加展示选择存在 `metric_selection.json`，不参与判定；窗口尊重用户关闭选择，仅在需要查看的节点通知置顶且不抢键盘焦点；前端随包分发，不引入 Node 构建链。
-  - 显性调试（Extension 模式连接桌面 OpticStudio 窗口）为可选（ADR-0011）。OpticStudio 长操作期间暂停实时测量，避免与原生工具竞争 API；rtc 的目录指标在独立副本上计算，不适用这一限制（ADR-0022）。替换窗口内容前一律先将窗口中的未保存状态存为副本（`lenses/captures/`），不替用户丢弃修改。
+  - OpticStudio 只以 standalone 私有实例运行，用户看进度一律用流程图窗口；连接桌面 OpticStudio 窗口的 extension 模式已删除（2026-11-03 用户决定，被 saos ui 取代）。OpticStudio 长操作期间暂停实时测量，避免与原生工具竞争 API；rtc 的目录指标在独立副本上计算，不适用这一限制。
   - 计算后端固定版本（见 [README](./README.md)）并用双精度；长时间进程降低优先级并默认预留 2 个逻辑核，许可证并发预算计入用户已打开的窗口（见 `saos --help` 与 `saos opt local --help`）。
 - **代码三层结构与上收原则**：分为固定 CLI 命令、库函数（`saos.kit`、`saos.search`、`saos.starts`、配方库）和任务内脚本（ADR-0007）。同一段代码在第二个任务中被复用时即上收为库函数或配方草稿，上收前后同一批镜头的计算数值必须逐项一致。测试只测工具，不测 Agent 的设计能力。
 - **模块分层**（2026-11-02 用户决定，参照 ripgrep 各 crate 单向依赖）：L0 基础约定（`protocol`、参数键与追迹结果 `lensdata`、`geometry`、`prescription`、文件与目录、共享参考库的只读入口 `library`）→ L1 计算后端（`saos.backend`，OpticStudio 的参数读写在 `backend/zos_params.py`）→ L2 测量库（`saos.kit`、指标目录 `saos.metrics`、微光学测量 `saos.micro`、`saos.fast`、`saos.search`、专家类，以及只含测量函数的配方库如 `saos.recipes.fiber`）→ 任务、需求、轮次、扫描、worker 池、后台进程与窗口。配方只保留布局约定，可拆开的慢测量经 `ctx.spare_map` 借空闲许可证，不直接碰 worker 池。下层不导入上层，L0–L2 之间也不成环（只有完全落在同一包内的环除外，经过同包模块绕回的跨包环照样算），函数内的延迟导入和相对导入也算，由 `tests/test_layers.py` 检查；最上层相当于 ripgrep 的 core，是把流程粘起来的胶水，内部模块可以互相引用；测量库只经 `Backend` 协议调用后端，只有 OpticStudio 能做的功能由后端自己报错。
@@ -94,7 +94,6 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 | **扫描 / 扰动诊断** | Scan / Probe (`saos scan`) | 在 Worker 池上并发评估候选结构（`candidates`）、参数网格、单变量扰动灵敏度（`probes`）或公差（`tolerance`）（*勿单称 map 或 sweep*） |
 | **交付报告** | Delivery Report (`report/index.html`) | 汇总实测值、达标状态、材料与计算后端的 HTML 报告；只把满足全部可交付条件的轮次称为交付镜头，没有时写明原因并只作诊断展示差距最小的轮次（*勿称：验收报告*） |
 | **诊断量** | Diagnostic | 随报告输出、帮助解释结果但不决定是否达标的光学量，如 Strehl 比（*勿称：附加指标*） |
-| **隐式运行 / 显性调试** | Headless Run / Explicit Debugging | 默认无界面运行 vs 通过 Interactive Extension 连接用户桌面 OpticStudio 窗口调试（*勿称：后台模式 / 窗口模式*） |
 | **配方** | Recipe (`.agents/skills/saos/references/recipes/<系统>.md`) | 针对一类光学系统、由入口技能在访谈确定系统类别后路由过去的参考文档与配套工具库，从真实任务中提炼（*勿称：模板、插件、子技能*） |
 
 ### 显微物镜配方专用术语

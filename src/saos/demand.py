@@ -680,7 +680,7 @@ def measure(ctx: ScriptContext, item: dict[str, Any], folder: Path, scripts: dic
     except Exception as exc:  # noqa: BLE001 - 见下 / see below
         # 判定失败是可报告的结果，连接中断和阻塞仍交给后台进程处理。
         # a failed measurement is a reportable result; a lost connection or a blocked window still goes to the daemon
-        if not ctx.backend.healthy() or (isinstance(exc, SaosError) and exc.code in (ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.UI_BLOCKED)):
+        if not ctx.backend.healthy() or (isinstance(exc, SaosError) and exc.code == ErrorCode.ZOS_CONNECTION_LOST):
             raise
         return {"value": None, "error": f"{type(exc).__name__}: {exc}", "error_kind": _error_kind(exc), "evidence": evidence}
     if not math.isfinite(value):

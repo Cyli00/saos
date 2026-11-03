@@ -14,7 +14,7 @@ from saos.daemon import Daemon
 @pytest.fixture
 def daemon(saos_home):
     backend = FakeBackend()
-    return Daemon(backend, backend.start(), "standalone")
+    return Daemon(backend, backend.start())
 
 
 @pytest.fixture

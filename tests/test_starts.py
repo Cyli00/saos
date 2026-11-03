@@ -183,7 +183,7 @@ def test_generate_passes_normalized_prescriptions_without_a_shim(saos_home, tmp_
 
 
 def test_generate_builds_on_rtc_and_sends_only_what_rtc_refuses_to_opticstudio(saos_home, tmp_path, monkeypatch):
-    # 生成起点原先总是另开一个 OpticStudio（make_backend("standalone")），建模归 rtc 后不该占许可（ADR-0020）
+    # 生成起点原先总是另开一个 OpticStudio（make_backend("zos")），建模归 rtc 后不该占许可（ADR-0020）
     import shutil
     import yaml
     from saos import backend as backends, jobs, starts, demand
@@ -212,7 +212,7 @@ def test_generate_builds_on_rtc_and_sends_only_what_rtc_refuses_to_opticstudio(s
                 raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, "rtc cannot build this prescription")
         def operand(self, *args): return 50.0
 
-    monkeypatch.setattr(backends, "make_backend", lambda mode, backend=None: Backend(backend))
+    monkeypatch.setattr(backends, "make_backend", lambda backend=None: Backend(backend))
     monkeypatch.setattr(prediction, "predict", lambda backend, **kwargs: {"first_order": {"efl": 50}, "on": backend.kind})
     out = starts.generate(job, {"efl_mm":"f","half_field_deg":"h","f_number":"n","wavelengths_um":"w"},
                           short_seconds=1, prepare="prepare.py", root=root)

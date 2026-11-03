@@ -33,7 +33,7 @@ print("stderr-ok", file=sys.stderr, flush=True)
         return original_popen([cmd[0], "-c", probe], **kwargs)
 
     monkeypatch.setattr(client.subprocess, "Popen", launch_probe)
-    proc = client._spawn("standalone", "console-test")
+    proc = client._spawn("console-test")
     try:
         assert proc.wait(timeout=15) == 0
     finally:
@@ -57,7 +57,7 @@ def test_spawn_resolves_relative_home_before_changing_cwd(tmp_path, monkeypatch)
         return object()
 
     monkeypatch.setattr(client.subprocess, 'Popen', launch)
-    client._spawn('standalone', 'relative-home-test')
+    client._spawn('relative-home-test')
     expected = str((tmp_path / 'relative-work').resolve())
     assert captured['cwd'] == expected
     assert captured['env']['SAOS_HOME'] == expected
@@ -73,7 +73,7 @@ def test_instance_daemons_reads_state_files_only(tmp_path, monkeypatch):
     for name, pid in (("a", os.getpid()), ("b", 0)):
         (work / name / "daemon").mkdir(parents=True)
         (work / name / "daemon" / "state.json").write_text(
-            json.dumps({"pid": pid, "token": "secret", "mode": "extension", "started_at": "t"}), encoding="utf-8")
+            json.dumps({"pid": pid, "token": "secret", "started_at": "t"}), encoding="utf-8")
     (work / "c").mkdir()
     job = work / "a" / "jobs" / "j1"
     job.mkdir(parents=True)
@@ -102,12 +102,12 @@ def _machine(tmp_path, monkeypatch):
     registry.mkdir()
     for name, pid in (("a", os.getpid()), ("b", 0)):
         (work / name / "daemon").mkdir(parents=True)
-        (work / name / "daemon" / "state.json").write_text(json.dumps({"pid": pid, "mode": "standalone"}), encoding="utf-8")
+        (work / name / "daemon" / "state.json").write_text(json.dumps({"pid": pid}), encoding="utf-8")
     elsewhere = tmp_path / "pytest-home"
     (elsewhere / "daemon").mkdir(parents=True)
     # work/ 之外那个用父进程的 pid：同样活着，又与 work/a 的不同
     (elsewhere / "daemon" / "state.json").write_text(json.dumps({"pid": os.getppid()}), encoding="utf-8")
-    (registry / f"{os.getppid()}.json").write_text(json.dumps({"pid": os.getppid(), "home": str(elsewhere), "mode": "standalone"}), encoding="utf-8")
+    (registry / f"{os.getppid()}.json").write_text(json.dumps({"pid": os.getppid(), "home": str(elsewhere)}), encoding="utf-8")
     (registry / "4.json").write_text(json.dumps({"pid": 4, "home": str(tmp_path / "gone")}), encoding="utf-8")
     # 与 work/a 同一 home 的登记不应重复列出
     (registry / "1.json").write_text(json.dumps({"pid": os.getpid(), "home": str(work / "a")}), encoding="utf-8")
