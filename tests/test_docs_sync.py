@@ -82,15 +82,11 @@ def _help_sources(parser, command="saos") -> list[tuple[str, str, str]]:
     return sources
 
 
-def _diagram_boxes(fill: str | None = None) -> list[str]:
-    """drawio 各框的文字；fill 给定时只取该填充色的框（#d5e8d4 是 saos 命令 / 工具行为）。
-    The text of the diagram's boxes; with fill, only boxes of that colour (#d5e8d4: saos commands / tool behaviour)."""
+def _diagram_boxes() -> list[str]:
+    """drawio 各框的文字（框按计算后端着色，每框第二行是命令或接口）。/ The text of the diagram's boxes."""
     xml = DIAGRAM.read_text(encoding="utf-8")
-    out = []
-    for value, style in re.findall(r'<mxCell [^>]*value="([^"]*)" style="([^"]*)"', xml):
-        if fill is None or f"fillColor={fill}" in style:
-            out.append(re.sub(r"<[^>]+>", " ", html.unescape(html.unescape(value))))
-    return out
+    return [re.sub(r"<[^>]+>", " ", html.unescape(html.unescape(value)))
+            for value in re.findall(r'<mxCell [^>]*value="([^"]*)" style="[^"]*"', xml)]
 
 
 def _agent_interface() -> set[str]:
@@ -130,7 +126,7 @@ def _documented(text: str, key: str) -> bool:
 def test_every_saos_command_in_the_docs_exists():
     parser = cli.build_parser()
     sources = [(name, span, text) for name in DOCS for text in [(ROOT / name).read_text(encoding="utf-8")] for span in _code_spans(text)]
-    sources += [("docs/workflow.drawio", box, box) for box in _diagram_boxes("#d5e8d4")]
+    sources += [("docs/workflow.drawio", box, box) for box in _diagram_boxes()]
     sources += _help_sources(parser)
     assert len(sources) > 200
     unknown = set()
