@@ -114,11 +114,12 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 | 根目录 | 只有 `README.md`、`DESIGN.md`、`TODO.md`、`AGENTS.md`、`pyproject.toml`、`uv.lock`、`.gitignore`，以及 `.agents/`（技能源文件）和 `.claude/skills/saos`（指向 `.agents/skills/saos` 的链接）；`ref`（联接到 zea 参考资料）和 `work/` 不入库 |
 | `src/saos/` | 核心工具代码。不依赖任何配方，仅 `cli.py` 注册配方命令 |
 | `src/saos/recipes/<配方>/` | 配方配套代码 |
+| `src/rtc/` | rtc 追迹内核（2026-11-03 由并列仓库并入） |
 | `.agents/skills/saos/` | 光学设计工作流技能：`SKILL.md` 入口（定位阶段、各阶段关卡与出口）、`references/` 按阶段的细节与按时机读取的通用参考（`session.md` 会话与长运行、`scripting.md` 脚本与 rtc 实例、`rtc-copy.md` OpticStudio 上的 rtc 副本、`micro.md` 微光学测量、`files.md` 任务目录）、`references/recipes/<配方>.md` 按《配方编写规范》（`references/recipes/README.md`）编写的配方 |
 | `docs/` | 跨任务文档：`workflow.drawio`（工作流图）、`adr/NNNN-*.md`、`plans/*.md` |
 | `docs/recipes/<配方>/` | 配方的中文长篇说明：规格与验收口径、入库流程、上收比对记录 |
 | `library/<库>/` | 跨任务共享参考数据（均含 `README.md` 说明来源与用法）：`materials/`、`glasscat/`、`thermal/`、`mechanics/`、`coatings/`、`starts/`、`patents/`、`microscope/`；脚本经 `saos.library` 统一查询。`patents/seq/` 原文件出处与再分发条款未核实，只留本地不入库 |
-| `tests/`、`tests/recipes/<配方>/` | 核心工具测试与配方测试 |
+| `tests/`、`tests/recipes/<配方>/`、`tests/rtc/` | 核心工具测试、配方测试与 rtc 回归 |
 
 镜头文件（`.zmx`、`.optiland.json`、`.ZDA`、`.seq`）只出现在 `library/`、测试夹具或 `work/` 中；日志和临时文件不入库（临时文件放系统临时目录）。具体设计任务的一切产物均放进该任务目录，不进仓库。
 

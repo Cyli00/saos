@@ -13,19 +13,26 @@ saos（simulate any optical system）让 AI agent 替你做光学设计。你用
 | Windows | 目前只支持 Windows（OpticStudio 和 ZOS-API 只有 Windows 版） |
 | [uv](https://docs.astral.sh/uv/) | 管理 Python 3.12 和依赖，所有命令都通过 `uv run` 执行 |
 | 支持技能的编程 agent | Claude Code、Cursor、Codex 等；agent 负责全部设计工作 |
-| Ansys Zemax OpticStudio 2024 R1.00 Premium | 从建模开始需要，使用可用的 ZOS-API 许可 |
+| Ansys Zemax OpticStudio 2024 R1.00 Premium | 交付阶段需要；rtc 复现不了的镜头（反射镜、坐标断点、非序列等）从建模起就需要 |
 | Chrome（可选） | 流程窗口优先用 Chrome 应用窗口打开，没有时用系统默认浏览器 |
 
 ### 步骤
 
-1. 打开 Windows 的“开发人员模式”，然后带符号链接克隆仓库。技能放在 `.agents/skills/saos`，Claude Code 和 Cursor 通过符号链接 `.claude/skills/saos` 找到它；没有开启符号链接时，这个链接会变成一个普通文本文件，agent 就找不到技能。
+1. 打开 Windows 的“开发人员模式”，然后带符号链接克隆仓库。技能在 `.agents/skills/saos`，agent 经由符号链接 `.claude/skills/saos` 找到它：
 
    ```bash
    git clone -c core.symlinks=true https://github.com/Cyli00/saos.git
    cd saos
    ```
 
-2. 安装依赖。Python 固定在 3.12，OpticStudio 固定在 2024 R1.00；不再依赖 Optiland 或 PyTorch。需求访谈和设计轮次所用的 rtc（ray tracing core）以路径依赖引用并列存放的 `../rtc` 仓库，先把它克隆到 saos 旁边。
+   `.claude/skills/saos` 若是普通文本文件（克隆时没开符号链接），开启开发人员模式后修复：
+
+   ```bash
+   git config core.symlinks true
+   rm .claude/skills/saos && git checkout -- .claude/skills/saos
+   ```
+
+2. 安装依赖。Python 固定在 3.12，OpticStudio 固定在 2024 R1.00：
 
    ```bash
    uv sync
@@ -33,7 +40,7 @@ saos（simulate any optical system）让 AI agent 替你做光学设计。你用
 
 3. OpticStudio 不在默认位置（`C:\Program Files\Ansys Zemax OpticStudio 2024 R1.00`）时，设置环境变量 `SAOS_OPTICSTUDIO_DIR` 指向安装目录。
 
-4. 检查环境。结果会列出后台进程、正在运行的任务、OpticStudio 进程数与许可余量、可见的 OpticStudio 窗口。
+4. 检查环境。结果会列出后台进程、正在运行的任务、OpticStudio 进程数与许可余量。
 
    ```bash
    uv run saos daemon status
@@ -98,7 +105,7 @@ uv run saos daemon stop --all    # 逐个停止它们，并清掉已退出进程
 
 ## 注意事项
 
-- **数值以 OpticStudio 为准**：需求访谈和设计轮次在 rtc 上算，不占许可；建模、模型确认和交付在 OpticStudio 上做，交付的那一轮先在 OpticStudio 上复测，报告只用复测数值。没有 OpticStudio 的机器可以用 `uv run saos daemon start --backend rtc` 只跑 rtc。
+- **数值以 OpticStudio 为准**：需求访谈、建模、模型确认和设计轮次在 rtc 上算，不占许可；交付在 OpticStudio 上做，交付的那一轮先在 OpticStudio 上复测，报告只用复测数值。没有 OpticStudio 的机器可以用 `uv run saos daemon start --backend rtc` 只跑 rtc，做到设计轮次为止。
 - **OpticStudio 许可证**：同时最多 8 个 OpticStudio 实例，包括你自己打开的窗口。daemon 第一次用到 OpticStudio 时占一个许可，之后一直占着；并发计算默认使用 4 个常驻 worker，起点生成另用一个独占会话。
 - **OpticStudio 弹出对话框会卡住计算**：例如自动保存恢复提示。`Documents/Zemax/Autosave/Recovered` 里的旧恢复文件会让每个新启动的实例都弹提示，清掉它们就不会再弹。
 - **长任务在后台跑**：命令超时不代表计算失败，不要让 agent 重新提交同一项计算。要中断用 `uv run saos job cancel <任务>`，已完成的部分会保留。
@@ -114,6 +121,7 @@ uv run saos daemon stop --all    # 逐个停止它们，并清掉已退出进程
 | `SAOS_LANG` | `zh` / `en`，面向人的输出（报告、流程窗口）的默认语言 |
 | `SAOS_UI=0` | 不自动打开流程窗口 |
 | `SAOS_OPTICSTUDIO_DIR` | OpticStudio 安装目录 |
+| `SAOS_GLASSCAT` | rtc 读的 AGF 玻璃目录文件夹，默认 `Documents/Zemax/Glasscat` |
 
 完整列表见 `uv run saos --help`。
 

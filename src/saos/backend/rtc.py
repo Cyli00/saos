@@ -1,7 +1,7 @@
 """rtc 后端：OpticStudio 镜头的内存副本（ctx.fast，ADR-0014），以及 rtc 实例（SAOS_BACKEND=rtc）自己持有的镜头。
 The rtc backend: an in-memory copy of an OpticStudio lens (ctx.fast, ADR-0014), and the lens an rtc instance owns.
 
-数值来自 rtc（ray tracing core，float64 序列追迹，与 saos 并列的 `../rtc`）。副本只用于探索；rtc 实例在需求阶段做可行性
+数值来自 rtc（ray tracing core，float64 序列追迹，同仓库的 `src/rtc`）。副本只用于探索；rtc 实例在需求阶段做可行性
 核算（ADR-0016），在设计阶段做变量、评价函数、优化、判定和轮次（ADR-0017），交付前在 OpticStudio 上复测。副本建立时用
 OpticStudio 自己的描述（describe_model）逐项核对：面型、参数、各波长折射率（INDX）、视场、波长、孔径和瞄准方式；rtc 复现
 不了的设置一律报 BACKEND_UNSUPPORTED，不返回近似值。

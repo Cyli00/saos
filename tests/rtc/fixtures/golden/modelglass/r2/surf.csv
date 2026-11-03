@@ -1,0 +1,15 @@
+index,type,radius,conic,thickness,material,semi,mechSemi,isStop,par1,par2,par3,par4,par5,par6,par7,par8,par9,par10,par11,par12,par13,par14,par15,par16,aperture
+0,Standard,Infinity,0,Infinity,,0,0,False,,,,,,,,,,,,,,,,,None
+1,Standard,Infinity,0,0.05748211165393,,0.5,0.5,False,,,,,,,,,,,,,,,,,None
+2,Paraxial,Infinity,Infinity,0,,0.5,Infinity,False,4.135,,,,,,,,,,,,,,,,None
+3,Standard,Infinity,0,4.135,,0.5,0.5,True,,,,,,,,,,,,,,,,,None
+4,Standard,Infinity,0,0.05,1.61,60.0,0.125,0.125,False,,,,,,,,,,,,,,,,,CircularAperture
+5,EvenAspheric,0.005000001259355148,-35.475996657856719,0.05251788834607,,0.125,0.125,False,0,0,0,0,0,0,0,0,,,,,,,,,CircularAperture
+6,Biconic,0.23765780230815997,-7.68299959060695,0.08,1.61,60.0,0.125,Infinity,False,0.058704281613183334,-9.9985870303355249,,,,,,,,,,,,,,,CircularAperture
+7,Biconic,-0.13802518589511958,-19.036400655712143,0.11,,0.125,Infinity,False,-7.2445892293694945,-188661.12620123217,,,,,,,,,,,,,,,CircularAperture
+8,Standard,Infinity,0,0.671,BK7,0.125,0.125,False,,,,,,,,,,,,,,,,,FloatingAperture
+9,Standard,Infinity,0,0.075,BK7,0.125,0.125,False,,,,,,,,,,,,,,,,,None
+10,BiconicZernike,-0.12071831041823314,-1.6818834483068517,0.1,,0.125,Infinity,False,-0.22659209112199591,-3.6044276914337039,,1,,,,,,,,,0,-1.693329241272,0,2.337517581858,FloatingAperture
+11,Toroidal,-0.3,0,0.05,BK7,0.3,Infinity,False,0,0,0,0,0,0,0,0,,,,,,100,,,FloatingAperture
+12,Toroidal,-0.35,0,0.3005,WATER2,0.3,Infinity,False,0,0,0,0,0,0,0,0,,,,,,100,,,FloatingAperture
+13,Standard,Infinity,0,Infinity,WATER2,0.000962701990325443,0.000962701990325443,False,,,,,,,,,,,,,,,,,None

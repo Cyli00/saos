@@ -1,0 +1,16 @@
+version,24.1.0
+license,PremiumEdition
+file,E:/gitProjects/rt-calc/fixtures/lenses/codex-r017.zmx
+surfaces,14
+configs,9
+waves,1
+fields,1
+fieldtype,Angle
+aperture,EntrancePupilDiameter,1
+wave1,0.92,1,True
+field1,0,0,1
+adv.DontPrintCoordinateBreakData,False
+adv.TurnOffThreading,False
+adv.OPDModulo2PI,False
+adv.IncludeCalculatedDataInSessionFile,True
+adv.IncludeToleranceDataInSessionFile,True

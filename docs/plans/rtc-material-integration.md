@@ -1,6 +1,6 @@
 # rtc 材料集成与加速：交接
 
-rtc（ray tracing core，并列仓库 `../rtc`）提供材料层与编译追迹内核；本文只记 saos 侧行为、准入流程与运行命令。
+rtc（ray tracing core，`src/rtc/`）提供材料层与编译追迹内核；本文只记 saos 侧行为、准入流程与运行命令。
 决定与实测数字见 ADR-0014，用法见技能 `references/scripting.md`。
 
 ## saos 侧行为
@@ -45,4 +45,3 @@ LD 外的点只记录 OpticStudio 的值。某个环境失败记入 `failed_envi
   此前像面差 2.6 mm）；光程差 2.96e-2 mm 是理想透镜相位混进了 opl，与折射率无关，现在 opl 与批量追迹同口径（≤ 2.1e-12 mm），
   相位在 `RayBlock.phase`。saos 建副本时不再拿 PARAXIAL 面的 conic 核对（ZOS-API 读作 inf、文件为 0），此前带 PARAXIAL 面的镜头都建不了副本。
   详见 rtc `docs/HANDOFF.md` §6.7。
-- 仓库目录已改名 `rt-calc` → `rtc`（2026-10-27）；别处引用旧路径的脚本或会话需要改成 `../rtc`。

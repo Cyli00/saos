@@ -5,7 +5,7 @@
 ## 落地情况（2026-10-29）
 
 - **已落地**：`saos daemon start --backend rtc`（或 `SAOS_BACKEND=rtc`）启动不连 OpticStudio 的实例；`lens build|load|save` 由处方或 `.zmx` 建 rtc 镜头，保存为 OpticStudio 24.1 行格式的 UTF-16 `.zmx`（`src/saos/backend/rtc_lens.py`）；每次改动后按 OpticStudio 规则重算边缘光线高度求解（MAZH）与自动半口径（物面除外，保留文件里的值；OpticStudio 在物距无穷时给 inf、有限物距时的值与布局差异未核对，交接不比它，见 ADR-0018）。
-- **操作数**：光线类 REAX/Y/Z/R/A/B/C、RAGX/Y/Z/A/B/C、RANG、RAID；系统类 EFFL、WFNO、ISFN、TOTR、TTHI、EPDI、ENPP、EXPP、EXPD、PETZ、INDX、SSAG、CONF（`src/saos/backend/rtc.py`，一阶量在 `../rtc/src/rtc/firstorder.py`）；`quick_focus` 用闭式 RMS² 极小。其余报 `BACKEND_UNSUPPORTED`。
+- **操作数**：光线类 REAX/Y/Z/R/A/B/C、RAGX/Y/Z/A/B/C、RANG、RAID；系统类 EFFL、WFNO、ISFN、TOTR、TTHI、EPDI、ENPP、EXPP、EXPD、PETZ、INDX、SSAG、CONF（`src/saos/backend/rtc.py`，一阶量在 `src/rtc/firstorder.py`）；`quick_focus` 用闭式 RMS² 极小。其余报 `BACKEND_UNSUPPORTED`。
 - **有限物距、物方 NA、物高视场**：rtc 加了 `allow_unverified` 开关，只在 rtc 实例上打开；这些路径的结果在 `computed_by` 里列为未对账。`ctx.fast()` 副本仍拒绝它们。
 - **门禁**：daemon 的 `OPTICSTUDIO_ONLY` 当初拒绝建模说明与确认、分析、评价函数与优化、`check`、`scan`、`round`；ADR-0017 起设计轮次也在 rtc 实例上做，现行门禁见 [rtc-design-stage.md](rtc-design-stage.md)。
 - **界面**：流程图窗口标出 rtc 实例，访谈节点显示可行性记录是否已写，布局脚注列出未对账项，走过需求确认仍在 rtc 实例时提示切换（ADR-0018 起只对只有 rtc 的实例提示，两个后端的后台进程自己切换）。
@@ -17,7 +17,7 @@
 |---|---|
 | `E:\gitProjects\test-core`（`INDEX.md` 为能力索引，`NOTES.md` 为调用关系与数据偏移） | 算法与约定的线索 |
 | OpticStudio 2024 R1 手册 | 操作数与分析的定义 |
-| `../rtc/oracle/Harness3.cs`、`fixtures/golden/` | 真值采集与回归基线 |
+| `tests/rtc/fixtures/golden/` | 回归基线 |
 
 阅读 test-core 时注意：
 

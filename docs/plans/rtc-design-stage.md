@@ -10,7 +10,7 @@
 | 优化 | `src/saos/backend/rtc_optim.py` | 带精确约束的阻尼最小二乘；Hammer 与全局搜索 |
 | 后端接口 | `src/saos/backend/rtc.py` | `vary`、`merit_*`、`optimize`、`optimize_search`、`apply_values`、`describe_model(None)`、`analysis("FftMtf")`、`viz_data(full=True)`、`change_surface_type`、`set_solve`、玻璃目录 |
 | .zmx 往返 | `src/saos/backend/rtc_lens.py` | 变量标记、评价函数行、公差行、多重结构行原样写回；文件头里 rtc 不建模的行原样带过去；不认识的面块行拒绝 |
-| FFT MTF | `../rtc/src/rtc/psf.py`（`opd_rays`、`otf_fft`、`mtf_fft`） | 多色复 OTF 按权重平均后取模 |
+| FFT MTF | `src/rtc/psf.py`（`opd_rays`、`otf_fft`、`mtf_fft`） | 多色复 OTF 按权重平均后取模 |
 | 复测 | `src/saos/workflow.py`（`confirm_round`）、`src/saos/ledger.py`（`effective`、`confirmed`、`deliver_round`） | `saos round --confirm [--of N]` |
 | 门禁 | `src/saos/daemon.py` | `OPTICSTUDIO_ONLY` = `round.confirm`，与公差扫描一起总在 OpticStudio 上算；只有 rtc 的后台进程拒绝它们。`lens.describe` 在 rtc 上出模型页，剖面图由 `model_report.section_layout` 画（2026-11-03） |
 | 专家类 | `src/saos/ctx/experts/` | rtc 实例上可用：`AsphereExpert(engine="rtc")` 直接用实例的镜头；`GlassExpert` 的牌号坐标全部在 rtc 材料层算 |

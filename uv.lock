@@ -192,32 +192,14 @@ wheels = [
 ]
 
 [[package]]
-name = "rtc"
-version = "0.1.0"
-source = { editable = "../rtc" }
-dependencies = [
-    { name = "numba" },
-    { name = "numpy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "numba", specifier = ">=0.62" },
-    { name = "numpy", specifier = ">=1.26" },
-]
-
-[package.metadata.requires-dev]
-dev = [{ name = "pytest", specifier = ">=9.1.1" }]
-
-[[package]]
 name = "saos"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "numba" },
     { name = "numpy" },
     { name = "pythonnet" },
     { name = "pyyaml" },
-    { name = "rtc" },
     { name = "scipy" },
 ]
 
@@ -228,10 +210,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "numba", specifier = ">=0.62" },
     { name = "numpy", specifier = ">=2" },
     { name = "pythonnet", specifier = "==3.0.5" },
     { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "rtc", editable = "../rtc" },
     { name = "scipy", specifier = ">=1.13" },
 ]
 
