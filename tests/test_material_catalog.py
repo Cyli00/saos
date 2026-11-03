@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from saos.protocol import ErrorCode, SaosError
+
 ROOT = Path(__file__).resolve().parents[1] / 'library' / 'materials'
 spec = importlib.util.spec_from_file_location('material_catalog', ROOT / 'catalog.py')
 catalog = importlib.util.module_from_spec(spec)
@@ -32,15 +34,17 @@ def test_models_against_authors_separate_spectral_table(material):
 
 @pytest.mark.parametrize('material', [m for m in DATA['materials'] if not m['dispersion']], ids=lambda m: m['id'])
 def test_single_point_materials_do_not_invent_dispersion(material):
-    with pytest.raises(ValueError, match='缺少可用色散模型'):
+    with pytest.raises(SaosError, match='has no dispersion model') as exc:
         catalog.refractive_index(material, 532)
+    assert exc.value.code == ErrorCode.BAD_ARGS
 
 
 @pytest.mark.parametrize('wavelength', [0, 404, 1941, float('nan'), float('inf')])
 def test_query_rejects_extrapolation(wavelength):
     material = next(m for m in MODELS if m['id'] == 'ips-darus2026')
-    with pytest.raises(ValueError, match='禁止外推'):
+    with pytest.raises(SaosError, match='no extrapolation') as exc:
         catalog.refractive_index(material, wavelength)
+    assert exc.value.code == ErrorCode.BAD_ARGS
 
 
 def test_exported_agf_matches_queries_and_excludes_unverified_transmission():

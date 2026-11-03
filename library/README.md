@@ -2,7 +2,7 @@
 
 跨任务共享的参考数据。每个库一个子目录，各有 README.md 写明来源、版本和用法；具体任务的数据不放这里。
 
-脚本里统一经 `saos.library` 读（只读，不缓存，权威数据仍是各库文件）：`library.catalog()` 列出各库的条目数、字段和按规格检索的函数；`library.find("mechanics", "zerodur", category="mirror_substrate")` 按文本（条目任一处，不分大小写）和字段取条目，每条带上它引用的来源；`library.index("noa-61", 587.56)` 按材料库的色散模型算折射率，超出有效范围拒绝。新增库时在 `src/saos/library.py` 的 `LIBRARIES` 登记读法，`tests/test_library.py` 会检查仓库里每个库都读得出来。
+脚本里统一经 `saos.library` 读（只读，不缓存，权威数据仍是各库文件）：`library.catalog()` 列出各库的条目数、字段和按规格检索的函数；`library.find("mechanics", "zerodur", category="mirror_substrate")` 按文本（条目任一处，不分大小写）和字段取条目，每条带上它引用的来源；`library.index("noa-61", 587.56)` 按材料库的色散模型算折射率，超出有效范围拒绝。新增库时在 `src/saos/library.py` 的 `LIBRARIES` 登记读法，`tests/test_shared_library.py` 会检查仓库里每个库都读得出来。
 
 | 库 | 内容 | 使用者 |
 |---|---|---|
