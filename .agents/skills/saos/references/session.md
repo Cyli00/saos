@@ -10,7 +10,7 @@ The licence allows 8 OpticStudio instances at a time, the user's open windows an
 
 ## Two backends in one daemon
 
-`uv run saos daemon start` runs each command on the backend its job's workflow stage uses: rtc for every stage before delivery (interview, demand confirmation, modelling, model approval, design rounds); OpticStudio for delivery, and always for `lens describe`, `round --confirm` and tolerance scans. rtc needs no licence; its glass catalogs come from `SAOS_GLASSCAT`, default `Documents/Zemax/Glasscat`.
+`uv run saos daemon start` runs each command on the backend its job's workflow stage uses: rtc for every stage before delivery (interview, demand confirmation, modelling, model approval, design rounds); OpticStudio for delivery, and always for `round --confirm` and tolerance scans. rtc needs no licence; its glass catalogs come from `SAOS_GLASSCAT`, default `Documents/Zemax/Glasscat`.
 
 When a command moves to the other backend, the loaded lens is handed over through its file: save it first (`lens save`), or the command stops with `UNSAVED_CHANGES`. The result's `backend_switch` names the backend that took over. `handover.agrees: false` lists what rtc and OpticStudio read differently (`mismatches`, `rays`); these stay on the lens as unverified provenance until the re-measurement before delivery, so tell the user when one concerns a demand item. `backend_switch.stayed` means rtc cannot reproduce the lens and OpticStudio keeps computing it.
 

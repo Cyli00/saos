@@ -145,14 +145,35 @@ def test_the_object_semi_diameter_is_left_to_the_ray_comparison(saos_home, monke
     assert switch["handover"]["agrees"], switch["handover"]["mismatches"]
 
 
-def test_an_rtc_only_daemon_still_refuses_opticstudio_operations(saos_home):
+NOTES = {"surfaces": {"0": "object"}, "assumptions": ["test"], "first_order": ["test"],
+         "exploration": {"fixed_by_user": {"parts": "the test lens", "quote": "就用这个镜头"}}}
+
+
+def test_an_rtc_only_daemon_describes_the_model_and_still_refuses_opticstudio_operations(saos_home):
     rtc = RtcBackend(None, standalone=True)
     daemon = Daemon(rtc, rtc.identity())
     assert not daemon.dual and daemon.rtc_instance
     job = jobs.create_job("rtc-only")
     _built(daemon, job)
-    assert call(daemon, "lens.describe", job=job.id)["error"]["code"] == ErrorCode.BACKEND_UNSUPPORTED
+    # 模型页不需要 OpticStudio：剖面图由 saos 用 viz 数据画 / the model page needs no OpticStudio: saos draws the section
+    reply = call(daemon, "lens.describe", job=job.id, notes=NOTES)
+    assert reply["ok"], reply
+    folder = job.root / reply["result"]["folder"]
+    assert reply["result"]["layout"] == {"cross-section": "layout-cross-section.svg"}
+    svg = (folder / "layout-cross-section.svg").read_text(encoding="utf-8")
+    assert svg.startswith('<svg xmlns="http://www.w3.org/2000/svg"') and 'class="glass"' in svg and 'class="ray"' in svg
+    assert "layout-cross-section.svg" in (folder / "index.html").read_text(encoding="utf-8")
+    assert call(daemon, "lens.approve", job=job.id, model=reply["result"]["folder"], quote="可以")["ok"]
+    assert call(daemon, "round.confirm", job=job.id)["error"]["code"] == ErrorCode.BACKEND_UNSUPPORTED
     assert call(daemon, "daemon.use", backend="zos")["error"]["code"] == ErrorCode.BAD_ARGS
+
+
+def test_the_model_page_no_longer_starts_opticstudio(saos_home):
+    daemon, _, started = _daemon()
+    job = jobs.create_job("both")
+    _built(daemon, job)
+    assert call(daemon, "lens.describe", job=job.id, notes=NOTES)["ok"]
+    assert daemon.active == "rtc" and not started
 
 
 def test_a_pin_holds_within_its_stage_and_is_released_when_the_stage_changes(saos_home, monkeypatch):

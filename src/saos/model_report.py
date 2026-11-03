@@ -35,7 +35,7 @@ TEXT: dict[str, tuple[str, str]] = {
     "title": ("建模说明", "Model description"),
     "byline": ("任务 {job} · 镜头 {lens} · 生成于 {time}", "Job {job} · lens {lens} · generated {time}"),
     "intro": (
-        "当前模型与需求值由打开镜头的OpticStudio读取；候选预判和初筛值来自注明版本的存档。开始优化前请核对：每个面代表什么实物、用的什么材料、按什么光阑、视场和波长计算。",
+        "当前模型与需求值由载入镜头的后端读取；候选预判和初筛值来自注明版本的存档。开始优化前请核对：每个面代表什么实物、用的什么材料、按什么光阑、视场和波长计算。",
         "Current model and requirement values come from the loaded backend; candidate predictions and screening values come from the identified archives. Before optimisation starts, check what each surface stands for, "
         "which material it uses, and which aperture, fields and wavelengths the evaluation uses.",
     ),
@@ -232,7 +232,7 @@ TEXT: dict[str, tuple[str, str]] = {
     "pred.surface": ("面", "Surface"), "pred.total": ("合计", "Total"),
     "pred.incidence": ("各面采样最大入射角", "Sampled maximum incidence per surface"),
     "pred.samples": ("有效样本", "Valid samples"), "pred.invalid": ("失效光线 / 尝试数", "Invalid rays / attempted"),
-    "pred.scope": ("预判来自 OpticStudio；三阶操作数单位为 waves，完整系数与色差见原生文本。入射角为采样最大值。", "Prediction uses OpticStudio; third-order operands are in waves. Full coefficients and color are in the native text. Incidence maxima are sampled."),
+    "pred.scope": ("三阶操作数单位为 waves；在 OpticStudio 上预判时，完整系数与色差见原生文本。入射角为采样最大值。", "Third-order operands are in waves; a prediction on OpticStudio adds the full coefficients and colour in the native text. Incidence maxima are sampled."),
     "sel.constraints": ("需求选型指标", "Selection constraints"),
     "sel.prediction": ("像差预判", "Aberration prediction"),
     "sel.no_prediction": ("未记录预判", "No prediction recorded"),
@@ -872,6 +872,29 @@ def next_budget(notes: dict[str, Any] | None) -> dict[str, Any] | None:
             or not math.isfinite(seconds) or seconds <= 0 or not str(raw.get("plan", "")).strip()):
         raise SaosError(ErrorCode.BAD_ARGS, 'notes.next_budget must be {"max_seconds": <positive number>, "plan": "<the optimisations and scans to run next>"}')
     return {"max_seconds": float(seconds), "plan": str(raw["plan"]).strip()}
+
+
+# 剖面图单独存成 SVG 文件，用 <img> 引用时读不到页面的 CSS，样式写进文件里
+# the section is a standalone SVG behind <img>, which sees none of the page's CSS, so it carries its own styles
+SECTION_STYLE = ("<style>text{font:11px ui-monospace,monospace;fill:#555}.ax{stroke:#222;stroke-width:.8}"
+                 ".glass{fill:#a07a3c12;stroke:#222;stroke-width:.9}.axis{stroke:#999;stroke-dasharray:10 3 2 3;stroke-width:.7}"
+                 ".ray{fill:none;stroke-width:.6}.img{stroke:#222;stroke-width:1.2}</style>")
+
+
+def section_layout(viz: dict[str, Any], folder: Path, prefix: str = "layout") -> dict[str, Any]:
+    """rtc 上的模型页布局图：用报告单页与流程图窗口同一套剖面画法（report_sheet.lens_svg）画子午剖面，
+    写成 folder/<prefix>-cross-section.svg；返回与 ZosBackend._export_layouts 相同的 {名称: 文件名 | {"error"}}。
+    The model page's layout on rtc: the meridional section drawn as the report sheet and the workflow window draw it."""
+    from saos import report_sheet
+
+    svg = report_sheet.lens_svg(viz, 960, 420)
+    if svg is None:
+        return {"cross-section": {"error": "no meridional section for this lens (non-sequential, or no symmetry plane)"}}
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / f"{prefix}-cross-section.svg"
+    body = svg.replace('<svg viewBox=', '<svg xmlns="http://www.w3.org/2000/svg" width="960" height="420" viewBox=', 1)
+    target.write_text(body.replace(">", ">" + SECTION_STYLE, 1), encoding="utf-8")
+    return {"cross-section": target.name}
 
 
 def measure_requirements(ctx) -> dict[str, Any]:

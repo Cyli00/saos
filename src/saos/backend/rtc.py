@@ -647,14 +647,14 @@ class RtcBackend(Backend):
 
     def describe_model(self, folder: Path | None, prefix: str = "layout") -> dict[str, Any]:
         """rtc 实例上镜头的描述数据，字段与 ZosBackend.describe_model(None) 相同，供结构指纹、逐轮材料记录和镜头哈希用；
-        UNREAD_SETTINGS 列在 unread 里、不给值。给用户确认的建模说明页面（带布局图）仍在 OpticStudio 上做。
+        UNREAD_SETTINGS 列在 unread 里、不给值。模型页的剖面图由后台进程用 viz 数据画（model_report.section_layout），这里不出图。
         The rtc instance's lens description with ZosBackend.describe_model(None)'s fields, for the structural fingerprint,
-        per-round materials and the lens hash; UNREAD_SETTINGS are listed under unread without values. The model page for
-        the user (with layout pictures) is still made on OpticStudio."""
+        per-round materials and the lens hash; UNREAD_SETTINGS are listed under unread without values. The daemon draws the
+        model page's section from the viz data (model_report.section_layout); no pictures here."""
         if not self.standalone:
             raise _unsupported("model descriptions are measured on OpticStudio; open the lens in an OpticStudio instance for saos lens describe")
         if folder is not None:
-            raise _unsupported("model pages with layout pictures are made on OpticStudio; run saos lens describe on an OpticStudio instance")
+            raise _unsupported("rtc writes no layout pictures; call describe_model(None) and draw the section with model_report.section_layout")
         lens = self._need_lens()
         info = self.system_info()
         vertex = self._vertex_z()

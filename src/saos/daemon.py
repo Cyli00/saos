@@ -59,10 +59,9 @@ SEARCH_FILES = {"hammer": "{stem}_*_HAMMER.zmx", "global": "GLOPT_*.zmx"}
 ROUND_REMINDER = {"opt": 2, "exec": 15}
 RUN_KINDS = {"opt.local": "opt", "opt.hammer": "opt", "opt.global": "opt", "script.exec": "exec", "scan.run": "scan"}
 COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
-# 交付之前的计算都在 rtc 上（ADR-0020）；建模说明页面（布局图还没有 rtc 版）和复测要 OpticStudio
-# everything before delivery computes on rtc (ADR-0020); the model page (no rtc layout pictures yet) and
-# re-measurement need OpticStudio
-OPTICSTUDIO_ONLY = frozenset({"lens.describe", "round.confirm"})
+# 交付之前的计算都在 rtc 上（模型页的布局图在 rtc 上由 saos 自己画）；复测要 OpticStudio
+# everything before delivery computes on rtc (saos draws the model page layout there); re-measurement needs OpticStudio
+OPTICSTUDIO_ONLY = frozenset({"round.confirm"})
 # 公差分析属于交付，要在 OpticStudio 上做 / tolerancing belongs to delivery and runs on OpticStudio
 OPTICSTUDIO_SCANS = ("tolerance",)
 # 一个后台进程持有两个后端时（ADR-0018）按流程阶段（saos.ui.stage）选后端：交付阶段是 zemax 的最后优化与测量（ADR-0020）
@@ -818,7 +817,12 @@ class Daemon:
         root = job.root / "models"
         root.mkdir(exist_ok=True)
         folder = root / f"{jobs.next_archive_number(root):03d}-{loaded.path.stem}"
-        desc = self.backend.describe_model(folder, "layout")
+        if self.active == "rtc":
+            # rtc 没有 OpticStudio 的布局导出：用流程图窗口同一份 viz 数据画剖面 / no OpticStudio layout export: draw the section from the viz data
+            desc = self.backend.describe_model(None)
+            desc["layout"] = model_report.section_layout(self.backend.viz_data(None, full=False), folder)
+        else:
+            desc = self.backend.describe_model(folder, "layout")
         try:
             desc["interference"] = self.backend.interference()
         except SaosError as exc:

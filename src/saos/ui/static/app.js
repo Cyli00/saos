@@ -22,7 +22,7 @@ const TEXT = {
     back_demand: "需求变更", back_model: "结构或计算前提改变", back_reach: "结构不可达", feasibility: "质疑结构 · 核算界限", feasibility_rtc: "rtc 核算 · 不占许可", feasibility_written: "可行性记录已写",
     standalone: "后台运行 · standalone", rtc_instance: "rtc 实例 · 交付之前各阶段，不占许可", no_daemon: "后台进程未运行",
     rtc_dual: (started) => `rtc 计算 · OpticStudio ${started ? "待命" : "未启动"}`,
-    rtc_switch: "后台进程只有 rtc（daemon start --backend rtc）；建模说明页面和交付需要 OpticStudio：存盘后 saos daemon stop，再 saos daemon start。",
+    rtc_switch: "后台进程只有 rtc（daemon start --backend rtc）；交付需要 OpticStudio：存盘后 saos daemon stop，再 saos daemon start。",
     tab_layout: "布局", tab_spot: "点列图", tab_mtf: "MTF", tab_rounds: "轮次",
     blocking: "blocking 待确认问题：",
     loading: "读取中…", failed: "失败",
@@ -37,7 +37,7 @@ const TEXT = {
     unverified: (items) => `未与 OpticStudio 对账：${items.join("；")}。`,
     model_evidence: "模型确认记录提示：",
     redescribe: "结构已变：重新描述并确认",
-    modeling_sub: "rtc 上起型 · 初筛 · 建模说明", approval_sub: "方向 · 取舍 · 未知项", design_sub: "rtc 上优化 · 到期复核 · round",
+    modeling_sub: "rtc 上起型 · 初筛 · 非球面位置 · 建模说明", approval_sub: "方向 · 取舍 · 未知项", design_sub: "rtc 上优化 · 到期复核 · round",
     layout_hint_3d: "拖动旋转 · Shift 或右键拖动平移 · 滚轮以光标为中心缩放 · 双击复位 · 指向某面看参数", layout_hint_2d: "拖动平移 · Shift 或右键拖动测距（吸附面上的点）· 滚轮以光标为中心缩放 · 双击复位 · Esc 清除测距 · 指向某面看参数",
     image_z: "像面 z", round: "轮", tiers: "层级", gap: "目标差距", state: "状态", note: "说明", achieved: "达成", deliverable: "可交付",
     pick_round: "点一行在其他视图中查看该轮", sag_flat: "部分面读不到面形，按平面画。", select_round: (n) => `r${String(n).padStart(3, "0")}`,
@@ -67,7 +67,7 @@ const TEXT = {
     st_form: "形式", st_source: "来源", st_scale: "缩放", st_tight: "最吃紧", st_extra: "超出来源示例", st_efl: "EFL", st_bfl: "BFL", st_fno: "f/#",
     st_petz: "Petzval R/f", st_seidel: "三阶像差合计（waves）", st_aoi: "最大入射角", st_excluded: "未入选的形式", st_noteval: "未评估（材料/计算）",
     st_screen: "零优化初筛", st_short: (s) => `同预算短优化 · ${s} s`, st_running: "运行中", st_verdict: { valid: "有效", invalid: "预算内无效", material: "未评估：材料", computation: "未评估：计算" },
-    st_g: "G 起点 → 终点", st_warn: "数值警告", st_page: "比较页", st_foot: "只读 explore/starts 与 scans 中已有文件；预判由 OpticStudio 的操作数和原生分析给出，不是优化结论。",
+    st_g: "G 起点 → 终点", st_warn: "数值警告", st_page: "比较页", st_foot: "只读 explore/starts 与 scans 中已有文件；预判由生成时所在后端的操作数给出（在 OpticStudio 上另有原生分析），不是优化结论。",
     hover_row: "指向表格一行，布局中高亮对应的面",
     tab_metrics: "指标", metrics_none: "需求单里还没有带判定方法的条目。",
     metric_missing: "需求单里已没有这一条", metric_bound: "界限", metric_no_value: "无有效值", merit: "评价函数",
@@ -102,7 +102,7 @@ const TEXT = {
     back_demand: "demand change", back_model: "revise model", back_reach: "unreachable", feasibility: "question · check bounds", feasibility_rtc: "rtc checks · no licence", feasibility_written: "feasibility recorded",
     standalone: "Background · standalone", rtc_instance: "rtc instance · every stage before delivery, no licence", no_daemon: "daemon not running",
     rtc_dual: (started) => `rtc · OpticStudio ${started ? "standing by" : "not started"}`,
-    rtc_switch: "The daemon holds rtc only (daemon start --backend rtc); the model page and delivery need OpticStudio: save, saos daemon stop, then saos daemon start.",
+    rtc_switch: "The daemon holds rtc only (daemon start --backend rtc); delivery needs OpticStudio: save, saos daemon stop, then saos daemon start.",
     tab_layout: "Layout", tab_spot: "Spot Diagram", tab_mtf: "MTF", tab_rounds: "Rounds",
     blocking: "Blocking questions:",
     loading: "loading…", failed: "failed",
@@ -117,7 +117,7 @@ const TEXT = {
     unverified: (items) => `Not reconciled with OpticStudio: ${items.join("; ")}.`,
     model_evidence: "Model approval evidence: ",
     redescribe: "Structure changed: describe and approve",
-    modeling_sub: "Start on rtc · screen · describe", approval_sub: "Direction · tradeoffs", design_sub: "Optimise on rtc · review on expiry · round",
+    modeling_sub: "Start on rtc · screen · place aspheres · describe", approval_sub: "Direction · tradeoffs", design_sub: "Optimise on rtc · review on expiry · round",
     layout_hint_3d: "drag to rotate · Shift or right-drag to pan · wheel zooms at the cursor · double-click to reset · hover a surface for its data", layout_hint_2d: "drag to pan · Shift or right-drag to measure (snaps to surface points) · wheel zooms at the cursor · double-click to reset · Esc clears the ruler · hover a surface for its data",
     image_z: "image z", round: "Round", tiers: "Tiers", gap: "Shortfall", state: "State", note: "Note", achieved: "achieved", deliverable: "deliverable",
     pick_round: "Click a row to view that round in the other tabs", sag_flat: "Some surface shapes could not be read; drawn flat.", select_round: (n) => `r${String(n).padStart(3, "0")}`,
@@ -147,7 +147,7 @@ const TEXT = {
     st_form: "Form", st_source: "Source", st_scale: "Scale", st_tight: "Tightest", st_extra: "Outside the source example", st_efl: "EFL", st_bfl: "BFL", st_fno: "f/#",
     st_petz: "Petzval R/f", st_seidel: "Third-order totals (waves)", st_aoi: "Max incidence", st_excluded: "Forms not selected", st_noteval: "Not evaluated (material/computation)",
     st_screen: "Zero-optimisation screening", st_short: (s) => `Equal short budget · ${s} s`, st_running: "running", st_verdict: { valid: "valid", invalid: "invalid within budget", material: "not evaluated: material", computation: "not evaluated: computation" },
-    st_g: "G start → end", st_warn: "Numeric warnings", st_page: "Comparison page", st_foot: "Reads existing files in explore/starts and scans only; predictions come from OpticStudio operands and native analyses, not from optimisation.",
+    st_g: "G start → end", st_warn: "Numeric warnings", st_page: "Comparison page", st_foot: "Reads existing files in explore/starts and scans only; predictions come from the operands of the backend that generated them (plus native analyses on OpticStudio), not from optimisation.",
     hover_row: "Point at a row to highlight its surface in the layout",
     tab_metrics: "Metrics", metrics_none: "The demand has no checked items yet.",
     metric_missing: "no longer in the demand", metric_bound: "Bound", metric_no_value: "no valid value", merit: "Merit",
@@ -375,8 +375,8 @@ function renderNotes() {
   const parts = [];
   if (state.blocking.length) parts.push(`<div class="q"><b>${esc(t("blocking"))}</b><br>${state.blocking.map((b) => esc(b.question || b)).join("<br>")}</div>`);
   if (state.model_evidence?.length) parts.push(`<div class="q"><b>${esc(t("model_evidence"))}</b><br>${state.model_evidence.map((p) => esc(`${p.path}: ${p.code}`)).join("<br>")}</div>`);
-  // 只有 rtc 的后台进程（--backend rtc）：建模、确认和交付要换成带 OpticStudio 的；两个后端都有时它自己切换（ADR-0018）
-  if (state.daemon.running && state.daemon.backend === "rtc" && !state.daemon.dual && ["modeling", "model_approve", "deliver"].includes(state.current)) {
+  // 只有 rtc 的后台进程（--backend rtc）：交付要换成带 OpticStudio 的；两个后端都有时它自己切换
+  if (state.daemon.running && state.daemon.backend === "rtc" && !state.daemon.dual && state.current === "deliver") {
     parts.push(`<div class="q">${esc(t("rtc_switch"))}</div>`);
   }
   const el = $("notes"), html = parts.join("");
