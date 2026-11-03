@@ -114,6 +114,21 @@ def _tags(r: dict[str, Any]) -> list[str]:
     return tags
 
 
+def _sig6(value: Any) -> Any:
+    if isinstance(value, float):
+        return float(f"{value:.6g}")
+    if isinstance(value, dict):
+        return {k: _sig6(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sig6(v) for v in value]
+    return value
+
+
+def _slim(record: dict[str, Any]) -> dict[str, Any]:
+    """近轴特征是算出来的，检索只需 6 位有效数字；原文件抄来的数不动。"""
+    return {**record, "paraxial": _sig6(record["paraxial"])} if record.get("paraxial") else record
+
+
 def build_index(root: Path | None = None) -> dict[str, Any]:
     """重建 index.jsonl（按 ID 排序）；返回条数统计。解析出错的文件也写一条，blockers 写明原因。"""
     root = root or library_root()
@@ -127,7 +142,7 @@ def build_index(root: Path | None = None) -> dict[str, Any]:
         except SaosError as exc:
             records.append({"schema": SCHEMA, "id": path.stem, "file": path.relative_to(root).as_posix(), "sha256": jobs.sha256_file(path),
                             "blockers": [f"解析失败：{exc.message}"], "convertible": False, "tags": []})
-    text = "".join(json.dumps(r, ensure_ascii=False, allow_nan=False) + "\n" for r in records)
+    text = "".join(json.dumps(_slim(r), ensure_ascii=False, allow_nan=False, separators=(",", ":")) + "\n" for r in records)
     target = root / "index.jsonl"
     tmp = target.with_suffix(".jsonl.tmp")
     tmp.write_text(text, encoding="utf-8")
