@@ -473,6 +473,7 @@ def test_model_glass_is_never_achieved_or_delivered():
     rounds[1]["model_glass"] = [3]
     d = ledger.decide(rounds, STOP)
     assert d["status"] == "continue" and d["next_tier"] == "materials" and "[3]" in d["reason"]
+    assert "GlassExpert([3])" in d["reason"]
     rounds.append({"round": 2, "shortfall": 0.0, "tier": "materials", "achieved": True, "demand_sha": "a", "model_glass": []})
     assert ledger.decide(rounds, STOP)["status"] == "achieved"
     assert ledger.deliverable(rounds[2]) and not ledger.deliverable(rounds[1])

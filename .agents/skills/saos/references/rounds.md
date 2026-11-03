@@ -20,9 +20,7 @@ Tools: `opt vary --param radius|curvature|thickness|conic|par<N>|material`, `opt
 - `opt hammer --max-seconds S` and `opt global --max-seconds S` run the native search tools until the budget, then cancel and leave the best system in the editor. Global search moves its ten best to `lenses/global/NNN/` (do not run next to existing `GLOPT_*` files). OpticStudio's Hammer writes no files: keep its result with `lens save`.
 - Glass substitution (`opt vary --param material --mode substitute`) happens only in Hammer or global search, within one catalog per surface. Without `--catalog` it uses `SAOS_CDGM_INPROD` (CDGM Standard or Preferred glasses; `SAOS_NHG_INPROD` is the same for New Huaguang), and the result names the catalog. `outside_catalog` lists surfaces whose current glass is not in it; pass `--catalog` per surface where the maker must stay.
 - Read `materials_changed`. A maker's full catalog often yields discontinued glasses (9 of 12 substitutions on the Cooke sample in SCHOTT were Obsolete); replace an `Obsolete` glass with one in production or ask the user before delivering it.
-- `ctx.GlassExpert` in an `exec` script is the `materials` tier done glass by glass: in-production neighbours by working-band n/V, anomalous-dispersion glasses first, each trial re-optimised. `surfaces="model"` replaces every model glass, which a patent start always has (its glass codes), before delivery.
-- `ctx.AsphereExpert(...).rank()` predicts which spherical surfaces gain most from an asphere and leaves the lens as it was. `.run(nas)` changes surface types, which changes the approved structure: show the ranking to the user, run, describe the model again and get `saos lens approve` before `saos round --tier structure`.
-- Options, and how to keep an expert's result, are in [scripting.md](scripting.md#expert-search-classes).
+- Material and asphere decisions beyond these: [Choose an expert](#choose-an-expert).
 - Where your own `saos.search` loops run: [scripting.md](scripting.md#choose-where-a-loop-runs).
 
 Read the result, not just the merit:
@@ -33,6 +31,20 @@ Read the result, not just the merit:
 - A failed run leaves the lens marked unsaved: save under a new name to retain it, or load a saved lens with `--discard`.
 
 When you optimise outside the lens's merit function (your own `exec` loop), record the value you optimised with `saos round --merit <value>`.
+
+## Choose an expert
+
+Two expert classes answer questions the optimisers never ask: which materials, and which surfaces earn an asphere. Run them in an `exec` script; options and how to keep the result are in [scripting.md](scripting.md#expert-search-classes). A stall alone is no reason to call one: name the mechanism behind the largest gap first ([diagnosis.md](diagnosis.md#which-variables-move-the-target)).
+
+`ctx.GlassExpert(surfaces)` is the `materials` tier done glass by glass: in-production neighbours by working-band n/V, anomalous-dispersion glasses first, each trial re-optimised. Use it when:
+
+- a round still has model glass (a patent start always does, from its glass codes): pass the surfaces its `model_glass` lists before delivery;
+- axial or lateral colour or the secondary spectrum is the largest weighted gap and the demand lets the glasses change. The merit function must weigh that colour over several wavelengths, or the trials optimise something else;
+- a glass is discontinued, or misses a cost, transmission, weight or expansion limit the user gave: pass that limit as `feasible(ctx, surface)`, since saos holds no such data.
+
+`.candidates(surface)` lists what it would try and leaves the lens unchanged; show the list to the user when the material choice is theirs. Record the result as a `materials` round.
+
+`ctx.AsphereExpert(surfaces).rank()` predicts which spherical surfaces gain most from an asphere and leaves the lens as it was. Use it when a monochromatic residual (spherical, coma, astigmatism) is the largest gap, the variables that move it are spent, and the demand allows aspheres; give it only the surfaces that can be made aspheric, with their slope limits. `.run(nas)` changes surface types, which changes the approved structure: show the ranking to the user, run, describe the model again and get `saos lens approve` before `saos round --tier structure`.
 
 ## On the rtc instance
 

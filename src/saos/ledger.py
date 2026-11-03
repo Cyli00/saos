@@ -336,7 +336,8 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str
         # 指标达到了，但材料还不是真实材料：继续，换成有来源的材料
         # targets met with a model glass: keep going and replace it with a sourced material
         return {**base, "status": "continue", "next_tier": "materials",
-                "reason": f"targets met, but surfaces {current['model_glass']} still use a model glass; replace it with a sourced material"}
+                "reason": f"targets met, but surfaces {current['model_glass']} still use a model glass; replace it with a sourced material, "
+                          f"e.g. ctx.GlassExpert({current['model_glass']}).run() in an exec script"}
     if not untried:
         return {
             **base,
