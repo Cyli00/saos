@@ -127,7 +127,10 @@ def rounds_of(job: jobs.Job) -> list[dict[str, Any]]:
                     # 谁算的这一轮；rtc 轮次复测后数值换成 OpticStudio 的（ADR-0017）/ who computed it; confirmed rtc rounds show OpticStudio's numbers
                     "backend": r.get("backend", "zos"),
                     **({"confirmed_by": r["confirmed_by"], "agrees": bool(r.get("agrees"))} if r.get("confirmed_by") is not None else {}),
-                    "values": {k: finite(v) for k, v in (r.get("values") or {}).items()}})
+                    "values": {k: finite(v) for k, v in (r.get("values") or {}).items()},
+                    # 未达的条目及未达量（账本按判定记下的，窗口不比界限）；更早的记录没有这一项时为 None
+                    # failing items and their shortfalls as judged in the ledger (the window never compares bounds); None on older records
+                    "failing": ({k: finite(v) for k, v in r["failing"].items()} if isinstance(r.get("failing"), dict) else None)})
     return out
 
 

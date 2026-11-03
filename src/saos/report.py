@@ -189,9 +189,10 @@ class Tr:
         return text
 
 
+# 纸面风格（2026-11-03 用户决定：报告用纸面模板，第 1 页一页总览）；完整记录沿用同一套颜色
+# paper style (the user's choice: a paper template with a one-page summary first); the full record uses the same colours
 CSS = """
-:root{--bg:#fbfaf7;--fg:#1f2328;--muted:#5d646d;--line:#d9dde3;--card:#ffffff;--ok:#1a7f37;--bad:#c4321b;--warn:#9a6700;--accent:#2f5d8a;}
-@media (prefers-color-scheme: dark){:root{--bg:#15171a;--fg:#e6e8eb;--muted:#a0a7b1;--line:#30353c;--card:#1d2024;--ok:#4cc26a;--bad:#ff7b65;--warn:#d9a733;--accent:#7fb0e0;}}
+:root{--bg:#f4f1ea;--fg:#1d1c1a;--muted:#57524a;--line:#d8d1c3;--card:#fbf9f4;--ok:#3f7a57;--bad:#b5432d;--warn:#a07a3c;--accent:#a07a3c;}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,"Microsoft YaHei","PingFang SC",sans-serif}
 main{max-width:1080px;margin:0 auto;padding:24px 16px 64px}h1{font-size:24px;margin:0 0 4px}h2{font-size:18px;margin:32px 0 8px;border-bottom:1px solid var(--line);padding-bottom:4px}
 .muted{color:var(--muted)}.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;margin:12px 0}
@@ -203,6 +204,31 @@ blockquote{margin:8px 0;padding:8px 12px;border-left:3px solid var(--accent);bac
 .wrap{overflow-x:auto}svg text{fill:var(--muted);font-size:11px}svg .line{stroke:var(--accent);fill:none;stroke-width:2}svg .axis{stroke:var(--line)}
 svg .dot{fill:var(--accent)}svg .dot.ok{fill:var(--ok)}svg .dot.inf{fill:var(--bg);stroke:var(--bad);stroke-width:2}img{max-width:100%;border:1px solid var(--line);border-radius:6px}
 """
+
+# 屏幕上一次只看一页：默认第 1 页（按窗口等比缩放，不上下滚动），#full 时看完整记录；打印时两页都出，第 1 页 A3 横向
+# one page at a time on screen: the summary by default (scaled to the window, no scrolling), the full record at #full;
+# printing gives both, the summary on A3 landscape
+PAGES_CSS = """
+body{background:#e7e2d7}
+nav.pages{position:fixed;left:14px;top:8px;z-index:5;display:flex;gap:6px}
+nav.pages a{font:12px system-ui,sans-serif;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:14px;padding:3px 12px;text-decoration:none}
+.fit{height:100vh;overflow:hidden;display:flex;justify-content:center;padding-top:8px}
+main#full{display:none;background:var(--bg)}
+main#full:target{display:block}
+body:has(#full:target) .fit{display:none}
+body:has(#full:target){background:var(--bg)}
+@media print{
+  @page{size:A3 landscape;margin:8mm}
+  body{background:none}nav.pages{display:none}
+  .fit{height:auto;overflow:visible;padding:0;display:block !important;break-after:page}
+  .sheet{transform:none !important;box-shadow:none;width:100%;height:auto;min-height:270mm}
+  main#full{display:block !important}
+}
+"""
+
+FIT_JS = """(function(){var s=document.getElementById("sheet");if(!s)return;
+function fit(){var k=Math.min(1,(innerWidth-16)/1480,(innerHeight-16)/900);s.style.transform="scale("+k+")";s.parentNode.style.height=(900*k+16)+"px";}
+addEventListener("resize",fit);fit();})();"""
 
 
 def e(value: Any) -> str:
@@ -405,11 +431,18 @@ def build(job: jobs.Job) -> dict[str, Any]:
     shown = {**evaluation["demand"], "summary": d["summary"], "open_questions": d.get("open_questions") or [], "lang": d.get("lang"), "stop": d["stop"]}
     from saos import milestones
 
+    from saos import model_gate, report_sheet
+
     confirmed = demand.confirmation_for(job.root, demand.digest(stored), stored)
+    # 第 1 页签署栏用交付镜头所依据的那次模型确认；记录里找不到时取最近一次
+    # the summary page shows the approval of the delivered lens's model, else the latest one
+    approvals = model_gate.approvals(job)
+    approval = next((a for a in reversed(approvals) if deliver.get("model") and a.get("model") == deliver.get("model")), approvals[-1] if approvals else None)
     return {"milestones": milestones.elapsed(job), "demand": shown, "confirmed": confirmed, "rounds": rounds, "decision": decision,
             "mode": job.mode, "autonomy": autonomy_items(job, confirmed, decision),
             "deliver": deliver, "items": evaluation["items"], "blocked": not ledger.deliverable(deliver),
-            "tolerance": latest_tolerance(job, deliver), "backend": backend}
+            "tolerance": latest_tolerance(job, deliver), "backend": backend,
+            "viz": report_sheet.load_viz(job, deliver), "approval": approval}
 
 
 def milestones_section(data: dict, t: Tr) -> str:
@@ -606,8 +639,25 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
     model_line = f'<p class="muted">{t("model_ok", model=e(deliver["model"]))}</p>' if deliver.get("model") else ""
     materials = (f'<div class="wrap"><table><thead><tr>{header_row(t("th.materials"))}</tr></thead><tbody>{"".join(mat_rows)}</tbody></table></div>'
                  if mat_rows else f"<p>{t('none')}</p>") + model_line
+    from saos import report_sheet
+
+    # 第 1 页的判定表与第 2 页逐项结果同一套结论（含容差）/ page 1's check table uses the same verdicts as page 2
+    judged = []
+    for item in data["items"]:
+        goal = item.get("goal")
+        if goal is None:
+            verdict, cls = t("pursuit", g=fmt(item.get("pursuit"))) if item.get("direction") else "—", ""
+        elif item.get("passed"):
+            verdict, cls = t("met"), "ok"
+        else:
+            verdict, cls = gap_text(goal, item.get("value"), t), "no"
+        judged.append({"id": item["id"], "bound": goal_text(goal, t) if goal else "—", "value": fmt(item.get("value")), "verdict": verdict, "cls": cls})
+    sheet = report_sheet.render_sheet(job, data, lang, status_text=t("status." + status), judged=judged)
     return f"""<!doctype html><html lang="{'zh-CN' if lang == 'zh' else 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{t('title')} · {e(job.id)}</title><style>{CSS}</style></head><body><main>
+<title>{t('title')} · {e(job.id)}</title><style>{CSS}{report_sheet.SHEET_CSS}{PAGES_CSS}</style></head><body>
+<nav class="pages"><a href="#sheet">{report_sheet.TEXT['to_sheet'][0 if lang == 'zh' else 1]}</a><a href="#full">{report_sheet.TEXT['to_full'][0 if lang == 'zh' else 1]}</a></nav>
+<div class="fit">{sheet}</div>
+<main id="full">
 <p class="muted">{t('byline', job=e(job.id), time=e(jobs.now_iso()))}</p>
 <h1>{e(job.read_state().get('name', job.id))} <span class="status {status}">{t('status.' + status)}</span></h1>
 <p>{t('summary.' + status)}</p>
@@ -630,7 +680,7 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
 <h2>{t('h.tolerance')}</h2>{tolerance_section(data.get('tolerance'), deliver, t)}
 <h2>{t('h.evidence')}</h2>{''.join(evidence) or f"<p>{t('none')}</p>"}
 <h2>{t('h.next')}</h2><p>{t('next_tol' if data.get('tolerance') else 'next')}</p>
-</main></body></html>"""
+</main><script>{FIT_JS}</script></body></html>"""
 
 
 def write(job: jobs.Job, lang: str | None = None) -> dict[str, Any]:

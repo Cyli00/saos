@@ -78,6 +78,18 @@ const TEXT = {
     metric_stale: "镜头改动之前的值", metric_slow: "单项超过自动测量的时限，取 saos check 或 round 的值", metric_pending: "等待测量",
     metric_src: { live: "自动", check: "check", round: "轮次" },
     metrics_foot: "“当前镜头”一行由后台进程在每次改动镜头后自动测量（每次限时 SAOS_LIVE_S 秒，默认 3 秒；超时的项取 saos check 或 round 的值），灰色为镜头改动之前的值；其余行是每轮账本记录的测量值，虚线为需求单的界限。saos ui open --metrics 可以改选和排序条目。",
+    lens: "镜头", judge: "判定", tl_title: "轮次", tl_rounds: (n) => `已记录 ${n} 轮`, tl_none: "还没有轮次", live_tick: "当前",
+    k_live: "当前镜头", k_review: "回看", k_hint: "点刻度或拖动，回看某一轮", k_follow: "跟随最新",
+    need_none: "需求单里还没有带判定方法的条目。", need_empty: "这一条还没有测量值。", need_live: "当前",
+    expand: "放大", close: "关闭", gate_wait: "等你确认", gate_signed: "已确认", gate_signed_at: (h) => `已于 ${h} 确认`, gate_auto: "自主运行",
+    fk_demand: "需求", fk_weak: "依据薄弱", fk_missing: "缺来源", fk_model: "模型", fk_rebuild: "重建", fk_todo: "待补",
+    need_curve: "曲线", need_table: "表格", need_trend: "各轮", display_only: "只看", iteration: (n) => `第 ${n} 步`,
+    pick_title: "指标目录", pick_save: "保存", pick_catalog: "目录", pick_chosen: "追加显示（不参与判定）", pick_none: "还没有追加的指标。",
+    pick_hint: "点左侧条目加入；key 是显示名，参数按 JSON 填写（悬停看可用参数）。需求单里绑定的指标自动显示，不用在这里加。",
+    pick_saved: "已保存，下一帧开始计算", pick_later: "后台进程忙或未连接，空闲后自动再存", pick_unavailable: "读不到指标目录（需要后台进程已加载镜头）：",
+    pick_stale: "目录未更新：", pick_need_key: "每一项都要有 key", pick_bad_params: "参数不是 JSON 对象", pick_dup: "key 有重复", pick_conflict: "与需求条目同名",
+    avail_available: "可算", avail_unsupported: "当前后端不支持", avail_unknown: "未知", live_error: "实时计算出错",
+    gate_ok: "确认", gate_note_short: "备注（要求修改时必填）", ld_objects: "非序列物体", no_ld: "等待镜头数据",
   },
   en: {
     interview: "Interview & feasibility", demand_confirm: "Confirm demand", modeling: "Start designs & model", model_approve: "Approve model", design: "Autonomous design", deliver: "Delivery report",
@@ -150,6 +162,18 @@ const TEXT = {
     metric_stale: "from before the last lens change", metric_slow: "slower than the live time limit; value from saos check or round", metric_pending: "not measured yet",
     metric_src: { live: "live", check: "check", round: "round" },
     metrics_foot: "The current-lens row is measured by the daemon after every lens change (limited to SAOS_LIVE_S seconds, 3 by default; items that do not fit take the value from saos check or round); grey values are from before the last change. The other rows are each round's ledger values; dashed lines are the demand's bounds. saos ui open --metrics picks and orders the items.",
+    lens: "Lens", judge: "Checks", tl_title: "Rounds", tl_rounds: (n) => `${n} ${n === 1 ? "round" : "rounds"} recorded`, tl_none: "no rounds yet", live_tick: "now",
+    k_live: "Current lens", k_review: "reviewing", k_hint: "click a tick or drag to review a round", k_follow: "following the latest",
+    need_none: "The demand has no checked items yet.", need_empty: "No measured value for this item yet.", need_live: "now",
+    expand: "Expand", close: "Close", gate_wait: "your turn", gate_signed: "confirmed", gate_signed_at: (h) => `confirmed at ${h}`, gate_auto: "autonomous",
+    fk_demand: "Demand", fk_weak: "Weak basis", fk_missing: "No source", fk_model: "Model", fk_rebuild: "Rebuild", fk_todo: "To add",
+    need_curve: "Curve", need_table: "Table", need_trend: "Rounds", display_only: "view only", iteration: (n) => `step ${n}`,
+    pick_title: "Metric catalog", pick_save: "Save", pick_catalog: "Catalog", pick_chosen: "Shown in addition (not judged)", pick_none: "No added metrics yet.",
+    pick_hint: "Click an entry on the left to add it; key is the display name, params are JSON (hover to see the allowed ones). Metrics bound in the demand show up by themselves.",
+    pick_saved: "Saved; the next frame computes it", pick_later: "The daemon is busy or not connected; saving again once it is idle", pick_unavailable: "Cannot read the metric catalog (the daemon must have a lens loaded): ",
+    pick_stale: "Catalog not refreshed: ", pick_need_key: "Every entry needs a key", pick_bad_params: "params is not a JSON object", pick_dup: "Duplicate keys", pick_conflict: "same id as a demand item",
+    avail_available: "computable", avail_unsupported: "not on this backend", avail_unknown: "unknown", live_error: "live computation failed",
+    gate_ok: "Confirm", gate_note_short: "Note (required to ask for changes)", ld_objects: "Non-sequential objects", no_ld: "waiting for lens data",
   },
 };
 const ANALYSIS_NAMES = {
@@ -171,21 +195,30 @@ const ROUND_PLOTS = [
 const NSC_PLOTS = [{ id: "detectors", key: "detectors", gapless: true, render: (v) => renderDetectors(v) }];
 const plotsFor = () => (isNsc() ? NSC_PLOTS : ROUND_PLOTS);
 const plotIds = () => [...ROUND_PLOTS, ...NSC_PLOTS].map((p) => p.id);
-const FIELD_COLORS = ["#4f8ff7", "#f26b3a", "#22b39a", "#e5a00d", "#e5508f", "#3fa34d", "#9b7cf2", "#58c4dd"];
-const MATERIAL_COLORS = ["#5fb3a1", "#7b8fd4", "#c9a35a", "#b57cc4", "#6aaed6", "#d47b7b"];
+// ayu Dark：视场依次黄、薄荷、橙，少用蓝紫 / ayu Dark: fields gold, mint, orange first; little blue or violet
+const FIELD_COLORS = ["#e6b450", "#95e6cb", "#f29668", "#aad94c", "#f07178", "#d9c38c", "#7fd9b0", "#ffb38a"];
+const MATERIAL_COLORS = ["#d5dae1", "#95e6cb", "#e6b450", "#f29668", "#aad94c", "#c9b38a"];
 
 let lang = "zh";
 let state = null;
 let stateText = "";
 let tab = Q.get("tab");
-let pinnedRound = null;
+// 时间轴选中的对象："live"（当前镜头）、轮次号，null 为跟随最新 / the timeline selection: "live", a round number, or null to follow the latest
+let pinnedRound = Q.get("round") === "live" ? "live" : Q.get("round") ? Number(Q.get("round")) : null;
+// 渲染器读的全局：画哪一份导出、它属于哪一轮；镜头卡与分析卡各有一份，画之前换进来
+// globals the renderers read: which export and which round; the lens card and the analysis card each keep theirs and swap it in
 let roundShown = null;
 let viz = null;
-let liveSeen = null;
+let lensViz = null;
+let anaViz = null;
+let lensSig = null;
+let anaSig = null;
 let metricsSeen = null;
-let lensDataOpen = Q.get("ld") === "1";
 let dim = Q.get("dim") === "2d" ? "2d" : "3d";
 let analyses = null;
+let needId = Q.get("need");
+let ldHover = null;
+const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const t = (k, ...a) => { const v = (TEXT[lang] || TEXT.zh)[k]; return typeof v === "function" ? v(...a) : (v ?? k); };
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const $ = (id) => document.getElementById(id);
@@ -198,7 +231,7 @@ async function api(path, params = {}, body = null) {
     body: body ? JSON.stringify({ job: JOB, ...body }) : null,
   });
   const msg = await res.json();
-  if (!msg.ok) throw new Error(msg.error?.message || "error");
+  if (!msg.ok) { const err = new Error(msg.error?.message || "error"); err.code = msg.error?.code; throw err; }
   return msg.result;
 }
 
@@ -217,22 +250,33 @@ function fmtDuration(sec) {
 const fmtG = (g) => (g == null ? "∞" : g === 0 ? "0" : Math.abs(g) >= 100 || Math.abs(g) < 0.01 ? g.toExponential(2) : g.toPrecision(3));
 const sig = (v, n = 3) => (v === 0 ? "0" : Number(v.toPrecision(n)).toString());
 
-// ---------------- 流程图 ----------------
-
-const NODES = [
-  { id: "interview", y: 14, h: 56 },
-  { id: "demand_confirm", y: 106, h: 46, gate: true },
-  { id: "modeling", y: 188, h: 56 },
-  { id: "model_approve", y: 280, h: 46, gate: true },
-  { id: "design", y: 362, h: 64 },
-  { id: "deliver", y: 462, h: 56 },
-];
-const NX = 20, NW = 226;
-
-// 图注与当前语言保持一致。
+// 图注与当前语言保持一致 / captions follow the current language
 function foot(key, ...args) {
   return t(key, ...args);
 }
+
+// ---------------- 里程表：数字逐位滚动 ----------------
+
+// 数字位换成一列 0–9 的竖条，按位平移；字形（位数、小数点位置）变了才重建 / digits roll; rebuilt only when the shape changes
+function odo(el, text) {
+  text = String(text);
+  if (el.dataset.v === text) return;
+  const old = el.dataset.v || "";
+  el.dataset.v = text;
+  if (reduceMotion) { el.textContent = text; return; }
+  const shape = (s) => [...s].map((c) => (/\d/.test(c) ? "d" : c)).join("");
+  if (shape(old) !== shape(text) || !el.querySelector(".strip")) {
+    el.classList.add("odo");
+    el.innerHTML = [...text].map((ch) => /\d/.test(ch)
+      ? `<span class="c"><span class="strip">${"0123456789".split("").map((d) => `<span>${d}</span>`).join("")}</span></span>`
+      : `<span class="c"><span>${esc(ch)}</span></span>`).join("");
+    if (!old) el.querySelectorAll(".strip").forEach((s) => (s.style.transition = "none"));
+  }
+  [...text].forEach((ch, i) => { const s = el.children[i]?.querySelector(".strip"); if (s) s.style.transform = `translateY(${-Number(ch) * 1.2}em)`; });
+  if (!old) requestAnimationFrame(() => el.querySelectorAll(".strip").forEach((s) => (s.style.transition = "")));
+}
+
+// ---------------- 顶部：流程弧线 ----------------
 
 function nodeSub(step) {
   const d = step.detail;
@@ -246,10 +290,7 @@ function nodeSub(step) {
     if (d && d.needs_description) return t("redescribe");
     if (step.status === "active" && state.progress) return `${state.progress.op}`;
     const x = d && d.exploration;
-    if (x) {
-      if (!x.finished) return t("explore_run", x.candidates);
-      return t("explore_done", x.candidates);
-    }
+    if (x) return x.finished ? t("explore_done", x.candidates) : t("explore_run", x.candidates);
     if (d && d.starts) return t("starts_done", d.starts.count, d.starts.not_evaluated);
     return t("modeling_sub");
   }
@@ -271,109 +312,34 @@ function nodeSub(step) {
   return "";
 }
 
-function wrapNodeSub(text, width) {
-  if (!text) return [];
-  const lines = [];
-  let line = "", size = 0;
-  for (const character of text) {
-    const weight = character.charCodeAt(0) > 255 ? 1.7 : 1;
-    if (size + weight > width && line) {
-      const split = line.lastIndexOf(" ");
-      lines.push((split > 0 ? line.slice(0, split) : line).trim());
-      line = split > 0 ? line.slice(split + 1) : "";
-      size = [...line].reduce((total, ch) => total + (ch.charCodeAt(0) > 255 ? 1.7 : 1), 0);
-    }
-    line += character; size += weight;
-  }
-  if (line) lines.push(line.trim());
-  return lines;
-}
-
-function renderFlow() {
-  const svg = $("flow");
-  const steps = Object.fromEntries(state.steps.map((s) => [s.id, s]));
+const GATES = new Set(["demand_confirm", "model_approve"]);
+let arcDone = 0;
+// 六个节点排在一条上拱的弧线上；走过的一段描黄，当前节点有呼吸光圈；完整说明放在悬停提示里
+// six nodes along an upward arc; the travelled part is gold, the current node breathes; full text in the hover title
+function renderArc() {
+  const svg = $("arc"), box = svg.getBoundingClientRect(), W = box.width, H = box.height;
+  if (!W) return;
+  const x0 = 8, x1 = W - 8, yTop = 22, yEnd = H - 44;
+  const P = (s) => [(1 - s) ** 2 * x0 + 2 * (1 - s) * s * ((x0 + x1) / 2) + s * s * x1, (1 - s) ** 2 * yEnd + 2 * (1 - s) * s * (yTop - 20) + s * s * yEnd];
+  const steps = state.steps, n = steps.length, ts = steps.map((_, i) => 0.03 + (0.94 * i) / (n - 1));
+  const at = steps.findIndex((s) => s.status !== "done"), doneT = at < 0 ? 1 : ts[at];
   const running = !!state.progress;
-  let offset = 0;
-  const nodes = NODES.map((node) => {
-    const lines = wrapNodeSub(nodeSub(steps[node.id]), node.gate ? 20 : 29);
-    const height = Math.max(node.h, 32 + lines.length * 12);
-    const result = {...node, y: node.y + offset, h: height};
-    offset += height - node.h;
-    return result;
+  const room = Math.max(8, Math.floor((W / n) / (lang === "zh" ? 11 : 6.2)));
+  const cut = (s) => ([...s].length > room ? [...s].slice(0, room - 1).join("") + "…" : s);
+  const d = `M${x0},${yEnd} Q${(x0 + x1) / 2},${yTop - 20} ${x1},${yEnd}`;
+  let s = `<path class="arc" d="${d}"/><path class="arc-done" id="arc-done" d="${d}" pathLength="1" stroke-dasharray="1" stroke-dashoffset="${1 - arcDone}"/>`;
+  steps.forEach((st, i) => {
+    const [x, y] = P(ts[i]);
+    const shape = GATES.has(st.id) ? `<rect class="core" x="-5.5" y="-5.5" width="11" height="11" rx="2" transform="rotate(45)"/>` : `<circle class="core" r="6.5"/>`;
+    const full = nodeSub(st), sub = ["waiting", "blocked"].includes(st.status) ? t(st.status) : full;
+    s += `<g class="node ${st.status} ${st.status === "active" && running ? "running" : ""}" transform="translate(${x},${y})"><title>${esc(`${t(st.id)} · ${full}`)}</title>`
+      + `<circle class="halo" r="8"/>${shape}<text y="24">${esc(t(st.id))}</text><text class="sub" y="37">${esc(cut(sub))}</text></g>`;
   });
-  const parts = [`<defs><filter id="soft" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="1.6"/></filter></defs>`];
-  const cx = NX + NW / 2;
-  // 主干连线
-  for (let i = 0; i < nodes.length - 1; i++) {
-    const a = nodes[i], b = nodes[i + 1];
-    const sa = steps[a.id], sb = steps[b.id];
-    const y1 = a.y + a.h, y2 = b.y - 6;
-    const live = ["active", "waiting", "blocked"].includes(sb.status) && sa.status === "done";
-    const cls = live ? `live ${sb.status === "waiting" ? "waiting" : ""}` : sa.status === "done" && sb.status !== "pending" ? "done" : "";
-    const id = `e${i}`;
-    parts.push(`<path id="${id}" class="edge ${cls}" d="M${cx},${y1} L${cx},${y2}"/>`);
-    parts.push(`<path class="arrow ${live ? "live" : cls}" d="M${cx - 4.5},${y2 - 1} L${cx + 4.5},${y2 - 1} L${cx},${y2 + 6} Z"/>`);
-    if (live) {
-      const color = sb.status === "waiting" ? css("--wait") : css("--accent");
-      parts.push(`<circle class="comet" r="3.2" fill="${color}"><animateMotion dur="${running ? 0.9 : 1.4}s" repeatCount="indefinite"><mpath href="#${id}"/></animateMotion></circle>`);
-      parts.push(`<circle r="1.6" fill="#fff"><animateMotion dur="${running ? 0.9 : 1.4}s" repeatCount="indefinite"><mpath href="#${id}"/></animateMotion></circle>`);
-    }
-  }
-  // 回退连线（虚线，右侧）
-  const back = (from, to, label, lane, dy1 = 0) => {
-    const a = nodes.find((n) => n.id === from), b = nodes.find((n) => n.id === to);
-    const xr = NX + NW, x2 = xr + lane;
-    const y1 = a.y + a.h / 2 + dy1, y2 = b.y + b.h / 2;
-    parts.push(`<path class="edge back" d="M${xr},${y1} L${x2},${y1} L${x2},${y2} L${xr + 7},${y2}"/>`);
-    parts.push(`<path class="arrow back" d="M${xr + 7},${y2 - 4} L${xr + 7},${y2 + 4} L${xr},${y2} Z"/>`);
-    const ly = (y1 + y2) / 2;
-    parts.push(`<text class="edge-label" x="${x2 + 3}" y="${ly}" transform="rotate(90 ${x2 + 3} ${ly})" text-anchor="middle">${esc(label)}</text>`);
-  };
-  // 三条回退线各走一条竖道，避免重叠；指向确认需求的两条在箭头处汇合 / each return edge has its own lane; the two into demand_confirm meet at the arrow
-  // 从建模出发的一条上移 12，免得和进入建模的箭头共用同一段横线 / the edge leaving modeling starts 12 higher so it never shares the stub of the edge entering it
-  back("design", "demand_confirm", t("back_demand"), 40);
-  back("modeling", "demand_confirm", t("back_reach"), 26, -12);
-  back("model_approve", "modeling", t("back_model"), 12);
-  back("deliver", "design", t("back_reject"), 68, -12);
-  // 节点
-  nodes.forEach((n, i) => {
-    const s = steps[n.id];
-    const cls = `node ${s.status} ${s.status === "active" && running ? "running" : ""}`;
-    const r = n.gate ? n.h / 2 : 10;
-    const x = n.gate ? NX + 26 : NX, w = n.gate ? NW - 52 : NW;
-    const fullSub = nodeSub(s);
-    const sub = fullSub;
-    const subLines = wrapNodeSub(sub, n.gate ? 20 : 29);
-    parts.push(`<g class="${cls}">`);
-    parts.push(`<title>${esc(fullSub)}</title>`);
-    parts.push(`<rect class="glow" x="${x}" y="${n.y}" width="${w}" height="${n.h}" rx="${r}"/>`);
-    parts.push(`<rect class="frame" x="${x}" y="${n.y}" width="${w}" height="${n.h}" rx="${r}"/>`);
-    parts.push(`<rect class="chase" x="${x}" y="${n.y}" width="${w}" height="${n.h}" rx="${r}" pathLength="100"/>`);
-    const icon = s.status === "done" ? "✓" : n.gate ? "◆" : String(i + 1);
-    const tx = x + (n.gate ? 22 : 16);
-    parts.push(`<text class="idx" x="${tx - 6}" y="${n.y + (sub ? 19 : n.h / 2 + 4)}" text-anchor="middle">${icon}</text>`);
-    parts.push(`<text class="title" x="${tx + 6}" y="${n.y + (sub ? 19 : n.h / 2 + 4)}">${esc(t(n.id))}</text>`);
-    subLines.forEach((line, index) => {
-      parts.push(`<text class="sub" x="${tx + 6}" y="${n.y + 34 + index * 12}">${esc(line)}</text>`);
-    });
-    if (["waiting", "blocked"].includes(s.status) || (s.status === "active" && running)) {
-      const label = s.status === "active" ? t("running") : t(s.status);
-      const bw = label.length * (lang === "zh" ? 11 : 6.4) + 12;
-      parts.push(`<rect class="badge-bg ${s.status}" x="${x + w - bw - 6}" y="${n.y - 8}" width="${bw}" height="16" rx="8"/>`);
-      parts.push(`<text class="badge badge-text" x="${x + w - bw / 2 - 6}" y="${n.y + 3.5}" text-anchor="middle">${esc(label)}</text>`);
-    }
-    parts.push(`</g>`);
-  });
-  svg.innerHTML = parts.join("");
-  svg.setAttribute("viewBox", `0 0 330 ${nodes[nodes.length - 1].y + nodes[nodes.length - 1].h + 24}`);
-  const note = $("flow-note");
-  note.innerHTML = state.blocking.length ? `<div class="q"><b>${esc(t("blocking"))}</b><br>${state.blocking.map(esc).join("<br>")}</div>` : "";
-  if (state.model_evidence?.length) note.innerHTML += `<div class="q"><b>${esc(t("model_evidence"))}</b><br>${state.model_evidence.map((p) => esc(`${p.path}: ${p.code}`)).join("<br>")}</div>`;
-  // 只有 rtc 的后台进程（--backend rtc）：建模、确认和交付要换成带 OpticStudio 的；两个后端都有时它自己切换（ADR-0018）
-  // an rtc-only daemon: modelling, approval and delivery need one with OpticStudio; a daemon holding both switches by itself
-  if (state.daemon.running && state.daemon.backend === "rtc" && !state.daemon.dual && ["modeling", "model_approve", "deliver"].includes(state.current)) {
-    note.innerHTML += `<div class="q">${esc(t("rtc_switch"))}</div>`;
-  }
+  svg.innerHTML = s;
+  const path = $("arc-done");
+  if (doneT !== arcDone && !reduceMotion) requestAnimationFrame(() => path.setAttribute("stroke-dashoffset", 1 - doneT));
+  else path.setAttribute("stroke-dashoffset", 1 - doneT);
+  arcDone = doneT;
 }
 
 function renderTop() {
@@ -383,12 +349,15 @@ function renderTop() {
   notice.hidden = !state.notice;
   if (state.notice) { $("notice-text").textContent = state.notice.message; $("notice-close").textContent = t("notice_close"); }
   $("job-name").textContent = state.job;
+  $("job-title").textContent = state.name || "";
+  $("job-title").title = state.name || "";
   const chip = $("mode-chip");
   const mode = state.daemon.running ? state.daemon.mode : null;
   const rtc = mode && state.daemon.backend === "rtc";
   chip.textContent = rtc ? (state.daemon.dual ? t("rtc_dual", state.daemon.zos_started) : t("rtc_instance"))
     : mode === "extension" ? t("explicit") : mode ? t("standalone") : t("no_daemon");
-  chip.className = "chip" + (mode === "extension" ? " explicit" : rtc ? " rtc" : "");
+  chip.title = chip.textContent;
+  chip.className = "pill" + (mode === "extension" ? " explicit" : rtc ? " rtc" : "");
   const run = $("run-chip");
   if (state.progress) {
     run.hidden = false;
@@ -398,87 +367,169 @@ function renderTop() {
   } else run.hidden = true;
   // 当前镜头的评价函数和目标差距，后台进程自动更新 / the live merit and shortfall, updated by the daemon
   const m = state.metrics, mc = $("metric-chip");
-  const parts = m ? [m.merit != null ? `${t("merit")} ${fmtG(m.merit)}` : "", m.shortfall ? `G ${fmtG(m.shortfall.value)}` : ""].filter(Boolean) : [];
-  mc.hidden = !parts.length;
-  if (parts.length) {
-    mc.textContent = parts.join(" · ");
-    mc.classList.toggle("stale", !!state.progress || (m.shortfall && m.shortfall.view !== m.view));
+  const g = m?.shortfall ? m.shortfall.value : null;
+  const show = m && (m.merit != null || m.shortfall);
+  mc.hidden = !show;
+  if (show) {
+    if (!mc.querySelector(".gv")) mc.innerHTML = `<span class="k">${esc(t("merit"))}</span><span class="mv"></span><span class="k">G</span><span class="gv"></span><span class="it"></span>`;
+    mc.querySelector(".k").textContent = t("merit");
+    mc.querySelector(".mv").textContent = m.merit != null ? fmtG(m.merit) : "–";
+    odo(mc.querySelector(".gv"), m.shortfall ? fmtG(g) : "–");
+    // rtc 实时帧（ADR-0022）：优化中带步数；出错时标红并把原因放进悬停提示 / live rtc frames carry the step; errors go to the title
+    const lv = m.live || {};
+    mc.querySelector(".it").textContent = lv.preview && m.iteration != null ? t("iteration", m.iteration) : "";
+    mc.classList.toggle("err", lv.status === "error");
+    mc.title = lv.status === "error" ? `${t("live_error")}: ${lv.error || ""}${lv.timeout_s ? ` (${lv.timeout_s} s)` : ""}` : "";
+    mc.classList.toggle("ok", g === 0);
+    // 新格式按 G 自己的视图版本判断；旧格式运行中一律算旧 / schema 2 compares G's own view; older files are stale while running
+    mc.classList.toggle("stale", m.schema === 2 ? !!(m.shortfall && m.shortfall.view !== m.view) : !!state.progress || (m.shortfall && m.shortfall.view !== m.view));
   }
 }
 
-// ---------------- 面板与标签 ----------------
+// 阻塞问题、模型记录提示、后端提示：有才显示 / blocking questions, model evidence and backend hints, shown only when present
+function renderNotes() {
+  const parts = [];
+  if (state.blocking.length) parts.push(`<div class="q"><b>${esc(t("blocking"))}</b><br>${state.blocking.map((b) => esc(b.question || b)).join("<br>")}</div>`);
+  if (state.model_evidence?.length) parts.push(`<div class="q"><b>${esc(t("model_evidence"))}</b><br>${state.model_evidence.map((p) => esc(`${p.path}: ${p.code}`)).join("<br>")}</div>`);
+  // 只有 rtc 的后台进程（--backend rtc）：建模、确认和交付要换成带 OpticStudio 的；两个后端都有时它自己切换（ADR-0018）
+  if (state.daemon.running && state.daemon.backend === "rtc" && !state.daemon.dual && ["modeling", "model_approve", "deliver"].includes(state.current)) {
+    parts.push(`<div class="q">${esc(t("rtc_switch"))}</div>`);
+  }
+  const el = $("notes"), html = parts.join("");
+  if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
+  el.hidden = !parts.length;
+}
+
+// ---------------- 选中的轮次与导出数据 ----------------
 
 const explicit = () => state?.daemon.running && state.daemon.mode === "extension";
 const vizRounds = () => (state?.rounds || []).filter((r) => r.viz);
+const latestRound = () => vizRounds().at(-1)?.round ?? null;
+// 跟随时：有当前镜头就看当前镜头，否则看最新一轮 / following: the live lens when there is one, else the latest round
+const selected = () => pinnedRound ?? (state?.live != null ? "live" : latestRound());
+// 点列图、MTF 等只有轮次有：选中当前镜头时看最新一轮 / per-round plots: the latest round while the live lens is selected
+const anaRound = () => (typeof selected() === "number" ? selected() : latestRound());
+const isNscOf = (v) => v?.system?.mode === "non_sequential";
+const isNsc = () => isNscOf(lensViz?.ok ? lensViz : anaViz);
+const roundOf = (n) => (state?.rounds || []).find((r) => r.round === n);
 
-function renderTabs() {
-  const list = [];
-  if (explicit()) list.push("control");
-  // 非序列系统没有点列图和 MTF，换成探测器读数；起点页只在生成过起点后出现；指标页要需求单里有带判定方法的条目
-  // a non-sequential system has detectors instead of spot and MTF; starts appear once generated; metrics need checked demand items
-  const hasStarts = !!state?.steps?.find((s) => s.id === "modeling")?.detail?.starts;
-  const hasMetrics = !!state?.metric_items?.length;
-  const applies = (k) => k === "layout" || k === "rounds" || (k === "detectors" ? isNsc() : ["spot", "fan", "field", "mtf"].includes(k) ? !isNsc()
-    : k === "starts" ? hasStarts : k === "metrics" ? hasMetrics : false);
-  // agent 用 saos ui open --tabs 为这类系统选的标签页和顺序；没选时用默认顺序 / tabs the agent chose for this kind of system, else the default
-  const chosen = state?.ui?.tabs;
-  const shown = (chosen || ["layout", ...plotsFor().map((p) => p.id), "metrics", "rounds", "starts"]).filter(applies);
-  list.push(...(shown.length ? shown : ["layout", "rounds"]));
-  if (!tab || !list.includes(tab)) tab = list[0];
-  $("tabs").innerHTML = list.map((k) => `<button class="tab ${k === tab ? "on" : ""}" data-tab="${k}" role="tab">${esc(t("tab_" + k))}</button>`).join("");
-  const vr = vizRounds();
-  const sel = $("round-select");
-  const withLive = tab === "layout" && state?.live != null;
-  sel.hidden = !["layout", ...plotIds()].includes(tab) || (!vr.length && !withLive);
-  const opts = (withLive ? `<option value="live">${esc(t("live"))}</option>` : "") +
-    vr.map((r) => `<option value="${r.round}">${t("select_round", r.round)} · G ${fmtG(r.shortfall)}</option>`).join("");
-  if (sel.dataset.opts !== opts) { sel.innerHTML = opts; sel.dataset.opts = opts; }
-  if (roundShown != null) sel.value = String(roundShown);
-  $("dim-seg").hidden = tab !== "layout";
+const vizCache = new Map();
+async function loadViz(key) {
+  if (key === "live") {
+    const k = `live:${state.live}`;
+    if (!vizCache.has(k)) {
+      [...vizCache.keys()].filter((x) => x.startsWith("live:")).forEach((x) => vizCache.delete(x));
+      try { vizCache.set(k, await api("live")); } catch (e) { return { ok: false, error: e.message, live: true }; }
+    }
+    return vizCache.get(k);
+  }
+  const r = roundOf(key);
+  if (!r?.viz) return { ok: false, error: "no viz.json" };
+  const k = `r:${key}:${r.time}`;
+  if (!vizCache.has(k)) {
+    try { vizCache.set(k, await api("viz", { round: key })); } catch (e) { return { ok: false, error: e.message }; }
+  }
+  return vizCache.get(k);
 }
 
-const isNsc = () => viz?.system?.mode === "non_sequential";
+function vizProblem(v, key) {
+  if (key === "live") return t("live_failed") + (v.error || "");
+  return v.error?.includes?.("no viz.json") ? t("viz_missing") : t("viz_failed") + (v.error || "");
+}
 
-// 布局默认看当前镜头（后台进程每次改动镜头后重写 view.json）；点列图和 MTF 只有轮次有 / the layout follows the current lens by default
-const wantsLive = () => tab === "layout" && state?.live != null && (pinnedRound === "live" || pinnedRound == null);
-
-async function ensureViz() {
-  if (wantsLive()) {
-    if (roundShown === "live" && viz && liveSeen === state.live) return;
-    try { viz = await api("live"); } catch (e) { viz = { ok: false, error: e.message, live: true }; }
-    roundShown = "live"; liveSeen = state.live;
+// 镜头卡：布局常驻；选中对象或数据变了才重画，免得每次轮询都清掉视角和测距
+// the lens card: the layout stays; redrawn only when the selection or its data change, keeping camera and ruler
+async function renderLens(force = false) {
+  const key = selected(), host = $("lens");
+  $("lens-title").textContent = t("lens");
+  const sig = JSON.stringify([key, key === "live" ? state.live : roundOf(key)?.time ?? null, dim, lang]);
+  if (!force && sig === lensSig) return;
+  lensSig = sig;
+  if (key == null) {
+    lensViz = null;
+    host.innerHTML = `<div class="empty">${esc(t("no_live"))}</div>`;
+    $("ld").innerHTML = `<div class="empty">${esc(t("no_ld"))}</div>`;
+    $("lens-src").textContent = "";
     return;
   }
-  const vr = vizRounds();
-  if (!vr.length) { viz = null; roundShown = null; return; }
-  const want = typeof pinnedRound === "number" && vr.some((r) => r.round === pinnedRound) ? pinnedRound : vr[vr.length - 1].round;
-  if (want === roundShown && viz) return;
-  try { viz = await api("viz", { round: want }); } catch (e) { viz = { ok: false, error: e.message }; }
-  roundShown = want;
+  const v = await loadViz(key);
+  if (JSON.stringify([selected(), key === "live" ? state.live : roundOf(key)?.time ?? null, dim, lang]) !== sig) return;
+  lensViz = v;
+  if (!v.ok) {
+    host.innerHTML = `<div class="empty">${esc(vizProblem(v, key))}</div>`;
+    $("ld").innerHTML = `<div class="empty">${esc(t("no_ld"))}</div>`;
+    return;
+  }
+  viz = v; roundShown = key;
+  if (isNscOf(v)) renderNscLayout(host); else renderLayout(host);
 }
 
-async function renderView() {
-  const view = $("view");
+// 分析卡（以及放大层）的标签：点列图等只看轮次；指标、轮次、起点、窗口控制另有来源
+// tabs of the analysis card (and its enlarged copy): per-round plots, plus metrics, rounds, starts and window controls
+function tabList() {
+  const list = [];
+  if (explicit()) list.push("control");
+  const hasStarts = !!state?.steps?.find((s) => s.id === "modeling")?.detail?.starts;
+  const hasMetrics = !!state?.metric_items?.length;
+  const applies = (k) => k === "rounds" || (k === "detectors" ? isNsc() : ["spot", "fan", "field", "mtf"].includes(k) ? !isNsc()
+    : k === "starts" ? hasStarts : k === "metrics" ? hasMetrics : false);
+  // agent 用 saos ui open --tabs 为这类系统选的标签页和顺序；布局已常驻在镜头卡里 / the agent's --tabs choice; the layout lives in the lens card
+  const chosen = state?.ui?.tabs?.filter((k) => k !== "layout");
+  const shown = (chosen?.length ? chosen : [...plotsFor().map((p) => p.id), "metrics", "rounds", "starts"]).filter(applies);
+  list.push(...(shown.length ? shown : ["rounds"]));
+  return list;
+}
+
+function renderTabs() {
+  const list = tabList();
+  if (!tab || !list.includes(tab)) tab = list[0];
+  const html = list.map((k) => `<button class="tab ${k === tab ? "on" : ""}" data-tab="${k}" role="tab">${esc(t("tab_" + k))}</button>`).join("");
+  if ($("tabs").dataset.html !== html) { $("tabs").innerHTML = html; $("tabs").dataset.html = html; }
+  $("expand").title = t("expand");
+}
+
+function anaSignature() {
+  const r = anaRound();
+  const modeling = JSON.stringify(state?.steps?.find((x) => x.id === "modeling")?.detail ?? null);
+  return JSON.stringify([tab, lang, r, roundOf(r)?.time ?? null, selected(), tab === "metrics" ? [state.metrics, state.metric_items, !!state.progress] : null,
+    tab === "rounds" ? state.rounds : null, tab === "starts" ? modeling : null, tab === "control" ? [state.daemon.mode, state.daemon.running] : null]);
+}
+
+async function renderAna(force = false) {
+  const sig = anaSignature();
+  if (!force && sig === anaSig) return;
+  anaSig = sig;
+  // 渲染器按 id 找子元素（mtf-plot、g-plot…），同一时刻只画在一处：放大层开着就只画放大层
+  // renderers look children up by id, so draw in one place at a time: the enlarged layer while it is open
+  const zoomed = !$("zoom").hidden;
+  if (zoomed) $("zoom-title").textContent = t("tab_" + tab);
+  await renderTabInto(zoomed ? $("zoom-view") : $("view"));
+}
+
+function setZoom(open) {
+  $("zoom").hidden = !open;
+  if (open) $("view").innerHTML = ""; else $("zoom-view").innerHTML = "";
+  renderAna(true);
+}
+
+async function renderTabInto(view) {
   if (tab === "control") return renderControl(view);
   if (tab === "rounds") return renderRounds(view);
   if (tab === "starts") return renderStarts(view);
   if (tab === "metrics") return renderMetrics(view);
-  await ensureViz();
-  renderTabs();
-  if (!viz) { view.innerHTML = `<div class="empty">${esc(t(tab === "layout" ? "no_live" : "no_viz"))}</div>`; return; }
-  if (!viz.ok) {
-    const why = roundShown === "live" ? t("live_failed") + (viz.error || "") : viz.error?.includes?.("no viz.json") ? t("viz_missing") : t("viz_failed") + (viz.error || "");
-    view.innerHTML = `<div class="empty">${esc(why)}</div>`; return;
-  }
+  const key = anaRound();
+  if (key == null) { view.innerHTML = `<div class="empty">${esc(t("no_viz"))}</div>`; return; }
+  const v = await loadViz(key);
+  if (anaRound() !== key) return;
+  anaViz = v;
+  if (!v.ok) { view.innerHTML = `<div class="empty">${esc(vizProblem(v, key))}</div>`; return; }
   const plot = plotsFor().find((p) => p.id === tab);
-  if (plot && !plot.gapless && viz[plot.key] == null) {
-    view.innerHTML = `<div class="empty">${esc(t("gap", t("tab_" + plot.id), viz.system?.backend))}</div>`;
-    return;
-  }
-  if (plot) plot.render(view);
-  else if (isNsc()) renderNscLayout(view);
-  else renderLayout(view);
+  if (!plot) { view.innerHTML = ""; return; }
+  if (!plot.gapless && v[plot.key] == null) { view.innerHTML = `<div class="empty">${esc(t("gap", t("tab_" + plot.id), v.system?.backend))}</div>`; return; }
+  viz = v; roundShown = key;
+  plot.render(view);
 }
+
 
 // ---------------- 窗口控制（显性调试）----------------
 
@@ -575,7 +626,7 @@ function renderSpot(view) {
   const colors = waveColors(sys.wavelengths);
   const cols = spot.fields.length <= 1 ? 1 : spot.fields.length <= 4 ? 2 : 3;
   // 每格至少 CELL 宽，视图放不下就横向滚动，而不是把点列图压扁
-  const CELL = 220, GAP = 12;
+  const GAP = 10, CELL = view.classList.contains("wide") ? 220 : Math.max(110, Math.min(220, (view.clientWidth - 30 - (cols - 1) * GAP) / cols));
   view.innerHTML = `<div class="figure" style="min-width:${cols * CELL + (cols - 1) * GAP + 30}px">
     <div class="fig-head"><div class="legend">${sys.wavelengths.map((w, i) => `<span><i style="background:${colors[i]}"></i>${Math.round(w.um * 1000)} nm</span>`).join("")}</div></div>
     <div class="spot-grid" style="grid-template-columns:repeat(${cols},minmax(${CELL}px,1fr))"></div></div>
@@ -638,7 +689,7 @@ function renderMtf(view) {
     <div class="foot">${esc(foot(viz.backend === "rtc" ? "mtf_foot_rtc" : "mtf_foot"))} ${esc(settings)}${mtf.per_field ? `<br>${esc(t("mtf_partial") + (viz.errors?.FftMtf || ""))}` : ""}</div>`;
   const host = $("mtf-plot");
   const head = view.querySelector(".fig-head").offsetHeight;
-  const W = host.clientWidth, H = Math.max(300, Math.min(520, view.clientHeight - head - 90));
+  const W = host.clientWidth, H = Math.max(150, Math.min(520, view.clientHeight - head - 70));
   const [, g] = canvasIn(host, W, H);
   const pad = { l: 46, r: 14, t: 10, b: 38 };
   const xmax = Math.max(...curves.flatMap((c) => c.x));
@@ -762,7 +813,7 @@ function renderField(view) {
     <div class="field-pair"><div id="curv-plot"></div><div id="dist-plot"></div></div></div>
     <div class="foot">${esc(foot("field_foot"))}</div>`;
   const W = Math.max(260, ($("curv-plot").clientWidth || 300));
-  const H = Math.max(280, Math.min(460, view.clientHeight - 120));
+  const H = Math.max(150, Math.min(460, view.clientHeight - 100));
   const yLabel = `${t("field_axis")} (${fieldUnit.trim()})`;
   if (fp.curvature) {
     const y = axis(fp.points, 0);
@@ -791,14 +842,14 @@ function renderMetrics(view) {
   const now = (id) => {
     const e = live.items?.[id];
     if (!e) return `<span class="stale" title="${esc(t("metric_pending"))}">–</span>`;
-    const stale = e.view !== live.view || !!state.progress;
+    const stale = staleEntry(e);
     const why = [stale ? t("metric_stale") : "", slow.has(id) ? t("metric_slow") : "", t("metric_src")[e.source] || e.source, e.error || ""].filter(Boolean).join(" · ");
     const text = e.value == null ? t("metric_no_value") : sig(e.value, 5);
     return `<span class="${stale ? "stale" : ""}" title="${esc(why)}">${esc(text)}${e.gap > 0 ? ` <span class="tag warn">${esc(fmtG(e.gap))}</span>` : e.gap === 0 ? ` <span class="tag ok">✓</span>` : ""}</span>`;
   };
   const bounds = (b) => (!b ? [] : "equals" in b ? [b.equals] : [b.min, b.max].filter((v) => v != null));
   const boundText = (b) => (!b ? "" : "equals" in b ? `= ${sig(b.equals, 4)}${b.tol ? ` ± ${sig(b.tol, 3)}` : ""}` : [b.min != null ? `≥ ${sig(b.min, 4)}` : "", b.max != null ? `≤ ${sig(b.max, 4)}` : ""].filter(Boolean).join(" · "));
-  view.innerHTML = `<div class="metric-grid">${items.map((m, k) => `<div class="card"><h3>${esc(m.id)}${m.unit ? ` <small>${esc(m.unit)}</small>` : ""}</h3>
+  view.innerHTML = `<div class="metric-grid">${items.map((m, k) => `<div class="card"><h3>${esc(m.id)}${unitOfItem(m) ? ` <small>${esc(unitOfItem(m))}</small>` : ""}</h3>
       <p>${esc(m.missing ? t("metric_missing") : m.description || "")}${m.bound ? ` · ${esc(t("metric_bound"))} ${esc(boundText(m.bound))}` : ""}${m.direction ? ` · ${esc(m.direction)}` : ""}</p>
       <div class="metric-now">${now(m.id)}</div><div id="metric-plot-${k}"></div></div>`).join("")}</div>
     <div class="table-wrap"><table><tr><th>${esc(t("round"))}</th>${items.map((m) => `<th class="num">${esc(m.id)}</th>`).join("")}</tr>
@@ -887,17 +938,33 @@ function clashOf(v) {
   return { lines, hit };
 }
 
-function lensDataTable(rows) {
+// Lens Data 卡：与镜头卡共用一个悬停状态（ldHover 由布局设置）；数值相同不重画，换轮次时数字逐位滚动
+// the Lens Data card shares one hover state with the layout (ldHover is set by it); numbers roll when the round changes
+function renderLensData(rows) {
+  const host = $("ld");
+  $("ld-title").textContent = t("lens_data");
+  $("ld-note").textContent = t("ld_solve");
+  $("ld-note").title = t("hover_row");
+  if (!rows?.length) { host.innerHTML = `<div class="empty">${esc(t("no_ld"))}</div>`; host.dataset.shape = ""; return; }
   const num = (v) => (v == null ? "" : !isFinite(v) ? "∞" : sig(v, 6));
-  const mark = (s, k) => { const v = (s.solves || {})[k]; return !v || ["Fixed", "Automatic", "None"].includes(v) ? "" : v === "Variable" ? " V" : ` ${v[0]}`; };
-  return `<details class="lens-data" ${lensDataOpen ? "open" : ""}><summary>${esc(t("lens_data"))}</summary>
-    <div class="table-wrap"><table><tr><th>#</th><th>${esc(t("ld_type"))}</th><th>${esc(t("ld_comment"))}</th><th class="num">${esc(t("ld_radius"))}</th>
-    <th class="num">${esc(t("ld_thickness"))}</th><th>${esc(t("ld_material"))}</th><th class="num">${esc(t("ld_sd"))}</th><th class="num">${esc(t("ld_conic"))}</th></tr>
-    ${rows.map((s) => `<tr data-surf="${s.index}"><td>${s.index}${s.is_stop ? " STO" : ""}</td><td>${esc(s.type)}</td><td>${esc(s.comment)}</td>
-      <td class="num">${num(s.radius)}${mark(s, "radius")}</td><td class="num">${num(s.thickness)}${mark(s, "thickness")}</td>
-      <td>${esc(s.material)}${mark(s, "material")}</td><td class="num">${num(s.semi_diameter)}${mark(s, "semi_diameter")}</td>
-      <td class="num">${num(s.conic)}${mark(s, "conic")}</td></tr>`).join("")}</table></div>
-    <div class="foot">${esc(t("ld_solve"))} · ${esc(t("hover_row"))}</div></details>`;
+  const mark = (s, k) => { const v = (s.solves || {})[k]; return !v || ["Fixed", "Automatic", "None"].includes(v) ? "" : v === "Variable" ? "V" : v[0]; };
+  const cells = (s) => [num(s.radius), num(s.thickness), num(s.semi_diameter), num(s.conic)];
+  // 表的结构（行、面型、材料、求解标记）不变时只滚动数字 / same structure: only roll the numbers
+  const shape = JSON.stringify([lang, rows.map((s) => [s.index, s.is_stop, s.type, s.comment, s.material, ...["radius", "thickness", "semi_diameter", "conic", "material"].map((k) => mark(s, k))])]);
+  if (host.dataset.shape !== shape) {
+    host.dataset.shape = shape;
+    const sv = (s, k) => (mark(s, k) ? `<span class="sv">${mark(s, k)}</span>` : "");
+    host.innerHTML = `<table><tr><th>#</th><th>${esc(t("ld_type"))}</th><th>${esc(t("ld_comment"))}</th><th class="num">${esc(t("ld_radius"))}</th>
+      <th class="num">${esc(t("ld_thickness"))}</th><th>${esc(t("ld_material"))}</th><th class="num">${esc(t("ld_sd"))}</th><th class="num">${esc(t("ld_conic"))}</th></tr>
+      ${rows.map((s) => `<tr data-surf="${s.index}"><td>${s.index}${s.is_stop ? " STO" : ""}</td><td>${esc(s.type)}</td><td>${esc(s.comment)}</td>
+        <td class="num"><span class="v"></span>${sv(s, "radius")}</td><td class="num"><span class="v"></span>${sv(s, "thickness")}</td>
+        <td>${esc(s.material)}${sv(s, "material")}</td><td class="num"><span class="v"></span>${sv(s, "semi_diameter")}</td>
+        <td class="num"><span class="v"></span>${sv(s, "conic")}</td></tr>`).join("")}</table>`;
+    const table = host.querySelector("table");
+    table.addEventListener("pointerover", (e) => { const tr = e.target.closest("tr[data-surf]"); if (tr) ldHover?.(Number(tr.dataset.surf)); });
+    table.addEventListener("pointerleave", () => ldHover?.(null));
+  }
+  host.querySelectorAll("tr[data-surf]").forEach((tr, i) => tr.querySelectorAll(".v").forEach((el, k) => odo(el, cells(rows[i])[k])));
 }
 
 // 布局图的显示选项按浏览器记住；读写失败（隐私窗口等）就用默认值
@@ -962,7 +1029,9 @@ function renderLayout(view) {
   if (only3d) dim = "3d";
   const shown = dim === "2d" && sec ? toSection(viz, sec) : viz;
   const sys = shown.system;
-  const surfs = shown.surfaces;
+  // 浅拷贝每个面：过渡动画会替换坐标数组，不能改到缓存里的导出 / shallow copies: the tween swaps coordinate arrays, never the cached export
+  const surfs = shown.surfaces.map((s) => ({ ...s }));
+  const shownKey = roundShown;
   const axisH = dim === "2d" && sec ? sec.u_name : "z", axisV = dim === "2d" && sec ? sec.v_name : "y";
   $("dim-seg").querySelectorAll("button").forEach((x) => { x.classList.toggle("on", x.dataset.dim === dim); x.disabled = only3d && x.dataset.dim === "2d"; x.title = x.disabled ? t("only_3d") : ""; });
   const clash = clashOf(viz);
@@ -974,20 +1043,21 @@ function renderLayout(view) {
   const stopSd = sys.stop_semi_diameter;
   const unit = sys.lens_units === "Millimeters" ? "mm" : sys.lens_units;
   const rows = new Map((viz.lens_data || []).map((r) => [r.index, r]));
-  // 图例放在画布外，不再盖住光路；画布有最小尺寸，视图放不下时上下、左右滚动
+  // 卡头写这是哪一轮；图例一行在上，材料图例并进同一行；来源说明一行在下，全文在悬停提示里
+  // the card header names the round; one legend row above; the provenance line below with its full text on hover
+  $("lens-src").textContent = title;
+  $("lens-src").title = title;
+  const footText = `${viz.errors?.sag ? t("sag_flat") + " " : ""}${foot(viz.backend === "rtc" ? "layout_foot_rtc" : "layout_foot")}${viz.unverified?.length ? ` ${t("unverified", viz.unverified)}` : ""}`;
   view.innerHTML = `<div class="layout-view"><div class="figure">
-    <div class="fig-head"><span class="info">λ ${sig(sys.wavelengths[sys.primary_wave - 1].um, 4)} µm${stopSd ? ` · STOP Ø ${(2 * stopSd).toFixed(2)} ${unit}` : ""}${image?.vertex ? ` · ${esc(t("image_z"))} ${image.vertex[2].toFixed(2)} ${unit}` : ""}</span>
-      <span class="fig-title">${esc(title)}</span></div>
-    ${clash.lines.length ? `<div class="clash"><b>${esc(t("clash_title"))}</b>${clash.lines.map((l) => `<div>${esc(l)}</div>`).join("")}</div>` : ""}
-    <div class="legend">${sys.fields.items.map((f, i) => `<span><i class="line" style="border-color:${FIELD_COLORS[i % FIELD_COLORS.length]}"></i>${esc(fieldLabel(sys, i))}</span>`).join("")}</div>
+    <div class="fig-head"><div class="legend">${sys.fields.items.map((f, i) => `<span><i class="line" style="border-color:${FIELD_COLORS[i % FIELD_COLORS.length]}"></i>${esc(fieldLabel(sys, i))}</span>`).join("")}
+      ${mats.map((m) => `<span><span class="swatch" style="background:${matColor(m)}55;border-color:${matColor(m)}"></span>${esc(m)}</span>`).join("")}</div>
+      <span class="info">λ ${sig(sys.wavelengths[sys.primary_wave - 1].um, 4)} µm${stopSd ? ` · STOP Ø ${(2 * stopSd).toFixed(2)} ${unit}` : ""}${image?.vertex ? ` · ${esc(t("image_z"))} ${image.vertex[2].toFixed(2)} ${unit}` : ""}</span></div>
+    ${clash.lines.length ? `<details class="clash"><summary><b>${esc(t("clash_title"))}</b> · ${clash.lines.length} · ${esc(clash.lines[0])}</summary>${clash.lines.map((l) => `<div>${esc(l)}</div>`).join("")}</details>` : ""}
     <div class="stage"><canvas></canvas>
       <div class="stage-tools"><button data-opt="grid">${esc(t("opt_grid"))}</button><button data-opt="labels">${esc(t("opt_labels"))}</button><button data-act="png" title="${esc(t("png_title"))}">PNG</button></div>
-      <span class="zoom-chip"></span><span class="readout"></span><div class="tip" hidden></div></div>
-    <div class="legend" style="margin:8px 0 0">${mats.map((m) => `<span><span class="swatch" style="background:${matColor(m)}55;border-color:${matColor(m)}"></span>${esc(m)}</span>`).join("")}</div></div>
-    <div class="foot ${viz.errors?.sag ? "warn" : ""}">${esc(viz.errors?.sag ? t("sag_flat") + " " : "")}${esc(foot(viz.backend === "rtc" ? "layout_foot_rtc" : "layout_foot"))}${viz.unverified?.length ? ` ${esc(t("unverified", viz.unverified))}` : ""} <span id="layout-hint"></span></div>
-    ${viz.lens_data ? lensDataTable(viz.lens_data) : ""}</div>`;
-  const details = view.querySelector(".lens-data");
-  if (details) details.addEventListener("toggle", () => { lensDataOpen = details.open; });
+      <span class="zoom-chip"></span><span class="readout"></span><div class="tip" hidden></div></div></div>
+    <div class="foot ${viz.errors?.sag ? "warn" : ""}" title="${esc(footText)}"><span id="layout-hint"></span> · ${esc(footText)}</div></div>`;
+  renderLensData(viz.lens_data);
   const stage = view.querySelector(".stage");
   const canvas = stage.querySelector("canvas");
   const zoomChip = stage.querySelector(".zoom-chip");
@@ -1248,13 +1318,41 @@ function renderLayout(view) {
 
   // 布局与 Lens Data 表共用一个悬停状态：指向布局里的面标出表格行，指向表格行高亮布局里的面（借鉴 Optiland GUI 的 SurfaceInteractionState）
   // the layout and the Lens Data table share one hover state, after the Optiland GUI's SurfaceInteractionState
-  const table = details?.querySelector("table");
-  const markRow = (index) => table?.querySelectorAll("tr[data-surf]").forEach((tr) => tr.classList.toggle("hl", Number(tr.dataset.surf) === index));
+  // Lens Data 表在另一张卡里，经 ldHover 接进来 / the table lives in its own card and calls in through ldHover
+  const markRow = (index) => $("ld").querySelectorAll("tr[data-surf]").forEach((tr) => tr.classList.toggle("hl", Number(tr.dataset.surf) === index));
   const setHover = (index) => { if (index === hover) return; hover = index; markRow(index); draw(); };
-  if (table) {
-    table.addEventListener("pointerover", (e) => { const tr = e.target.closest("tr[data-surf]"); if (tr && !drag) setHover(Number(tr.dataset.surf)); });
-    table.addEventListener("pointerleave", () => { if (!drag) setHover(null); });
+  ldHover = (index) => { if (!drag) setHover(index); };
+
+  // 结构不变（面、截线点数、光线条数都一样）时，镜片与光线从上次画的位置过渡到新位置；只是动画，终点就是导出的坐标
+  // with the same structure, lenses and rays glide from where they were drawn to the new export; animation only, it ends on the export
+  const GEO = ["vertex", "profile_y", "profile_x", "rim"];
+  const geomKey = JSON.stringify([dim, surfs.map((s) => [s.index, ...GEO.map((k) => (!s[k] ? 0 : k === "vertex" ? 1 : s[k].length))]), rays.map((r) => [r.field, r.px, r.pts.length])]);
+  const target = { surfs: surfs.map((s) => Object.fromEntries(GEO.map((k) => [k, s[k]]))), rays: rays.map((r) => r.pts) };
+  const lerpPts = (a, b, k) => b.map((p, i) => p.map((v, j) => a[i][j] + (v - a[i][j]) * k));
+  const snapshot = () => ({ key: geomKey, surfs: surfs.map((s) => Object.fromEntries(GEO.map((k) => [k, s[k]]))), rays: rays.map((r) => r.pts) });
+  const blend = (from, k) => {
+    surfs.forEach((s, i) => GEO.forEach((g) => {
+      const a = from.surfs[i][g], b = target.surfs[i][g];
+      if (a && b) s[g] = g === "vertex" ? b.map((v, j) => a[j] + (v - a[j]) * k) : lerpPts(a, b, k);
+    }));
+    rays.forEach((r, i) => { r.pts = lerpPts(from.rays[i], target.rays[i], k); });
+  };
+  cancelAnimationFrame(renderLayout.anim);
+  const prev = renderLayout.geom;
+  if (prev && prev.key === geomKey && !reduceMotion) {
+    blend(prev, 0);
+    const t0 = performance.now();
+    // rAF 的时间戳可能早于 t0：进度夹到 [0, 1]，否则缓动会外推 / rAF stamps can precede t0: clamp the progress
+    const step = (now) => {
+      const k = Math.min(1, Math.max(0, (now - t0) / 700));
+      blend(prev, 1 - Math.pow(1 - k, 4));
+      renderLayout.geom = snapshot();
+      draw();
+      if (k < 1) renderLayout.anim = requestAnimationFrame(step);
+    };
+    renderLayout.anim = requestAnimationFrame(step);
   }
+  renderLayout.geom = snapshot();
 
   draw();
   let drag = null;
@@ -1321,15 +1419,17 @@ function renderLayout(view) {
       if (!blob) return;
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `${JOB}-${roundShown === "live" ? "live" : t("select_round", roundShown)}-${dim}.png`;
+      a.download = `${JOB}-${shownKey === "live" ? "live" : t("select_round", shownKey)}-${dim}.png`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     });
   };
   renderLayout.redraw = draw;
+  renderLayout.ro?.disconnect();
+  renderLayout.ro = new ResizeObserver(() => draw());
+  renderLayout.ro.observe(stage);
 }
 
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && ruler) { ruler = null; if (tab === "layout" && renderLayout.redraw) renderLayout.redraw(); } });
 
 // ---------------- 非序列 ----------------
 
@@ -1354,17 +1454,21 @@ function renderNscLayout(view) {
     f.is !== "default" ? t("face_is")[f.is] || f.is : "", f.coating || "", f.profile ? `profile ${f.profile}` : "",
     f.scatter && f.scatter.model !== "none" ? [f.scatter.model, f.scatter.fraction != null ? sig(f.scatter.fraction, 3) : "", f.scatter.reflect || f.scatter.transmit || f.scatter.dll || ""].filter(Boolean).join(" ") : ""].filter(Boolean).join(" · ")}`).join("; ") || "—";
   const [h0, h1, h2, h3, h4, h5] = t("th_obj");
+  $("lens-src").textContent = title;
+  const nscFoot = `${t("nsc_foot")}${undrawn.length ? ` ${t("nsc_undrawn")}${undrawn.join(", ")}` : ""}`;
   view.innerHTML = `<div class="layout-view"><div class="figure">
-    <div class="fig-head"><span class="info">${esc(t("nsc_title"))} · λ ${sys.wavelengths.map((w) => sig(w.um, 4)).join(", ")} µm</span><span class="fig-title">${esc(title)}</span></div>
+    <div class="fig-head"><div class="legend">${mats.map((m) => `<span><span class="swatch" style="background:${MATERIAL_COLORS[mats.indexOf(m) % MATERIAL_COLORS.length]}55;border-color:${MATERIAL_COLORS[mats.indexOf(m) % MATERIAL_COLORS.length]}"></span>${esc(m || "—")}</span>`).join("")}
+      <span><i class="line" style="border-color:#e5a00d"></i>${esc(t("kind_source"))}</span><span><i class="line" style="border-color:#e0705f"></i>${esc(t("kind_detector"))}</span></div>
+      <span class="info">${esc(t("nsc_title"))} · λ ${sys.wavelengths.map((w) => sig(w.um, 4)).join(", ")} µm</span></div>
     ${clash.length ? `<div class="clash"><b>${esc(t("clash_title"))}</b>${clash.map((l) => `<div>${esc(l)}</div>`).join("")}</div>` : ""}
-    <div class="stage"><canvas></canvas><span class="zoom-chip"></span></div>
-    <div class="legend" style="margin:8px 0 0">${mats.map((m) => `<span><span class="swatch" style="background:${MATERIAL_COLORS[mats.indexOf(m) % MATERIAL_COLORS.length]}55;border-color:${MATERIAL_COLORS[mats.indexOf(m) % MATERIAL_COLORS.length]}"></span>${esc(m || "—")}</span>`).join("")}
-      <span><i class="line" style="border-color:#e5a00d"></i>${esc(t("kind_source"))}</span><span><i class="line" style="border-color:#e0705f"></i>${esc(t("kind_detector"))}</span></div></div>
-    <div class="foot">${esc(t("nsc_foot"))}${undrawn.length ? ` ${esc(t("nsc_undrawn"))}${undrawn.join(", ")}` : ""} <span>${esc(t(dim === "2d" ? "layout_hint_2d" : "layout_hint_3d"))}</span></div>
-    <details class="lens-data" open><summary>${esc(t("lens_data"))}</summary><div class="table-wrap"><table>
-      <tr><th>${h0}</th><th>${esc(h1)}</th><th>${esc(h2)}</th><th>${esc(h3)}</th><th>${esc(h4)}</th><th>${esc(h5)}</th></tr>
+    <div class="stage"><canvas></canvas><span class="zoom-chip"></span></div></div>
+    <div class="foot" title="${esc(nscFoot)}">${esc(t(dim === "2d" ? "layout_hint_2d" : "layout_hint_3d"))} · ${esc(nscFoot)}</div></div>`;
+  // 物体表放进 Lens Data 卡 / the object table goes into the Lens Data card
+  $("ld-title").textContent = t("ld_objects"); $("ld-note").textContent = ""; $("ld").dataset.shape = "";
+  $("ld").innerHTML = `<table><tr><th>${h0}</th><th>${esc(h1)}</th><th>${esc(h2)}</th><th>${esc(h3)}</th><th>${esc(h4)}</th><th>${esc(h5)}</th></tr>
       ${objs.map((o) => `<tr><td>${o.index}</td><td>${esc(o.type_label || o.type)}${data.get(o.index)?.file ? ` · ${esc(data.get(o.index).file)}` : ""}</td><td>${esc(o.comment)}</td><td>${esc(o.kind === "object" ? o.material || "—" : "—")}</td><td>${esc(vpText(data.get(o.index)?.volume_physics))}</td><td>${esc(faceText(data.get(o.index)))}</td></tr>`).join("")}
-    </table></div></details></div>`;
+    </table>`;
+  ldHover = null; renderLayout.geom = null;
   $("dim-seg").querySelectorAll("button").forEach((x) => { x.classList.toggle("on", x.dataset.dim === dim); x.disabled = false; x.title = ""; });
   const stage = view.querySelector(".stage"), canvas = stage.querySelector("canvas"), zoomChip = stage.querySelector(".zoom-chip");
   const lines = (o) => (dim === "2d" ? o.section || [] : o.edges || []);
@@ -1424,6 +1528,9 @@ function renderNscLayout(view) {
   canvas.onwheel = (e) => { e.preventDefault(); camera.zoom = Math.max(0.3, Math.min(200, camera.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12))); draw(); };
   canvas.ondblclick = () => { Object.assign(camera, CAMERA0); draw(); };
   renderLayout.redraw = draw;
+  renderLayout.ro?.disconnect();
+  renderLayout.ro = new ResizeObserver(() => draw());
+  renderLayout.ro.observe(stage);
 }
 
 function renderDetectors(view) {
@@ -1463,19 +1570,18 @@ function renderRounds(view) {
   if (!rounds.length) { view.innerHTML = `<div class="empty">${esc(t("no_rounds"))}</div>`; return; }
   view.innerHTML = `<div class="table-wrap"><div class="figure"><div id="g-plot"></div></div><div class="foot">${esc(t("pick_round"))}</div>
     <table><tr><th>${esc(t("round"))}</th><th>${esc(t("tiers"))}</th><th class="num">${esc(t("gap"))}</th><th>${esc(t("state"))}</th><th>${esc(t("note"))}</th></tr>
-    ${rounds.slice().reverse().map((r) => `<tr class="${r.viz ? "pick" : ""} ${r.round === roundShown ? "sel" : ""}" data-round="${r.round}">
+    ${rounds.slice().reverse().map((r) => `<tr class="${r.viz ? "pick" : ""} ${r.round === selected() ? "sel" : ""}" data-round="${r.round}">
       <td class="num" style="text-align:left">${t("select_round", r.round)}</td><td>${r.tiers.map((x) => `<span class="tag">${esc(x)}</span>`).join("")}${roundSource(r)}</td>
       <td class="num">${fmtG(r.shortfall)}</td><td>${r.achieved ? `<span class="tag ok">${esc(t("achieved"))}</span>` : ""}${r.deliverable ? `<span class="tag">${esc(t("deliverable"))}</span>` : ""}</td>
       <td>${esc(r.note)}</td></tr>`).join("")}</table></div>`;
   view.querySelectorAll("tr.pick").forEach((tr) => tr.addEventListener("click", () => {
     pinnedRound = Number(tr.dataset.round);
-    tab = "layout";
-    renderTabs(); renderView();
+    renderSelection();
   }));
   const host = $("g-plot");
   const W = host.clientWidth, H = 180;
   const [, g] = canvasIn(host, W, H);
-  const pad = { l: 46, r: 14, t: 10, b: 26 };
+  const pad = { l: 62, r: 14, t: 10, b: 26 };
   const finite = rounds.filter((r) => r.shortfall != null);
   if (!finite.length) return;
   const ys = finite.map((r) => r.shortfall);
@@ -1492,7 +1598,7 @@ function renderRounds(view) {
   g.stroke();
   finite.forEach((r) => {
     g.fillStyle = r.achieved ? css("--done") : css("--accent");
-    g.beginPath(); g.arc(px(r.round), py(r.shortfall), r.round === roundShown ? 4.5 : 3, 0, 2 * Math.PI); g.fill();
+    g.beginPath(); g.arc(px(r.round), py(r.shortfall), r.round === selected() ? 4.5 : 3, 0, 2 * Math.PI); g.fill();
   });
   g.fillStyle = css("--text-2"); g.font = `11px ${css("--mono")}`; g.textAlign = "right"; g.textBaseline = "middle";
   g.fillText(fmtG(Math.max(...ys)), pad.l - 6, pad.t + 6);
@@ -1506,15 +1612,21 @@ function renderRounds(view) {
 // 需求单与建模说明由用户在窗口里点确认（ADR-0020）；命令行的 --quote 只在窗口用不了时可用
 // the user confirms the demand and approves a model here; the CLI's --quote only works when the window cannot be used
 let gateKey = null;
+let signedAt = 0;
+
+function gateShell(title, sub, stateText, body) {
+  return `<div class="gh"><span class="gicon"></span><div class="gt"><b>${esc(title)}</b><span>${sub}</span></div><span class="gstate">${esc(stateText)}</span></div>${body}`;
+}
 
 function renderGate() {
   const el = $("gate");
   // 自主任务：只说明谁在过关卡，并给用户一个改为参与的按钮（反过来只能在建任务时定，ADR-0021）
-  // an autonomous job: say who passes the gates and offer the switch to interactive (the reverse is set at job creation only)
   if (state.mode === "autonomous") {
-    if (gateKey === "autonomous") return;
-    gateKey = "autonomous";
-    el.innerHTML = `<p>${esc(t("mode_auto"))}</p><button class="ghost" id="mode-switch">${esc(t("mode_to_interactive"))}</button>`;
+    if (gateKey === "autonomous" + lang) return;
+    gateKey = "autonomous" + lang;
+    el.className = "card gate auto";
+    el.innerHTML = gateShell(t("gate_auto"), "", t("gate_auto"),
+      `<p class="auto-text">${esc(t("mode_auto"))}</p><div class="act"><button class="gbtn" id="mode-switch">${esc(t("mode_to_interactive"))}</button></div>`);
     el.hidden = false;
     $("mode-switch").addEventListener("click", async () => {
       try { await api("mode", {}, { mode: "interactive" }); toast(t("mode_switched")); gateKey = null; stateText = ""; } catch (err) { toast(err.message, true); }
@@ -1522,61 +1634,519 @@ function renderGate() {
     return;
   }
   const step = state.steps.find((s) => s.id === state.current);
-  if (!["demand_confirm", "model_approve"].includes(state.current) || !["waiting", "blocked"].includes(step?.status)) {
-    el.hidden = true; el.innerHTML = ""; gateKey = null; return;
-  }
+  const open = GATES.has(state.current) && ["waiting", "blocked"].includes(step?.status);
   const g = state.gate || { demand: null, model: null };
+  if (!open || (!g.demand && !g.model)) {
+    // 刚确认过的卡收成两行、转绿，停留片刻再收起 / a just-confirmed card stays folded and green for a moment
+    if (el.classList.contains("signed") && Date.now() - signedAt < 4000) return;
+    el.hidden = true; el.innerHTML = ""; el.className = "card gate"; gateKey = null; return;
+  }
   // 内容没变就不重画：重画会清掉用户正在打的备注 / redraw only on a change, or the note being typed is lost
-  const key = JSON.stringify([g, state.revisions]);
+  const key = JSON.stringify([g, state.revisions, lang]);
   if (key === gateKey) return;
   gateKey = key;
-  if (!g.demand && !g.model) { el.hidden = true; el.innerHTML = ""; return; }
-  const parts = [];
-  let ready = true;
+  const facts = [];
+  let ready = true, sub = "";
+  const fact = (k, v, cls = "") => facts.push(`<div class="fact ${cls}"><span class="fk">${esc(t(k))}</span><span class="fv">${v}</span></div>`);
   if (g.demand) {
     const d = g.demand;
-    parts.push(`<b>${esc(t("gate_demand"))}</b>`, `<p>${esc(d.summary)}</p>`);
-    if (d.weak_basis.length) {
-      parts.push(`<div class="weak"><b>${esc(t("gate_weak"))}</b>${d.weak_basis.map((w) => `<div>${esc(w.id)}: ${esc(JSON.stringify(w.bound))} · ${esc(w.source || "—")}</div>`).join("")}</div>`);
-    }
-    if (d.missing_source.length) { ready = false; parts.push(`<div class="q">${esc(t("gate_missing", d.missing_source.join(", ")))}</div>`); }
+    fact("fk_demand", esc(d.summary));
+    if (d.weak_basis.length) fact("fk_weak", d.weak_basis.map((w) => `<i class="pend"></i><code>${esc(w.id)}</code> ${esc(JSON.stringify(w.bound))} · ${esc(w.source || "—")}`).join("<br>"));
+    if (d.missing_source.length) { ready = false; fact("fk_missing", esc(t("gate_missing", d.missing_source.join(", "))), "bad"); }
   } else {
     const m = g.model;
-    parts.push(`<b>${esc(t("gate_model"))}</b> <span class="muted">${esc(m.model)}</span>`);
-    if (m.page) parts.push(`<button class="ghost" id="gate-open">${esc(t("gate_open"))}</button>`);
-    if (m.rebuild_reason) parts.push(`<p>${esc(t("gate_rebuild", m.rebuild_reason))}</p>`);
-    else if (m.rebuild_required) { ready = false; parts.push(`<div class="q">${esc(t("gate_no_rebuild"))}</div>`); }
-    if (m.exploration_missing) { ready = false; parts.push(`<div class="q">${esc(t("gate_no_search"))}</div>`); }
-    if (!m.shown_sha) { ready = false; parts.push(`<div class="q">${esc(t("gate_old"))}</div>`); }
+    fact("fk_model", `<code>${esc(m.model)}</code>`);
+    if (m.page) sub = `<button class="lnk" id="gate-open">${esc(t("gate_open"))} ↗</button>`;
+    if (m.rebuild_reason) fact("fk_rebuild", esc(m.rebuild_reason));
+    const todo = [];
+    if (!m.rebuild_reason && m.rebuild_required) { ready = false; todo.push(t("gate_no_rebuild")); }
+    if (m.exploration_missing) { ready = false; todo.push(t("gate_no_search")); }
+    if (!m.shown_sha) { ready = false; todo.push(t("gate_old")); }
+    if (todo.length) fact("fk_todo", todo.map(esc).join("<br>"), "bad");
   }
   const gate = g.demand ? "demand" : "model";
-  (state.revisions || []).filter((r) => r.gate === gate).forEach((r) => parts.push(`<div class="weak">${esc(t("gate_revised", r.note))}</div>`));
-  parts.push(`<textarea id="gate-note" rows="2" placeholder="${esc(t("gate_note"))}"></textarea>`,
-    `<div class="row"><button class="primary" id="gate-ok"${ready ? "" : " disabled"}>${esc(t(g.demand ? "gate_demand" : "gate_model"))}</button>`
-    + `<button class="ghost" id="gate-revise">${esc(t("gate_revise"))}</button></div>`);
-  el.innerHTML = parts.join("");
+  const revs = (state.revisions || []).filter((r) => r.gate === gate).map((r) => esc(t("gate_revised", r.note))).join("<br>");
+  el.className = "card gate";
+  el.innerHTML = gateShell(t(g.demand ? "gate_demand" : "gate_model"), sub, t("gate_wait"),
+    `<div class="body"><div class="facts">${facts.join("")}</div>${revs ? `<div class="rev">${revs}</div>` : ""}
+      <div class="act"><input id="gate-note" placeholder="${esc(t("gate_note_short"))}"><button class="gbtn" id="gate-revise">${esc(t("gate_revise"))}</button>
+      <button class="gbtn primary" id="gate-ok"${ready ? "" : " disabled"}><span>${esc(t("gate_ok"))}</span><kbd>Ctrl ↵</kbd></button></div></div>
+     <div class="done" id="gate-done"></div>`);
   el.hidden = false;
   $("gate-open")?.addEventListener("click", () => api("open", {}, { page: g.model.page }).catch((e) => toast(e.message, true)));
+  $("gate-note").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !$("gate-ok").disabled) $("gate-ok").click(); });
   $("gate-ok").addEventListener("click", async (e) => {
-    e.target.disabled = true;
+    const btn = e.currentTarget, note = $("gate-note").value;
+    btn.disabled = true;
     try {
-      await api("confirm", {}, g.demand ? { gate: "demand", sha: g.demand.demand_sha, note: $("gate-note").value }
-        : { gate: "model", sha: g.model.shown_sha, model: g.model.model, note: $("gate-note").value });
+      await api("confirm", {}, g.demand ? { gate: "demand", sha: g.demand.demand_sha, note } : { gate: "model", sha: g.model.shown_sha, model: g.model.model, note });
       toast(t("gate_done"));
+      signedAt = Date.now();
+      el.classList.add("signed");
+      el.querySelector(".gstate").textContent = t("gate_signed");
+      $("gate-done").textContent = t("gate_signed_at", new Date().toTimeString().slice(0, 5)) + (note.trim() ? ` · ${note.trim()}` : "");
       gateKey = null; stateText = "";
-    } catch (err) { toast(err.message, true); e.target.disabled = false; }
+    } catch (err) { toast(err.message, true); btn.disabled = false; }
   });
   $("gate-revise").addEventListener("click", async (e) => {
-    const note = $("gate-note").value.trim();
-    if (!note) { toast(t("gate_revise_need"), true); return; }
-    e.target.disabled = true;
+    const btn = e.currentTarget, note = $("gate-note").value.trim();
+    if (!note) { toast(t("gate_revise_need"), true); $("gate-note").focus(); return; }
+    btn.disabled = true;
     try {
       await api("revise", {}, { gate, sha: g.demand ? g.demand.demand_sha : g.model.shown_sha, note });
       toast(t("gate_revise_done"));
       gateKey = null; stateText = "";
-    } catch (err) { toast(err.message, true); e.target.disabled = false; }
+    } catch (err) { toast(err.message, true); btn.disabled = false; }
   });
 }
+
+// ---------------- 判定圆环 ----------------
+
+const boundText = (b) => (!b ? "" : "equals" in b ? `= ${sig(b.equals, 4)}${b.tol ? ` ± ${sig(b.tol, 3)}` : ""}`
+  : [b.min != null ? `≥ ${sig(b.min, 4)}` : "", b.max != null ? `≤ ${sig(b.max, 4)}` : ""].filter(Boolean).join(" · "));
+const fmtVal = (v) => (v == null ? "–" : Math.abs(v) >= 1e5 || (v !== 0 && Math.abs(v) < 1e-3) ? v.toExponential(2) : sig(v, 4));
+const liveItems = () => state?.metrics?.items || {};
+// 一项的单位：目录条目由后端写好 pick 与所选标量的单位（ADR-0022），其余用需求单写的单位
+// a catalog entry carries its pick and that scalar's unit from the backend; other items use the demand's unit
+const unitOfItem = (m) => {
+  const e = liveItems()[m.id];
+  if (!e?.metric_id) return m.unit;
+  return e.pick ? e.unit : (e.scalar_units?.value ?? e.unit ?? m.unit);
+};
+
+// 圆环与需求卡的条目：需求里带判定的条目在前，用户追加的只看不判定的目录指标在后（ADR-0022）
+// gauges and the need card: checked demand items first, then the display-only catalog metrics the user added
+function judgeItems() {
+  const items = (state?.metric_items || []).map((m) => ({ ...m, display: false }));
+  const known = new Set(items.map((m) => m.id));
+  Object.entries(liveItems()).forEach(([id, e]) => {
+    if (!e.display_only || known.has(id)) return;
+    items.push({ id, description: e.name || e.metric_id, unit: e.unit, bound: null, display: true, metric_id: e.metric_id });
+  });
+  return items;
+}
+
+// 实时帧里的条目是否过时：每项带自己的视图版本，与这一帧的版本不同就是旧值；旧格式在运行中一律算旧
+// an entry is stale when its own view differs from the frame's; older files count everything stale while running
+function staleEntry(e) {
+  const live = state.metrics || {};
+  if (!e) return true;
+  if (live.schema === 2) return e.view !== live.view;
+  return e.view !== live.view || !!state.progress;
+}
+
+// 一条在选中对象上的值与未达量：当前镜头取后台测的值（metrics.json），轮次取账本记录；未达量都是后台算好的
+// an item's value and shortfall for the selection: live from metrics.json, a round from the ledger; shortfalls come from the daemon
+function itemAt(id, key) {
+  if (key === "live") {
+    const e = liveItems()[id];
+    if (!e) return { value: null, gap: null, stale: true };
+    return { value: e.value, gap: e.display_only ? null : (e.gap ?? null), stale: staleEntry(e), error: e.error, display: !!e.display_only };
+  }
+  const r = roundOf(key);
+  if (!r) return { value: null, gap: null };
+  const value = r.values?.[id] ?? null;
+  const gap = r.failing ? (r.failing[id] ?? (value == null ? null : 0)) : null;
+  return { value, gap };
+}
+
+function renderJudge() {
+  const items = judgeItems(), key = selected(), host = $("gauges");
+  $("judge-title").textContent = t("judge");
+  $("judge-src").textContent = key === "live" ? t("k_live") : key != null ? t("select_round", key) : "";
+  $("pick-open").title = t("pick_title");
+  if (!items.length) { host.innerHTML = `<div class="empty">${esc(t("need_none"))}</div>`; host.dataset.ids = ""; return; }
+  const ids = JSON.stringify(items.map((m) => [m.id, unitOfItem(m), m.bound, m.description, m.display])) + lang;
+  if (host.dataset.ids !== ids) {
+    host.dataset.ids = ids;
+    host.innerHTML = items.map((m) => `<div class="gauge ${m.display ? "display" : ""}" data-id="${esc(m.id)}" title="${esc(m.description || m.id)}"><div class="ring"><svg viewBox="0 0 80 80"><circle class="trk" cx="40" cy="40" r="34"/>`
+      + `<circle class="fill" cx="40" cy="40" r="34" stroke-dasharray="213.6" stroke-dashoffset="213.6"/></svg><div class="val"><div><span class="num"></span><small>${esc(unitOfItem(m) || "")}</small></div></div></div>`
+      + `<div class="n">${esc(m.id)}</div><div class="b">${esc(m.display ? t("display_only") : boundText(m.bound))}</div></div>`).join("");
+  }
+  host.querySelectorAll(".gauge").forEach((el) => {
+    const it = itemAt(el.dataset.id, key), display = el.classList.contains("display");
+    // 圆环填充 1/(1+3·未达量)：达成为满圈；只看的条目和没有未达量（旧账本、未测）时画一半、用主色
+    // fill 1/(1+3·shortfall); half and gold for display-only items and when the shortfall is unknown
+    const frac = display || it.gap == null ? 0.5 : 1 / (1 + 3 * it.gap);
+    const fill = el.querySelector(".fill");
+    fill.setAttribute("stroke-dashoffset", 213.6 * (1 - frac));
+    fill.setAttribute("stroke", display ? "#95e6cb66" : it.gap == null ? "#e6b45066" : it.gap === 0 ? "#aad94c" : it.gap < 0.2 ? "#e6b450" : "#f07178");
+    odo(el.querySelector(".num"), fmtVal(it.value));
+    el.classList.toggle("ok", it.gap === 0);
+    el.classList.toggle("stale", !!it.stale);
+    el.classList.toggle("err", !!it.error);
+    el.title = [el.title.split("\n")[0], it.error || ""].filter(Boolean).join("\n");
+    el.classList.toggle("sel", el.dataset.id === needItem()?.id);
+  });
+}
+
+// ---------------- 需求卡：曲线、表格或各轮趋势 ----------------
+
+// 没点选时取当前未达最多的一条 / without a pick, the item furthest from its bound now
+function needItem() {
+  const items = judgeItems();
+  if (!items.length) return null;
+  const picked = items.find((m) => m.id === needId);
+  if (picked) return picked;
+  const key = selected();
+  return items.slice().sort((a, b) => (itemAt(b.id, key).gap ?? -1) - (itemAt(a.id, key).gap ?? -1))[0];
+}
+
+// 曲线与表格只有当前镜头的目录结果里有；轮次的完整结果在证据目录，窗口只画各轮的标量 / curves exist for the live lens only
+let needMode = null;
+function needViews(m) {
+  const e = selected() === "live" ? liveItems()[m.id] : null;
+  const views = [];
+  if (e?.series?.length) views.push("curve");
+  if (e?.table?.rows?.length) views.push("table");
+  if (!m.display) views.push("trend");
+  return { e, views };
+}
+
+function renderNeed() {
+  const m = needItem(), host = $("need");
+  const seg = $("need-mode");
+  if (!m) {
+    $("need-name").textContent = t("judge"); $("need-rule").textContent = ""; seg.innerHTML = "";
+    host.innerHTML = `<div class="empty">${esc(t("need_none"))}</div>`; host.dataset.mode = "";
+    return;
+  }
+  const { e, views } = needViews(m);
+  const mode = views.includes(needMode) ? needMode : views[0] || "trend";
+  const segHtml = views.length > 1 ? views.map((v) => `<button data-mode="${v}" class="${v === mode ? "on" : ""}">${esc(t("need_" + v))}</button>`).join("") : "";
+  if (seg.dataset.html !== segHtml) { seg.innerHTML = segHtml; seg.dataset.html = segHtml; }
+  seg.hidden = !segHtml;
+  $("need-name").textContent = m.id;
+  const unit = unitOfItem(m);
+  $("need-rule").textContent = [m.description, boundText(m.bound) && `${t("metric_bound")} ${boundText(m.bound)}${unit ? ` ${unit}` : ""}`, m.direction,
+    m.display ? t("display_only") : ""].filter(Boolean).join(" · ");
+  $("need-rule").title = [$("need-rule").textContent, e?.description].filter(Boolean).join("\n");
+  if (host.dataset.mode !== mode) {
+    host.dataset.mode = mode;
+    host.innerHTML = mode === "table" ? `<div class="need-table"></div>`
+      : `<canvas></canvas><div class="verdict"><b><span class="num"></span><small></small></b><span></span></div>`;
+  }
+  const key = selected(), now = itemAt(m.id, key);
+  const verdict = host.querySelector(".verdict");
+  if (verdict) {
+    odo(verdict.querySelector(".num"), fmtVal(now.value));
+    verdict.querySelector("small").textContent = unit || "";
+    const at = key === "live" ? t("k_live") : key != null ? t("select_round", key) : "";
+    const frame = key === "live" && state.metrics?.live?.preview && state.metrics.iteration != null ? ` · ${t("iteration", state.metrics.iteration)}` : "";
+    verdict.querySelector(":scope > span").textContent = now.error ? `${at} · ${t("failed")}` : at + frame;
+    verdict.title = now.error || "";
+    verdict.className = "verdict" + (now.gap === 0 ? " ok" : now.gap > 0 || now.error ? " bad" : "") + (now.stale ? " stale" : "");
+  }
+  if (mode === "curve") drawCurve(m, e);
+  else if (mode === "table") drawTable(e);
+  else drawNeed(m);
+}
+
+function needCanvas() {
+  const cv = $("need").querySelector("canvas");
+  if (!cv) return [null];
+  const W = cv.clientWidth, H = cv.clientHeight;
+  if (!W || !H) return [null];
+  const dpr = devicePixelRatio || 1;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  return [g, W, H];
+}
+
+// 界限线：需求的界限（equals 带容差时画两条）/ the demand's bound lines
+const boundLines = (b) => (!b ? [] : "equals" in b ? [b.equals - (b.tol || 0), b.equals + (b.tol || 0)].filter((v, k, a) => a.indexOf(v) === k) : [b.min, b.max].filter((v) => v != null));
+
+// 目录指标的曲线组（ADR-0022 的 curve 形态）：每组 x 与若干条 y；scatter 画点；判定标量与 y 同单位时画界限线，
+// MTF 判定频率画竖线。窗口只画导出的数据
+// a catalog curve result: series of x with named y arrays; scatter as dots; bound lines when the judged scalar shares
+// the y unit; a vertical line at the MTF judging frequency. The window draws exported data only
+function drawCurve(m, e) {
+  const [g, W, H] = needCanvas();
+  if (!g) return;
+  const series = e.series || [];
+  const curves = [];
+  // 衍射极限不占颜色序号，第一条视场曲线用主色 / the diffraction limit takes no colour slot
+  let slot = -1;
+  series.forEach((s) => { const isDiff = /diff/i.test(s.description || s.name || ""); if (!isDiff) slot += 1; const si = slot; Object.entries(s.y || {}).forEach(([name, ys]) => {
+    curves.push({ x: s.x || [], y: ys || [], scatter: s.render === "scatter", label: [s.name || s.description, Object.keys(s.y).length > 1 ? name : ""].filter(Boolean).join(" · "),
+      color: isDiff ? css("--text-3") : FIELD_COLORS[si % FIELD_COLORS.length], dash: isDiff ? [4, 4] : /sag/i.test(name) ? [6, 4] : [] });
+  }); });
+  const finite = (v) => v != null && isFinite(v);
+  const xs = curves.flatMap((c) => c.x.filter(finite)), ys = curves.flatMap((c) => c.y.filter(finite));
+  if (!xs.length || !ys.length) { g.fillStyle = css("--text-3"); g.font = `12px ${css("--font")}`; g.textAlign = "center"; g.fillText(t("need_empty"), W / 2, H / 2); return; }
+  const yUnit = e.y_axis?.unit ?? "", judged = !m.display && unitOfItem(m) === yUnit;
+  const lines = judged ? boundLines(m.bound) : [];
+  let [x0, x1] = extent(xs), [y0, y1] = extent([...ys, ...lines]);
+  const square = curves.some((c) => c.scatter);
+  if (square) { const h = Math.max(Math.abs(x0), Math.abs(x1), Math.abs(y0), Math.abs(y1)) * 1.1 || 1e-3; x0 = y0 = -h; x1 = y1 = h; }
+  else { const p = (y1 - y0) * 0.08 || Math.abs(y1) * 0.1 || 1; y0 -= p; y1 += p; if (x0 === x1) { x0 -= 1; x1 += 1; } }
+  const L = 54, R = 14, T = Math.min(44, H * 0.22), B = 34;
+  let pw = W - L - R, ph = H - T - B, ox = L, oy = T;
+  if (square) { const s = Math.min(pw, ph); ox = L + (pw - s) / 2; oy = T + (ph - s) / 2; pw = ph = s; }
+  const X = (x) => ox + ((x - x0) / (x1 - x0)) * pw, Y = (y) => oy + (1 - (y - y0) / (y1 - y0)) * ph;
+  g.font = `10px ${css("--mono")}`; g.strokeStyle = css("--grid"); g.lineWidth = 1; g.fillStyle = css("--text-3");
+  ticks(y0, y1, niceStep((y1 - y0) / 4)).forEach((v) => { const y = Math.round(Y(v)) + 0.5; g.beginPath(); g.moveTo(ox, y); g.lineTo(ox + pw, y); g.stroke(); g.textAlign = "right"; g.fillText(sig(v, 3), ox - 6, y + 3); });
+  ticks(x0, x1, niceStep((x1 - x0) / 5)).forEach((v) => { const x = Math.round(X(v)) + 0.5; g.beginPath(); g.moveTo(x, oy); g.lineTo(x, oy + ph); g.stroke(); g.textAlign = "center"; g.fillText(sig(v, 3), x, oy + ph + 13); });
+  const axis = (a, fallback) => (a ? `${a.name}${a.unit ? ` (${a.unit})` : ""}` : fallback || "");
+  g.textAlign = "center"; g.fillText(axis(e.x_axis, series[0]?.x_label), ox + pw / 2, oy + ph + 27);
+  g.textAlign = "left"; g.fillText(axis(e.y_axis), 4, Math.max(10, oy - 8));
+  g.strokeStyle = "#acb6bf88"; g.setLineDash([5, 4]);
+  lines.forEach((v) => { const y = Y(v); g.beginPath(); g.moveTo(ox, y); g.lineTo(ox + pw, y); g.stroke(); });
+  const fq = e.params?.frequency;
+  if (judged && finite(fq) && fq >= x0 && fq <= x1) { g.beginPath(); g.moveTo(X(fq), oy); g.lineTo(X(fq), oy + ph); g.stroke(); }
+  g.setLineDash([]);
+  g.save(); g.beginPath(); g.rect(ox, oy, pw, ph); g.clip();
+  curves.forEach((c) => {
+    g.strokeStyle = g.fillStyle = c.color;
+    if (c.scatter) { c.x.forEach((x, i) => { const y = c.y[i]; if (finite(x) && finite(y)) g.fillRect(X(x) - 0.9, Y(y) - 0.9, 1.8, 1.8); }); return; }
+    g.lineWidth = 1.6; g.setLineDash(c.dash); g.beginPath();
+    let pen = false;
+    c.x.forEach((x, i) => { const y = c.y[i]; if (!finite(x) || !finite(y)) { pen = false; return; } pen ? g.lineTo(X(x), Y(y)) : g.moveTo(X(x), Y(y)); pen = true; });
+    g.stroke(); g.setLineDash([]);
+  });
+  g.restore();
+  // 图例：曲线不多时写在左上 / a legend at the top left when there are few curves
+  if (curves.length > 1 && curves.length <= 8) {
+    g.font = `10px ${css("--font")}`; g.textAlign = "left"; let lx = ox + 6;
+    curves.forEach((c) => {
+      const w = g.measureText(c.label).width;
+      if (lx + w + 20 > ox + pw - 90) return;
+      g.fillStyle = c.color; g.fillRect(lx, oy + 6, 10, 2); g.fillStyle = css("--text-3"); g.fillText(c.label, lx + 14, oy + 10); lx += w + 26;
+    });
+  }
+}
+
+// 目录指标的表格（ADR-0022 的 table 形态）：列取各行共有的简单值 / a catalog table: columns are the rows' simple values
+function drawTable(e) {
+  const host = $("need").querySelector(".need-table");
+  const rows = e.table?.rows || [];
+  const cell = (v) => (v == null ? "–" : typeof v === "number" ? fmtVal(v) : Array.isArray(v) ? v.map((x) => (typeof x === "number" ? sig(x, 3) : x)).join(", ") : typeof v === "boolean" ? (v ? "✓" : "✗") : String(v));
+  const cols = [...new Set(rows.flatMap((r) => Object.keys(r)))].filter((k) => rows.some((r) => r[k] != null && (typeof r[k] !== "object" || (Array.isArray(r[k]) && r[k].length <= 3 && r[k].every((x) => typeof x !== "object")))));
+  host.innerHTML = `<table><tr>${cols.map((c) => `<th class="num">${esc(c)}</th>`).join("")}</tr>${rows.map((r) => `<tr>${cols.map((c) => `<td class="num">${esc(cell(r[c]))}</td>`).join("")}</tr>`).join("")}</table>`;
+}
+
+function drawNeed(m) {
+  const [g, W, H] = needCanvas();
+  if (!g) return;
+  const rounds = (state.rounds || []).filter((r) => r.values?.[m.id] != null);
+  const live = state.live != null ? itemAt(m.id, "live") : null;
+  const pts = rounds.map((r, i) => ({ i, v: r.values[m.id], r }));
+  const liveAt = pts.length;
+  const all = [...pts.map((p) => p.v), ...(live?.value != null ? [live.value] : [])];
+  if (!all.length) { g.fillStyle = css("--text-3"); g.font = `12px ${css("--font")}`; g.textAlign = "center"; g.fillText(t("need_empty"), W / 2, H / 2); return; }
+  const lines = boundLines(m.bound);
+  let [lo, hi] = extent([...all, ...lines]);
+  const pad = (hi - lo) * 0.12 || Math.abs(hi) * 0.1 || 1; lo -= pad; hi += pad;
+  const L = 50, R = 16, T = Math.min(44, H * 0.22), B = 22, n = liveAt + (live?.value != null ? 1 : 0);
+  const X = (i) => L + (n <= 1 ? 0.5 : i / (n - 1)) * (W - L - R), Y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+  g.font = `10px ${css("--mono")}`; g.strokeStyle = css("--grid"); g.lineWidth = 1; g.fillStyle = css("--text-3");
+  ticks(lo, hi, niceStep((hi - lo) / 4)).forEach((v) => { const y = Math.round(Y(v)) + 0.5; g.beginPath(); g.moveTo(L, y); g.lineTo(W - R, y); g.stroke(); g.textAlign = "right"; g.fillText(sig(v, 3), L - 6, y + 3); });
+  g.strokeStyle = "#acb6bf88"; g.setLineDash([5, 4]);
+  lines.forEach((v) => { const y = Y(v); g.beginPath(); g.moveTo(L, y); g.lineTo(W - R, y); g.stroke(); });
+  g.setLineDash([]);
+  const key = selected();
+  const sx = typeof key === "number" ? pts.find((p) => p.r.round === key) : key === "live" && live?.value != null ? { i: liveAt } : null;
+  if (sx) { g.strokeStyle = "#ffffff30"; g.beginPath(); g.moveTo(X(sx.i), T - 6); g.lineTo(X(sx.i), H - B); g.stroke(); }
+  if (pts.length) {
+    g.strokeStyle = css("--gold"); g.lineWidth = 1.8; g.beginPath();
+    pts.forEach((p, k) => (k ? g.lineTo(X(p.i), Y(p.v)) : g.moveTo(X(p.i), Y(p.v)))); g.stroke();
+    pts.forEach((p) => {
+      const ok = p.r.failing ? !(m.id in p.r.failing) : null;
+      g.fillStyle = ok === true ? css("--sage") : ok === false ? css("--card") : css("--gold"); g.strokeStyle = ok === true ? css("--sage") : css("--gold");
+      g.lineWidth = 1.4; g.beginPath(); g.arc(X(p.i), Y(p.v), sx && sx.i === p.i ? 4.5 : 3.2, 0, 7); g.fill(); g.stroke();
+    });
+  }
+  if (live?.value != null) {
+    const x = X(liveAt), y = Y(live.value);
+    if (pts.length) { g.strokeStyle = "#95e6cb66"; g.setLineDash([3, 3]); g.lineWidth = 1.2; g.beginPath(); g.moveTo(X(liveAt - 1), Y(pts.at(-1).v)); g.lineTo(x, y); g.stroke(); g.setLineDash([]); }
+    g.globalAlpha = live.stale ? 0.45 : 1; g.fillStyle = css("--mint");
+    g.beginPath(); g.moveTo(x, y - 5); g.lineTo(x + 5, y); g.lineTo(x, y + 5); g.lineTo(x - 5, y); g.closePath(); g.fill(); g.globalAlpha = 1;
+  }
+  g.fillStyle = css("--text-3"); g.textAlign = "center";
+  const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor((W - L - R) / 46))));
+  pts.forEach((p, k) => { if (k % every === 0 || k === pts.length - 1) g.fillText(t("select_round", p.r.round), X(p.i), H - 6); });
+  if (live?.value != null) g.fillText(t("need_live"), X(liveAt), H - 6);
+}
+
+$("need-mode").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-mode]");
+  if (!b) return;
+  needMode = b.dataset.mode;
+  renderNeed();
+});
+
+// ---------------- 指标目录与追加选择 ----------------
+
+// 目录与保存都经后台进程；优化占着它时会失败（BUSY 等），未保存的选择留在窗口里，空闲后自动再存（ADR-0022）
+// listing and saving go through the daemon; while it is busy the unsaved selection stays here and is saved once idle
+let catalog = null;
+let draft = null;
+let draftPending = false;
+let saveTries = 0;
+const SAVE_TRIES = 20;
+
+async function openPicker() {
+  $("picker").hidden = false;
+  $("picker-title").textContent = t("pick_title");
+  $("picker-save").textContent = t("pick_save");
+  $("picker-body").innerHTML = `<div class="empty">${esc(t("loading"))}</div>`;
+  try {
+    const r = await api("metrics");
+    catalog = r;
+    if (!draft) draft = (r.selection || []).map((x) => ({ ...x }));
+  } catch (err) {
+    if (!catalog) { $("picker-body").innerHTML = `<div class="empty">${esc(t("pick_unavailable"))} ${esc(err.message)}</div>`; return; }
+    toast(`${t("pick_stale")} ${err.message}`, true);
+  }
+  if (!draft) draft = [];
+  renderPicker();
+}
+
+function renderPicker() {
+  const reserved = new Set((state?.metric_items || []).map((m) => m.id));
+  const avail = { available: "ok", unsupported: "warn", unknown: "" };
+  const list = (catalog?.metrics || []).map((m) => `<button class="cat ${m.availability === "unsupported" ? "off" : ""}" data-add="${esc(m.id)}" title="${esc(m.description)}">
+      <b>${esc(m.name)}</b><small>${esc(m.id)} · ${esc(m.shape)}${m.unit ? ` · ${esc(m.unit)}` : ""}</small>
+      <span class="tag ${avail[m.availability] ?? ""}">${esc(t("avail_" + (m.availability || "unknown")))}</span></button>`).join("");
+  const chosen = draft.map((x, i) => {
+    const m = (catalog?.metrics || []).find((c) => c.id === x.id);
+    const picks = m?.scalars?.length ? `<select data-pick="${i}">${m.scalars.map((s) => `<option ${s === (x.pick || "value") ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>` : "";
+    const bad = reserved.has(x.key) ? ` <span class="tag warn">${esc(t("pick_conflict"))}</span>` : "";
+    return `<div class="chosen"><input data-key="${i}" value="${esc(x.key)}" aria-label="key"><span class="mid">${esc(x.id)}</span>${picks}
+      <input class="params" data-params="${i}" value="${esc(JSON.stringify(x.params || {}))}" title="${esc(Object.keys(m?.params || {}).join(", "))}">${bad}
+      <button class="icon" data-del="${i}" aria-label="remove">✕</button></div>`;
+  }).join("");
+  $("picker-body").innerHTML = `<div class="pick-cols"><div><h4>${esc(t("pick_catalog"))}${catalog?.backend ? ` · ${esc(catalog.backend)}` : ""}</h4><div class="cats">${list}</div></div>
+    <div><h4>${esc(t("pick_chosen"))}</h4>${chosen || `<p class="muted">${esc(t("pick_none"))}</p>`}<p class="muted">${esc(t("pick_hint"))}</p></div></div>`;
+}
+
+function readDraft() {
+  const rows = draft.map((x) => ({ ...x }));
+  for (const [i, x] of rows.entries()) {
+    const key = $("picker-body").querySelector(`[data-key="${i}"]`)?.value.trim();
+    const params = $("picker-body").querySelector(`[data-params="${i}"]`)?.value.trim();
+    const pick = $("picker-body").querySelector(`[data-pick="${i}"]`)?.value;
+    if (!key) throw new Error(t("pick_need_key"));
+    let parsed;
+    try { parsed = params ? JSON.parse(params) : {}; } catch { throw new Error(`${key}: ${t("pick_bad_params")}`); }
+    if (typeof parsed !== "object" || Array.isArray(parsed) || parsed === null) throw new Error(`${key}: ${t("pick_bad_params")}`);
+    Object.assign(x, { key, params: parsed });
+    if (pick && pick !== "value") x.pick = pick; else delete x.pick;
+    if (!Object.keys(x.params).length) delete x.params;
+  }
+  if (new Set(rows.map((x) => x.key)).size !== rows.length) throw new Error(t("pick_dup"));
+  return rows;
+}
+
+async function saveDraft(quiet = false) {
+  try {
+    const r = await api("metrics", {}, { items: draft });
+    draft = (r.selection || draft).map((x) => ({ ...x }));
+    draftPending = false; saveTries = 0;
+    if (!quiet) toast(t("pick_saved"));
+    if (!$("picker").hidden) renderPicker();
+  } catch (err) {
+    // 参数错是用户要改的，忙或断开才留到之后再存 / a parameter error is for the user to fix; busy or disconnected waits
+    const retry = !err.code || ["BUSY", "DAEMON_NOT_RUNNING", "TIMEOUT", "DAEMON_TIMEOUT"].includes(err.code);
+    draftPending = retry && saveTries < SAVE_TRIES;
+    toast(`${retry ? t("pick_later") : t("failed")}: ${err.message}`, true);
+  }
+}
+
+$("pick-open").addEventListener("click", openPicker);
+$("picker-close").addEventListener("click", () => { $("picker").hidden = true; });
+$("picker").addEventListener("click", (e) => { if (e.target === $("picker")) $("picker").hidden = true; });
+$("picker-body").addEventListener("click", (e) => {
+  const add = e.target.closest("[data-add]"), del = e.target.closest("[data-del]");
+  if (!add && !del) return;
+  try { draft = readDraft(); } catch { /* 先保留输入框里的内容，保存时再报 */ }
+  if (add) {
+    const id = add.dataset.add, taken = new Set([...draft.map((x) => x.key), ...(state?.metric_items || []).map((m) => m.id)]);
+    let key = id, k = 2;
+    while (taken.has(key)) key = `${id}_${k++}`;
+    draft.push({ key, id });
+  } else draft.splice(Number(del.dataset.del), 1);
+  renderPicker();
+});
+$("picker-save").addEventListener("click", async () => {
+  try { draft = readDraft(); } catch (err) { toast(err.message, true); return; }
+  saveTries = 0;
+  await saveDraft();
+});
+
+// 每次轮询：后台空闲且有没存上的选择就再试一次，至多 SAVE_TRIES 次 / each poll: retry an unsaved selection once the daemon is idle
+function retryDraft() {
+  if (!draftPending || !state?.daemon.running || state.progress) return;
+  saveTries += 1;
+  draftPending = false;
+  saveDraft(true);
+}
+
+// ---------------- 时间轴 ----------------
+
+// 刻度：每一轮一个，有当前镜头时末尾加一个菱形；点击或拖动吸附到最近的刻度 / one tick per round plus a diamond for the live lens
+function timelineItems() {
+  const items = (state?.rounds || []).map((r) => ({ key: r.round, r }));
+  if (state?.live != null) items.push({ key: "live" });
+  return items;
+}
+let tlKnown = null;
+
+function renderTimeline() {
+  const items = timelineItems(), n = items.length, key = selected();
+  const pos = (i) => (n <= 1 ? 50 : (i / (n - 1)) * 100);
+  $("tl-title").textContent = t("tl_title");
+  const rounds = (state.rounds || []).length;
+  $("tl-hint").textContent = rounds ? t("tl_rounds", rounds) : t("tl_none");
+  const known = new Set(tlKnown || []);
+  const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(($("track").clientWidth || 600) / 52))));
+  const html = items.map((it, i) => {
+    const label = it.key === "live" ? t("live_tick") : t("select_round", it.key);
+    const tip = it.key === "live" ? t("k_live") : `${label} · G ${fmtG(it.r.shortfall)} · ${it.r.tiers.join("+")}${it.r.note ? ` · ${it.r.note}` : ""}`;
+    const fresh = tlKnown && !known.has(String(it.key)) ? " new" : "";
+    const cls = it.key === "live" ? "live" : it.r.achieved ? "ok" : "";
+    return `<div class="tick ${cls}${fresh}" style="left:${pos(i)}%" data-i="${i}" title="${esc(tip)}">${i % every === 0 || i === n - 1 ? `<span>${esc(label)}</span>` : ""}</div>`;
+  }).join("");
+  tlKnown = items.map((it) => String(it.key));
+  if ($("ticks").dataset.html !== html) { $("ticks").innerHTML = html; $("ticks").dataset.html = html; }
+  const at = items.findIndex((it) => it.key === key);
+  $("knob").hidden = at < 0;
+  if (at >= 0) { $("knob").style.left = `${pos(at)}%`; $("rail-fill").style.width = `${pos(at)}%`; } else $("rail-fill").style.width = "0";
+  $("ticks").querySelectorAll(".tick").forEach((el) => el.classList.toggle("on", Number(el.dataset.i) <= at && !el.classList.contains("ok")));
+  const r = typeof key === "number" ? roundOf(key) : null;
+  $("k-pos").textContent = key == null ? "—" : key === "live" ? t("k_live") : t("select_round", key);
+  $("k-state").textContent = key == null ? t("k_hint")
+    : [r ? `G ${fmtG(r.shortfall)}` : "", r?.achieved ? t("achieved") : "", pinnedRound == null ? t("k_follow") : t("k_review")].filter(Boolean).join(" · ");
+}
+
+function selectAt(i) {
+  const items = timelineItems();
+  if (!items[i]) return;
+  // 选最后一个刻度就回到跟随最新 / picking the last tick follows the latest again
+  const next = i === items.length - 1 ? null : items[i].key;
+  if (next === pinnedRound) return;
+  pinnedRound = next;
+  renderSelection();
+}
+
+function renderSelection() {
+  renderTimeline(); renderJudge(); renderNeed(); renderLens(); renderAna();
+}
+
+const track = $("track");
+let tdrag = false;
+const indexFrom = (e) => { const r = track.getBoundingClientRect(), n = timelineItems().length; return Math.round(clampN((e.clientX - r.x) / r.width, 0, 1) * Math.max(0, n - 1)); };
+const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
+track.addEventListener("pointerdown", (e) => { if (!timelineItems().length) return; tdrag = true; track.classList.add("drag"); track.setPointerCapture(e.pointerId); selectAt(indexFrom(e)); });
+track.addEventListener("pointermove", (e) => { if (tdrag) selectAt(indexFrom(e)); });
+track.addEventListener("pointerup", () => { tdrag = false; track.classList.remove("drag"); });
+
+$("gauges").addEventListener("click", (e) => {
+  const el = e.target.closest(".gauge");
+  if (!el) return;
+  needId = el.dataset.id;
+  renderJudge(); renderNeed();
+});
 
 // ---------------- 轮询与事件 ----------------
 
@@ -1586,23 +2156,18 @@ async function poll() {
     const next = await api("state", document.hidden ? { hidden: "1" } : {});
     const text = JSON.stringify(next);
     if (text !== stateText) {
-      const roundsChanged = !state || JSON.stringify(state.rounds) !== JSON.stringify(next.rounds);
-      const modeChanged = !state || state.daemon.mode !== next.daemon.mode || state.daemon.running !== next.daemon.running
-        || state.daemon.backend !== next.daemon.backend;
-      const modelingOf = (st) => JSON.stringify(st?.steps?.find((x) => x.id === "modeling")?.detail ?? null);
-      const startsChanged = tab === "starts" && modelingOf(state) !== modelingOf(next);
       state = next; stateText = text;
       lang = next.lang === "en" ? "en" : "zh";
       document.documentElement.lang = lang;
-      renderFlow();
-      renderTabs();
-      const liveChanged = tab === "layout" && roundShown === "live" && next.live !== liveSeen;
-      const metricsChanged = tab === "metrics" && metricsSeen !== JSON.stringify([next.metrics, next.metric_items, !!next.progress]);
-      if ((roundsChanged || liveChanged || startsChanged || metricsChanged) && tab !== "control") renderView();
-      if (modeChanged) { analyses = null; renderView(); }
+      // 选中的轮次已不在账本里（重建任务等）：回到跟随 / a pinned round gone from the ledger: follow again
+      if (typeof pinnedRound === "number" && !roundOf(pinnedRound)) pinnedRound = null;
+      if (pinnedRound === "live" && next.live == null) pinnedRound = null;
+      renderArc(); renderNotes(); renderTabs(); renderTimeline(); renderJudge(); renderNeed();
+      renderLens(); renderAna();
     }
     renderTop();
     renderGate();
+    retryDraft();
   } catch (e) {
     // 服务重启后沿用同一端口和令牌，继续轮询就能重连 / a restarted service keeps the port and token: keep polling
     $("mode-chip").textContent = e instanceof TypeError ? t("disconnected") : e.message;
@@ -1623,26 +2188,51 @@ $("tabs").addEventListener("click", (e) => {
   const b = e.target.closest("[data-tab]");
   if (!b || b.dataset.tab === tab) return;
   tab = b.dataset.tab;
-  renderTabs(); renderView();
+  renderTabs(); renderAna(true);
+  if (!reduceMotion) { const p = $("view"); p.classList.remove("enter"); void p.offsetWidth; p.classList.add("enter"); }
+});
+$("expand").addEventListener("click", () => setZoom(true));
+$("zoom-close").addEventListener("click", () => setZoom(false));
+$("zoom").addEventListener("click", (e) => { if (e.target === $("zoom")) setZoom(false); });
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (ruler) { ruler = null; if (renderLayout.redraw) renderLayout.redraw(); return; }
+  if (!$("picker").hidden) { $("picker").hidden = true; return; }
+  if (!$("zoom").hidden) setZoom(false);
 });
 $("notice-close").addEventListener("click", async () => {
   $("notice").hidden = true;
   try { await api("notice", {}, { message: "" }); } catch { /* 下次轮询再显示 */ }
 });
-$("round-select").addEventListener("change", (e) => { pinnedRound = e.target.value === "live" ? "live" : Number(e.target.value); renderView(); });
 $("dim-seg").addEventListener("click", (e) => {
   const b = e.target.closest("[data-dim]");
   if (!b || b.disabled) return;
   dim = b.dataset.dim;
   $("dim-seg").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x === b));
   // 2D 与 3D 用的坐标可能不同（折转系统的 2D 换到剖面平面），整体重画 / 2D may use the section frame: redraw from scratch
-  if (tab === "layout") renderView();
+  renderLens(true);
 });
 let resizeTimer = null;
 window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => { if (state && tab !== "control") renderView(); }, 150);
+  resizeTimer = setTimeout(() => {
+    if (!state) return;
+    renderArc(); renderTimeline(); renderNeed();
+    if (renderLayout.redraw) renderLayout.redraw();
+    if (tab !== "control") renderAna(true);
+  }, 150);
 });
+
+// 卡片尺寸变了就重画画布（首次绘制时布局可能还没定）/ redraw canvases when their cards resize (the first draw may precede layout)
+const sized = new ResizeObserver((entries) => {
+  if (!state) return;
+  entries.forEach((e) => {
+    if (e.target.id === "need") renderNeed();
+    else if (e.target.id === "arc") renderArc();
+    else if (e.target.id === "track") renderTimeline();
+  });
+});
+["need", "arc", "track"].forEach((id) => sized.observe($(id)));
 
 $("dim-seg").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x.dataset.dim === dim));
 if (!JOB) document.body.innerHTML = `<div class="empty">?job= missing</div>`;
