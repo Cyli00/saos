@@ -620,6 +620,9 @@ class RtcBackend(Backend):
                     for r, line in zip(self.merit, rtc_merit.to_lines(self.merit))]
         rtc_lens.write(lens, path, carried=self._carried)
 
+    def snapshot_to(self, path: Path) -> None:
+        self._write(Path(path))
+
     def new_system(self) -> None:
         if not self.standalone:
             raise _unsupported("rtc only holds a copy of an OpticStudio lens")
@@ -705,6 +708,18 @@ class RtcBackend(Backend):
         catalogs = [c for c in self.lens.catalogs if any(g.name.upper() == name for g in self._glass_table(c))]
         return {"kind": "catalog", "name": name, "catalogs": catalogs, "status": self.glass_status(name, catalogs)}
 
+    def medium_indices(self, ref: Any, wavelengths_um: list[float]) -> list[float]:
+        """面后介质在任意波长的折射率，与 INDX 同一条材料路径，不改镜头的波长表。玻璃专家在 rtc 实例上取当前材料的坐标用；
+        OpticStudio 那边只能临时改波长表再读 INDX。
+        The index after a surface at any wavelengths, by INDX's material path, leaving the wavelength table alone."""
+        from rtc.material import Environment, resolve
+
+        s = self.lens.surfaces[self._index(ref)]
+        medium = _material_call(resolve, s.material, self._catalog(), self.lens.catalogs)
+        e = self.lens.environment
+        env = _material_call(Environment, e.temperature, e.pressure, e.adjust)
+        return [float(_material_call(medium.index, float(w), env)) for w in wavelengths_um]
+
     def _indices(self, index: int) -> list[float | None]:
         """面后介质在各波长的折射率（同 OpticStudio 的 INDX）；算不出的波长为 None。"""
         out: list[float | None] = []
@@ -723,6 +738,13 @@ class RtcBackend(Backend):
         return {"count": count, "current": self.config,
                 "operands": [{"row": j, "type": "THIC", "params": [s], "values": [lens.thickness(s, c) for c in range(1, count + 1)],
                               "solves": ["Fixed"] * count} for j, s in enumerate(surfaces, 1)]}
+
+    def metric_support(self, *, operand: str | None = None, analysis: str | None = None) -> str:
+        if operand is not None and operand not in RAY_OPERANDS | SYSTEM_OPERANDS:
+            return "unsupported"
+        if analysis is not None and analysis not in self.analysis_types():
+            return "unsupported"
+        return "available"
 
     def analysis_types(self) -> list[str]:
         return ["FftMtf"]

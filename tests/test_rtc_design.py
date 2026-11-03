@@ -348,3 +348,31 @@ def test_disagreed_confirmation_returns_to_design_even_at_the_round_limit(achiev
     decision = ledger.decide(rounds, stop)
     assert decision["status"] == "continue" and decision["confirm_failed"] == 0
     assert ledger.confirmation_failure(rounds + [_round(3)]) is None
+
+
+@needs_glass
+def test_medium_indices_follow_indx_at_the_lens_wavelengths():
+    # 玻璃专家在 rtc 实例上取当前材料坐标时不改波长表，直接问材料层；它必须与 INDX 同一条路径
+    # the glass expert asks the material layer instead of editing the wavelength table; it must match INDX
+    backend = _loaded()
+    waves = [w["um"] for w in backend.system_info()["wavelengths"]]
+    for surface in (1, 2):
+        indx = [backend.operand("INDX", surface, k, []) for k in range(1, len(waves) + 1)]
+        assert backend.medium_indices(surface, waves) == pytest.approx(indx, abs=1e-12)
+
+
+@needs_glass
+def test_glass_coordinates_of_the_current_material_need_no_opticstudio_on_rtc():
+    # 2026-11-03 验证：rtc 上 GlassExpert.candidates() 取当前材料坐标时进入要 ctx.system 的 _band，报 BACKEND_UNSUPPORTED
+    # the current material's coordinates used to go through _band, which needs OpticStudio's ctx.system
+    from types import SimpleNamespace
+
+    from saos.ctx.experts import GlassExpert
+    from saos.scripting import ScriptContext
+
+    backend = _loaded()
+    expert = GlassExpert(ScriptContext(SimpleNamespace(backend=backend), None, {}), [1], catalogs=["SCHOTT"])
+    expert._spectral(backend.system_info())
+    long, reference, short = backend.medium_indices(1, list(expert.spectral_waves))
+    n, v, _ = expert._coordinates(1)
+    assert n == pytest.approx(reference) and v == pytest.approx((reference - 1) / (short - long))

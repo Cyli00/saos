@@ -2,7 +2,7 @@
 
 ## 接口与运行范围
 
-`ctx.AsphereExpert(...)` 和 `ctx.GlassExpert(...)` 在当前 ZOS 镜头上执行非球面选面与材料搜索；也可从 `saos.ctx` 导入对应类。脚本与 worker 上下文共用 KitMethods 工厂，不另占 OpticStudio 许可；`engine="rtc"` 的排名和玻璃建库会在内存里用 rtc（ADR-0015），数值只用于排序和建库，接受仍看 OpticStudio。
+`ctx.AsphereExpert(...)` 和 `ctx.GlassExpert(...)` 在当前计算后端的镜头上（OpticStudio 或 rtc 实例）执行非球面选面与材料搜索；类从 `saos.ctx.experts` 导入（`saos.ctx` 是 L0，只导出 `rows`）。脚本与 worker 上下文经 `saos.ctx.experts.ExpertMethods` 获得这两个入口，rtc 探索副本没有；不另占 OpticStudio 许可。OpticStudio 上 `engine="rtc"` 的排名和玻璃建库在内存里用 rtc（ADR-0015），数值只用于排序和建库，接受仍看 OpticStudio；rtc 实例上候选库与当前材料的坐标都在 rtc 材料层计算（`RtcBackend.medium_indices`，与 INDX 同一路径），不改波长表。
 
 当前只支持纯序列、单结构镜头；非序列、混合模式、多重结构、rtc 探索副本及只读判定上下文不支持。工作流里的用法（手段层级、结构确认）见技能 `references/rounds.md`。
 

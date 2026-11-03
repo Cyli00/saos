@@ -349,10 +349,32 @@ class _Parser(argparse.ArgumentParser):
         sys.exit(2)
 
 
+def cmd_metrics(args: argparse.Namespace) -> Any:
+    payload: dict[str, Any] = {}
+    if args.action == "get":
+        payload.update(id=args.id, params=_key_values(args.param, "--param"))
+    elif args.action == "select":
+        payload["items"] = _read_json(Path(args.file))
+    return _lens_request(f"metrics.{args.action}", args, payload)
+
+
 def build_parser() -> argparse.ArgumentParser:
     # 命令与子命令的说明只写在 cli_help（COMMANDS / GROUPS），由 cli_help.configure 填入 / command help lives only in cli_help
     parser = _Parser(prog="saos")
     sub = parser.add_subparsers(dest="group", required=True, parser_class=_Parser)
+
+    metric_group = sub.add_parser("metrics")
+    metric_sub = metric_group.add_subparsers(dest="action", required=True, parser_class=_Parser)
+    for action in ("list", "get", "select"):
+        metric_parser = metric_sub.add_parser(action)
+        metric_parser.add_argument("--job", required=True)
+        metric_parser.add_argument("--timeout", type=float, default=client.DEFAULT_REQUEST_TIMEOUT_S)
+        metric_parser.set_defaults(func=cmd_metrics)
+        if action == "get":
+            metric_parser.add_argument("id", help="metric catalog id")
+            metric_parser.add_argument("--param", action="append", default=[], help="parameter KEY=JSON; repeat for more")
+        elif action == "select":
+            metric_parser.add_argument("--file", required=True, help="JSON list of {key,id,params?,pick?}; [] clears display extras")
 
     daemon = sub.add_parser("daemon")
     dsub = daemon.add_subparsers(dest="action", required=True, parser_class=_Parser)
@@ -575,8 +597,8 @@ def build_parser() -> argparse.ArgumentParser:
     q = usub.add_parser("open")
     q.add_argument("--job", required=True)
     q.add_argument("--no-window", action="store_true", help="only start the service and print the URL")
-    q.add_argument("--tabs", help="comma-separated tabs to show, in order: layout,spot,fan,field,mtf,detectors,metrics,rounds,starts "
-                                  "(remembered for the job)")
+    q.add_argument("--tabs", help="comma-separated analysis tabs to show, in order: spot,fan,field,mtf,detectors,metrics,rounds,starts "
+                                  "(remembered for the job; the layout always has its own card, so layout is accepted and ignored)")
     q.add_argument("--metrics", help="comma-separated demand item ids the Metrics tab shows, in order (default every checked item; remembered for the job)")
     q.add_argument("--tab", help="tab to show first when the window opens")
     q.add_argument("--reset", action="store_true", help="forget the job's tab and metric choices (back to the default tabs)")

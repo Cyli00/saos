@@ -340,7 +340,7 @@ def search(problem: Problem, kind: str, *, max_seconds: float, substitutes: dict
     backend = problem.backend
     start_x = problem.values()
     start_glass = {s: str(backend.get_param(f"{s}.material")) for s in substitutes}
-    first = local(problem, iterations=local_iterations, deadline=deadline, should_cancel=should_cancel)
+    first = local(problem, iterations=local_iterations, deadline=deadline, should_cancel=should_cancel, on_progress=on_progress)
     initial_merit = first["initial"].merit
     best = Candidate(first["final"].merit if first["final"].feasible else math.inf, first["final"].x.copy(), dict(start_glass))
     kept: list[Candidate] = [best] if math.isfinite(best.merit) else []
@@ -368,7 +368,8 @@ def search(problem: Problem, kind: str, *, max_seconds: float, substitutes: dict
             try:
                 for s, name in glasses.items():
                     backend.set_param(f"{s}.material", name)
-                run = local(problem, iterations=local_iterations, deadline=deadline, should_cancel=should_cancel, start=x0)
+                run = local(problem, iterations=local_iterations, deadline=deadline, should_cancel=should_cancel,
+                            on_progress=on_progress, start=x0)
             except SaosError as exc:
                 if exc.code not in (ErrorCode.BAD_ARGS, ErrorCode.BACKEND_UNSUPPORTED):
                     raise
@@ -383,6 +384,11 @@ def search(problem: Problem, kind: str, *, max_seconds: float, substitutes: dict
             if run is not None and run["stopped_by"]:
                 stopped_by = run["stopped_by"]
             if on_progress is not None:
+                # 回调导出的完整镜头必须与所报告的最好评价函数值对应，包含换料结果。
+                if math.isfinite(best.merit):
+                    for s, name in best.glasses.items():
+                        backend.set_param(f"{s}.material", name)
+                    problem.apply(best.x)
                 on_progress({"merit": best.merit if math.isfinite(best.merit) else None, "systems": systems,
                              "elapsed_s": round(time.monotonic() - started, 1)})
     finally:

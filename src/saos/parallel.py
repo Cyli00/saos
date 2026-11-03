@@ -46,7 +46,9 @@ from pathlib import Path
 from typing import Any
 
 from saos import config, jobs
+from saos.ctx.experts import ExpertMethods
 from saos.kit import KitMethods
+from saos.metrics import MetricMethods
 from saos.protocol import ErrorCode, SaosError, jsonable, write_json
 
 PARALLEL_DIR = "parallel"
@@ -74,7 +76,7 @@ def idle_seconds() -> float:
     return float(os.environ.get("SAOS_POOL_IDLE_S", "600"))
 
 
-class WorkerContext(KitMethods):
+class WorkerContext(KitMethods, MetricMethods, ExpertMethods):
     """worker 里 fn(w, item) 能用的入口。/ What fn(w, item) can use inside a worker."""
 
     def __init__(self, backend, job_root: Path, base: Path | None, index: int, args: dict[str, Any] | None = None,

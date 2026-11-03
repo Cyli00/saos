@@ -65,6 +65,7 @@ Help
 """
 
 GROUPS = {
+    "metrics": "Query the backend-neutral metric catalog and store display-only selections for a job.",
     "daemon": 'Control the per-instance daemon holding rtc and the OpticStudio connection.\nStart defaults to standalone. Extension attaches to a user window and leaves it\nopen on exit. Jobs and daemon state use SAOS_INSTANCE (or SAOS_HOME).\n',
     "job": """Manage local job directories without contacting OpticStudio.
 Jobs live in work/<instance>/jobs/<job>. show, cancel and verify read/write job
@@ -100,6 +101,12 @@ always opens it. Gate windows restore/raise without taking keyboard focus.
 }
 
 COMMANDS = {
+    "metrics list": ("List metrics, parameters, scalar selectors and active-backend availability.",
+                     "Returns metrics and saved display-only selection. Availability does not imply reconciliation or model validity.", "NO_LENS_LOADED, JOB_MISMATCH"),
+    "metrics get": ("Measure one catalog metric on the loaded backend.",
+                    "Returns scalar, curves or table without creating evaluation evidence. Use demand metric checks for evidence.", "BAD_ARGS, BACKEND_UNSUPPORTED"),
+    "metrics select": ("Replace the job's display-only metric selection.",
+                       "Writes metric_selection.json. Keys must be unique and distinct from demand ids. Does not change judging.", "BAD_ARGS"),
     "daemon start": ('Start the daemon with rtc and OpticStudio (2024 R1 Premium) as its two backends.', 'Each command runs on the backend of its job\'s workflow stage (ADR-0020):\n  rtc for every stage before delivery; OpticStudio for delivery, and always for\n  lens describe, view, screenshot, capture, round --confirm and tolerance scans. OpticStudio starts\n  the first time a command needs it (cold start 6-8 s) and stays up until the\n  daemon stops. A switch hands the loaded lens over through its file: unsaved\n  changes are refused (UNSAVED_CHANGES), then both sides are compared value by\n  value; results carry backend_switch (handover.agrees, mismatches, rays, or\n  stayed when rtc cannot reproduce the lens). Differences stay on the lens as\n  unverified provenance. saos daemon use pins a backend.\n  --backend auto (default, or SAOS_BACKEND) as above; zos connects OpticStudio at\n  start; rtc runs rtc only, without OpticStudio or licence, and refuses its\n  commands with BACKEND_UNSUPPORTED. standalone creates a private OpticStudio\n  instance. extension uses UI Automation to open/reuse Interactive Extension,\n  disable Auto Close on Disconnect and read its instance, and connects at start.\n  It refuses a window connected elsewhere; use SAOS_UI_PID for multiple windows.\n  Startup errors include details.log_tail. Background logs: daemon/daemon.log;\n  startup creates no console window.', 'DAEMON_ALREADY_RUNNING, DAEMON_START_FAILED, DAEMON_TIMEOUT, UI_BLOCKED, ZOS_LICENSE, ZOS_VERSION_MISMATCH, ZOS_ERROR'),
     "daemon use": (
         "Pin the backend commands run on, or return to the workflow stage's choice.",
@@ -355,9 +362,10 @@ COMMANDS.update({
     "report": ('Generate the delivery report from the demand and ledger without OpticStudio.', "Writes report/index.html and a sealed report/NNN-rMMM-<status>.html. Language:\n  --lang > demand.lang > SAOS_LANG > system UI language > English. Returns\n  headline (deliver/best_so_far/best_blocked/no_valid), deliverable, deliver,\n  diagnostic and achieved. deliver is null for an undeliverable lens; diagnostic\n  identifies its file/round and hard_failing, measurement_errors, model_glass.\n  An achieved deliverable round with minimum shortfall is preferred; otherwise\n  the best deliverable round is used. Terminal exhausted/limit/stopped can\n  headline deliver with achieved:false. No valid lens means no delivery.\n  Changed demand/checks require a new measured round before reporting; sealed\n  evidence must be intact (uv run saos job verify J lists problems). An rtc\n  round must be confirmed (saos round --confirm); after a disagreeing\n  confirmation a new round is required unless the user stopped.\n  The tolerance section uses the latest finished, uncancelled tolerance scan\n  (yield, per-check distributions, top 10 sensitivities) and states, by lens\n  file content hash, whether it ran on the delivered round's lens; without one\n  it says none was run.", 'BAD_ARGS, SPEC_CHANGED, EVIDENCE_TAMPERED, FILE_NOT_FOUND, JOB_NOT_FOUND'),
     "ui open": (
         "Start the local workflow service if needed and open the user's job window.",
-        "--tabs a,b,... picks and orders the top tabs (layout, spot, fan, field, mtf,\n"
-        "  detectors, metrics, rounds, starts); --metrics id,... picks and orders the\n"
-        "  demand items of the Metrics tab (default every checked item; unknown ids are\n"
+        "--tabs a,b,... picks and orders the analysis tabs (spot, fan, field, mtf,\n"
+        "  detectors, metrics, rounds, starts; the layout always has its own card, so\n"
+        "  layout is accepted and ignored); --metrics id,... picks and orders the\n"
+        "  demand items of the Metrics tab and the check gauges (default every checked item; unknown ids are\n"
         "  refused when the demand exists). Both are stored as ui in the job's state.json\n"
         "  and apply to every later window; --reset forgets them. Tabs that do not apply\n"
         "  (detectors in a sequential system, starts before generation) are skipped;\n"

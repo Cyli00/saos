@@ -737,18 +737,6 @@ class KitMethods:
 
     cache: dict[Any, Any]
 
-    def AsphereExpert(self, surfaces, **options):
-        """当前上下文的非球面排名与 placement；接口见 saos.ctx.experts。"""
-        from saos.ctx.experts import AsphereExpert
-
-        return AsphereExpert(self, surfaces, **options)
-
-    def GlassExpert(self, surfaces, **options):
-        """当前上下文的工作波段材料搜索，复用当前计算后端。"""
-        from saos.ctx.experts import GlassExpert
-
-        return GlassExpert(self, surfaces, **options)
-
     def surface(self, ref):
         return surface(self, ref)
 

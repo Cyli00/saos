@@ -1,16 +1,7 @@
-"""流程图窗口的当前镜头指标（任务的 metrics.json，ADR-0019）：评价函数值和需求每一项的值。
+"""当前镜头指标文件与正式判定结果的复用（ADR-0019、ADR-0022）。
 
-后台进程回复一个改动镜头的操作之后、读下一个请求之前测量，agent 不用调用命令；saos check 和 saos round 测过的值
-直接写进来，不再重测。每次测量有时间预算（SAOS_LIVE_S，默认 3 s，0 关闭）：预算用完时没测到的项排到下一次最前，
-单项就超过预算的项不再自动测，只用 check 和 round 的值。每个值记下测它时的视图版本（view.json 的 view），
-界面据此把镜头改动之前的值标为过时。
-
-The workflow window's live metrics (the job's metrics.json, ADR-0019): the merit value and every demand item's value.
-The daemon measures them after replying to an op that changed the lens and before reading the next request, so the
-agent runs no command for it; values measured by saos check and saos round are written as they are. Each pass has a
-time budget (SAOS_LIVE_S, default 3 s, 0 turns it off): items the budget did not reach go first next time, and an item
-that alone takes longer than the budget is left to check and round. Each value carries the view version it was measured
-on, so the window can mark values from before a lens change as stale.
+rtc 目录指标由 live_worker 的完整快照副本异步计算；本模块的 measure 保留 OpticStudio
+回复后的限时测量路径。check/round 结果直接记录，带完整目录数据与测量视图版本，不再重测。
 """
 
 from __future__ import annotations
@@ -21,7 +12,7 @@ import os
 import time
 from typing import Any
 
-from saos import demand, jobs, scripting, workflow
+from saos import demand, jobs, metrics, scripting, workflow
 from saos.protocol import SaosError, finite, write_json
 
 BUDGET_ENV = "SAOS_LIVE_S"
@@ -59,15 +50,29 @@ def _entry(value: Any, view: str, source: str, *, gap: Any = None, error: Any = 
 
 
 def record(job: jobs.Job, evaluation: dict[str, Any], *, view: str, source: str) -> None:
+    from saos.live_worker import WRITE_LOCK
+
+    with WRITE_LOCK:
+        _record(job, evaluation, view=view, source=source)
+
+
+def _record(job: jobs.Job, evaluation: dict[str, Any], *, view: str, source: str) -> None:
     """saos check（source "check"）或 saos round（"round"）刚测过当前镜头：各项的值写进来。只测了几项（--only）时不动 G。
     saos check or saos round has just measured the current lens: store its values. A partial check (--only) leaves G as it was."""
     data = read(job)
     for item in evaluation.get("items") or []:
-        data["items"][item["id"]] = _entry(item.get("value"), view, source, gap=item.get("shortfall"), error=item.get("error"),
-                                           duration_s=item.get("duration_s"))
+        entry = _entry(item.get("value"), view, source, gap=item.get("shortfall"), error=item.get("error"),
+                       duration_s=item.get("duration_s"))
+        evidence = item.get("evidence") or {}
+        if evidence.get("metric") and evidence.get("result"):
+            result = json.loads(jobs.inside(job.root, evidence["result"]).read_text(encoding="utf-8"))
+            entry = {**result, **entry, "metric_id": result["id"], "id": item["id"], "goal": item.get("goal"),
+                     "passed": item.get("passed"), "display_only": False, **metrics.picked(evidence["metric"])}
+        data["items"][item["id"]] = entry
     if not evaluation.get("partial"):
         data["shortfall"] = {"value": finite(evaluation.get("shortfall")), "view": view, "source": source}
     data.update(view=view, evidence=evaluation.get("evidence_file"), updated=jobs.now_iso())
+    data["live"] = {"status": "recorded", "view": view, "source": source}
     write_json(job.root / jobs.METRICS_FILE, data)
 
 
@@ -113,8 +118,30 @@ def measure(daemon: Any, job: jobs.Job, view: str) -> dict[str, Any]:
             daemon.loaded.dirty = True
         data["paused"] = {"method_sha": method, "changes": changed[:30]}
     for item_id, value in res["values"].items():
-        items[item_id] = _entry(value, view, "live", gap=res["gaps"].get(item_id), error=res["errors"].get(item_id),
-                                duration_s=res["durations"].get(item_id))
+        result = res.get("metric_results", {}).get(item_id, {})
+        items[item_id] = {**result, **_entry(value, view, "live", gap=res["gaps"].get(item_id), error=res["errors"].get(item_id),
+                                          duration_s=res["durations"].get(item_id))}
+        if result:
+            spec = next(s for s in specs if s["id"] == item_id)
+            items[item_id].update(id=item_id, metric_id=result["id"], goal=spec["goal"], display_only=False,
+                                  **metrics.picked(spec["check"]["metric"]))
+            if spec["goal"] is not None:
+                items[item_id]["passed"] = res["gaps"].get(item_id) == 0
+    from saos import live_worker
+
+    for extra in live_worker.selection(job):
+        if time.monotonic() >= started + budget:
+            break
+        ctx = scripting.ScriptContext(daemon, job, {})
+        try:
+            result = metrics.measure(ctx, extra["id"], **extra.get("params", {}))
+            items[extra["key"]] = {**result, **_entry(metrics.scalar(result, extra), view, "live"),
+                                    "id": extra["key"], "metric_id": result["id"], "display_only": True, **metrics.picked(extra)}
+        except Exception as exc:
+            if not backend.healthy():
+                raise
+            items[extra["key"]] = {**_entry(None, view, "live", error=exc), "id": extra["key"],
+                                    "metric_id": extra["id"], "display_only": True, **metrics.picked(extra)}
     pursued = [s["id"] for s in specs if s["goal"] is not None or "direction" in s]
     if all(i in res["values"] for i in pursued):
         data["shortfall"] = {"value": finite(res["shortfall"]), "view": view, "source": "live"}

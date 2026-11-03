@@ -88,10 +88,12 @@ def _explicit() -> None:
 
 
 def live_of(job: jobs.Job) -> dict[str, Any]:
+    from saos import live
+
     path = job.root / jobs.VIEW_FILE
     if not path.is_file():
         raise SaosError(ErrorCode.FILE_NOT_FOUND, "no live view yet: the daemon writes one after the first command that loads or changes the lens")
-    return _with_section(json.loads(path.read_text(encoding="utf-8")))
+    return {**_with_section(json.loads(path.read_text(encoding="utf-8"))), "metrics": live.read(job)}
 
 
 def viz_of(job: jobs.Job, number: int) -> dict[str, Any]:
@@ -229,6 +231,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/jobs":
             return {"jobs": jobs.list_jobs()}
         job = jobs.get_job(str(args.get("job", "")))
+        if path == "/api/metrics" and method in ("GET", "POST"):
+            if method == "GET":
+                return client.request("metrics.list", {"job": job.id}, timeout=10)
+            return client.request("metrics.select", {"job": job.id, "items": args.get("items")}, timeout=10)
+        if path == "/api/metric" and method == "POST":
+            return client.request("metrics.get", {"job": job.id, "id": args.get("id"), "params": args.get("params", {})}, timeout=30)
         if path == "/api/state":
             self.server.seen[job.id] = time.monotonic()
             _mark_closed(job.id, False)

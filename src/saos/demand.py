@@ -13,10 +13,8 @@ The file is the job's sources/demand.yaml; keys are English (the agent writes it
     lang: zh
     stop: {rel, max_rounds, tiers}
 
-判定方法三选一：operand（任意 Zemax 优化操作数）、analysis（运行一个分析，按 path 取值）、
-script（任务内的脚本，run(ctx) 返回数值）。每一项都在 OpticStudio 中实际计算，满足"实测依据"。
-A check is exactly one of: operand, analysis (pick a value by path) or script (run(ctx) returns a number).
-Every value is computed in OpticStudio, which is what "measured evidence" means.
+判定方法四选一：operand（操作数）、analysis（分析结果按 path 取值）、script（run(ctx) 返回数值）、
+metric（目录指标按 pick 选择标量，完整结果留档）。设计阶段在 rtc 上计算，交付在 OpticStudio 上复测。
 
 常量和变量范围是硬条件：任何一项不满足的轮次不能交付，不能靠其他目标变好抵消。
 Constants and variable ranges are hard: a round that breaks one is not deliverable, whatever the other goals do.
@@ -298,6 +296,12 @@ def prepare_scripts(root: Path, demand: dict[str, Any]) -> dict[str, dict[str, A
     files = support_files(root)
     scripts[SUPPORT_KEY] = {"source": None, "sha256": hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest(), "files": files}
     code = code_files(root)
+    if any("metric" in item["check"] for item in checked(demand)):
+        from saos import config
+
+        for name in ("metrics.py", "kit.py", "micro.py"):
+            path = config.REPO_ROOT / "src" / "saos" / name
+            code[path.relative_to(config.REPO_ROOT).as_posix()] = jobs.sha256_file(path)
     if code:
         # 只在判定确实用到 saos 代码时才加这一项，旧任务的判定版本不变 / added only when used, so older jobs keep their version
         scripts[CODE_KEY] = {"source": None, "sha256": hashlib.sha256(json.dumps(code, sort_keys=True).encode()).hexdigest(), "files": code}
@@ -321,6 +325,8 @@ def code_files(root: Path) -> dict[str, str]:
         folder = package / "recipes" / name
         if folder.is_dir():
             paths.extend(f for f in sorted(folder.rglob("*.py")) if "__pycache__" not in f.parts)
+    if re.search(r"\bctx\.metrics?\s*\(|\bsaos\.metrics\b|from\s+saos\s+import\s+[^\n]*\bmetrics\b", text):
+        paths.extend(package / name for name in ("metrics.py", "micro.py", "kit.py"))
     if paths or _KIT_RE.search(text):
         paths.append(package / "kit.py")
     return {f.relative_to(config.REPO_ROOT).as_posix(): jobs.sha256_file(f) for f in paths}
@@ -346,8 +352,12 @@ def _check_goal(where: str, goal: Any) -> None:
 
 
 def _check_method(where: str, check: Any) -> None:
-    if not isinstance(check, dict) or len(check) != 1 or next(iter(check)) not in ("operand", "analysis", "script"):
-        raise _bad(f"{where}: check must have exactly one of operand / analysis / script")
+    if not isinstance(check, dict) or len(check) != 1 or next(iter(check)) not in ("operand", "analysis", "script", "metric"):
+        raise _bad(f"{where}: check must have exactly one of operand / analysis / script / metric")
+    if "metric" in check:
+        from saos import metrics
+
+        metrics.validate(check["metric"], judging=True)
 
 
 def validate(data: Any) -> dict[str, Any]:
@@ -638,6 +648,15 @@ def measure(ctx: ScriptContext, item: dict[str, Any], folder: Path, scripts: dic
         if kind == "operand":
             value = ctx.backend.operand(str(spec["type"]), int(spec.get("int1", 0)), int(spec.get("int2", 0)), [float(x) for x in spec.get("data", [])])
             evidence = {"operand": spec}
+        elif kind == "metric":
+            from saos import metrics
+
+            result = metrics.measure(ctx, spec["id"], **spec.get("params", {}))
+            output = folder / f"{item['id']}.json"
+            write_json(output, result)
+            evidence = {"metric": spec, "result": _evidence_path(ctx, output)}
+            selected = metrics.scalar(result, spec)
+            value = math.inf if selected is None else selected
         elif kind == "analysis":
             text_path = folder / f"{item['id']}.txt"
             data = ctx.backend.analysis(str(spec["type"]), dict(spec.get("settings") or {}), text_path)
@@ -807,6 +826,7 @@ def quick(ctx, ids: list[str] | None = None, *, deadline: float | None = None) -
     gaps: dict[str, float] = {}
     pursued: dict[str, float] = {}
     durations: dict[str, float] = {}
+    metric_results: dict[str, Any] = {}
     skipped: list[str] = []
     total = 0.0
     try:
@@ -820,6 +840,8 @@ def quick(ctx, ids: list[str] | None = None, *, deadline: float | None = None) -
             started = time.monotonic()
             measured = measure(shared, spec, sub, scripts)
             durations[item_id] = round(time.monotonic() - started, 3)
+            if "metric" in spec["check"] and not measured.get("error"):
+                metric_results[item_id] = json.loads((sub / f"{item_id}.json").read_text(encoding="utf-8"))
             values[item_id] = measured["value"]
             if measured.get("error"):
                 errors[item_id] = measured["error"]
@@ -835,4 +857,5 @@ def quick(ctx, ids: list[str] | None = None, *, deadline: float | None = None) -
     return {"values": values, "shortfall": total, "gaps": gaps, "pursuit": pursued,
             "hard_failing": [i for i, g in gaps.items() if specs[i]["kind"] in HARD_KINDS and g > 0],
             "invalid": [i for i, v in values.items() if v is None and i not in errors], "errors": errors, "error_kinds": error_kinds,
-            "durations": durations, "skipped": skipped}
+            "durations": durations, "skipped": skipped,
+            **({"metric_results": metric_results} if metric_results else {})}

@@ -166,6 +166,10 @@ class GlassExpert:
             if len(values) != 3 or not all(math.isfinite(x) for x in values):
                 raise Rejected("coordinates(ctx, surface) must return finite n, V, partial dispersion")
             return values
+        # rtc 实例没有 OpticStudio 的波长编辑器（_band 要 ctx.system）：在材料层直接算，和候选库同一条路径
+        # the rtc instance has no OpticStudio wavelength editor: compute in the material layer, as the database does
+        if getattr(self.ctx.backend, "standalone", False):
+            return self._from_indices(self.ctx.backend.medium_indices(surface, self._band_waves()))
         with self._band() as count:
             return self._measure(surface, count)
 

@@ -7,7 +7,7 @@ import math
 import numpy as np
 import pytest
 
-from saos.ctx import GlassCandidate
+from saos.ctx.experts import GlassCandidate
 from saos.ctx.experts.glass import candidate_window, special_glasses
 from saos.ctx.experts.ranking import SurfaceSensitivity, rank, usable_fraction
 

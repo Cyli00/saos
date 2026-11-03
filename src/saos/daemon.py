@@ -42,7 +42,8 @@ LONG_OPS = frozenset({"opt.local", "opt.hammer", "opt.global", "script.exec", "r
 # 不改镜头的操作；其余操作（含以后新加的）回复之后都重写 view.json 并测当前镜头的指标（ADR-0019）
 # ops that leave the lens as it was; after any other op (new ones included) the daemon rewrites view.json and measures
 VIEW_KEEPS = frozenset({"ping", "shutdown", "daemon.use", "lens.import", "lens.info", "lens.surfaces", "lens.describe", "lens.approve",
-                        "lens.save", "lens.operand", "lens.view", "lens.analysis", "lens.screenshot", "lens.capture", "demand.check", "scan.run"})
+                        "lens.save", "lens.operand", "lens.view", "lens.analysis", "lens.screenshot", "lens.capture", "demand.check", "scan.run",
+                        "metrics.list", "metrics.get", "metrics.select"})
 # 优化运行中、长脚本报告进度时多久给流程图窗口推一次当前镜头；导出慢时（OpticStudio 上 1–4.5 s）间隔放长，
 # 让导出至多占运行时间的 VIEW_SHARE
 # how often a running optimisation or a long script's progress updates the live view; a slow export (1–4.5 s on
@@ -69,7 +70,8 @@ OPTICSTUDIO_SCANS = ("tolerance",)
 # with both backends, the workflow stage picks one: delivery is zemax's final optimisation and measurement (ADR-0020)
 STAGE_BACKENDS = {"interview": "rtc", "demand_confirm": "rtc", "modeling": "rtc", "model_approve": "rtc", "design": "rtc", "deliver": "zos"}
 # 不切换后端的操作：只读当前状态，或是切换前的准备（保存）/ ops that never switch: they read the current state or prepare a switch
-UNROUTED = frozenset({"ping", "shutdown", "daemon.use", "lens.import", "lens.unload", "lens.info", "lens.surfaces", "lens.save"})
+UNROUTED = frozenset({"ping", "shutdown", "daemon.use", "lens.import", "lens.unload", "lens.info", "lens.surfaces", "lens.save",
+                       "metrics.list", "metrics.select"})
 # 换上另一份镜头的操作：切换时不交接旧镜头，未保存修改按 lens load 的规则处理 / ops that replace the lens hand nothing over
 REPLACING = {"lens.load": "loading another lens", "lens.build": "building a new lens"}
 BACKEND_CHOICES = ("auto", "rtc", "zos")
@@ -81,8 +83,8 @@ class Loaded:
     job: jobs.Job
     path: Path
     dirty: bool = False
-    # fast.push 写回过 rtc 的结果、之后还没在 OpticStudio 上优化过（SKILL.md“Measured evidence”规则里的收尾优化）
-    # rtc results were pushed and no OpticStudio optimisation has run since (the closing optimisation in the SKILL.md measured-evidence rule)
+    # fast.push 写回过 rtc 的结果、之后还没在 OpticStudio 上优化过（技能 references/rtc-copy.md 里的收尾优化）
+    # rtc results were pushed and no OpticStudio optimisation has run since (the closing optimisation in references/rtc-copy.md)
     rtc_unclosed: bool = False
 
     def __post_init__(self) -> None:
@@ -102,7 +104,7 @@ class Loaded:
 
 
 UNCLOSED_RTC = ("this lens holds rtc results pushed with fast.push and no OpticStudio optimisation has run since; "
-                "close with saos opt local on the merit function before judging it (SKILL.md, measured evidence)")
+                "close with saos opt local on the merit function before judging it (skill references/rtc-copy.md)")
 
 
 def _warn_unclosed(loaded: Loaded | None, out: dict[str, Any]) -> dict[str, Any]:
@@ -182,6 +184,7 @@ class Daemon:
         self.window_unsaved = bool(zos_info.get("initial_needs_save"))
         # ctx.map / saos scan 的常驻 worker 池，第一次用时启动 / the worker pool of ctx.map and saos scan, started on first use
         self.pool = parallel.Pool()
+        self.live_worker = None
         # 分离运行的扫描线程，键为任务内的 scans/NNN / threads of detached scans, keyed by scans/NNN in the job
         self.background: dict[str, Any] = {}
         self.view_seq = 0
@@ -219,6 +222,9 @@ class Daemon:
             "scan.run": self.op_scan,
             "round.record": self.op_round,
             "round.confirm": self.op_confirm,
+            "metrics.list": lambda args: self.op_metrics({**args, "action": "list"}),
+            "metrics.get": lambda args: self.op_metrics({**args, "action": "get"}),
+            "metrics.select": lambda args: self.op_metrics({**args, "action": "select"}),
         }
 
     # ---- 请求分发 ----
@@ -239,6 +245,9 @@ class Daemon:
             if handler is None:
                 raise SaosError(ErrorCode.UNKNOWN_OP, f"unknown operation {op!r}", {"available": sorted(self.handlers)})
             self._route(op, args)
+            if self.live_worker is not None and (self.active != "rtc" or self._switched is not None or op not in VIEW_KEEPS
+                                                or op in ("demand.check", "metrics.select")):
+                self.live_worker.invalidate()
             if op in OPTICSTUDIO_ONLY and self.rtc_instance:
                 raise SaosError(ErrorCode.BACKEND_UNSUPPORTED,
                                 f"{op} needs OpticStudio; this daemon runs rtc only (saos daemon start --backend rtc). "
@@ -408,6 +417,21 @@ class Daemon:
             return
         if time.monotonic() - self._view_at >= max(VIEW_DURING_OPT_S, self._view_cost / VIEW_SHARE):
             self.export_view()
+            self._submit_live(job)
+
+    def _submit_live(self, job: jobs.Job, *, iteration=None, merit=None) -> None:
+        from saos import live, live_worker
+
+        if self.active != "rtc" or os.environ.get("SAOS_VIEW") == "0" or live.budget_s() <= 0:
+            if self.live_worker is not None:
+                self.live_worker.invalidate()
+            return
+        try:
+            if self.live_worker is None:
+                self.live_worker = live_worker.LiveWorker()
+            self.live_worker.submit(self.backend, job, self.view_token, iteration=iteration, merit=merit)
+        except Exception:
+            log.exception("提交实时指标快照失败")
 
     def _queue_refresh(self, op: Any, args: dict[str, Any], result: Any) -> None:
         """记下回复之后要做的刷新：改了镜头（或换了后端）就重画窗口、重写 view.json、测指标；check 和 round 的结果直接当指标。
@@ -450,9 +474,14 @@ class Daemon:
             if os.environ.get("SAOS_VIEW") == "0":
                 return
             if pending["evaluation"] is not None:
+                if self.live_worker is not None:
+                    self.live_worker.invalidate()
                 live.record(loaded.job, pending["evaluation"], view=self.view_token, source=pending["source"])
             elif pending["view"]:
-                live.measure(self, loaded.job, self.view_token)
+                if self.active == "rtc":
+                    self._submit_live(loaded.job)
+                else:
+                    live.measure(self, loaded.job, self.view_token)
         except Exception:  # noqa: BLE001 - 刷新只是给人看的 / the refresh is for people only
             log.exception(_t("回复之后刷新当前镜头失败", "refreshing the live lens after the reply failed"))
 
@@ -529,6 +558,8 @@ class Daemon:
         return job
 
     def close(self) -> None:
+        if self.live_worker is not None:
+            self.live_worker.close()
         for backend in {id(b): b for b in (self.backend, self.rtc, self.zos) if b is not None}.values():
             backend.close()
 
@@ -835,6 +866,27 @@ class Daemon:
         loaded = self._require_loaded(self._job(args))
         return {**loaded.describe(), "system": self.backend.system_info()}
 
+    def op_metrics(self, args: dict[str, Any]) -> dict[str, Any]:
+        from saos import live_worker, metrics
+
+        job = self._job(args)
+        loaded = self._require_loaded(job)
+        action = _arg(args, "action", str, default="list")
+        ctx = scripting.ScriptContext(self, job, {})
+        if action == "list":
+            return {"backend": self.active, "metrics": metrics.catalog(ctx), "selection": live_worker.selection(job)}
+        if action == "select":
+            items = live_worker.validate_selection(args.get("items"))
+            reserved = {s["id"] for s in live_worker.demand_specs(job)}
+            if any(item["key"] in reserved for item in items):
+                raise SaosError(ErrorCode.BAD_ARGS, "selected metric keys must not conflict with demand ids")
+            write_json(job.root / live_worker.SELECTION_FILE, items)
+            self._submit_live(job)
+            return {"selection": items, "file": live_worker.SELECTION_FILE}
+        if action != "get":
+            raise SaosError(ErrorCode.BAD_ARGS, "metrics action must be list, get or select")
+        return {**loaded.describe(), "metric": metrics.measure(ctx, _arg(args, "id", str), **_arg(args, "params", dict, default={}))}
+
     def op_surfaces(self, args: dict[str, Any]) -> dict[str, Any]:
         loaded = self._require_loaded(self._job(args))
         objects = self.backend.objects()
@@ -1105,6 +1157,7 @@ class Daemon:
             # only geometry can be read mid-run: the optimiser holds the tool; reading it left the result unchanged
             if time.monotonic() - last_view[0] >= VIEW_DURING_OPT_S:
                 self.export_view(rays=False)
+                self._submit_live(job, iteration=data.get("iteration", data.get("systems")), merit=data.get("merit"))
                 last_view[0] = time.monotonic()
 
         return on_progress

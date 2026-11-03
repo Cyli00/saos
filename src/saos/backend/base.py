@@ -146,6 +146,11 @@ class Backend(ABC):
         """连接的窗口里有 saos 之外的未保存修改。只在 extension 模式下有意义。"""
         return False
 
+    def metric_support(self, *, operand: str | None = None, analysis: str | None = None) -> str:
+        if analysis is not None and analysis not in self.analysis_types():
+            return "unsupported"
+        return "available" if self.identity().get("backend") == "zos" else "unknown"
+
     def analysis_types(self) -> list[str]:
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} has no analyses")
 

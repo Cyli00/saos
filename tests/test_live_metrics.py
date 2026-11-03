@@ -140,3 +140,59 @@ def test_script_progress_refreshes_the_view(loaded):
     reply = call(daemon, "script.exec", job=job.id, source=source, name="tick", args={})
     assert reply["ok"], reply
     assert json.loads(reply["result"]["result"])["seq"] == before + 1
+
+
+def test_an_explicit_null_cannot_bypass_a_metric_default():
+    from saos import metrics
+    from saos.protocol import SaosError
+
+    # grid 有缺省值：显式 null 在入口拒绝，省略则用缺省值 / grid has a default: null is refused, omission uses it
+    with pytest.raises(SaosError) as err:
+        metrics.validate({"id": "spot", "params": {"grid": None}})
+    assert err.value.code == "BAD_ARGS"
+    assert metrics.validate({"id": "spot", "params": {}})[1]["grid"] == 21
+    # wave 的缺省值就是 None（主波长），null 与省略同义 / wave defaults to None, so null means omitted
+    assert metrics.validate({"id": "spot", "params": {"wave": None}})[1]["wave"] is None
+
+
+def test_display_metrics_can_be_selected_before_there_is_a_demand(loaded):
+    daemon, job = loaded
+    assert not (job.root / demand.DEMAND_FILE).exists()
+    items = [{"key": "watch_spot", "id": "spot", "params": {"grid": 9}, "pick": "pass_rate"}]
+    reply = call(daemon, "metrics.select", job=job.id, items=items)
+    assert reply["ok"], reply
+    from saos import live_worker
+
+    assert [r["key"] for r in live_worker.requests(job)] == ["watch_spot"]
+
+
+def test_a_recorded_metric_item_carries_the_unit_of_its_picked_scalar(loaded):
+    from saos import live
+
+    daemon, job = loaded
+    folder = job.root / "evaluations" / "900"
+    folder.mkdir(parents=True)
+    result = {"id": "spot", "name": "spot", "unit": "mm", "shape": "scalar", "value": 0.002,
+              "scalars": {"value": 0.002, "rms_radius": 0.002, "geo_radius": 0.004, "pass_rate": 100.0},
+              "scalar_units": {"value": "mm", "rms_radius": "mm", "geo_radius": "mm", "pass_rate": "%"}}
+    (folder / "ok.json").write_text(json.dumps(result), encoding="utf-8")
+    spec = {"id": "spot", "params": {"grid": 9}, "pick": "pass_rate"}
+    evaluation = {"items": [{"id": "ok", "value": 100.0, "shortfall": 0.0, "goal": {"min": 90.0}, "passed": True,
+                             "evidence": {"metric": spec, "result": "evaluations/900/ok.json"}}]}
+    live.record(job, evaluation, view="v1", source="check")
+    entry = read(job, jobs.METRICS_FILE)["items"]["ok"]
+    assert (entry["value"], entry["pick"], entry["unit"]) == (100.0, "pass_rate", "%")
+
+
+def test_integers_beyond_float_range_are_refused_at_the_entry():
+    from saos import metrics
+    from saos.protocol import SaosError
+
+    huge = 10**400
+    # grid 有上限，frequency 只有下限：两种都要在入口拒绝，不能到测量里转 float 时溢出
+    # grid has a maximum, frequency only a minimum: both must fail at the entry, not overflow in the measurement
+    for spec in ({"id": "spot", "params": {"grid": huge}}, {"id": "mtf", "params": {"frequency": huge}}):
+        with pytest.raises(SaosError) as err:
+            metrics.validate(spec)
+        assert err.value.code == "BAD_ARGS"
+    assert metrics.validate({"id": "mtf", "params": {"frequency": 50}})[1]["frequency"] == 50.0

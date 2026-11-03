@@ -42,7 +42,7 @@ INTERNAL = {
     "ctx.show", "ctx.spot", "ctx.surface", "ctx.trace", "ctx.values", "ctx.zosapi",
     "saos daemon run", "saos job list", "saos lens analysis", "saos lens capture", "saos lens info", "saos lens operand",
     "saos lens surfaces", "saos lens unload", "saos microscope adapt", "saos microscope perturb", "saos microscope repro", "saos ui serve",
-    "saos.ctx.experts.asphere.mfe_residual", "saos.ctx.experts.asphere.topology",
+    "saos.ctx.experts.ExpertMethods", "saos.ctx.experts.asphere.mfe_residual", "saos.ctx.experts.asphere.topology",
     "saos.ctx.experts.glass.GlassCandidate", "saos.ctx.experts.glass.candidate_window", "saos.ctx.experts.glass.special_glasses",
     "saos.ctx.experts.ranking.SurfaceSensitivity", "saos.ctx.experts.ranking.usable_fraction",
     "saos.ctx.hints.direct_api_hints",

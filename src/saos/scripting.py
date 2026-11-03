@@ -14,7 +14,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from saos import jobs
+from saos.ctx.experts import ExpertMethods
 from saos.kit import KitMethods
+from saos.metrics import MetricMethods
 from saos.lens_files import companion
 from saos.protocol import ErrorCode, SaosError, finite, jsonable, write_json
 
@@ -31,7 +33,7 @@ SOLVE_PARAMETERS: dict[str, dict[str, Any]] = {
 REQUIRED_SOLVE_PARAMETERS = {kind: {k for k, v in d.items() if v is None} for kind, d in SOLVE_PARAMETERS.items()}
 
 
-class ScriptContext(KitMethods):
+class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
     """脚本能用的全部入口。镜头切换和保存要经过这里，后台进程才能跟踪当前加载的文件和未保存状态。
     kit 的方法（set、get、spot、trace、op、analysis、kept、restored、lib、memo）也挂在这里，见 saos.kit。"""
 
