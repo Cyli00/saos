@@ -4,7 +4,7 @@ The outcome of this stage is an approved model description: a structure chosen f
 
 ## Build the model
 
-Models are built, saved and approved on rtc, like every stage before delivery (ADR-0020); `saos lens describe` makes the model page on OpticStudio until rtc draws layouts, and the daemon routes it there by itself. A surface type or setting rtc cannot trace comes back as `backend_switch.stayed`: the lens then computes on OpticStudio, and you tell the user which item caused it ([session.md](session.md#two-backends-in-one-daemon)).
+Models are built, saved and approved on rtc, like every stage before delivery; `saos lens describe` makes the model page on OpticStudio until rtc draws layouts, and the daemon routes it there by itself. A surface type or setting rtc cannot trace comes back as `backend_switch.stayed`: the lens then computes on OpticStudio, and you tell the user which item caused it ([session.md](session.md#two-backends-in-one-daemon)).
 
 - Build or import through `lens build`, `lens load` and `lens save`. Commands use native `.zmx` files (`lens build --as start.zmx`) in OpticStudio 24.1 line format, whichever backend saves them.
 - Keep sourced materials and mechanical semi-diameters (`lens set --param mech_semi_diameter`) in the model; the interference check uses the parts' outer edges.

@@ -2,7 +2,7 @@
 
 The outcome of this stage is a ledger of rounds judged against the demand and a final round decision: `achieved`, `exhausted`, `limit` or `stopped`. Leaving the approved structure sends you back to stage 2 ([the last section](#gate-expensive-runs-on-the-gap)).
 
-This stage computes on rtc (ADR-0017; [session.md](session.md#two-backends-in-one-daemon)): `opt`, `check`, `scan`, `round` and the expert classes work there as described below, with the differences in [On the rtc instance](#on-the-rtc-instance). A check result's `backend_unsupported` names the items rtc cannot compute: rewrite them through `ctx` ([need.md](need.md#write-checks-that-measure-the-real-quantity)), or, for an analysis rtc lacks, pin OpticStudio for that step as [session.md](session.md#two-backends-in-one-daemon) describes.
+This stage computes on rtc ([session.md](session.md#two-backends-in-one-daemon)): `opt`, `check`, `scan`, `round` and the expert classes work there as described below, with the differences in [On the rtc instance](#on-the-rtc-instance). A check result's `backend_unsupported` names the items rtc cannot compute: rewrite them through `ctx` ([need.md](need.md#write-checks-that-measure-the-real-quantity)), or, for an analysis rtc lacks, pin OpticStudio for that step as [session.md](session.md#two-backends-in-one-daemon) describes.
 
 ## Build a merit function that means the demand
 

@@ -11,7 +11,7 @@ You are the designer: models, starting forms, variables, merit functions, algori
 
 ## Interactive or autonomous
 
-Each job runs one of two workflows, fixed by `saos job create --mode` and shown as `workflow.mode` (ADR-0021):
+Each job runs one of two workflows, fixed by `saos job create --mode` and shown as `workflow.mode`:
 
 - **interactive** (the default; designing from scratch): the user passes each gate with the workflow window's button, or asks for changes there instead. A change request appears in `workflow.revisions` and in `sources/interview.md`; answer it with a new demand version or model description, which returns to the gate. [Stop and ask](#stop-and-ask) applies as written.
 - **autonomous** (exercises and tests): pass the gates yourself with `--reason` (`demand confirm`, `lens approve`), source open questions as `agent assumption: <why>` instead of blocking on them, stop with `saos stop --reason` (no `--quote`) when the evidence says so, and decide the cases in [Stop and ask](#stop-and-ask) yourself, writing each decision and its evidence into `sources/interview.md`. Everything a gate checks still applies (sources, the search record, the rebuild reason), and the report lists each decision as not confirmed by the user.
@@ -44,7 +44,7 @@ Read these when their condition first holds:
 
 ## Rules in every stage
 
-- **Measured evidence.** Every optical number you decide on comes from a saos backend (operand, ray trace, analysis, check), and every number you deliver comes from OpticStudio. Hand estimates guide reasoning and are labelled as estimates; never write your own ray tracer, paraxial or aberration calculator or surrogate (ADR-0013). rtc is the one other tracer. The daemon computes stages 1 to 3 on it ([session.md](references/session.md#two-backends-in-one-daemon)), and the round you deliver is re-measured on OpticStudio first ([delivery.md](references/delivery.md#re-measure-on-opticstudio)). A number from the rtc copy (`ctx.fast()`) decides nothing until it goes back to OpticStudio ([rtc-copy.md](references/rtc-copy.md)).
+- **Measured evidence.** Every optical number you decide on comes from a saos backend (operand, ray trace, analysis, check), and every number you deliver comes from OpticStudio. Hand estimates guide reasoning and are labelled as estimates; never write your own ray tracer, paraxial or aberration calculator or surrogate. rtc is the one other tracer. The daemon computes stages 1 to 3 on it ([session.md](references/session.md#two-backends-in-one-daemon)), and the round you deliver is re-measured on OpticStudio first ([delivery.md](references/delivery.md#re-measure-on-opticstudio)). A number from the rtc copy (`ctx.fast()`) decides nothing until it goes back to OpticStudio ([rtc-copy.md](references/rtc-copy.md)).
 - **One definition per number.** Optimisation targets, script objectives and first-order estimates use the demand checks' definition, or are compared with them on the same lens before you draw a conclusion.
 - **No silent relaxing.** A goal that cannot be met is reported with its gap. Changing what the demand judges (the full list is in the [format](demand.example.yaml) header) goes back to the user for a new confirmation.
 - **Sourced materials in delivery.** Model glasses are for exploration only.

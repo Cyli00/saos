@@ -2,7 +2,7 @@
 
 How to steer loops with `ctx.fast()` while the daemon computes on OpticStudio (delivery, or after `saos daemon use zos`). Where loops run otherwise: [scripting.md](scripting.md#choose-where-a-loop-runs).
 
-`fast = ctx.fast()` (also `w.fast()` in a worker) is an in-memory copy of the current lens, unsaved changes included, traced by rtc in float64 (ADR-0014 holds the design and the measured agreement and speed). It has the kit methods `set`, `get`, `values`, `kept`, `trace`, `spot`, `cra`, `field_profile` and `configuration`, running the same kit code as `ctx`; operands, analyses, `measure` and checks are not there, and check scripts cannot call `ctx.fast()`. rtc traces with a compiled kernel: the first trace after rtc's code changes compiles it (about 6 s, once), later processes load it from cache (about 1 s on the first trace).
+`fast = ctx.fast()` (also `w.fast()` in a worker) is an in-memory copy of the current lens, unsaved changes included, traced by rtc in float64. It has the kit methods `set`, `get`, `values`, `kept`, `trace`, `spot`, `cra`, `field_profile` and `configuration`, running the same kit code as `ctx`; operands, analyses, `measure` and checks are not there, and check scripts cannot call `ctx.fast()`. rtc traces with a compiled kernel: the first trace after rtc's code changes compiles it (about 6 s, once), later processes load it from cache (about 1 s on the first trace).
 
 ```python
 from saos import search

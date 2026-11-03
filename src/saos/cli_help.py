@@ -78,7 +78,7 @@ Before load/unload/build replace the lens, the agent's unsaved edits require
 lens save or --discard. Archived rounds cannot be overwritten. The workflow
 window (saos ui) shows the current lens.
 """,
-    "opt": 'Configure and run optimization on the loaded job lens: OpticStudio, or on an\nrtc instance damped least squares with boundary rows as exact constraints and\nrtc Hammer/global search (ADR-0017).\nlocal/hammer/global require the current demand to be confirmed and free of\nblocking questions. Model approval is required to record rounds. Geometry and\nmaterial changes require saving before worker scans; model glass is exploratory\nand cannot be delivered. Optimization keeps the best reached system in memory.\n',
+    "opt": 'Configure and run optimization on the loaded job lens: OpticStudio, or on an\nrtc instance damped least squares with boundary rows as exact constraints and\nrtc Hammer/global search.\nlocal/hammer/global require the current demand to be confirmed and free of\nblocking questions. Model approval is required to record rounds. Geometry and\nmaterial changes require saving before worker scans; model glass is exploratory\nand cannot be delivered. Optimization keeps the best reached system in memory.\n',
     "demand": """Validate and confirm sources/demand.yaml locally, without OpticStudio.
 Format: .agents/skills/saos/demand.example.yaml; shortfall and stop rules: saos round --help.
 Each bound needs a source; confirmation records the user's actual approval and
@@ -103,7 +103,7 @@ COMMANDS = {
                     "Returns scalar, curves or table without creating evaluation evidence. Use demand metric checks for evidence.", "BAD_ARGS, BACKEND_UNSUPPORTED"),
     "metrics select": ("Replace the job's display-only metric selection.",
                        "Writes metric_selection.json. Keys must be unique and distinct from demand ids. Does not change judging.", "BAD_ARGS"),
-    "daemon start": ('Start the daemon with rtc and OpticStudio (2024 R1 Premium) as its two backends.', 'Each command runs on the backend of its job\'s workflow stage (ADR-0020):\n  rtc for every stage before delivery; OpticStudio for delivery, and always for\n  lens describe, round --confirm and tolerance scans. OpticStudio starts\n  the first time a command needs it (cold start 6-8 s) and stays up until the\n  daemon stops. A switch hands the loaded lens over through its file: unsaved\n  changes are refused (UNSAVED_CHANGES), then both sides are compared value by\n  value; results carry backend_switch (handover.agrees, mismatches, rays, or\n  stayed when rtc cannot reproduce the lens). Differences stay on the lens as\n  unverified provenance. saos daemon use pins a backend.\n  --backend auto (default, or SAOS_BACKEND) as above; zos connects OpticStudio at\n  start; rtc runs rtc only, without OpticStudio or licence, and refuses its\n  commands with BACKEND_UNSUPPORTED. OpticStudio runs as a private standalone\n  instance. Startup errors include details.log_tail. Background logs: daemon/daemon.log;\n  startup creates no console window.', 'DAEMON_ALREADY_RUNNING, DAEMON_START_FAILED, DAEMON_TIMEOUT, ZOS_LICENSE, ZOS_VERSION_MISMATCH, ZOS_ERROR'),
+    "daemon start": ('Start the daemon with rtc and OpticStudio (2024 R1 Premium) as its two backends.', 'Each command runs on the backend of its job\'s workflow stage:\n  rtc for every stage before delivery; OpticStudio for delivery, and always for\n  lens describe, round --confirm and tolerance scans. OpticStudio starts\n  the first time a command needs it (cold start 6-8 s) and stays up until the\n  daemon stops. A switch hands the loaded lens over through its file: unsaved\n  changes are refused (UNSAVED_CHANGES), then both sides are compared value by\n  value; results carry backend_switch (handover.agrees, mismatches, rays, or\n  stayed when rtc cannot reproduce the lens). Differences stay on the lens as\n  unverified provenance. saos daemon use pins a backend.\n  --backend auto (default, or SAOS_BACKEND) as above; zos connects OpticStudio at\n  start; rtc runs rtc only, without OpticStudio or licence, and refuses its\n  commands with BACKEND_UNSUPPORTED. OpticStudio runs as a private standalone\n  instance. Startup errors include details.log_tail. Background logs: daemon/daemon.log;\n  startup creates no console window.', 'DAEMON_ALREADY_RUNNING, DAEMON_START_FAILED, DAEMON_TIMEOUT, ZOS_LICENSE, ZOS_VERSION_MISMATCH, ZOS_ERROR'),
     "daemon use": (
         "Pin the backend commands run on, or return to the workflow stage's choice.",
         "auto: by the job's workflow stage. rtc or zos: every command runs there, except\n"
@@ -507,7 +507,7 @@ Sequential rays, analyses and focus
     ctx.wavefront_rms(field, wave=None): ray-integrated RMS to centroid, waves; a
     list of fields gives a list from one analysis.
     ctx.aperture(surface): the surface aperture. rtc: huygens and wavefront_rms
-    are BACKEND_UNSUPPORTED until reconciled with OpticStudio (ADR-0020).
+    are BACKEND_UNSUPPORTED until reconciled with OpticStudio.
   from saos import kit: global_matrix, sag, pupil, best_focus, material_nd
     (model glass uses its solve's nd), profile, fwhm. Optical evaluations use ZOS-API.
   from saos import micro: micro-optics measurements (focus depth in a medium,

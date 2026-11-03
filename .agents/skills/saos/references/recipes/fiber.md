@@ -8,7 +8,7 @@ Not covered: the proximal side (beam splitter, relay, camera), volume scattering
 
 ## Backend status
 
-The measurement library (`saos.recipes.fiber.side_view`) and the diffraction kit work through `ctx` only. rtc refuses the side-view model itself (fold mirror, coordinate breaks), so the daemon builds it on OpticStudio and says so in `backend_switch`. On a probe rtc can build, the geometry and ray items run on rtc. The Huygens PSF and wavefront items (`psf_x`, `psf_y`, `ee80`, `psf_z`, `wfe_rms`), and the edge-thickness precondition (ETVA), come back under `backend_unsupported` until rtc has them (ADR-0020): measure those with OpticStudio pinned for that step. Write a job's own checks through `ctx` as well ([need.md](../need.md#write-checks-that-measure-the-real-quantity)).
+The measurement library (`saos.recipes.fiber.side_view`) and the diffraction kit work through `ctx` only. rtc refuses the side-view model itself (fold mirror, coordinate breaks), so the daemon builds it on OpticStudio and says so in `backend_switch`. On a probe rtc can build, the geometry and ray items run on rtc. The Huygens PSF and wavefront items (`psf_x`, `psf_y`, `ee80`, `psf_z`, `wfe_rms`), and the edge-thickness precondition (ETVA), come back under `backend_unsupported` until rtc has them: measure those with OpticStudio pinned for that step. Write a job's own checks through `ctx` as well ([need.md](../need.md#write-checks-that-measure-the-real-quantity)).
 
 ## Stage 1: diffraction bounds for two-photon PSF goals
 

@@ -1,12 +1,12 @@
 # saos 设计与术语
 
-saos（simulate any optical system）给 agent 提供以 **Zemax OpticStudio**（2024 R1 Premium + ZOS-API standalone）为交付数值权威后端的光学设计与仿真工具；需求阶段与设计轮次可在不占许可的 rtc 实例上计算，交付前由 OpticStudio 复测（ADR-0016、ADR-0017）。支持序列、非序列与多重结构系统，从用户需求出发完成建模、仿真、优化并交付有实测依据的报告。
+saos（simulate any optical system）给 agent 提供以 **Zemax OpticStudio**（2024 R1 Premium + ZOS-API standalone）为交付数值权威后端的光学设计与仿真工具；需求阶段与设计轮次可在不占许可的 rtc 实例上计算，交付前由 OpticStudio 复测。支持序列、非序列与多重结构系统，从用户需求出发完成建模、仿真、优化并交付有实测依据的报告。
 
 相关文档按需查阅，不必在每次改代码前通读：
 - 任务执行工作流：`.agents/skills/saos/SKILL.md`（入口，按阶段路由到 `references/`）
 - 需求单模板与权重/无效值约定：`.agents/skills/saos/demand.example.yaml`
 - 命令参数与输入输出格式：`uv run saos --help` 及各子命令 `--help`（英文 `--help` 是唯一详细说明，不另维护易漂移的中文命令速览）
-- 历史决策与分阶段计划：`docs/adr/`、[docs/plans/](./docs/plans/README.md)
+- 分阶段计划与算法细节：[docs/plans/](./docs/plans/README.md)；`docs/adr/` 是已冻结的历史决策记录，不再更新，与代码冲突时以代码为准
 
 ## 决策边界与底线
 
@@ -14,7 +14,7 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 
 ### 两种流程：参与与自主
 
-每个任务建立时选定一种流程（`saos job create --mode`，ADR-0021）：**参与模式 (interactive)** 用于从头设计，以下硬关卡由用户在工作流窗口里点确认（窗口用不了时才用 `--quote` 记用户原话），也可以在关卡处要求修改；**自主模式 (autonomous)** 用于做题和测试，agent 带理由自行通过关卡（`--reason`）、把阻塞问题按假设作答、按证据自行停止，关卡背后的内容检查照做，报告标明这些决定未经用户确认。自主任务只能由用户在窗口里改为参与，反过来不行。
+每个任务建立时选定一种流程（`saos job create --mode`）：**参与模式 (interactive)** 用于从头设计，以下硬关卡由用户在工作流窗口里点确认（窗口用不了时才用 `--quote` 记用户原话），也可以在关卡处要求修改；**自主模式 (autonomous)** 用于做题和测试，agent 带理由自行通过关卡（`--reason`）、把阻塞问题按假设作答、按证据自行停止，关卡背后的内容检查照做，报告标明这些决定未经用户确认。自主任务只能由用户在窗口里改为参与，反过来不行。
 
 ### 何时必须停下等用户（硬关卡）
 
@@ -25,22 +25,22 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 
 ### 交付底线
 
-- **实测依据**：所有交付数值来自 OpticStudio 的实际追迹、操作数或分析结果，记录后端版本与命令/脚本。交付之前的轮次在 rtc 上计算和判定（每轮记 `backend` 与未对账项）；zemax 做交付前的最后优化，在同一状态下记一轮，报告与公差只用这一轮的 OpticStudio 数值。逐轮交给 zemax 复测（`saos round --confirm`）在需求访谈时与用户确认，默认不做（ADR-0020）；假后端仅用于工具测试，不是光学实测。
+- **实测依据**：所有交付数值来自 OpticStudio 的实际追迹、操作数或分析结果，记录后端版本与命令/脚本。交付之前的轮次在 rtc 上计算和判定（每轮记 `backend` 与未对账项）；zemax 做交付前的最后优化，在同一状态下记一轮，报告与公差只用这一轮的 OpticStudio 数值。逐轮交给 zemax 复测（`saos round --confirm`）在需求访谈时与用户确认，默认不做；假后端仅用于工具测试，不是光学实测。
 - **可交付条件**：待制造零件不含模型玻璃（模型玻璃仅用于探索，交付前须换成真实牌号；环境面有数据来源即可）、满足全部常量与变量范围、判定未出错、零件无结构交叠（建模时即给定机械半口径，按零件外缘或显式孔径检查）。玻璃来源与状态（如 `Obsolete`）随轮次记录并写入报告。
-- **判定只读且物理自洽**：判定脚本不得改动镜头（写回原值时后端 `1e-12` 末位舍入不算改动，详见 `saos round --help`）。物理上不成立的状态（零件相交、成虚像、光线丢失、只量幸存光而非整束光）必须判为无效（`inf`），不能当作可权衡的线性罚分。判定代码（`checks/` 及引用的配方库与 `saos.kit`）改动后，`saos round` 自动用新判定重测此前最佳轮次（`rebase`）再作比较（ADR-0010）。
+- **判定只读且物理自洽**：判定脚本不得改动镜头（写回原值时后端 `1e-12` 末位舍入不算改动，详见 `saos round --help`）。物理上不成立的状态（零件相交、成虚像、光线丢失、只量幸存光而非整束光）必须判为无效（`inf`），不能当作可权衡的线性罚分。判定代码（`checks/` 及引用的配方库与 `saos.kit`）改动后，`saos round` 自动用新判定重测此前最佳轮次（`rebase`）再作比较。
 - **报告与语言规范**：面向用户的报告一律生成 `.html`（中英双语，按 `saos report --help` 的 `--lang` 选择）；给 Agent 读的内容（技能、配方、需求单格式、CLI 报错与提示）用英文；仓库文档与代码注释用中文；访谈记录保留用户原话。
 
 ## 架构与关键设计取舍
 
-以下设计决定反映了用户的明确取舍；2026-10-23 用户授权改回 ZOS standalone（ADR-0013）：
+以下设计决定反映了用户的明确取舍（2026-10-23 用户授权改回 ZOS standalone）：
 
-- **常驻后台进程**：后台进程在内存中持有当前镜头状态和两个后端（rtc 立即可用；OpticStudio standalone 会话在第一次需要时建立，之后一直开着，ADR-0018），命令行只转发请求（ADR-0002）。并发评估（`saos scan`、`ctx.map`）复用常驻 Worker 池（空闲 10 分钟关闭并释放许可）。支持 `--detach` 分离运行：扫描在后台线程用镜头快照和 Worker 池运行，主实例照常响应其他命令（ADR-0009）；`exec`/`opt`/`check`/`round` 的分离运行由独立子进程等待主实例完成并写入 `runs/`。
-- **各阶段的计算后端**（同一后台进程按 `saos.ui.stage` 的阶段切换，ADR-0018）：
-  - 需求访谈与确认、建模（起点生成、初筛）、模型确认、设计轮次用 rtc（ADR-0016：只有准入项可单独支撑可行性结论；ADR-0017：变量、评价函数、带精确约束的局部优化、Hammer 与全局搜索、判定和轮次；ADR-0020：建模与模型确认也归 rtc）。
-  - 交付（zemax 最后优化、交付轮测量、公差、报告）用 ZOS，许可不足时报告失败，不改用 rtc；rtc 出模型页截面图之前，`lens describe` 也要 ZOS（ADR-0020）。许可计数见技能 `references/session.md`。
-  - `saos daemon use rtc|zos` 固定后端只在当时的流程阶段内有效，阶段一变自动回到按阶段选择；rtc 上没有 `ctx.system`，检查与脚本经 `ctx` 读写，rtc 算不了的判定条目列入 `backend_unsupported`（ADR-0020）。
+- **常驻后台进程**：后台进程在内存中持有当前镜头状态和两个后端（rtc 立即可用；OpticStudio standalone 会话在第一次需要时建立，之后一直开着），命令行只转发请求。并发评估（`saos scan`、`ctx.map`）复用常驻 Worker 池（空闲 10 分钟关闭并释放许可）。支持 `--detach` 分离运行：扫描在后台线程用镜头快照和 Worker 池运行，主实例照常响应其他命令；`exec`/`opt`/`check`/`round` 的分离运行由独立子进程等待主实例完成并写入 `runs/`。
+- **各阶段的计算后端**（同一后台进程按 `saos.ui.stage` 的阶段切换）：
+  - 需求访谈与确认、建模（起点生成、初筛）、模型确认、设计轮次用 rtc（需求阶段只有准入项可单独支撑可行性结论；设计轮次覆盖变量、评价函数、带精确约束的局部优化、Hammer 与全局搜索、判定和轮次）。
+  - 交付（zemax 最后优化、交付轮测量、公差、报告）用 ZOS，许可不足时报告失败，不改用 rtc；rtc 出模型页截面图之前，`lens describe` 也要 ZOS。许可计数见技能 `references/session.md`。
+  - `saos daemon use rtc|zos` 固定后端只在当时的流程阶段内有效，阶段一变自动回到按阶段选择；rtc 上没有 `ctx.system`，检查与脚本经 `ctx` 读写，rtc 算不了的判定条目列入 `backend_unsupported`。
   - 切换时镜头经 `.zmx` 交接后逐值比对，不一致仍交给 rtc、差异记为未对账（2026-10-30 用户决定）。
-  - 在 OpticStudio 上的脚本可用 rtc 内存副本 `ctx.fast()` 探索（ADR-0014），结果推回后先用 OpticStudio 局部优化按评价函数收尾，再判定和记录轮次（2026-10-28 用户决定）；专家类用 rtc 做非球面排名与玻璃坐标（ADR-0015）。
+  - 在 OpticStudio 上的脚本可用 rtc 内存副本 `ctx.fast()` 探索，结果推回后先用 OpticStudio 局部优化按评价函数收尾，再判定和记录轮次（2026-10-28 用户决定）；专家类用 rtc 做非球面排名与玻璃坐标。
 - **ZOS 原生镜头权威保存**：`.zmx` 由 OpticStudio 保存，包含当前处方、求解与评价函数；rtc 实例按 OpticStudio 24.1 的行格式写回它建模的部分（处方、变量、评价函数行），其余行原样带过去，没见过的行拒绝加载；JSON 处方只是建模输入。带 `.optiland.json` 的旧文件不可加载或覆盖，旧双后端任务不追加新计算证据。迁移时新建任务，按原处方重建或导入另存的 ZOS 原生镜头，重新确认与实测；不继承旧指标。
   - **脚本编辑只经公开 ZOS-API**：`ctx.merit_add`、`ctx.solve`、`ctx.insert_surface`、`ctx.change_surface_type` 直接改当前镜头；评价函数行经 `.MF` 文件整批载入并另存回读核对（1501 行由逐行 9.8 s 降到约 65 ms，2026-10-27 实测）。不调用 OpticStudio 未公开的内部组件（如 `ZemaxEngine.dll`）：接口无文档、随版本变化，且绕开许可计数。
 - **起点从已有设计生成，不设候选配额**：结构未由用户指定时，由 `saos.starts` 从起点库或专利库（`library/patents`，按规格检索）按需求缩放生成并给出一阶与三阶像差预判，以相同短期预算初筛；明显合适的形式可直接选用并在确认页写明理由，无需凑候选数量。
@@ -49,15 +49,15 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
   - 越小/越大越好的目标用 `minimize` / `maximize`，按离理想值的距离计入目标差距（Shortfall），达标后继续改进；不要把“越小越好”写成 `≤ 0` 这种永远达不到的达标线。
   - 局部优化只收敛到局部极小，每轮须声明手段层级（`local`、`variables`、`materials`、`global`、`structure`）。层级记录试过什么而非强行按序执行，诊断表明无效的层级可用 `saos rule-out` 带证据排除。终止状态分四种：达成（`achieved`）、达到轮次上限（`limit`）、无法再优化（`exhausted`，允许的手段均已尝试或排除仍无明显进步）、按用户决定停止（`stopped`）。
 - **Zemax 优化器与玻璃在产目录**：
-  - OpticStudio 上的局部优化使用 Zemax DLS 或正交下降；`auto` 在序列系统选 DLS，非序列系统选正交下降。Hammer 与 Global 使用原生工具；rtc 上是 rtc 自己的约束 DLS、Hammer 与全局搜索（ADR-0017）。外层 Brent、Nelder–Mead、Powell 搜索仍可调用 ZOS 测量。预算与取消共用 `saos.budget`，原生调用返回前不承诺硬实时中断。
+  - OpticStudio 上的局部优化使用 Zemax DLS 或正交下降；`auto` 在序列系统选 DLS，非序列系统选正交下降。Hammer 与 Global 使用原生工具；rtc 上是 rtc 自己的约束 DLS、Hammer 与全局搜索。外层 Brent、Nelder–Mead、Powell 搜索仍可调用 ZOS 测量。预算与取消共用 `saos.budget`，原生调用返回前不承诺硬实时中断。
   - 玻璃替换默认使用按厂家分开的在产目录 `SAOS_CDGM_INPROD`（另有 `SAOS_NHG_INPROD`，见 `library/glasscat/README.md`），防止全局搜索或 Hammer 换成停产牌号，并避免两家同名牌号参数不同带来的混淆。
   - `ctx.AsphereExpert` / `ctx.GlassExpert` 是当前 ZOS 或 rtc 实例镜头的非球面选面与材料搜索类（`saos.ctx.experts`）。只对纯序列、单结构镜头工作；分析恢复入口，接受态标未保存，保存仍经 ctx。项目物理过滤、Q 型列映射和持久斜率约束必须明确提供，不能用缺失数据猜测。接口、算法与待验收项见 `docs/plans/optical-experts.md`。
 - **统一处方骨架与非序列支持**：序列与纯非序列系统（`"mode": "non_sequential"`）共用同一套处方入口、建模确认、结构指纹、判定和轮次；saos 只校验系统设置、通用面属性和多重结构骨架，具体面型和参数按 OpticStudio 原名透传。非序列能力随真实任务逐步扩展。
 - **窗口、资源与未保存修改保护**：
-  - 用户通过流程图窗口（`saos ui`）查看进度、当前镜头视图（`view.json`）与当前镜头指标（`metrics.json`）及每轮导出的点列图/MTF（`viz.json`）。后台进程在镜头改动后自动刷新；rtc 的目录指标另由专用进程读取完整镜头快照，在优化进度回调与空闲刷新时计算，只保留最新待算快照，正式判定仍走 check/round（ADR-0022）。追加展示选择存在 `metric_selection.json`，不参与判定；窗口尊重用户关闭选择，仅在需要查看的节点通知置顶且不抢键盘焦点；前端随包分发，不引入 Node 构建链。
+  - 用户通过流程图窗口（`saos ui`）查看进度、当前镜头视图（`view.json`）与当前镜头指标（`metrics.json`）及每轮导出的点列图/MTF（`viz.json`）。后台进程在镜头改动后自动刷新；rtc 的目录指标另由专用进程读取完整镜头快照，在优化进度回调与空闲刷新时计算，只保留最新待算快照，正式判定仍走 check/round。追加展示选择存在 `metric_selection.json`，不参与判定；窗口尊重用户关闭选择，仅在需要查看的节点通知置顶且不抢键盘焦点；前端随包分发，不引入 Node 构建链。
   - OpticStudio 只以 standalone 私有实例运行，用户看进度一律用流程图窗口；连接桌面 OpticStudio 窗口的 extension 模式已删除（2026-11-03 用户决定，被 saos ui 取代）。OpticStudio 长操作期间暂停实时测量，避免与原生工具竞争 API；rtc 的目录指标在独立副本上计算，不适用这一限制。
   - 计算后端固定版本（见 [README](./README.md)）并用双精度；长时间进程降低优先级并默认预留 2 个逻辑核，许可证并发预算计入用户已打开的窗口（见 `saos --help` 与 `saos opt local --help`）。
-- **代码三层结构与上收原则**：分为固定 CLI 命令、库函数（`saos.kit`、`saos.search`、`saos.starts`、配方库）和任务内脚本（ADR-0007）。同一段代码在第二个任务中被复用时即上收为库函数或配方草稿，上收前后同一批镜头的计算数值必须逐项一致。测试只测工具，不测 Agent 的设计能力。
+- **代码三层结构与上收原则**：分为固定 CLI 命令、库函数（`saos.kit`、`saos.search`、`saos.starts`、配方库）和任务内脚本。同一段代码在第二个任务中被复用时即上收为库函数或配方草稿，上收前后同一批镜头的计算数值必须逐项一致。测试只测工具，不测 Agent 的设计能力。
 - **模块分层**（2026-11-02 用户决定，参照 ripgrep 各 crate 单向依赖）：L0 基础约定（`protocol`、参数键与追迹结果 `lensdata`、`geometry`、`prescription`、文件与目录、共享参考库的只读入口 `library`）→ L1 计算后端（`saos.backend`，OpticStudio 的参数读写在 `backend/zos_params.py`）→ L2 测量库（`saos.kit`、指标目录 `saos.metrics`、微光学测量 `saos.micro`、`saos.fast`、`saos.search`、专家类，以及只含测量函数的配方库如 `saos.recipes.fiber`）→ 任务、需求、轮次、扫描、worker 池、后台进程与窗口。配方只保留布局约定，可拆开的慢测量经 `ctx.spare_map` 借空闲许可证，不直接碰 worker 池。下层不导入上层，L0–L2 之间也不成环（只有完全落在同一包内的环除外，经过同包模块绕回的跨包环照样算），函数内的延迟导入和相对导入也算，由 `tests/test_layers.py` 检查；最上层相当于 ripgrep 的 core，是把流程粘起来的胶水，内部模块可以互相引用；测量库只经 `Backend` 协议调用后端，只有 OpticStudio 能做的功能由后端自己报错。
 
 ## 核心术语对照
@@ -74,10 +74,10 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 | **待确认问题** | Open Question | 需用户回答的问题；标为 `blocking` 时阻止优化和记录轮次（*勿称：待办、pending inputs*） |
 | **判定方法** | Check Method (`checks/`) | 计算带界限常量、变量和目标的方式；同次判定共享缓存且只读（*勿称：验收口径*） |
 | **重测基准** | Rebase (`rebase`) | 判定代码改动后，用新判定重测此前最佳归档镜头的记录；数值一致则延续比较窗口，不一致则开启新窗口（*勿称：reverify、回归测试*） |
-| **复测** | Confirmation (`confirm`) | 在 OpticStudio 上重测 rtc 记下的一轮（`saos round --confirm`，逐轮复测在需求访谈时约定，默认不做，ADR-0020）；不单独成轮，其数值替换那一轮的数值，结论与 rtc 不同则回到设计（*勿与重测基准混淆*） |
+| **复测** | Confirmation (`confirm`) | 在 OpticStudio 上重测 rtc 记下的一轮（`saos round --confirm`，逐轮复测在需求访谈时约定，默认不做）；不单独成轮，其数值替换那一轮的数值，结论与 rtc 不同则回到设计（*勿与重测基准混淆*） |
 | **设计任务** | Design Job (`jobs/<job>/`) | 从一份用户需求到交付的一次完整设计及其文件目录（*勿称：项目、会话、run*） |
 | **运行实例** | Instance (`work/<instance>/`) | 一个后台进程及其独占运行目录，不同实例可并行（*勿单称“实例”指代 OpticStudio 进程*） |
-| **计算后端** | Backend (`zos`, `rtc`) | 后台进程里持有镜头并完成计算的一方：`zos` 是 OpticStudio 会话，`rtc` 做交付之前的全部计算，`zos` 做交付前的最后优化与交付轮测量（ADR-0020）；`fake` 仅供工具测试 |
+| **计算后端** | Backend (`zos`, `rtc`) | 后台进程里持有镜头并完成计算的一方：`zos` 是 OpticStudio 会话，`rtc` 做交付之前的全部计算，`zos` 做交付前的最后优化与交付轮测量；`fake` 仅供工具测试 |
 | **OpticStudio 实例** | OpticStudio Instance | 占用一个 ZOS-API 许可的 OpticStudio 进程（桌面窗口、standalone 会话或 Worker）（*勿称：license 槽*） |
 | **原生镜头** | Native Lens (`.zmx`) | OpticStudio 保存的完整镜头，作为加载、工作与轮次归档的权威文件 |
 | **环境面** | Environment Surface | 声明为不由本设计制造的面（样品、介质、外购件），须有数据来源，使用模型介质不阻止交付（*勿称：背景介质*） |

@@ -43,7 +43,7 @@ saos（simulate any optical system）让 AI agent 替你做光学设计。你用
 
 ### 开始一个设计
 
-1. 启动后台进程。它在内存里持有当前镜头，所有计算命令都转发给它；按流程阶段在 rtc 与 OpticStudio 之间自己切换，第一次需要 OpticStudio 时才启动它（ADR-0018）。agent 发现它没启动时也会提醒你或自己启动。
+1. 启动后台进程。它在内存里持有当前镜头，所有计算命令都转发给它；按流程阶段在 rtc 与 OpticStudio 之间自己切换，第一次需要 OpticStudio 时才启动它。agent 发现它没启动时也会提醒你或自己启动。
 
    ```bash
    uv run saos daemon start
@@ -98,7 +98,7 @@ uv run saos daemon stop --all    # 逐个停止它们，并清掉已退出进程
 
 ## 注意事项
 
-- **数值以 OpticStudio 为准**：需求访谈和设计轮次在 rtc 上算，不占许可；建模、模型确认和交付在 OpticStudio 上做，交付的那一轮先在 OpticStudio 上复测，报告只用复测数值（ADR-0017）。没有 OpticStudio 的机器可以用 `uv run saos daemon start --backend rtc` 只跑 rtc。
+- **数值以 OpticStudio 为准**：需求访谈和设计轮次在 rtc 上算，不占许可；建模、模型确认和交付在 OpticStudio 上做，交付的那一轮先在 OpticStudio 上复测，报告只用复测数值。没有 OpticStudio 的机器可以用 `uv run saos daemon start --backend rtc` 只跑 rtc。
 - **OpticStudio 许可证**：同时最多 8 个 OpticStudio 实例，包括你自己打开的窗口。daemon 第一次用到 OpticStudio 时占一个许可，之后一直占着；并发计算默认使用 4 个常驻 worker，起点生成另用一个独占会话。
 - **OpticStudio 弹出对话框会卡住计算**：例如自动保存恢复提示。`Documents/Zemax/Autosave/Recovered` 里的旧恢复文件会让每个新启动的实例都弹提示，清掉它们就不会再弹。
 - **长任务在后台跑**：命令超时不代表计算失败，不要让 agent 重新提交同一项计算。要中断用 `uv run saos job cancel <任务>`，已完成的部分会保留。
@@ -124,7 +124,7 @@ uv run saos daemon stop --all    # 逐个停止它们，并清掉已退出进程
 | [.agents/skills/saos/SKILL.md](.agents/skills/saos/SKILL.md) | agent 执行设计任务的工作流、各阶段细节与配方（英文） |
 | [docs/workflow.drawio](docs/workflow.drawio) | 工作流全貌图 |
 | [DESIGN.md](DESIGN.md) | 架构原则、用户决定、目录规范与中英术语 |
-| [docs/adr/](docs/adr/) | 关键决策记录 |
+| [docs/adr/](docs/adr/) | 历史决策记录（已冻结，不再更新；与代码冲突时以代码为准） |
 | [TODO.md](TODO.md) | 暂缓和待查的事项 |
 | `library/<库>/README.md` | 跨任务共享的参考数据：材料、在产玻璃目录、热学与机械材料、膜层、初始结构、显微物镜结构库 |
 
@@ -136,8 +136,8 @@ uv run saos daemon stop --all    # 逐个停止它们，并清掉已退出进程
 |---|---|
 | `ref/docs/光学设计及Zemax应用 (Pdg2Pic, 张欣婷)_OCR.pdf` 及配套 OCR JSON | Zemax 的具体操作 |
 | `ref/docs/几何光学·像差·光学设计第3版-李晓彤_OCR.pdf` 及配套 OCR JSON | 几何光学、像差理论、初始结构求解 |
-| `ref/repo/ai-zemax-optical-design` | 只借鉴经验，不复用代码（ADR-0001） |
-| `ref/repo/patent-lens-to-excel` | 只借鉴做法（JSON 中间格式、按 nd/νd 匹配玻璃），不调用其代码（ADR-0005） |
+| `ref/repo/ai-zemax-optical-design` | 只借鉴经验，不复用代码 |
+| `ref/repo/patent-lens-to-excel` | 只借鉴做法（JSON 中间格式、按 nd/νd 匹配玻璃），不调用其代码 |
 
 两本教材出版较早，部分内容可能已经过时；拿不准时查最新的 OpticStudio 手册和几何光学资料。OCR 中的公式和表格质量不可靠，不能直接作为决策依据。光学胶与微透镜材料见 [library/materials/README.md](library/materials/README.md)，光纤探头的选材规则在 [光纤配方](.agents/skills/saos/references/recipes/fiber.md) 里。
 
