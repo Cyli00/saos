@@ -15,7 +15,6 @@ import secrets
 import shutil
 import sys
 import time
-import traceback
 from dataclasses import dataclass
 from datetime import datetime
 from multiprocessing.connection import Connection, Listener
@@ -450,6 +449,80 @@ class Daemon:
             return
         data.update(lens=loaded.job.relative_lens(loaded.path), dirty=loaded.dirty, updated=jobs.now_iso())
         write_json(path, data)
+
+    def _unexpected(self, exc: Exception) -> SaosError:
+        detail = {"exception": type(exc).__name__, "message": str(exc)[:2000]}
+        if self.backend.healthy():
+            return SaosError(ErrorCode.ZOS_ERROR, f"backend operation failed: {exc}", detail)
+        return self._connection_lost(detail)
+
+    def _connection_lost(self, detail: dict[str, Any]) -> SaosError:
+        # 实测（2024 R1）：OpticStudio 进程退出后，同一进程内无论复用还是新建 ZOSAPI_Connection，
+        # CreateNewApplication 都报 RemotingException，无法重连。所以直接退出后台进程，由调用方重新启动。
+        detail["lost_lens"] = self.loaded.describe() if self.loaded else None
+        detail["daemon_exiting"] = True
+        self.loaded = None
+        self.stopping = True
+        return SaosError(
+            ErrorCode.ZOS_CONNECTION_LOST,
+            "the OpticStudio connection is lost and the daemon is exiting; unsaved changes are gone. Run saos daemon start and load the lens again",
+            detail,
+        )
+
+    def _log_to_job(self, op: Any, args: dict[str, Any], error: SaosError | None, duration_ms: float,
+                    phases: dict[str, dict[str, float]] | None = None) -> None:
+        job_id = args.get("job") if isinstance(args, dict) else None
+        if not isinstance(job_id, str):
+            return
+        try:
+            job = jobs.get_job(job_id)
+        except SaosError:
+            return
+        if "source" in args:
+            # 脚本全文已存进 scripts/，执行记录只留长度。
+            args = {**args, "source": f"<{len(str(args['source']))} chars>"}
+        record: dict[str, Any] = {"op": op, "args": args, "ok": error is None, "duration_ms": duration_ms}
+        if phases:
+            # 包含式分项会重叠，不能相加。
+            record["phases"] = phases
+        if error is not None:
+            record["error"] = {"code": error.code, "message": error.message}
+        try:
+            job.append_log(record)
+        except OSError:
+            log.exception(_t("写入任务 %s 的执行记录失败", "writing the run record of job %s failed"), job_id)
+
+    def _job(self, args: dict[str, Any]) -> jobs.Job:
+        job = jobs.get_job(_arg(args, "job", str))
+        jobs.require_zos_history(job.root)
+        return job
+
+    def close(self) -> None:
+        if self.live_worker is not None:
+            self.live_worker.close()
+        for backend in {id(b): b for b in (self.backend, self.rtc, self.zos) if b is not None}.values():
+            backend.close()
+
+    @property
+    def active(self) -> str:
+        if self.rtc is None:
+            return str(self.backend.identity().get("backend") or "zos")
+        return "rtc" if self.backend is self.rtc else "zos"
+
+    @property
+    def rtc_instance(self) -> bool:
+        return self.backend is self.rtc and self.zos is None and self._start_zos is None
+
+    @property
+    def dual(self) -> bool:
+        return self.rtc is not None and (self.zos is not None or self._start_zos is not None)
+
+    def write_state(self) -> None:
+        if self.state_base is None:
+            return
+        write_json(config.daemon_state_file(), {**self.state_base, "opticstudio": self.zos_info,
+                                                "backends": {"active": self.active, "preference": self.preference, "pinned_stage": self.pinned_stage,
+                                                             "dual": self.dual, "zos_started": self.zos is not None}})
 
     def _ensure_zos(self) -> Backend:
         if self.zos is None:

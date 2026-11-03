@@ -9,7 +9,7 @@ import pytest
 from saos import jobs
 from saos.backend.fake import FakeBackend
 from saos.daemon import Daemon, compare_surfaces
-from saos.protocol import ErrorCode, SaosError
+from saos.protocol import ErrorCode
 
 
 @pytest.fixture
