@@ -4,7 +4,7 @@ The outcome of this stage is an approved model description: a structure chosen f
 
 ## Build the model
 
-Models are built, saved and approved on rtc, like every stage before delivery; `saos lens describe` makes the model page on OpticStudio until rtc draws layouts, and the daemon routes it there by itself. A surface type or setting rtc cannot trace comes back as `backend_switch.stayed`: the lens then computes on OpticStudio, and you tell the user which item caused it ([session.md](session.md#two-backends-in-one-daemon)).
+Models are built, saved, described and approved on rtc, like every stage before delivery; the model page then shows the meridional section drawn from the viz data, the same one the workflow window shows. A surface type or setting rtc cannot trace comes back as `backend_switch.stayed`: the lens then computes on OpticStudio, and you tell the user which item caused it ([session.md](session.md#two-backends-in-one-daemon)).
 
 - Build or import through `lens build`, `lens load` and `lens save`. Commands use native `.zmx` files (`lens build --as start.zmx`) in OpticStudio 24.1 line format, whichever backend saves them.
 - Keep sourced materials and mechanical semi-diameters (`lens set --param mech_semi_diameter`) in the model; the interference check uses the parts' outer edges.
@@ -36,6 +36,10 @@ The unoptimised pass only shows whether a start traces and fits together; choosi
 - The verdict per candidate is valid, invalid within budget, or not evaluated because of a material or computation failure; material failures stay distinct from connection and UI failures, which propagate.
 - Equal fingerprints count once. Keep budget-limited candidates and record `RuntimeWarning` counts; zero warnings does not establish validity, because check scripts can suppress them.
 - Plans, input copies, the prepare copy and structure descriptions are sealed. The model page shows prediction and screening records matched to the current model by fingerprint; missing, stale or unmatched comparisons are warnings, not gates.
+
+## Place aspheres before approval
+
+Which surfaces are aspheric is part of the structure, so decide it here rather than in the rounds, where a conversion means a new description and approval. When the demand allows aspheres and a screened candidate misses on a monochromatic residual (spherical, coma, astigmatism), or its element count, length or weight is tight, run `ctx.AsphereExpert(surfaces).rank()` on it after its short stage: the ranking reads the merit rows and means little on an unoptimised start. Give it only the surfaces that can be made aspheric, with their slope limits. Convert the best with `.run(nas)`, screen that version against the spherical one on the same budget, and describe the one you choose. Options: [scripting.md](scripting.md#expert-search-classes).
 
 ## Record material sources
 

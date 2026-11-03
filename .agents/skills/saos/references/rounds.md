@@ -44,7 +44,7 @@ Two expert classes answer questions the optimisers never ask: which materials, a
 
 `.candidates(surface)` lists what it would try and leaves the lens unchanged; show the list to the user when the material choice is theirs. Record the result as a `materials` round.
 
-`ctx.AsphereExpert(surfaces).rank()` predicts which spherical surfaces gain most from an asphere and leaves the lens as it was. Use it when a monochromatic residual (spherical, coma, astigmatism) is the largest gap, the variables that move it are spent, and the demand allows aspheres; give it only the surfaces that can be made aspheric, with their slope limits. `.run(nas)` changes surface types, which changes the approved structure: show the ranking to the user, run, describe the model again and get `saos lens approve` before `saos round --tier structure`.
+`ctx.AsphereExpert` places aspheres while the structure is chosen ([model.md](model.md#place-aspheres-before-approval)). Here it is the fallback for a monochromatic residual (spherical, coma, astigmatism) that stays the largest gap after the variables that move it are spent, when the demand allows aspheres: `.rank()` leaves the lens as it was; `.run(nas)` changes surface types and so the approved structure. Show the ranking to the user, run, describe the model again and get `saos lens approve` before `saos round --tier structure`.
 
 ## On the rtc instance
 

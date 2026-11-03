@@ -37,7 +37,7 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 - **常驻后台进程**：后台进程在内存中持有当前镜头状态和两个后端（rtc 立即可用；OpticStudio standalone 会话在第一次需要时建立，之后一直开着），命令行只转发请求。并发评估（`saos scan`、`ctx.map`）复用常驻 Worker 池（空闲 10 分钟关闭并释放许可）。支持 `--detach` 分离运行：扫描在后台线程用镜头快照和 Worker 池运行，主实例照常响应其他命令；`exec`/`opt`/`check`/`round` 的分离运行由独立子进程等待主实例完成并写入 `runs/`。
 - **各阶段的计算后端**（同一后台进程按 `saos.ui.stage` 的阶段切换）：
   - 需求访谈与确认、建模（起点生成、初筛）、模型确认、设计轮次用 rtc（需求阶段只有准入项可单独支撑可行性结论；设计轮次覆盖变量、评价函数、带精确约束的局部优化、Hammer 与全局搜索、判定和轮次）。
-  - 交付（zemax 最后优化、交付轮测量、公差、报告）用 ZOS，许可不足时报告失败，不改用 rtc；rtc 出模型页截面图之前，`lens describe` 也要 ZOS。许可计数见技能 `references/session.md`。
+  - 交付（zemax 最后优化、交付轮测量、公差、报告）用 ZOS，许可不足时报告失败，不改用 rtc；`lens describe` 在 rtc 上出模型页，剖面图由 saos 用流程图窗口同一份 viz 数据画（2026-11-03 用户决定）。许可计数见技能 `references/session.md`。
   - `saos daemon use rtc|zos` 固定后端只在当时的流程阶段内有效，阶段一变自动回到按阶段选择；rtc 上没有 `ctx.system`，检查与脚本经 `ctx` 读写，rtc 算不了的判定条目列入 `backend_unsupported`。
   - 切换时镜头经 `.zmx` 交接后逐值比对，不一致仍交给 rtc、差异记为未对账（2026-10-30 用户决定）。
   - 在 OpticStudio 上的脚本可用 rtc 内存副本 `ctx.fast()` 探索，结果推回后先用 OpticStudio 局部优化按评价函数收尾，再判定和记录轮次（2026-10-28 用户决定）；专家类用 rtc 做非球面排名与玻璃坐标。
@@ -51,7 +51,7 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 - **Zemax 优化器与玻璃在产目录**：
   - OpticStudio 上的局部优化使用 Zemax DLS 或正交下降；`auto` 在序列系统选 DLS，非序列系统选正交下降。Hammer 与 Global 使用原生工具；rtc 上是 rtc 自己的约束 DLS、Hammer 与全局搜索。外层 Brent、Nelder–Mead、Powell 搜索仍可调用 ZOS 测量。预算与取消共用 `saos.budget`，原生调用返回前不承诺硬实时中断。
   - 玻璃替换默认使用按厂家分开的在产目录 `SAOS_CDGM_INPROD`（另有 `SAOS_NHG_INPROD`，见 `library/glasscat/README.md`），防止全局搜索或 Hammer 换成停产牌号，并避免两家同名牌号参数不同带来的混淆。
-  - `ctx.AsphereExpert` / `ctx.GlassExpert` 是当前 ZOS 或 rtc 实例镜头的非球面选面与材料搜索类（`saos.ctx.experts`）。只对纯序列、单结构镜头工作；分析恢复入口，接受态标未保存，保存仍经 ctx。项目物理过滤、Q 型列映射和持久斜率约束必须明确提供，不能用缺失数据猜测。接口、算法与待验收项见 `docs/plans/optical-experts.md`。
+  - `ctx.AsphereExpert` / `ctx.GlassExpert` 是当前 ZOS 或 rtc 实例镜头的非球面选面与材料搜索类（`saos.ctx.experts`）。只对纯序列、单结构镜头工作；分析恢复入口，接受态标未保存，保存仍经 ctx。项目物理过滤、Q 型列映射和持久斜率约束必须明确提供，不能用缺失数据猜测。非球面位置属于结构，在建模阶段初筛后用 `AsphereExpert.rank()` 决定、随模型确认，设计轮次里只作后备；`GlassExpert` 不改结构，留在设计轮次的 materials 层级（2026-11-03 用户决定）。接口、算法与待验收项见 `docs/plans/optical-experts.md`。
 - **统一处方骨架与非序列支持**：序列与纯非序列系统（`"mode": "non_sequential"`）共用同一套处方入口、建模确认、结构指纹、判定和轮次；saos 只校验系统设置、通用面属性和多重结构骨架，具体面型和参数按 OpticStudio 原名透传。非序列能力随真实任务逐步扩展。
 - **窗口、资源与未保存修改保护**：
   - 用户通过流程图窗口（`saos ui`）查看进度、当前镜头视图（`view.json`）与当前镜头指标（`metrics.json`）及每轮导出的点列图/MTF（`viz.json`）。后台进程在镜头改动后自动刷新；rtc 的目录指标另由专用进程读取完整镜头快照，在优化进度回调与空闲刷新时计算，只保留最新待算快照，正式判定仍走 check/round。追加展示选择存在 `metric_selection.json`，不参与判定；窗口尊重用户关闭选择，仅在需要查看的节点通知置顶且不抢键盘焦点；前端随包分发，不引入 Node 构建链。
