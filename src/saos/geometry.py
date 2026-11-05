@@ -35,8 +35,84 @@ def aperture(spec: dict[str, Any] | None, sd: float) -> dict[str, Any]:
         return {"shape": "ellipse", "hx": float(spec["XHalfWidth"]), "hy": float(spec["YHalfWidth"]), "dx": dx, "dy": dy, "rmin": 0.0, "explicit": True}
     if "CircularAperture" in kind and spec.get("MaximumRadius"):
         r = float(spec["MaximumRadius"])
-        return {"shape": "circle", "hx": r, "hy": r, "dx": dx, "dy": dy, "rmin": float(spec.get("MinimumRadius") or 0.0), "explicit": True}
+        # 最小通光半径只定义挡光区域，不能据此认定玻璃或镜坯被挖空。
+        return {"shape": "circle", "hx": r, "hy": r, "dx": dx, "dy": dy, "rmin": 0.0, "explicit": True}
     return {"shape": "circle", "hx": sd, "hy": sd, "dx": 0.0, "dy": 0.0, "rmin": 0.0, "explicit": False}
+
+
+def obscuration_paths(spec: dict[str, Any] | None, sd: float) -> dict[str, list]:
+    """遮挡的显示轮廓与轴截线；不改变零件外缘，也不从结构交叠检查中扣除材料。
+
+    轮廓按 64 边形绘制，截线由同一轮廓求交；结果是局部坐标的多段折线，裁到半口径圆内。
+    """
+    spec = spec or {}
+    kind = str(spec.get("type", ""))
+    dx, dy = float(spec.get("ApertureXDecenter") or 0), float(spec.get("ApertureYDecenter") or 0)
+    regions = []
+
+    def boundary(shape, hx, hy):
+        if hx <= 0 or hy <= 0:
+            return []
+        return outline({"shape": shape, "hx": hx, "hy": hy, "dx": dx, "dy": dy}, 64)
+
+    if "CircularObscuration" in kind:
+        outer = boundary("circle", float(spec.get("MaximumRadius") or 0), float(spec.get("MaximumRadius") or 0))
+        inner = boundary("circle", float(spec.get("MinimumRadius") or 0), float(spec.get("MinimumRadius") or 0))
+        regions = [[p for p in (outer, inner) if p]]
+    elif "CircularAperture" in kind:
+        inner = float(spec.get("MinimumRadius") or 0)
+        regions = [[boundary("circle", inner, inner)]] if inner > 0 else []
+    elif "Obscuration" in kind and ("Rectangular" in kind or "Elliptical" in kind):
+        shape = "rect" if "Rectangular" in kind else "ellipse"
+        regions = [[boundary(shape, float(spec.get("XHalfWidth") or 0), float(spec.get("YHalfWidth") or 0))]]
+    elif "Spider" in kind:
+        count = int(spec.get("NumberOfArms") or 0)
+        half = abs(float(spec.get("WidthOfArms") or 0)) / 2
+        if count > 1024:
+            raise ValueError("蜘蛛显示最多支持 1024 条臂")
+        for k in range(count):
+            a = -2 * math.pi * k / count
+            c, s = math.cos(a), math.sin(a)
+            points = [(dx + c * x - s * y, dy + s * x + c * y)
+                      for x, y in ((0, -half), (2 * sd, -half), (2 * sd, half), (0, half), (0, -half))]
+            regions.append([points])
+    result = {"rim": [], "profile_x": [], "profile_y": []}
+    if sd <= 0:
+        return result
+
+    def clipped_segment(a, b):
+        vx, vy = b[0] - a[0], b[1] - a[1]
+        length = vx * vx + vy * vy
+        if length == 0:
+            return None
+        dot = a[0] * vx + a[1] * vy
+        disc = dot * dot - length * (a[0] ** 2 + a[1] ** 2 - sd * sd)
+        if disc < 0:
+            return None
+        root = math.sqrt(disc)
+        lo, hi = max(0.0, (-dot - root) / length), min(1.0, (-dot + root) / length)
+        return [(a[0] + t * vx, a[1] + t * vy) for t in (lo, hi)] if hi > lo else None
+
+    for contours in regions:
+        for contour in contours:
+            for a, b in zip(contour, contour[1:]):
+                segment = clipped_segment(a, b)
+                if segment:
+                    result["rim"].append(segment)
+        for axis, key in ((0, "profile_y"), (1, "profile_x")):
+            crossings = []
+            for contour in contours:
+                for a, b in zip(contour, contour[1:]):
+                    if (a[axis] <= 0 < b[axis]) or (b[axis] <= 0 < a[axis]):
+                        t = -a[axis] / (b[axis] - a[axis])
+                        crossings.append(a[1 - axis] + t * (b[1 - axis] - a[1 - axis]))
+            crossings.sort()
+            for lo, hi in zip(crossings[::2], crossings[1::2]):
+                lo, hi = max(lo, -sd), min(hi, sd)
+                if hi > lo:
+                    result[key].append([(0.0, p) if axis == 0 else (p, 0.0)
+                                        for p in (lo + (hi - lo) * k / 20 for k in range(21))])
+    return result
 
 
 def extent(ap: dict[str, Any]) -> float:

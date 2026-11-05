@@ -29,7 +29,10 @@ from saos.protocol import ErrorCode, SaosError
 # 求解类型里 rtc 当作普通数值的两种；其余求解（拾取、边缘光线高度、F 数…）改别的参数后 OpticStudio 会重算，rtc 不会
 # the two solve types rtc treats as plain numbers; other solves are recomputed by OpticStudio after a change, not by rtc
 PLAIN_SOLVES = ("Fixed", "Variable")
-SURFACE_APERTURES = {"None": 0, "CircularAperture": 1, "FloatingAperture": 10}
+SURFACE_APERTURES = {"None": 0, "CircularAperture": 1, "CircularObscuration": 2, "RectangularAperture": 4, "FloatingAperture": 10}
+# 系统孔径类型：OpticStudio 的名字 ↔ .zmx 的写法。float_by_stop 的孔径值由光阑半口径定，文件里没有数值。
+APERTURE_TYPES = {"EntrancePupilDiameter": "EPD", "ObjectSpaceNA": "OBNA", "FloatByStopSize": "FLOA"}
+APERTURE_NAMES = {v: k for k, v in APERTURE_TYPES.items()}
 # 与 OpticStudio 逐条追迹对过账的面型（.zmx 类型码）；rtc 另有的 BINARY_2、FRESNELS 尚未对账，一律拒绝
 # surface types reconciled ray by ray with OpticStudio; rtc's BINARY_2 and FRESNELS are not, so they are refused
 RECONCILED_TYPES = ("STANDARD", "EVENASPH", "BICONIC", "BICONICX", "BICONICZ", "TOROIDAL", "PARAXIAL")
@@ -104,6 +107,14 @@ def _material_call(operation, *args, **kwargs):
         raise SaosError(ErrorCode.BAD_ARGS, str(exc)) from exc
     except MaterialUnsupported as exc:
         raise _unsupported(str(exc)) from exc
+
+
+def _aperture_value(lens) -> float:
+    """系统孔径的数值：Float By Stop Size 由光阑半口径定（OpticStudio 的 ApertureValue 报的也是它）。"""
+    if lens.aperture_type != "FLOA":
+        return float(lens.aperture_value)
+    stop = next((s for s in lens.surfaces if s.is_stop), None)
+    return float(stop.semi_diameter) if stop is not None else 0.0
 
 
 def _same(a: float, b: float, tol: float = GEOMETRY_TOL) -> bool:
@@ -233,22 +244,23 @@ class RtcBackend(Backend):
             # the rtc instance writes .zmx back: unknown surface lines (pickups and other solves, coatings) would make the
             # saved lens differ from the one computed, whether ignored or dropped
             out += [f"{line} (a .zmx line rtc neither models nor carries over)" for line in rtc_lens.unknown_surface_lines(lens)]
-            if lens.aperture_type not in ("EPD", "OBNA"):
-                out.append(f"system aperture {lens.aperture_type} (rtc has entrance pupil diameter and object space NA)")
+            if lens.aperture_type not in ("EPD", "OBNA", "FLOA"):
+                out.append(f"system aperture {lens.aperture_type} (rtc has entrance pupil diameter, object space NA and "
+                           "float by stop size)")
             if lens.field_type not in ("ANGLE", "OP1") or (lens.field_type == "OP1" and not finite):
                 out.append(f"field type {lens.field_type} (rtc has angles, and object heights with a finite object)")
             if lens.aperture_type == "OBNA" and not finite:
                 out.append("object space NA with the object at infinity")
         else:
-            if lens.aperture_type != "EPD":
+            if lens.aperture_type not in ("EPD", "FLOA"):
                 # 2026-10-26 实测：piB（物方 NA + 实际瞄准）10 条光线 9 条瞄准不收敛，位置差 0.096 mm
-                out.append("system aperture other than entrance pupil diameter (rtc's object space NA launch and aiming do not "
+                out.append("system aperture other than entrance pupil diameter or float by stop size (rtc's object space NA launch and aiming do not "
                            "match OpticStudio)")
             if lens.field_type != "ANGLE":
                 out.append(f"field type {lens.field_type} (rtc traces angle fields only)")
             if lens.ray_aiming == 1:
                 out.append("paraxial ray aiming (rtc has off and real)")
-            if lens.aperture_type == "EPD" and finite:
+            if lens.aperture_type in ("EPD", "FLOA") and finite:
                 out.append("finite object distance with an entrance pupil aperture")
         if "ENVD" not in lens.raw:
             out.append("missing ENVD (the environment cannot be checked)")
@@ -259,9 +271,20 @@ class RtcBackend(Backend):
         others = sorted({row.op for row in lens.mce if row.op not in ("THIC", "MOFF")})
         if others:
             out.append(f"multi-configuration operands {others} (rtc applies THIC only)")
+        # 下面几条路径没有 OpticStudio 真值，对账前拒绝（docs/plans/rtc-iris-mirror.md）
+        # paths without OpticStudio truth yet are refused until reconciled
+        mirrors = [s.index for s in lens.surfaces[1:] if s.mirror]
+        if lens.aperture_type == "FLOA" and lens.ray_aiming == 2:
+            out.append("float by stop size with real ray aiming (not reconciled with OpticStudio)")
+        if mirrors and lens.ray_aiming == 2:
+            out.append("mirrors with real ray aiming (not reconciled with OpticStudio)")
         for s in lens.surfaces[1:]:
-            if s.glass.upper() == "MIRROR":
-                out.append(f"surface {s.index} is a mirror")
+            if s.aperture_code not in SURFACE_APERTURES.values():
+                out.append(f"surface {s.index} aperture code {s.aperture_code} (not reconciled with OpticStudio)")
+            if s.mirror and s.type.upper() != "STANDARD":
+                out.append(f"surface {s.index} is a {s.type} mirror (only standard surfaces are reconciled as mirrors)")
+            if s.type.upper() == "PARAXIAL" and mirrors and mirrors[0] < s.index:
+                out.append(f"surface {s.index} is a paraxial surface after a mirror (not reconciled with OpticStudio)")
             if s.type.upper() not in RECONCILED_TYPES:
                 out.append(f"surface {s.index} type {s.type} (not reconciled with OpticStudio)")
                 continue
@@ -287,7 +310,7 @@ class RtcBackend(Backend):
         if model.get("mode") == "non_sequential":
             return ["non-sequential system"]
         ap = model.get("aperture", {})
-        if ap.get("type") != "EntrancePupilDiameter":
+        if ap.get("type") not in ("EntrancePupilDiameter", "FloatByStopSize"):
             out.append(f"system aperture {ap.get('type')}")
         if ap.get("telecentric_object"):
             out.append("telecentric object space")
@@ -296,8 +319,6 @@ class RtcBackend(Backend):
         fields = model.get("fields", {})
         if fields.get("type") != "Angle":
             out.append(f"field type {fields.get('type')}")
-        if any(any(v for v in f.get("vignetting", {}).values()) for f in fields.get("items", [])):
-            out.append("field vignetting factors (VDX/VDY/VCX/VCY/VAN)")
         operands = {op.get("type") for op in model.get("configurations", {}).get("operands", [])}
         if operands - {"THIC"}:
             out.append(f"multi-configuration operands {sorted(operands - {'THIC'})}")
@@ -338,9 +359,9 @@ class RtcBackend(Backend):
             if environment.get("adjust_index") is not actual.adjust:
                 out.append(f"environment adjust_index: OpticStudio {environment.get('adjust_index')}, file {actual.adjust}")
         ap = model.get("aperture", {})
-        want_ap = {"EntrancePupilDiameter": "EPD", "ObjectSpaceNA": "OBNA"}.get(ap.get("type"))
-        if want_ap != lens.aperture_type or not _same(float(ap.get("value", 0.0)), lens.aperture_value):
-            out.append(f"aperture {ap.get('type')} {ap.get('value')} vs file {lens.aperture_type} {lens.aperture_value}")
+        want_ap = APERTURE_TYPES.get(ap.get("type"))
+        if want_ap != lens.aperture_type or not _same(float(ap.get("value", 0.0)), _aperture_value(lens)):
+            out.append(f"aperture {ap.get('type')} {ap.get('value')} vs file {lens.aperture_type} {_aperture_value(lens)}")
         if {"Off": 0, "Real": 2}.get(model.get("ray_aiming")) != lens.ray_aiming:
             out.append(f"ray aiming {model.get('ray_aiming')} vs file {lens.ray_aiming}")
         fields = model.get("fields", {})
@@ -349,6 +370,11 @@ class RtcBackend(Backend):
         items = fields.get("items", [])
         if len(items) != len(lens.fields) or not all(_same(f["x"], x) and _same(f["y"], y) for f, (x, y, _) in zip(items, lens.fields)):
             out.append("field points differ from the file")
+        for k, (f, mine) in enumerate(zip(items, lens.vignetting or [])):
+            theirs = f.get("vignetting") or {}
+            for name, value in zip(("VDX", "VDY", "VCX", "VCY", "VAN"), mine):
+                if not _same(float(theirs.get(name, 0.0)), float(value)):
+                    out.append(f"field {k + 1} vignetting {name}: OpticStudio {theirs.get(name)}, file {value}")
         waves = model.get("wavelengths", [])
         if len(waves) != len(lens.active_wavelengths) or not all(_same(w["um"], um) for w, (um, _) in zip(waves, lens.active_wavelengths)):
             out.append("wavelengths differ from the file")
@@ -417,8 +443,9 @@ class RtcBackend(Backend):
 
         env = self.lens.environment
         out = []
+        material = self._incident_surface(s).material
         try:
-            medium = resolve(s.material, self._catalog(), self.lens.catalogs)
+            medium = resolve(material, self._catalog(), self.lens.catalogs)
         except (MaterialInvalid, MaterialUnsupported):
             return out
         for w, ((um, _), n_zos) in enumerate(zip(self.lens.active_wavelengths, indices), 1):
@@ -427,10 +454,16 @@ class RtcBackend(Backend):
             except (MaterialInvalid, MaterialUnsupported):
                 continue
             if abs(float(n_zos) - n_rtc) <= INDEX_TOL:
-                self.confirmed.add((s.material, um))
+                self.confirmed.add((material, um))
             else:
                 out.append(f"surface {s.index} index at wavelength {w}: OpticStudio {n_zos}, rtc {n_rtc}")
         return out
+
+    def _incident_surface(self, s):
+        """INDX 读的那一面：反射面报入射侧介质（reflective 实测，玻璃内的反射面报玻璃折射率），其余面报面后介质。"""
+        while s.mirror:
+            s = self.lens.surfaces[s.index - 1]
+        return s
 
     # ---- rtc 系统 / rtc systems ----
 
@@ -441,6 +474,9 @@ class RtcBackend(Backend):
 
     def _admit(self, medium, spec, wavelength: float) -> None:
         """材料路径已准入，或这一 (材料, 波长) 建立时经 OpticStudio INDX 确认过，才允许参与追迹。"""
+        # 反射面没有自己的折射率，入射侧的材料由入射侧那一面准入
+        if medium.reflect:
+            return
         path = medium.path(self.lens.environment)
         if path not in admitted_paths() and (spec, wavelength) not in self.confirmed and self.standalone:
             self.unverified_paths.add(path)
@@ -538,6 +574,8 @@ class RtcBackend(Backend):
             out.append("object space NA aperture")
         if lens.field_type == "OP1":
             out.append("object height fields")
+        if any(s.semi_variable for s in lens.surfaces):
+            out.append("光阑半口径内存变量：AD 与优化终点待对账，导出只保留固定数值")
         if lens.ray_aiming == 1:
             out.append("paraxial ray aiming")
         for surface in lens.surfaces[1:]:
@@ -675,7 +713,7 @@ class RtcBackend(Backend):
             "backend": "rtc", "file": info["file"], "title": info["title"], "lens_units": "Millimeters", "aperture": info["aperture"],
             "ray_aiming": {0: "Off", 1: "Paraxial", 2: "Real"}[lens.ray_aiming],
             "fields": {"type": fields["type"], "normalization": fields["normalization"],
-                       "items": [{**f, "vignetting": {k: 0.0 for k in ("VDX", "VDY", "VCX", "VCY", "VAN")}} for f in fields["items"]]},
+                       "items": fields["items"]},
             "wavelengths": info["wavelengths"], "material_catalogs": list(lens.catalogs), "stop_surface": lens.stop_index,
             "environment": info["environment"], "configurations": self._configurations(), "unread": list(UNREAD_SETTINGS),
             "surfaces": surfaces, "layout": {},
@@ -689,7 +727,7 @@ class RtcBackend(Backend):
         return {"radius": "Variable" if s.solve_radius == 1 else "Fixed",
                 "thickness": self.held.get(f"{i}.thickness") or ("Variable" if "VDSZ" in s.raw else "Fixed"),
                 "material": material or ("MaterialModel" if isinstance(s.material, Model) else "Fixed"),
-                "semi_diameter": "Fixed" if s.semi_fixed else "Automatic",
+                "semi_diameter": "Variable" if s.semi_variable else "Fixed" if s.semi_fixed else "Automatic",
                 "mech_semi_diameter": "Fixed" if s.mech_fixed else "Automatic",
                 "conic": "Variable" if "VCON" in s.raw else "Fixed"}
 
@@ -697,6 +735,8 @@ class RtcBackend(Backend):
         from rtc.material import Model
 
         spec = s.material
+        if s.mirror:
+            return {"kind": "mirror"}
         if spec is None:
             return {"kind": "none"}
         if isinstance(spec, Model):
@@ -711,7 +751,7 @@ class RtcBackend(Backend):
         The index after a surface at any wavelengths, by INDX's material path, leaving the wavelength table alone."""
         from rtc.material import Environment, resolve
 
-        s = self.lens.surfaces[self._index(ref)]
+        s = self._incident_surface(self.lens.surfaces[self._index(ref)])
         medium = _material_call(resolve, s.material, self._catalog(), self.lens.catalogs)
         e = self.lens.environment
         env = _material_call(Environment, e.temperature, e.pressure, e.adjust)
@@ -828,11 +868,13 @@ class RtcBackend(Backend):
         return {
             **self.identity(), "file": str(self.path) if self.path else None, "lens_units": "Millimeters", "title": lens.name,
             "mode": "sequential", "object_thickness": lens.surface(0).thickness,
-            "aperture": {"type": {"EPD": "EntrancePupilDiameter", "OBNA": "ObjectSpaceNA"}[lens.aperture_type],
-                         "value": lens.aperture_value, "telecentric_object": False, "afocal_image": bool(ap.get("afocal_image"))},
+            "aperture": {"type": APERTURE_NAMES[lens.aperture_type], "value": _aperture_value(lens),
+                         "telecentric_object": False, "afocal_image": bool(ap.get("afocal_image"))},
             "fields": {"type": {"ANGLE": "Angle", "OP1": "ObjectHeight"}.get(lens.field_type, lens.field_type),
                        "normalization": lens.field_normalization.capitalize(),
-                       "items": [{"x": x, "y": y, "weight": w} for x, y, w in lens.fields]},
+                       "items": [{"x": x, "y": y, "weight": w,
+                                  "vignetting": dict(zip(("VDX", "VDY", "VCX", "VCY", "VAN"), vig))}
+                                 for (x, y, w), vig in zip(lens.fields, lens.vignetting or [(0.0,) * 5] * len(lens.fields))]},
             "wavelengths": [{"um": um, "weight": w, "primary": k == lens.primary_wave} for k, (um, w) in enumerate(lens.active_wavelengths, 1)],
             "num_surfaces": len(lens.surfaces), "stop_surface": lens.stop_index,
             "environment": {"temperature": lens.environment.temperature, "pressure": lens.environment.pressure,
@@ -862,6 +904,8 @@ class RtcBackend(Backend):
         from rtc.material import Model
 
         spec = s.material
+        if s.mirror:
+            return "MIRROR"
         return {"nd": spec.nd, "vd": spec.vd, "dpgf": spec.dpgf} if isinstance(spec, Model) else s.glass
 
     @staticmethod
@@ -870,6 +914,8 @@ class RtcBackend(Backend):
         from rtc.material import Model
 
         spec = s.material
+        if s.mirror:
+            return "MIRROR"
         return f"MODEL {spec.nd:.10g} {spec.vd:.10g} {spec.dpgf:.10g}" if isinstance(spec, Model) else s.glass
 
     def set_surface(self, index: int, param: str, value: Any) -> dict[str, Any]:
@@ -925,7 +971,7 @@ class RtcBackend(Backend):
                 if int(int1) == 0:
                     return 1.0
                 system = self._system(wave(int2))
-                return float(next(it.n_after for it in system.items if it.index == int(self._index(int(int1)))))
+                return abs(float(next(it.n_after for it in system.items if it.index == int(self._index(int(int1))))))
             if op == "SSAG":
                 x, y = (list(data) + [0.0, 0.0])[:2]
                 value = self.sag(self._index(int(int1)), float(x), float(y))
@@ -1083,6 +1129,8 @@ class RtcBackend(Backend):
                 out.append(f"{i}.thickness")
             if "VCON" in s.raw:
                 out.append(f"{i}.conic")
+            if s.semi_variable:
+                out.append(f"{i}.semi_diameter")
             out += [f"{i}.par{n}" for n in sorted(s.variable_params)]
             if self.material_vars.get(i, {}).get("mode") == "model":
                 out += [f"{i}.nd", f"{i}.vd"]
@@ -1092,8 +1140,8 @@ class RtcBackend(Backend):
         from saos.lensdata import PAR_RE
 
         lens = self._designing("saos opt vary")
-        if param not in ("radius", "curvature", "thickness", "conic", "material") and not PAR_RE.match(param):
-            raise SaosError(ErrorCode.BAD_ARGS, "only radius, thickness, conic, par<N> and material can be variables")
+        if param not in ("radius", "curvature", "thickness", "conic", "material", "semi_diameter") and not PAR_RE.match(param):
+            raise SaosError(ErrorCode.BAD_ARGS, "可调参数为 radius、thickness、conic、par<N>、material 或浮动孔径光阑的 semi_diameter")
         image = len(lens.surfaces) - 1
         if not (0 < surface < image or (surface == 0 and param == "thickness")):
             raise SaosError(ErrorCode.BAD_ARGS, f"surface {surface} {param} cannot be a variable")
@@ -1103,6 +1151,10 @@ class RtcBackend(Backend):
             raise SaosError(ErrorCode.BAD_ARGS, f"surface {surface} {name} is held by a {self.held[f'{surface}.{name}']} solve")
         if param == "material":
             out = self._vary_material(s, on, mode, catalog)
+        elif param == "semi_diameter":
+            if on and (lens.aperture_type != "FLOA" or not s.is_stop or s.semi_diameter <= 0):
+                raise SaosError(ErrorCode.BAD_ARGS, "semi_diameter 变量仅用于 Float By Stop Size 的光阑，数值必须大于零")
+            s.semi_variable, s.semi_fixed = bool(on), True
         elif name == "radius":
             s.solve_radius = 1 if on else 0
         elif param == "thickness":
@@ -1168,6 +1220,8 @@ class RtcBackend(Backend):
             raise SaosError(ErrorCode.BAD_ARGS, f"only surfaces 1–{len(lens.surfaces) - 2} can change type, got {index!r}")
         kind = rtc_lens.TYPES.get(rtc_lens._type_key(str(surface_type)))
         s = lens.surface(index)
+        if s.mirror:
+            raise _unsupported(f"surface {index} is a mirror; only standard surfaces are reconciled as mirrors")
         if kind not in self.SURFACE_TYPES or s.type.upper() not in self.SURFACE_TYPES:
             raise _unsupported(f"rtc switches surfaces between Standard and EvenAspheric only; surface {index} is {s.type}, "
                                f"asked for {surface_type}")
@@ -1429,10 +1483,20 @@ class RtcBackend(Backend):
     @staticmethod
     def _aperture_spec(surface) -> dict[str, Any]:
         """面孔径写成 ZOS 后端 _aperture_dict 的形式，交给 saos.geometry。"""
-        if surface.aperture_code == 1:
-            return {"type": "CircularAperture", "MinimumRadius": surface.ap_min, "MaximumRadius": surface.ap_max,
-                    "ApertureXDecenter": surface.ap_dx, "ApertureYDecenter": surface.ap_dy}
-        return {"type": "FloatingAperture" if surface.aperture_code == 10 else "None"}
+        code = surface.aperture_code
+        common = {"ApertureXDecenter": surface.ap_dx, "ApertureYDecenter": surface.ap_dy}
+        if code == 1:
+            return {"type": "CircularAperture", "MinimumRadius": surface.ap_min, "MaximumRadius": surface.ap_max, **common}
+        if code == 2:
+            return {"type": "CircularObscuration", "MinimumRadius": surface.ap_min, "MaximumRadius": surface.ap_max, **common}
+        if code == 4:
+            return {"type": "RectangularAperture", "XHalfWidth": surface.ap_min, "YHalfWidth": surface.ap_max, **common}
+        if code in (5, 6, 7):
+            kind = {5: "RectangularObscuration", 6: "EllipticalAperture", 7: "EllipticalObscuration"}[code]
+            return {"type": kind, "XHalfWidth": surface.ap_min, "YHalfWidth": surface.ap_max, **common}
+        if code == 3:
+            return {"type": "Spider", "NumberOfArms": int(surface.ap_max), "WidthOfArms": surface.ap_min, **common}
+        return {"type": "FloatingAperture" if code == 10 else "None"}
 
     def _geometry_items(self) -> list[dict[str, Any]]:
         """交叠检查的面，取法同 ZosBackend._geometry_items：网格到零件外缘，净口径外面形照常延伸。"""
@@ -1518,6 +1582,10 @@ class RtcBackend(Backend):
                     if any(v is None for v in sags):
                         errors.setdefault("sag", f"no sag on surface {i}; drawn flat")
                     item[key] = [[x, y, (v or 0.0) + off[2]] for (x, y), v in zip(points, sags)]
+                masks = geometry.obscuration_paths(self._aperture_spec(surface), sd)
+                if any(masks.values()):
+                    item["obscuration"] = {key: [[[x, y, (self.sag(i, x, y) or 0.0) + off[2]] for x, y in line]
+                                                   for line in paths] for key, paths in masks.items()}
             surfaces.append(item)
         timings["geometry"] = round(time.monotonic() - started, 3)
         started = time.monotonic()
@@ -1671,7 +1739,7 @@ class RtcBackend(Backend):
         lens = self.lens
         if kind == "system":
             if ref == "aperture":
-                return lens.aperture_value
+                return _aperture_value(lens)
             if ref == "wave":
                 return lens.active_wavelengths[self._slot(param, len(lens.active_wavelengths), "wave")][0]
             if ref in ("field_x", "field_y"):
@@ -1711,6 +1779,8 @@ class RtcBackend(Backend):
             self._guard(key)
             number = parse_numeric(key, value)
             if ref == "aperture":
+                if lens.aperture_type == "FLOA":
+                    raise _unsupported("float by stop size has no aperture value; the stop surface's semi_diameter sets the aperture")
                 lens.aperture_value = number
             elif ref == "wave":
                 k = self._slot(param, len(lens.active_wavelengths), "wave")
@@ -1751,7 +1821,7 @@ class RtcBackend(Backend):
             if any(r.op == "THIC" and r.surface == index and r.config == self.config for r in lens.mce):
                 raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"surface {index} thickness comes from a multi-configuration row in configuration {self.config}")
             number = parse_numeric(param, value)
-            if index == 0 and math.isfinite(number) and lens.aperture_type == "EPD" and not self.standalone:
+            if index == 0 and math.isfinite(number) and lens.aperture_type in ("EPD", "FLOA") and not self.standalone:
                 raise _unsupported("rtc traces an entrance pupil aperture with the object at infinity only")
             s.thickness = number
         elif param == "conic" and s.type.upper() == "PARAXIAL":
@@ -1761,7 +1831,13 @@ class RtcBackend(Backend):
         elif param in ("conic", "semi_diameter", "mech_semi_diameter"):
             number = parse_numeric(param, value)
             check_size(param, number)
+            if param == "semi_diameter" and lens.aperture_type == "FLOA" and s.is_stop and number <= 0:
+                raise SaosError(ErrorCode.BAD_ARGS, "Float By Stop Size 的光阑半口径必须大于零")
             setattr(s, param, number)
+            if param == "semi_diameter":
+                s.semi_fixed = True
+                if s.aperture_code == 10:
+                    s.ap_max = number
         elif PAR_RE.match(param):
             n = int(PAR_RE.match(param).group(1))
             s.params[n] = parse_numeric(param, value)
@@ -1778,11 +1854,14 @@ class RtcBackend(Backend):
                                "pass freeze_solves=True to keep their saved values fixed in rtc, or make them fixed")
 
     def _set_material(self, s, value: Any) -> None:
-        from rtc.material import material_spec, resolve
+        from rtc.material import Mirror, material_spec, resolve
 
         spec = _material_call(material_spec, value)
         if s.index == 0 and spec is not None:
             raise _unsupported("rtc assumes air in object space")
+        # 增删反射面会翻转后面所有面的符号和厚度，属于换结构，rtc 只接受建模时就有的反射面
+        if isinstance(spec, Mirror) or s.mirror:
+            raise _unsupported(f"surface {s.index}: rtc cannot add or remove a mirror on a built lens; rebuild the lens")
         medium = _material_call(resolve, spec, self._catalog(), self.lens.catalogs)
         # 先查准入、算全部有效波长再提交，失败时材料和系统缓存都不变
         for wavelength, _ in self.lens.active_wavelengths:

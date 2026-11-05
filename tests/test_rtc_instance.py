@@ -135,15 +135,46 @@ def test_quick_focus_moves_the_image_to_the_smallest_rms_spot():
 
 
 def test_prescription_items_rtc_cannot_build_are_listed_together():
+    # 反射面、矩形孔径与渐晕因子已放行；蜘蛛等孔径未对账，和膜层、未实现的面型一起拒绝
     raw = _singlet()
     raw["surfaces"][0]["coating"] = "AR"
-    raw["surfaces"][1]["aperture"] = {"type": "rectangular", "x_half": 2, "y_half": 3}
-    raw["surfaces"].append({"radius": "inf", "thickness": 1, "material": "MIRROR"})
+    raw["surfaces"][1]["type"] = "oddasphere"
+    # 同一面只报第一个问题，蜘蛛孔径单独放一面
+    raw["surfaces"].insert(1, {"radius": "inf", "thickness": 1, "aperture": {"type": "spider", "arms": 4, "width": 1}})
     with pytest.raises(SaosError) as exc:
         _built(raw)
     assert exc.value.code == ErrorCode.BACKEND_UNSUPPORTED
     problems = " | ".join(exc.value.details["problems"])
-    assert "coating" in problems and "rectangular" in problems and "mirror" in problems
+    assert "coating" in problems and "oddasphere" in problems and "spider" in problems
+
+
+def _mirror_lens(**changes) -> dict:
+    raw = {"title": "mirror", "aperture": {"type": "entrance_pupil_diameter", "value": 20}, "fields": {"type": "angle", "y": [0]},
+           "wavelengths": {"um": [0.5876]}, "ray_aiming": "off", "object": {"thickness": "inf"},
+           "surfaces": [{"radius": -200, "conic": -1, "thickness": -100, "material": "MIRROR", "stop": True}]}
+    raw.update(changes)
+    return raw
+
+
+@pytest.mark.parametrize("raw, words", [
+    (_mirror_lens(ray_aiming="real"), "mirrors with real ray aiming"),
+    (_mirror_lens(surfaces=[{"type": "evenaspheric", "radius": -200, "thickness": -100, "material": "MIRROR", "stop": True}]), "mirror"),
+    (_mirror_lens(aperture={"type": "float_by_stop"}, ray_aiming="real",
+                  surfaces=[{"radius": 40, "thickness": 5, "material": {"model": {"nd": 1.5, "vd": 60}}},
+                            {"radius": "inf", "thickness": 40, "stop": True, "semi_diameter": 2}]), "float by stop size"),
+])
+def test_paths_without_opticstudio_truth_are_refused(raw, words):
+    with pytest.raises(SaosError) as exc:
+        _built(raw)
+    assert exc.value.code == ErrorCode.BACKEND_UNSUPPORTED
+    assert words in " | ".join(exc.value.details["problems"])
+
+
+def test_a_mirror_cannot_be_added_or_removed_on_a_built_lens():
+    backend = _built(_mirror_lens())
+    with pytest.raises(SaosError) as exc:
+        backend.set_param("1.material", "")
+    assert exc.value.code == ErrorCode.BACKEND_UNSUPPORTED
 
 
 def test_operands_rtc_does_not_compute_are_refused():
@@ -202,3 +233,76 @@ def test_paraxial_conic_reads_as_opticstudio_does():
     with pytest.raises(SaosError) as err:
         backend.set_param("1.conic", -1.0)
     assert err.value.code == ErrorCode.BAD_ARGS
+
+
+@needs_glass
+def test_mirror_material_reads_as_mirror_and_has_mirror_source():
+    backend = RtcBackend(CASES / "reflective.zmx", standalone=True)
+    assert backend.get_param("1.material") == "MIRROR"
+    assert backend.surfaces()[1]["material"] == "MIRROR"
+    assert backend.describe_model(None)["surfaces"][1]["material_source"] == {"kind": "mirror"}
+
+
+@needs_glass
+def test_float_stop_semi_variable_changes_pupil_without_changing_structure(tmp_path):
+    from saos import model_gate
+    from rtc import zmx
+
+    backend = RtcBackend(CASES / "iris.zmx", standalone=True)
+    before = model_gate.fingerprint(backend.describe_model(None))
+    diameter = backend.operand("EPDI", 0, 0, [])
+    backend.vary(6, "semi_diameter", True)
+    backend.set_param("6.semi_diameter", 2.0)
+    assert "6.semi_diameter" in backend.variables()
+    assert backend.optical_system(backend.lens.primary_wave).items[5].semi == 2.0
+    assert backend.operand("EPDI", 0, 0, []) == pytest.approx(diameter * 0.8)
+    assert model_gate.fingerprint(backend.describe_model(None)) == before
+    legacy = {**before, "aperture": {**before["aperture"], "value": diameter}}
+    assert model_gate.fingerprint_changes(legacy, before) == []
+    target = tmp_path / "iris.zmx"
+    backend.save_as(target)
+    assert zmx.parse(target).surface(6).semi_diameter == 2.0
+    assert backend.get_param("6.semi_diameter") == 2.0
+    backend.load(target)
+    assert "6.semi_diameter" not in backend.variables()
+    assert backend.get_param("6.semi_diameter") == 2.0
+
+
+def test_floating_aperture_dump_tracks_the_changed_semi_diameter():
+    from case_variants import BY_NAME
+    from rtc import zmx
+    from saos.backend import rtc_lens
+
+    lens = BY_NAME["iris"].lens()
+    stop = lens.surface(6)
+    stop.aperture_code, stop.ap_max = 10, stop.semi_diameter
+    stop.semi_diameter = 1.8
+    loaded = zmx.parse_text(rtc_lens.dump(lens)).surface(6)
+    assert loaded.semi_diameter == loaded.ap_max == 1.8
+
+
+@needs_glass
+def test_description_keeps_recorded_field_vignetting(tmp_path):
+    from case_variants import BY_NAME
+    from saos.backend import rtc_lens
+
+    lens = BY_NAME["iris_vignetting"].lens()
+    target = tmp_path / "iris.zmx"
+    rtc_lens.write(lens, target)
+    backend = RtcBackend(target, standalone=True)
+    fields = backend.describe_model(None)["fields"]["items"]
+    for field, values in zip(fields, lens.vignetting):
+        assert [field["vignetting"][key] for key in ("VDX", "VDY", "VCX", "VCY", "VAN")] == list(values)
+
+
+@needs_glass
+def test_obscuration_view_keeps_the_mirror_outer_edge():
+    from saos.report_sheet import lens_svg
+
+    backend = RtcBackend(CASES / "reflective.zmx", standalone=True)
+    view = backend.viz_data(None, full=False)
+    mirror = next(s for s in view["surfaces"] if s["index"] == 1)
+    assert max(abs(p[1]) for p in mirror["profile_y"]) == pytest.approx(45.0)
+    mask = mirror["obscuration"]["profile_y"]
+    assert max(abs(p[1]) for line in mask for p in line) == pytest.approx(15.0)
+    assert "stroke-dasharray" in lens_svg(view)

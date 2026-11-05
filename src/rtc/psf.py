@@ -57,7 +57,10 @@ def _pupil_frame(system: OpticalSystem, px, py, mask):
     return P[mask], C, float(abs(z_pos)) if np.isfinite(z_pos) else np.inf
 
 
-def _check_opd(system: OpticalSystem) -> None:
+def _check_opd(system: OpticalSystem, experimental: bool = False) -> None:
+    mirrors = [it.surface.index for it in system.items if it.reflect]
+    if mirrors and not experimental:
+        raise NotImplementedError(f"第 {mirrors} 面是反射面：反射系统的 OPD/波前尚未与 OpticStudio 对账")
     bad = [it.surface.index for it in system.items if not it.shape.opd_supported]
     if bad:
         raise NotImplementedError(
@@ -66,25 +69,26 @@ def _check_opd(system: OpticalSystem) -> None:
         )
 
 
-def opd_rays(system: OpticalSystem, px, py, hx: float = 0.0, hy: float = 0.0):
+def opd_rays(system: OpticalSystem, px, py, hx: float = 0.0, hy: float = 0.0, *, experimental: bool = False):
     """视场 (hx, hy) 下一批光线相对该视场主光线的 OPD（mm），参考球心在主光线与像面的交点。
     返回 (opd, ok)：ok 为假的光线（追迹出错、被渐晕或拦截）opd 为 nan。不去倾斜；主光线自身的 OPD 恒为 0。
 
     参考球半径取近轴出瞳到像面的轴向距离（与轴上视场时的 :func:`opd_map` 同一定义）；离轴视场时
     OpticStudio 以主光线在出瞳的点到像点的距离为半径，两者在离轴时不同，尚未与 OpticStudio 对账。
     """
-    _check_opd(system)
+    _check_opd(system, experimental)
     px = np.atleast_1d(np.asarray(px, float))
     py = np.atleast_1d(np.asarray(py, float))
     px, py = np.broadcast_arrays(px, py)
     block = trace(system, np.r_[0.0, px.ravel()], np.r_[0.0, py.ravel()], hx, hy)
-    opd, ok = opd_from_trace(system, block, chief_index=0)
+    opd, ok = opd_from_trace(system, block, chief_index=0, experimental=experimental, hx=hx, hy=hy)
     return opd[1:], ok[1:]
 
 
-def opd_from_trace(system: OpticalSystem, block, *, chief_index: int = 0):
+def opd_from_trace(system: OpticalSystem, block, *, chief_index: int = 0,
+                   experimental: bool = False, hx: float = 0.0, hy: float = 0.0):
     """从同一视场、包含主光线的追迹结果计算 OPD（mm），复用光程和像面交点。"""
-    _check_opd(system)
+    _check_opd(system, experimental)
     z_pos, _ = exit_pupil(system)
     if not np.isfinite(z_pos):
         raise ValueError("出瞳在无穷远：请用平面参考（reference='planar'）而不是球面参考")
@@ -94,16 +98,36 @@ def opd_from_trace(system: OpticalSystem, block, *, chief_index: int = 0):
     C = np.array([block.x[chief_index, k_img], block.y[chief_index, k_img], block.z[chief_index, k_img]])
     R = abs(z_pos)
     n_img = system.items[-1].n_after
+    incoming = np.zeros(len(block.error))
+    sign = system.items[-1].sign if experimental else 1.0
+    root_sign = -1.0
+    if experimental:
+        if system.finite_object or system.lens.field_type != "ANGLE":
+            raise NotImplementedError("实验波前目前只支持无穷远物体、角度视场")
+        # PLEN 从第 1 面计起；波前还需该面各交点相对同一入射等相位面的光程。
+        fx, fy = system.field_slopes(hx, hy)
+        direction = np.asarray([float(fx), float(fy), 1.0])
+        direction /= np.linalg.norm(direction)
+        first = np.c_[block.x[:, 0], block.y[:, 0], block.z[:, 0] + system.items[0].vertex_z]
+        incoming = abs(system.n_before(0)) * ((first - first[chief_index]) @ direction)
+        chief_n = sign * block.n[chief_index, k_img]
+        if abs(chief_n) < 1e-14:
+            raise ValueError("主光线与像面相切，参考球半径没有定义")
+        R = abs(z_pos / chief_n)
+        root_sign = 1.0 if z_pos * chief_n > 0 else -1.0
+        n_img = abs(n_img)
 
     def path(b):
-        opl = b.opl[:, k_img] + b.phase[:, k_img]  # 波前含理想透镜相位
-        d = np.stack([b.l[:, k_img], b.m[:, k_img], b.n[:, k_img]], axis=-1)
+        opl = b.opl[:, k_img] + b.phase[:, k_img] + incoming
+        d = sign * np.stack([b.l[:, k_img], b.m[:, k_img], b.n[:, k_img]], axis=-1)
         P = np.stack([b.x[:, k_img], b.y[:, k_img], b.z[:, k_img]], axis=-1)
         diff = P - C[None, :]
         bq = -(diff * d).sum(axis=1)
         cq = (diff * diff).sum(axis=1) - R * R
         # 反向延长到参考球面：s² − 2·bq·s + cq = 0 的负根（此前写成 −bq − √…，交点不在球面上）
-        s = bq - np.sqrt(np.maximum(bq * bq - cq, 0.0))
+        discriminant = bq * bq - cq
+        s = bq + root_sign * np.sqrt(np.maximum(discriminant, 0.0))
+        s = np.where(discriminant >= 0.0, s, np.nan)
         # 符号同 OpticStudio OPDC：光程比参考球面短为正（2026-10-28 对照，见 tests/test_paraxial_glass.py）；
         # Huygens 叠加里 ph = k·(phase0 − dist) 也要这个符号
         return -(opl + n_img * s)
@@ -115,7 +139,8 @@ def opd_from_trace(system: OpticalSystem, block, *, chief_index: int = 0):
 
 
 def opd_map(system: OpticalSystem, px=None, py=None, n: int = 32, kind: str = "square",
-            wavefront: bool = True, remove_tilt: bool = True, hx: float = 0.0, hy: float = 0.0):
+            wavefront: bool = True, remove_tilt: bool = True, hx: float = 0.0, hy: float = 0.0,
+            *, experimental: bool = False):
     """OPD 图。返回 (opd, mask, px, py)，单位：``wavefront`` 真时是 waves，否则 mm。
     ``hx``、``hy`` 是归一化视场；mask 不含追迹出错、被渐晕或拦截的光线（它们的 opd 置 0）。
 
@@ -128,7 +153,7 @@ def opd_map(system: OpticalSystem, px=None, py=None, n: int = 32, kind: str = "s
         px = np.atleast_1d(np.asarray(px, float))
         py = np.atleast_1d(np.asarray(py, float))
         mask = np.hypot(px, py) <= 1.0
-    opd, ok = opd_rays(system, px, py, hx, hy)
+    opd, ok = opd_rays(system, px, py, hx, hy, experimental=experimental)
     mask = mask & ok
     opd = np.where(ok, opd, 0.0)
     # 去掉 piston；再按需去掉倾斜（倾斜只让像点平移，不改变 Strehl——Zemax 的 STRH 与倾斜无关）
@@ -142,9 +167,11 @@ def opd_map(system: OpticalSystem, px=None, py=None, n: int = 32, kind: str = "s
     return opd, mask, px, py
 
 
-def psf_fft(system: OpticalSystem, n: int = 64, pad: int = 2, kind: str = "square"):
+def psf_fft(system: OpticalSystem, n: int = 64, pad: int = 2, kind: str = "square", *, experimental: bool = False):
     """FFT PSF：光瞳函数 A·exp(i2πW) 补零后做 FFT，取模方并归一化。"""
-    opd, mask, px, py = opd_map(system, n=n, kind=kind, wavefront=True)
+    opd, mask, px, py = opd_map(system, n=n, kind=kind, wavefront=True, experimental=experimental)
+    if not mask.any():
+        raise ValueError("没有可用光瞳采样点，无法计算 PSF")
     grid = np.zeros((n, n), dtype=complex)
     ix = np.clip(np.round((px + 1.0) / 2.0 * (n - 1)).astype(int), 0, n - 1)
     iy = np.clip(np.round((py + 1.0) / 2.0 * (n - 1)).astype(int), 0, n - 1)
@@ -230,16 +257,20 @@ def strehl_huygens(system: OpticalSystem, n: int = 24, image_pixels: int = 48,
     return float(peak / ideal)
 
 
-def strehl(system: OpticalSystem, n: int = 32, kind: str = "square") -> float:
+def strehl(system: OpticalSystem, n: int = 32, kind: str = "square", *, experimental: bool = False) -> float:
     """Strehl = |Σ A·exp(i2πW)|² / (Σ A)²（= OPD 全零时的峰值归一化）。"""
-    opd, mask, _, _ = opd_map(system, n=n, kind=kind, wavefront=True)
+    opd, mask, _, _ = opd_map(system, n=n, kind=kind, wavefront=True, experimental=experimental)
+    if not mask.any():
+        raise ValueError("没有可用光瞳采样点，无法计算 Strehl")
     amp = np.exp(2j * np.pi * opd[mask])
     return float(np.abs(amp.sum()) ** 2 / amp.size**2)
 
 
-def rms_wavefront(system: OpticalSystem, n: int = 32, kind: str = "square") -> float:
+def rms_wavefront(system: OpticalSystem, n: int = 32, kind: str = "square", *, experimental: bool = False) -> float:
     """波前 RMS（waves，已去 piston 与倾斜）。"""
-    opd, mask, _, _ = opd_map(system, n=n, kind=kind, wavefront=True)
+    opd, mask, _, _ = opd_map(system, n=n, kind=kind, wavefront=True, experimental=experimental)
+    if not mask.any():
+        raise ValueError("没有可用光瞳采样点，无法计算波前 RMS")
     w = opd[mask]
     return float(np.sqrt(np.mean((w - w.mean()) ** 2)))
 

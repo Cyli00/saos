@@ -484,7 +484,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     q = opt_cmd("vary")
     q.add_argument("--param", help="radius, curvature (the same variable as radius; bounds in 1/mm), thickness, conic, par<N> "
-                                   "(a Lens Data parameter column: aspheric terms, tilts, …) or material")
+                                   "(a Lens Data parameter column: aspheric terms, tilts, …), material，或 rtc 浮动孔径光阑的 semi_diameter（内存变量）")
     q.add_argument("--mode", choices=("model", "substitute"), help="for material: model = a model glass whose nd and Vd vary (exploration, not deliverable); substitute = OpticStudio swaps real glasses (Hammer / global search)")
     q.add_argument("--catalog", help="for --mode substitute: the catalog to substitute from (default: SAOS_CDGM_INPROD)")
     q.add_argument("--surfaces", help="e.g. 1-16 or 1,3,5-7")

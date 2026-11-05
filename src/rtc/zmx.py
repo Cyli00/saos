@@ -16,7 +16,7 @@ from math import isfinite
 from pathlib import Path
 
 from .textio import decode_text
-from .material.types import Catalog, Environment, MaterialSpec, MaterialUnsupported, Model
+from .material.types import Catalog, Environment, MaterialSpec, MaterialUnsupported, Mirror, Model
 
 
 # ---------------------------------------------------------------- 解码
@@ -45,6 +45,8 @@ class Surface:
     mech_semi_diameter: float = 0.0  # MEMA（机械半口径）
     #: DIAM / MEMA 第 2 列：1 为用户固定，0 为 OpticStudio 自动计算（存盘值是保存时算出的）
     semi_fixed: bool = False
+    #: rtc 内存变量；原生文件只保存半口径数值，未猜写无存盘样本的变量求解。
+    semi_variable: bool = False
     mech_fixed: bool = False
     is_stop: bool = False
     # ---- 面孔径（"Surface Properties > Aperture"）----
@@ -68,6 +70,8 @@ class Surface:
     #: ``DISZ`` 行的第 2 列（厚度列的求解类型）：0 固定 / 1 变量。
     #: 30 个轮次里的 DISZ 全部只有一列，所以这条路径没有样本；按 LDE 的通用写法解析。
     solve_thickness: int = 0
+    #: ``GLAS MIRROR``：反射面（材料列写 mirror）。
+    mirror: bool = False
     raw: dict[str, str] = field(default_factory=dict)
     model_dpgf: float = 0.0
 
@@ -78,6 +82,8 @@ class Surface:
     @property
     def material(self) -> MaterialSpec:
         # 旧构造参数继续可用；统一视图不另存一份可失同步的材料状态。
+        if self.mirror:
+            return Mirror()
         if self.model_nd is not None:
             if self.model_vd is None:
                 raise MaterialUnsupported(f"面 {self.index}: 模型玻璃缺少 Vd")
@@ -86,11 +92,16 @@ class Surface:
 
     @material.setter
     def material(self, spec: MaterialSpec):
-        if isinstance(spec, Model):
+        if isinstance(spec, Mirror):
+            self.glass, self.model_nd, self.model_vd, self.model_dpgf = "", None, None, 0.0
+            self.mirror = True
+        elif isinstance(spec, Model):
             self.glass, self.model_nd, self.model_vd, self.model_dpgf = "", spec.nd, spec.vd, spec.dpgf
+            self.mirror = False
         elif isinstance(spec, Catalog) or spec is None:
             self.glass = spec.name if spec else ""
             self.model_nd, self.model_vd, self.model_dpgf = None, None, 0.0
+            self.mirror = False
         else:
             raise MaterialUnsupported(f"面 {self.index}: 材料描述类型无效")
 
@@ -127,9 +138,11 @@ class Lens:
     path: str = ""
     name: str = ""
     units: str = "MM"
-    aperture_type: str = ""      # "EPD" | "OBNA"
+    aperture_type: str = ""      # "EPD" | "OBNA" | "FLOA"（由光阑半口径定孔径，文件里只有一行 FLOA）
     aperture_value: float = 0.0
     fields: list[tuple[float, float, float]] = field(default_factory=list)  # (x, y, weight)，只含有效视场
+    #: 各视场的渐晕因子 (VDX, VDY, VCX, VCY, VAN)，与 ``fields`` 一一对应；VDX… 是入瞳的偏心与压缩比，VAN 是切向角。
+    vignetting: list[tuple[float, float, float, float, float]] = field(default_factory=list)
     field_type: str = "ANGLE"
     #: 视场归一化（``FTYP`` 第 5 列：0 径向 / 1 矩形；OpticStudio 24.1 存盘实测）。
     field_normalization: str = "radial"
@@ -210,6 +223,15 @@ _HEADER_KEYS = {
     "MOFF", "MCFG", "TOL", "BLNK", "MKV", "PROT", "JUPN", "USTN", "MCON",
 }
 
+# 面孔径行 → 类型码（手册 §14.46 的编号），只收有 OpticStudio 24.1 存盘样本的类型（tests/fixtures/cases/truth.json）：
+#   OBSC 0 8 0   圆遮挡       SQAP 3 4 0  矩形孔       SQOB 3 4 0  矩形遮挡
+#   ELAP 3 4 0   椭圆孔       ELOB 3 4 0  椭圆遮挡     SPID 0.5 4 0  蜘蛛（臂宽、臂数）
+#   OBDC dx dy 是孔径偏心行
+# 读入不等于放行：saos 的准入检查按类型码拒绝未对账的类型。
+APERTURE_LINES = {"OBSC": 2, "SPID": 3, "SQAP": 4, "SQOB": 5, "ELAP": 6, "ELOB": 7}
+# 渐晕因子在文件头按视场逐列排开 / vignetting factors, one column per field
+VIGNETTING_KEYS = ("VDXN", "VDYN", "VCXN", "VCYN", "VANN")
+
 
 def _nums(parts: list[str]) -> list[float]:
     out: list[float] = []
@@ -223,8 +245,11 @@ def _nums(parts: list[str]) -> list[float]:
 
 def parse(path: str | Path) -> Lens:
     p = Path(path)
-    text = decode_zmx_bytes(p.read_bytes())
-    lens = Lens(path=str(p))
+    return parse_text(decode_zmx_bytes(p.read_bytes()), path=str(p))
+
+
+def parse_text(text: str, path: str = "") -> Lens:
+    lens = Lens(path=path)
 
     cur: Surface | None = None
     in_mce = False
@@ -261,7 +286,9 @@ def parse(path: str | Path) -> Lens:
                     except ValueError:
                         cur.solve_thickness = 0
             elif key == "GLAS":
-                if parts[1].upper() == "___BLANK":
+                if parts[1].upper() == "MIRROR":
+                    cur.material = Mirror()
+                elif parts[1].upper() == "___BLANK":
                     if len(parts) < 6:
                         raise MaterialUnsupported(f"面 {cur.index}: GLAS 模型缺少 nd/Vd")
                     cur.material = Model(float(parts[4]), float(parts[5]), float(parts[6]) if len(parts) > 6 else 0.0)
@@ -289,16 +316,25 @@ def parse(path: str | Path) -> Lens:
             elif key == "STOP":
                 cur.is_stop = True
             elif key == "CLAP" or key == "FLAP":
-                # 面孔径。实测格式（三件镜头的 30 个轮次）：
-                #   FLAP 0 0.115 0   ← 浮动孔径，中间那个数与 DIAM 相同
-                #   CLAP 0 0.125 0   ← 圆形孔径
-                # 只把前两个数当 (下限, 上限)；其后的数（偏移）在样本里恒为 0，未标定。
+                # 面孔径。实测格式（OpticStudio 24.1 存盘的例子文件，tests/rtc/fixtures 的样本同样如此）：
+                #   CLAP 0 0.125 0   ← 圆孔：最小半径、最大半径、保留位
+                #   FLAP 0 0.115 0   ← 浮动孔径：中间那个数与 DIAM 相同
+                # 其后的数（偏移）在样本里恒为 0，孔径偏心由单独的 OBDC 行给出。
                 nums = _nums(parts[1:])
                 cur.aperture_code = 10 if key == "FLAP" else 1
                 cur.ap_min = nums[0] if len(nums) > 0 else 0.0
                 cur.ap_max = nums[1] if len(nums) > 1 else cur.semi_diameter
-                cur.ap_dx = nums[2] if len(nums) > 2 else 0.0
-                cur.ap_dy = nums[3] if len(nums) > 3 else 0.0
+                cur.raw[key] = raw_line.strip()
+            elif key in APERTURE_LINES:
+                cur.aperture_code = APERTURE_LINES[key]
+                nums = _nums(parts[1:])
+                cur.ap_min = nums[0] if len(nums) > 0 else 0.0
+                cur.ap_max = nums[1] if len(nums) > 1 else 0.0
+                cur.raw[key] = raw_line.strip()
+            elif key == "OBDC":
+                nums = _nums(parts[1:])
+                cur.ap_dx = nums[0] if len(nums) > 0 else 0.0
+                cur.ap_dy = nums[1] if len(nums) > 1 else 0.0
                 cur.raw[key] = raw_line.strip()
             else:
                 cur.raw[key] = raw_line.strip()
@@ -344,6 +380,9 @@ def parse(path: str | Path) -> Lens:
             lens.units = parts[1]
         elif key == "ENPD":
             lens.aperture_type, lens.aperture_value = "EPD", float(parts[1])
+        elif key == "FLOA":
+            # Float By Stop Size：行内没有数值，孔径由光阑面的半口径定（手册 §2.1.1.1）
+            lens.aperture_type, lens.aperture_value = "FLOA", 0.0
         elif key == "OBNA":
             lens.aperture_type, lens.aperture_value = "OBNA", float(parts[1])
         elif key == "FTYP":
@@ -423,3 +462,5 @@ def _fields_from_raw(lens: Lens) -> None:
         return vals[i] if i < len(vals) else default
 
     lens.fields = [(pick(xs, i, 0.0), pick(ys, i, 0.0), pick(ws, i, 1.0)) for i in range(count)]
+    columns = [_nums(lens.raw.get(key, "").split()[1:]) for key in VIGNETTING_KEYS]
+    lens.vignetting = [tuple(pick(col, i, 0.0) for col in columns) for i in range(count)]

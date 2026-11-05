@@ -20,7 +20,7 @@ from .system import OpticalSystem
 # 为负 = 在该面全反射（−面号）；渐晕码 = 光线被面孔径挡住的第一个面号，0 为通过。
 
 
-def aperture_clipped(item, x, y) -> np.ndarray:
+def aperture_clipped(item, x, y, *, aiming: bool = False) -> np.ndarray:
     """按面孔径判断哪些光线被挡（布尔数组，可广播）。
 
     孔径类型码见 :attr:`rtc.zmx.Surface.aperture_code`，编号与类型名的对应取自手册 §14.46。
@@ -37,6 +37,9 @@ def aperture_clipped(item, x, y) -> np.ndarray:
     a = item.surface.ap_min
     b = item.surface.ap_max
     r2 = dx * dx + dy * dy
+    if code in (1, 2, 10):
+        # 金标准 is_ray_vignetted：容差乘在半径平方上，同时用于圆孔的内外边界。
+        r2 *= 1.0 - (1e-7 if item.is_stop and aiming else 1e-8)
     if code == 1:                       # 圆孔
         return (r2 > b * b) | (r2 < a * a)
     if code == 2:                       # 圆遮挡：环带内被挡
@@ -46,7 +49,7 @@ def aperture_clipped(item, x, y) -> np.ndarray:
         half = abs(a) * 0.5
         hit = np.zeros(r2.shape, bool)
         for k in range(n_arm):
-            th = np.pi * k / n_arm
+            th = -2.0 * np.pi * k / n_arm
             ct, st = np.cos(th), np.sin(th)
             hit |= (ct * dx + st * dy >= 0.0) & (np.abs(-st * dx + ct * dy) <= half)
         return hit
@@ -55,7 +58,7 @@ def aperture_clipped(item, x, y) -> np.ndarray:
         return ~inside if code == 4 else inside
     if code in (6, 7):                  # 椭圆孔 / 椭圆遮挡
         q = (dx * dx) / (a * a) + (dy * dy) / (b * b) if a and b else np.full(r2.shape, np.inf)
-        return ~(q < 1.0) if code == 6 else q < 1.0
+        return ~(q < 1.0) if code == 6 else q <= 1.0
     if code in (8, 9):
         raise NotImplementedError(
             "用户定义面孔径（类型 8/9）需要外部孔径文件，未实现（两者的码值语义相反）"
@@ -148,13 +151,13 @@ def _normalize(v):
 def _launch(system: OpticalSystem, px, py, hx=0.0, hy=0.0):
     """把归一化光瞳/视场坐标变成物理光线（起点 + 方向）。
 
-    EPD：在入瞳平面按半径 R·(px,py) 发射，方向取视场角。
+    EPD / Float By Stop Size：在入瞳平面按半径 R·(px,py) 发射，方向取视场角。
     OBNA：物在无穷远时 Zemax 把光阑中心对齐到第 1 面顶点，方向由物方 NA 决定
     （oracle 实测：piB 在面 1 上所有光线的交点是 (0,0)，方向随 px、py 变化）。
     """
-    z_ep, _ = system.entrance_pupil()
-    r = system.pupil_radius()
+    z_ep, r = system.pupil_reference()
     px, py, hx, hy = np.broadcast_arrays(*(np.asarray(v, dtype=float) for v in (px, py, hx, hy)))
+    pupil_aperture = system.lens.aperture_type in ("EPD", "FLOA")
     legacy_obna = (system.lens.aperture_type == "OBNA" and system.object_thickness == 0.0
                    and system.lens.field_type == "ANGLE" and not system.allow_unverified)
     if system.finite_object and not legacy_obna:
@@ -168,9 +171,9 @@ def _launch(system: OpticalSystem, px, py, hx=0.0, hy=0.0):
         d = _normalize(np.stack([px * r - xo, py * r - yo, np.full(xo.shape, z_ep) - z0], axis=-1))
         return xo.astype(float).copy(), yo.astype(float).copy(), z0, d
     fx, fy = system.field_slopes(hx, hy)
-    if system.lens.aperture_type == "EPD":
+    if pupil_aperture:
         if np.isfinite(system.object_thickness):
-            raise NotImplementedError("EPD 且物距有限的系统未实现（EPD 发射只按物在无穷远处理）")
+            raise NotImplementedError("EPD / Float By Stop Size 且物距有限的系统未实现（只按物在无穷远处理）")
         x0 = r * px
         y0 = r * py
         z0 = np.where(np.isfinite(z_ep), z_ep, 0.0) * np.ones_like(x0)
@@ -207,6 +210,8 @@ def _trace_block(system: OpticalSystem, px, py, hx=0.0, hy=0.0, aim: bool = None
     """``trace`` 的追迹部分，``phase`` 留零。"""
     px, py, hx, hy = np.broadcast_arrays(*(np.atleast_1d(np.asarray(v, dtype=float)) for v in (px, py, hx, hy)))
     px, py, hx, hy = (np.ascontiguousarray(v.ravel()) for v in (px, py, hx, hy))
+    # 视场渐晕因子只改光瞳坐标：先换成本视场的偏心/压缩/旋转，再发射与瞄准（手册 Vignetting Factors）
+    px, py = (np.ascontiguousarray(v.ravel(), dtype=float) for v in system.vignetted_pupil(px, py, hx, hy))
     n_ray = px.size
     packed = system.packed() if start is None else None
     if packed is not None:
@@ -254,9 +259,10 @@ def _trace_block(system: OpticalSystem, px, py, hx=0.0, hy=0.0, aim: bool = None
             t[live] = it.shape.intersect_batch(X[live], Y[live], zloc[live], L[live], M[live], N[live])
         good = np.isfinite(t) & live
         error = np.where(live & ~good, it.index, error)
-        # OPL 以第 1 面为 0（物体在无穷远时 Zemax 也是这么报的；见 oracle 批量追迹的 opl 列）
+        # OPL 以第 1 面为 0（物体在无穷远时 Zemax 也是这么报的；见 oracle 批量追迹的 opl 列）。
+        # 反射之后 n_cur 为负，光程按 |n|·路程 累计。
         if k > 0:
-            opl = opl + n_cur * np.where(good, t, 0.0)
+            opl = opl + abs(n_cur) * np.where(good, t, 0.0)
         X = X + np.where(good, t, 0.0) * L
         Y = Y + np.where(good, t, 0.0) * M
         Z = Z + np.where(good, t, 0.0) * N
@@ -270,7 +276,7 @@ def _trace_block(system: OpticalSystem, px, py, hx=0.0, hy=0.0, aim: bool = None
 
         # 渐晕/遮挡：按面孔径（不是按 DIAM；仅设通光半口径时 Zemax 不遮挡光线）
         if it.surface.aperture_code:
-            vig = np.where(good & (vig == 0) & aperture_clipped(it, X, Y), it.index, vig)
+            vig = np.where(good & (vig == 0) & aperture_clipped(it, X, Y, aiming=system.lens.ray_aiming > 0), it.index, vig)
 
         # 折射
         if it.type == "PARAXIAL" and it.focal:
@@ -279,6 +285,7 @@ def _trace_block(system: OpticalSystem, px, py, hx=0.0, hy=0.0, aim: bool = None
             # 波前少了它会多出 ~10 波的假离焦（piA 实测 8.75 → 0.12 waves RMS）。
             # 近轴薄透镜（OpticStudio 24.1 实测，面后为 N-BK7、N-SF6 时差 ≤ 7e-18）：n'·tan u' = n·tan u − y/f
             L, M, N = _normalize_uv((n_cur * L / N - X / it.focal) / n2, (n_cur * M / N - Y / it.focal) / n2)
+            L, M, N = it.sign * L, it.sign * M, it.sign * N
             n_cur = np.full(n_ray, n2)
         else:
             n2 = it.n_after
@@ -286,7 +293,9 @@ def _trace_block(system: OpticalSystem, px, py, hx=0.0, hy=0.0, aim: bool = None
             norm = np.sqrt(Nx * Nx + Ny * Ny + Nz * Nz)
             Nx, Ny, Nz = Nx / norm, Ny / norm, Nz / norm
             phase = it.shape.phase_grad(X, Y) if it.shape.diffractive else None
-            if phase is None:
+            if it.reflect:
+                L, M, N, err = _reflect(L, M, N, Nx, Ny, Nz)
+            elif phase is None:
                 L, M, N, err = _refract(L, M, N, Nx, Ny, Nz, n_cur, n2)
             else:
                 phi, phx, phy = phase
@@ -299,9 +308,10 @@ def _trace_block(system: OpticalSystem, px, py, hx=0.0, hy=0.0, aim: bool = None
         out["x"][:, k] = X
         out["y"][:, k] = Y
         out["z"][:, k] = zloc
-        out["l"][:, k] = L
-        out["m"][:, k] = M
-        out["n"][:, k] = N
+        # 对外报告的方向余弦带上 σ（反射一次翻一次），与 OpticStudio 批量追迹同口径
+        out["l"][:, k] = L * it.sign
+        out["m"][:, k] = M * it.sign
+        out["n"][:, k] = N * it.sign
         out["opl"][:, k] = opl
 
     return RayBlock(
@@ -325,13 +335,13 @@ def _trace_compiled(system: OpticalSystem, packed, px, py, hx, hy, aim) -> RayBl
 
     x0, y0, z0, d = _launch(system, px, py, hx, hy)
     do_aim = (_aiming(system) if aim is None else aim) and system.stop is not None
-    # 内核只做物在无穷远的 EPD 瞄准（调发射位置）；有限物距调发射方向，走 numpy 延拓
-    epd_aim = do_aim and system.lens.aperture_type == "EPD" and not system.finite_object
+    # 内核只做物在无穷远的 EPD / Float By Stop Size 瞄准（调发射位置）；有限物距调发射方向，走 numpy 延拓
+    epd_aim = do_aim and system.lens.aperture_type in ("EPD", "FLOA") and not system.finite_object
     if do_aim and not epd_aim:
         x0, y0, z0, d = _aim(system, x0, y0, z0, d, px, py)
     tx, ty = system.aim_target(px, py) if epd_aim else (None, None)
-    x, y, z, l, m, n, opl, error, vig = kernel.trace(packed, x0, y0, z0, d, epd_aim, tx, ty,
-                                                     aim_scale=system.lens.aperture_value)
+    scale = system.lens.aperture_value or 2.0 * system.pupil_radius()
+    x, y, z, l, m, n, opl, error, vig = kernel.trace(packed, x0, y0, z0, d, epd_aim, tx, ty, aim_scale=scale)
     return RayBlock(x=x, y=y, z=z, l=l, m=m, n=n, opl=opl, phase=np.zeros_like(x), error=error, vig=vig,
                     surface_index=[it.index for it in system.items])
 
@@ -362,6 +372,18 @@ def _refract(L, M, N, Nx, Ny, Nz, n1, n2):
     v = np.stack([Lt, Mt, Nt], axis=-1)
     v = _normalize(v)
     return v[..., 0], v[..., 1], v[..., 2], tir
+
+
+def _reflect(L, M, N, Nx, Ny, Nz):
+    """反射面：``d′ = d − 2(d·N)N``（法线先翻到入射侧，使 d·N < 0）。返回 (l, m, n, 永假)。"""
+    dn = L * Nx + M * Ny + N * Nz
+    flip = dn > 0
+    Nx = np.where(flip, -Nx, Nx)
+    Ny = np.where(flip, -Ny, Ny)
+    Nz = np.where(flip, -Nz, Nz)
+    g = 2.0 * np.abs(dn)
+    v = _normalize(np.stack([L + g * Nx, M + g * Ny, N + g * Nz], axis=-1))
+    return v[..., 0], v[..., 1], v[..., 2], np.zeros(L.shape, bool)
 
 
 def _grating(L, M, N, Nx, Ny, Nz, n1, n2, phx, phy, zx, zy, lam):
@@ -569,6 +591,7 @@ def _trace_wo_aim(system: OpticalSystem, x0, y0, z0, d):
         Z = Z + t * N
         if it.type == "PARAXIAL" and it.focal:
             L, M, N = _normalize_uv((n_cur * L / N - X / it.focal) / it.n_after, (n_cur * M / N - Y / it.focal) / it.n_after)
+            L, M, N = it.sign * L, it.sign * M, it.sign * N
             n_cur = np.full(X.shape, it.n_after)
         else:
             zs, zx, zy = it.shape.sag(X, Y)
@@ -576,7 +599,10 @@ def _trace_wo_aim(system: OpticalSystem, x0, y0, z0, d):
                 zx, zy = it.shape.refraction_gradient(X, Y)
             Nx, Ny, Nz = -np.asarray(zx, float), -np.asarray(zy, float), np.ones_like(X)
             nn = np.sqrt(Nx * Nx + Ny * Ny + Nz * Nz)
-            L, M, N, _ = _refract(L, M, N, Nx / nn, Ny / nn, Nz / nn, n_cur, it.n_after)
+            if it.reflect:
+                L, M, N, _ = _reflect(L, M, N, Nx / nn, Ny / nn, Nz / nn)
+            else:
+                L, M, N, _ = _refract(L, M, N, Nx / nn, Ny / nn, Nz / nn, n_cur, it.n_after)
             n_cur = np.full(X.shape, it.n_after)
         if k == system.stop:
             break

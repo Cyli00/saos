@@ -75,6 +75,21 @@ def test_local_optimisation_lowers_the_merit_and_meets_every_boundary_exactly():
 
 
 @needs_glass
+def test_stop_semi_optimisation_reaches_recorded_epdi_and_wfno():
+    from case_variants import truth
+
+    backend = _loaded(CASES / "iris.zmx")
+    expected = truth("iris_semi_2")["operands"]
+    backend.vary(6, "semi_diameter", True)
+    backend.merit_add([{"type": "EPDI", "target": expected["EPDI"], "weight": 1.0}])
+    result = backend.optimize("auto", max_seconds=30)
+    assert result["final_merit"] < result["initial_merit"]
+    assert backend.get_param("6.semi_diameter") == pytest.approx(2.0, abs=1e-6)
+    assert backend.operand("EPDI", 0, 0, []) == pytest.approx(expected["EPDI"], abs=1e-6)
+    assert backend.operand("WFNO", 0, 0, []) == pytest.approx(expected["WFNO"], rel=1e-6)
+
+
+@needs_glass
 def test_merit_rows_rtc_cannot_compute_are_refused_as_a_batch():
     backend = _designed()
     before = len(backend.merit)

@@ -943,7 +943,10 @@ function toSection(v, sec) {
   const surfaces = v.surfaces.map((s) => {
     if (!s.vertex) return s;
     const key = sec.profiles[s.index] || "profile_y", other = key === "profile_y" ? "profile_x" : "profile_y";
-    return { ...s, vertex: P(s.vertex), profile_y: upward(s[key]?.map(P)), profile_x: s[other]?.map(P), rim: s.rim?.map(P) };
+    const masks = s.obscuration;
+    const obscuration = masks && { profile_y: (masks[key] || []).map((p) => p.map(P)),
+      profile_x: (masks[other] || []).map((p) => p.map(P)), rim: (masks.rim || []).map((p) => p.map(P)) };
+    return { ...s, vertex: P(s.vertex), profile_y: upward(s[key]?.map(P)), profile_x: s[other]?.map(P), rim: s.rim?.map(P), obscuration };
   });
   const swap = sec.fan !== "px";
   const rays = v.layout.rays.map((r) => ({ ...r, px: swap ? r.py : r.px, py: swap ? r.px : r.py, points: r.points.map(P), start_dir: r.start_dir && D(r.start_dir) }));
@@ -1155,6 +1158,11 @@ function renderLayout(view) {
       g.strokeStyle = "#c8ccd4"; g.lineWidth = 2.4; line(s.profile_y); g.stroke();
       if (dim === "3d" && s.rim) { g.lineWidth = 1; line(s.rim, true); g.stroke(); }
     });
+    // 遮挡只标出挡光区域，零件外缘和实体截线保持完整。
+    g.save();
+    g.strokeStyle = css("--accent"); g.lineWidth = 3; g.setLineDash([3, 2]);
+    surfs.forEach((s) => (s.obscuration?.[dim === "2d" ? "profile_y" : "rim"] || []).forEach((pts) => { line(pts); g.stroke(); }));
+    g.restore();
     // 悬停的面
     const hs = hover != null && surfs.find((s) => s.index === hover);
     if (hs?.profile_y) {
@@ -1267,7 +1275,7 @@ function renderLayout(view) {
   };
   cancelAnimationFrame(renderLayout.anim);
   const prev = renderLayout.geom;
-  if (prev && prev.key === geomKey && !reduceMotion) {
+  if (prev && prev.key === geomKey && !reduceMotion && !surfs.some((s) => s.obscuration)) {
     blend(prev, 0);
     const t0 = performance.now();
     // rAF 的时间戳可能早于 t0：进度夹到 [0, 1]，否则缓动会外推 / rAF stamps can precede t0: clamp the progress

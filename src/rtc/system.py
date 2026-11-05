@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 
 import numpy as np
@@ -33,13 +34,18 @@ class Item:
     surface: zmx.Surface
     shape: geometry.Shape
     thickness: float          # 到下一面的轴向距离
-    n_after: float            # 面后介质在working wavelength 下的折射率
+    n_after: float            # 面后介质在working wavelength 下的折射率（反射之后带负号，见 OpticalSystem）
     semi: float
     is_stop: bool
     is_image: bool
     vertex_z: float
     focal: float | None = None  # PARAXIAL 面的焦距
     medium: Medium | None = None
+    #: 反射面：方向按 d − 2(d·N)N 更新，面后介质的折射率带负号（OpticStudio 序列模式约定）
+    reflect: bool = False
+    #: 这一面之后的方向余弦符号 σ（反射一次翻一次）。追迹内部用几何方向，对外报告按 σ 乘回去，
+    #: 与 OpticStudio 批量追迹一致：光线穿过奇数个反射面之后，它报的方向余弦仍是 σ·d。
+    sign: float = 1.0
 
     @property
     def type(self) -> str:
@@ -75,10 +81,20 @@ class OpticalSystem:
         self.object_thickness = lens.surface(0).thickness
         z = 0.0
         image_index = max(s.index for s in lens.surfaces)
+        # 带符号的折射率：每过一次反射面符号翻一次（OpticStudio 的序列模式约定，反射面之后介质不变）。
+        # 这样同一套 Snell 与近轴公式在 n' = −n 时正好给出反射，光程按 |n|·路程累计。
+        sigma, material_before = 1.0, 1.0
         for s in sorted(lens.surfaces, key=lambda s: s.index):
             if s.index == 0:
                 continue
-            medium, n_after = self._medium(s.material)
+            medium, n_material = self._medium(s.material)
+            reflect = bool(getattr(medium, "reflect", False))
+            if reflect:
+                sigma = -sigma
+                n_after = sigma * material_before
+            else:
+                n_after = sigma * n_material
+                material_before = n_material
             focal = s.params.get(1) if s.type.upper() == "PARAXIAL" else None
             item = Item(
                 index=s.index,
@@ -92,6 +108,8 @@ class OpticalSystem:
                 vertex_z=z,
                 focal=focal,
                 medium=medium,
+                reflect=reflect,
+                sign=sigma,
             )
             self.items.append(item)
             if np.isfinite(item.thickness):
@@ -131,9 +149,29 @@ class OpticalSystem:
         return self._packed
 
     def invalidate(self) -> None:
-        """改过 items 之后调用：丢掉由面数据导出的缓存（内核数据、入瞳、光阑半径）。"""
-        for name in ("_packed", "_entrance_pupil", "_stop_radius"):
+        """改过 items 之后调用：丢掉由面数据导出的缓存（内核数据、入瞳、光阑半径、Float By Stop Size 的入瞳半径）。"""
+        for name in ("_packed", "_entrance_pupil", "_stop_radius", "_float_pupil_radius"):
             self.__dict__.pop(name, None)
+        self.primary = None
+
+    def primary_system(self) -> "OpticalSystem":
+        """当前面数据在主波长下的系统；直接改 items 的设计副本也必须同步。"""
+        wavelength = self.lens.active_wavelengths[self.lens.primary_wave - 1][0]
+        if wavelength == self.wavelength:
+            return self
+        if self.primary is None:
+            lens = copy.deepcopy(self.lens)
+            for it in self.items:
+                surface = copy.deepcopy(it.surface)
+                surface.thickness, surface.semi_diameter = it.thickness, it.semi
+                lens.surfaces[lens.surfaces.index(lens.surface(it.index))] = surface
+            for row in lens.mce:
+                if row.op == "THIC" and row.config == self.config:
+                    row.value = lens.surface(row.surface).thickness
+            self.primary = OpticalSystem(lens, wavelength_um=wavelength, config=self.config,
+                                         aim_scale=self.aim_scale, glasses=self.glasses,
+                                         media=self._media, allow_unverified=self.allow_unverified)
+        return self.primary
 
     def n_before(self, k: int) -> float:
         return 1.0 if k == 0 else self.items[k - 1].n_after
@@ -246,6 +284,10 @@ class OpticalSystem:
             return px * rx, py * ry
         if self.stop is None:
             return px, py
+        if self.lens.aperture_type == "FLOA":
+            # Float By Stop Size：瞄准目标就是光阑的半口径本身，不经近轴换算（手册 §2.1.1.1）
+            semi = self.stop_semi_diameter()
+            return px * semi, py * semi
         if self.lens.aperture_type == "EPD" or self.allow_unverified:
             semi = self.stop_radius()
             return px * semi, py * semi
@@ -261,9 +303,7 @@ class OpticalSystem:
 
             primary = self.lens.active_wavelengths[self.lens.primary_wave - 1][0]
             if primary != self.wavelength:
-                ref = self.primary if self.primary is not None and self.primary.wavelength == primary else OpticalSystem(
-                    self.lens, wavelength_um=primary, config=self.config, glasses=self.glasses,
-                    media=self._media, allow_unverified=self.allow_unverified)
+                ref = self.primary_system()
                 self._stop_radius = ref.stop_radius()
                 return self._stop_radius
             if self.finite_object or self.lens.ray_aiming == 1:
@@ -348,10 +388,92 @@ class OpticalSystem:
         z = -yB / uB                  # 相对像面的偏移（负为在像面之前）
         return z, abs(yA + uA * z)
 
+    # ---- 视场渐晕因子 ----
+    def vignetting_factors(self, hx, hy) -> np.ndarray:
+        """视场渐晕：取曼哈顿距离最近的表内视场那一行，不插值。
+
+        由 iris_vignetting、iris_set_vignetting 的 4 个表外视场反解所得；(0.26, 0.72)、(1, 0) 排除了欧氏距离。
+        距离相等时取哪一行没有样本，这里取表中靠前的一行。浮点与 AD 共用此映射。
+        """
+        hx, hy = np.broadcast_arrays(np.atleast_1d(np.asarray(hx, float)),
+                                     np.atleast_1d(np.asarray(hy, float)))
+        if not np.all(np.isfinite(hx)) or not np.all(np.isfinite(hy)):
+            raise ValueError("视场坐标必须有限")
+        rows = self.lens.vignetting or []
+        out = np.zeros(hx.shape + (5,))
+        if not rows or not np.any(rows):
+            return out
+        sx, sy = self._field_scale()
+        fields = np.asarray([(x / sx if sx else 0.0, y / sy if sy else 0.0)
+                             for x, y, _ in self.lens.fields], dtype=float)
+        factors = np.zeros((len(fields), 5))
+        factors[:min(len(rows), len(fields))] = rows[:len(fields)]
+        points = np.column_stack([hx.ravel(), hy.ravel()])
+        nearest = np.abs(points[:, None, :] - fields).sum(axis=2).argmin(axis=1)
+        return factors[nearest].reshape(hx.shape + (5,))
+
+    def vignetted_pupil(self, px, py, hx, hy):
+        """按渐晕因子把归一化光瞳坐标变成实际入瞳上的点（手册「Vignetting Factors」）：
+
+        先 ``Px' = VDX + Px·(1−VCX)``、``Py' = VDY + Py·(1−VCY)``（偏心 + 压缩），再绕光轴转 ``VAN``（度）。
+        只影响发射位置，不改变内核追迹。
+        """
+        px = np.asarray(px, dtype=float)
+        py = np.asarray(py, dtype=float)
+        f = self.vignetting_factors(hx, hy)
+        vdx, vdy, vcx, vcy, van = (f[..., k] for k in range(5))
+        if not np.any(vdx) and not np.any(vdy) and not np.any(vcx) and not np.any(vcy) and not np.any(van):
+            return px, py
+        qx = vdx + px * (1.0 - vcx)
+        qy = vdy + py * (1.0 - vcy)
+        th = np.radians(van)
+        c, s = np.cos(th), np.sin(th)
+        return qx * c - qy * s, qx * s + qy * c
+
     # ---- 孔径 ----
+    def stop_semi_diameter(self) -> float:
+        """光阑面的半口径（Float By Stop Size 用它定义孔径；文件里 DIAM 与浮动孔径同值）。"""
+        if self.stop is None:
+            raise NotImplementedError("系统里没有光阑面，Float By Stop Size 没有定义")
+        it = self.items[self.stop]
+        semi = float(it.semi or it.surface.ap_max)
+        if not (np.isfinite(semi) and semi > 0):
+            raise NotImplementedError(f"光阑面 {it.index} 的半口径为 {semi}，不能用于 Float By Stop Size")
+        return semi
+
+    def float_stop_pupil_radius(self) -> float:
+        """Float By Stop Size 的入瞳半径 = 光阑半口径 / |A|，A 是第 1 面到光阑面的近轴横向传递系数。
+
+        这是当前近轴实现；尚未对齐 UpdatePupil 追迹标定分支。
+        旧案例相符不足以覆盖分支映射，缺口见 iris/mirror 计划第 8 节。
+        """
+        if getattr(self, "_float_pupil_radius", None) is None:
+            if self.stop is None:
+                raise NotImplementedError("系统里没有光阑面，Float By Stop Size 没有定义")
+            transfer = self._paraxial(1.0, 0.0)[self.stop][0]
+            if not (np.isfinite(float(transfer)) and float(transfer) != 0.0):
+                raise NotImplementedError("第 1 面到光阑面的近轴传递系数为 0，Float By Stop Size 的入瞳半径无定义")
+            self._float_pupil_radius = self.stop_semi_diameter() / abs(float(transfer))
+        return self._float_pupil_radius
+
+    def stop_pupil_radius(self) -> float:
+        """光阑面处的边缘光线高度：无穷远物体且瞄准 off 时用近轴高度，其余用实际高度；FLOA 用指定半口径。
+
+        EXPD 用它：reflective 案例的光阑半口径是 45 mm 而边缘光线只到 40 mm，OpticStudio 报的 EXPD 51.65 = 2×0.6456×40。
+        """
+        if self.lens.aperture_type == "FLOA":
+            return self.stop_semi_diameter()
+        # 光阑在反射镜之后时两种高度才分得开（reflective_stop_on_secondary）：瞄准 off 的 EXPD 18.94419 是近轴高度
+        # 9.46349 算出的，瞄准 real 的 18.97750 是实际高度 9.48013 算出的
+        if self.lens.ray_aiming == 0 and not self.finite_object:
+            return abs(self._paraxial(self.pupil_radius(), 0.0)[self.stop][0])
+        return self.stop_radius()
+
     def pupil_radius(self) -> float:
         if self.lens.aperture_type == "EPD":
             return self.lens.aperture_value / 2.0
+        if self.lens.aperture_type == "FLOA":
+            return self.float_stop_pupil_radius()
         # OBNA：物方 NA = n·sin(近轴边缘光线角)（手册 §14.32，物方 n = 1）；入瞳半径 = 物点到入瞳的距离 × tanθ
         z_ep, _ = self.entrance_pupil()
         na = self.lens.aperture_value
@@ -359,6 +481,18 @@ class OpticalSystem:
             return float(na)
         span = z_ep + (self.object_thickness if self.finite_object else 0.0)
         return abs(span) * na / np.sqrt(max(1e-300, 1.0 - na * na))
+
+    def pupil_reference(self) -> tuple[float, float]:
+        """发射用的入瞳 (位置 z_ep, 半径 R)，按**主波长**定，所有波长共用。
+
+        2026-11-04 与 OpticStudio 24.1 实测（iris 案例）：同一光瞳坐标在 F 线与 C 线上打在面 1 的交点逐位相同，
+        说明它把入瞳位置和半径都冻在主波长上；rtc 早先按各波长自己的色散算 z_ep，两条谱线在面 1 差 6.9e-3 mm。
+        """
+        primary = self.lens.active_wavelengths[self.lens.primary_wave - 1][0]
+        if abs(primary - self.wavelength) <= 1e-15:
+            return self.entrance_pupil()[0], self.pupil_radius()
+        ref = self.primary_system()
+        return ref.entrance_pupil()[0], ref.pupil_radius()
 
     def marginal_image_ray(self):
         """像方边缘光线的方向余弦（用于定标 PSF 网格与 NA）。"""

@@ -62,15 +62,28 @@ class Model:
             object.__setattr__(self, name, float(getattr(self, name)))
 
 
-MaterialSpec = Catalog | Model | None
+@dataclass(frozen=True)
+class Mirror:
+    """反射面（``.zmx`` 的材料列写 ``MIRROR``）。
+
+    序列模式约定：反射面之后介质不变，内部用带符号的折射率记录（见 ``rtc.system``）；
+    膜层的反射率不进追迹（OpticStudio 未镀膜的反射面按铝 0.7−7.0i 计，rtc 只算几何）。
+    """
+
+    name: str = "MIRROR"
+
+
+MaterialSpec = Catalog | Model | Mirror | None
 
 
 def material_spec(value) -> MaterialSpec:
-    """脚本可交换表示：目录名、空气空串，或 nd/vd/dpgf 字典。"""
-    if value is None or isinstance(value, (Catalog, Model)):
+    """脚本可交换表示：目录名、空气空串、MIRROR，或 nd/vd/dpgf 字典。"""
+    if value is None or isinstance(value, (Catalog, Model, Mirror)):
         return value
     if isinstance(value, str):
+        if value.strip().upper() == "MIRROR":
+            return Mirror()
         return Catalog(value) if value.strip() else None
     if isinstance(value, dict) and {"nd", "vd"} <= value.keys() and not value.keys() - {"nd", "vd", "dpgf"}:
         return Model(value["nd"], value["vd"], value.get("dpgf", 0.0))
-    raise MaterialInvalid("材料须为目录名、空气空串，或含 nd/vd 和可选 dpgf 的有限数值字典")
+    raise MaterialInvalid("材料须为目录名、空气空串、MIRROR，或含 nd/vd 和可选 dpgf 的有限数值字典")

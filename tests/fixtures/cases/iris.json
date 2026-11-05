@@ -1,0 +1,22 @@
+{
+  "title": "iris: float by stop size with a clipping front aperture and a decentred rectangular aperture (test case)",
+  "aperture": {"type": "float_by_stop"},
+  "fields": {"type": "angle", "x": [0, 0, 0, 6], "y": [0, 5, 10, 8]},
+  "wavelengths": {"um": [0.4861, 0.5876, 0.6563], "weights": [1, 1, 1], "primary": 2},
+  "catalogs": ["SCHOTT"],
+  "ray_aiming": "off",
+  "object": {"thickness": "inf"},
+  "surfaces": [
+    {"radius": 40, "thickness": 5, "material": "N-BK7", "comment": "front, aperture clips the off-axis beam",
+     "aperture": {"type": "circular", "min": 0, "max": 6.0}},
+    {"radius": -40, "thickness": 6, "comment": "air space"},
+    {"radius": -30, "thickness": 2, "material": "N-SF5", "comment": "cemented flint"},
+    {"radius": 30, "thickness": 4, "material": "N-BK7", "comment": "cemented crown"},
+    {"radius": -30, "thickness": 3, "comment": "air space before the stop"},
+    {"radius": "inf", "thickness": 3, "stop": true, "semi_diameter": 2.5,
+     "comment": "dedicated stop in air, the system aperture follows its semi-diameter"},
+    {"radius": 35, "thickness": 4, "material": "N-BK7", "comment": "decentred rectangular aperture",
+     "aperture": {"type": "rectangular", "x_half": 2.6, "y_half": 2.2, "x_decenter": 0.5}},
+    {"radius": -80, "thickness": 20.04, "comment": "back"}
+  ]
+}

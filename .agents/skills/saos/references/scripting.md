@@ -12,10 +12,14 @@ A loop of many evaluations (a scan of a few variables, multi-starts, a sensitivi
 
 ## The rtc instance
 
-While the daemon computes on rtc ([session.md](session.md#two-backends-in-one-daemon)), `ctx` itself is rtc and `ctx.fast()` is refused: use `ctx` directly. `lens build` takes the same prescriptions with what rtc can trace: standard, paraxial, even-asphere, biconic and toroidal surfaces, EPD or object-space NA, angle or object-height fields, infinite or finite object, circular apertures, variable flags and marginal-ray-height thickness solves. It lists every other item in one `BACKEND_UNSUPPORTED`. Automatic semi-diameters (except the object surface's, which keeps the file's value) and the solves are recomputed after every change, following OpticStudio's rules; `lens save` writes an OpticStudio `.zmx`.
+daemon 在 rtc 上计算时（[session.md](session.md#two-backends-in-one-daemon)），`ctx` 就是 rtc，`ctx.fast()` 被拒绝，直接使用 `ctx`。`lens build` 接受 rtc 能追迹的处方：Standard、Paraxial、EvenAspheric、Biconic、Toroidal 面，EPD 或物方 NA，角度或物高视场，无穷或有限物距，圆孔径、变量和边缘光线高度厚度求解。也能建立瞄准 off 的 Float By Stop Size、瞄准 off 的 Standard MIRROR 及反射后的负厚度、带偏心的圆遮挡和矩形孔，以及 `fields.vignetting`。镜面读回 `MIRROR`，来源为 `{"kind": "mirror"}`；波前操作数仍拒绝镜面。这些新路径尚未全部对账，使用前读 [iris/mirror 计划](../../../../docs/plans/rtc-iris-mirror.md) 第 1、6、7 节，结果标为估算并在 OpticStudio 上确认。其余不支持项汇总为一个 `BACKEND_UNSUPPORTED`。改动后重算求解及自动半口径（物面保留文件值）；自动半口径尚未对账。`lens save` 写 OpticStudio `.zmx`。
 
 - `ctx.op` evaluates the ray operands `REAX|Y|Z|R|A|B|C`, `RAGX|Y|Z|A|B|C`, `RANG`, `RAID` (Int1 = surface, Int2 = wavelength, data = Hx, Hy, Px, Py) and `EFFL`, `WFNO`, `ISFN`, `TOTR`, `TTHI`, `EPDI`, `ENPP`, `EXPP`, `EXPD`, `PETZ`, `INDX`, `SSAG`, `CONF`; any other operand is `BACKEND_UNSUPPORTED`, so compute that quantity from rays or leave it to OpticStudio. `ctx.trace`, `ctx.spot`, `ctx.cra`, `ctx.field_profile`, `ctx.set`/`get`/`kept` and `ctx.quick_focus()` (smallest RMS spot over every field and wavelength) work as on OpticStudio. `ctx.merit_add`, `ctx.change_surface_type` (Standard ↔ EvenAspheric) and `ctx.solve` with `fixed` or `variable` work; other solves are refused. The one analysis is `ctx.analysis("FftMtf", {...})`, shaped like OpticStudio's export and not yet reconciled with it. `ctx.huygens` and `ctx.wavefront_rms` are `BACKEND_UNSUPPORTED` until rtc's PSF is reconciled with OpticStudio, so a check using them is filed under `backend_unsupported`.
 - Every `exec` result carries `computed_by`: the backend, the operands used that rtc has not yet reconciled with OpticStudio, and the unreconciled paths this lens takes (finite object, object-space NA, object-height field, a material outside the admission table). A number built on a listed item is an estimate: say so where you write it.
+
+FLOA 光阑半口径只定义系统孔径，必须有显式面孔径才裁剪光线。rtc 上可用 `ctx.solve("6.semi_diameter", "variable")` 将 FLOA 光阑设为变量，数值必须大于零；固定时用 `"fixed"`。变量标志目前仅存内存，`.zmx` 保存数值，重载后须重新设置。将 F 数需求写进评价函数，避免优化仅靠缩小孔径降低像差。
+
+渐晕因子已进入 AD 发射；表外视场不插值，取曼哈顿距离最近的表内视场那一行（已与 OpticStudio 对账）。实际瞄准的光阑半口径 AD 明确拒绝，不能把瞄准发射当常量求导。R3 面孔径、R5 自动半口径和 R8 波前的底层实验入口仅用于实现验收；生产后端的拒绝清单不因实验开关改变，边界见上述计划。
 
 ## Scripts
 

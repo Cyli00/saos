@@ -3,10 +3,9 @@
 Lenses of the rtc instance: prescription → rtc lens, rtc lens → .zmx, and what OpticStudio recomputes for the user
 (marginal-ray-height solves, automatic semi-diameters).
 
-.zmx 只写在 OpticStudio 24.1 存盘文件里见过的行（rtc 的 fixtures/lenses 与 tests/fixtures/cases/*.zmx）；写法没见过的
-处方项（拾取、F 数求解、膜层、矩形与椭圆孔径、偏心倾斜）报 BACKEND_UNSUPPORTED，不猜格式。
-Only lines seen in files OpticStudio 24.1 saved are written; prescription items whose file form was never seen are
-refused with BACKEND_UNSUPPORTED instead of guessing a format.
+.zmx 只写 OpticStudio 24.1 存盘样本里的格式（含 tests/fixtures/cases/truth.json 的 zmx 字段）。
+拾取、F 数求解、膜层、倾斜偏心等未建模的处方项报 BACKEND_UNSUPPORTED。
+蜘蛛、椭圆和矩形遮挡仅供 experimental=True 的底层候选入口，后端准入另行检查。
 """
 
 from __future__ import annotations
@@ -21,11 +20,18 @@ from saos.protocol import ErrorCode, SaosError
 # 处方面型（小写去分隔符）→ .zmx 的 TYPE / prescription surface type → .zmx TYPE
 TYPES = {"standard": "STANDARD", "paraxial": "PARAXIAL", "evenaspheric": "EVENASPH", "evenasphere": "EVENASPH",
          "biconic": "BICONICX", "toroidal": "TOROIDAL"}
-APERTURES = {"entrance_pupil_diameter": "EPD", "object_na": "OBNA"}
+APERTURES = {"entrance_pupil_diameter": "EPD", "object_na": "OBNA", "float_by_stop": "FLOA"}
 FIELD_TYPES = {"angle": ("ANGLE", 0), "object_height": ("OP1", 1)}
 AIMING = {"off": 0, "paraxial": 1, "real": 2}
+# 处方面孔径 → (.zmx 行名, 类型码)：只收有 OpticStudio 24.1 存盘样本的类型，列序与 rtc.zmx 的解析一致
+SURFACE_APERTURES = {"circular": ("CLAP", 1), "circular_obscuration": ("OBSC", 2), "spider": ("SPID", 3),
+                     "rectangular": ("SQAP", 4), "rectangular_obscuration": ("SQOB", 5),
+                     "elliptical": ("ELAP", 6), "elliptical_obscuration": ("ELOB", 7)}
+# 类型码 → .zmx 行名（写回用）
+APERTURE_LINES_BY_CODE = {code: line for line, code in SURFACE_APERTURES.values()} | {10: "FLAP"}
 # 自动半口径：每个视场、每个波长沿光瞳边缘取这么多条光线 / rim rays per field and wavelength for automatic semi-diameters
 RIM_RAYS = 16
+NON_ROTATIONAL_TYPES = ("BICONIC", "BICONICX", "BICONICZ", "TOROIDAL")
 # UTF-16LE 的字节序标记 / the UTF-16LE byte order mark
 BOM = bytes((0xFF, 0xFE))
 
@@ -39,7 +45,7 @@ def _type_key(name: str) -> str:
 
 
 def _material(value: Any):
-    from rtc.material.types import Catalog, Model
+    from rtc.material.types import Catalog, Mirror, Model
 
     if value in (None, ""):
         return None
@@ -47,11 +53,11 @@ def _material(value: Any):
         m = value["model"]
         return Model(float(m["nd"]), float(m["vd"]), float(m.get("dpgf", 0.0)))
     if str(value).upper() == "MIRROR":
-        raise unsupported("rtc does not trace mirrors; use an OpticStudio instance for reflective systems")
+        return Mirror()
     return Catalog(str(value).upper())
 
 
-def from_prescription(p: dict[str, Any]):
+def from_prescription(p: dict[str, Any], *, experimental: bool = False):
     """规范化处方（saos.prescription.normalize）→ rtc.zmx.Lens；rtc 复现不了或 .zmx 写不出的项一次全部列出。
     A normalized prescription → rtc.zmx.Lens; everything rtc cannot reproduce or write is listed at once."""
     from rtc import zmx
@@ -94,6 +100,10 @@ def from_prescription(p: dict[str, Any]):
     lens.field_normalization = f["normalization"]
     lens.fields = [(float(x), float(y), float(w)) for x, y, w in zip(f["x"], f["y"], f["weights"])]
     lens.num_fields = len(lens.fields)
+    vig = f.get("vignetting")
+    lens.vignetting = ([tuple(float(vig[k][i]) for k in ("vdx", "vdy", "vcx", "vcy", "van"))
+                        for i in range(lens.num_fields)]
+                       if vig else [(0.0, 0.0, 0.0, 0.0, 0.0)] * lens.num_fields)
     w = p["wavelengths"]
     lens.wavelengths = [(float(um), float(wt)) for um, wt in zip(w["um"], w["weights"])]
     lens.num_waves = len(lens.wavelengths)
@@ -104,10 +114,20 @@ def from_prescription(p: dict[str, Any]):
     lens.surfaces.append(obj)
     rows = list(p["surfaces"]) + [{**(p.get("image") or {"type": "standard", "radius": math.inf}), "image": True}]
     for k, s in enumerate(rows, start=1):
+        ap = s.get("aperture") or {}
+        if not experimental and ap.get("type") in ("spider", "elliptical", "elliptical_obscuration", "rectangular_obscuration"):
+            problems.append(f"surface {k} aperture {ap['type']} (not reconciled with OpticStudio)")
         try:
             lens.surfaces.append(_surface(k, s))
         except SaosError as exc:
             problems.append(exc.message)
+    if lens.aperture_type == "FLOA":
+        # Float By Stop Size 仅定义系统入瞳；显式 FLAP 才挡光，半口径自身不裁剪。
+        stop = next((s for s in lens.surfaces if s.is_stop), None)
+        if stop is None:
+            problems.append("aperture float_by_stop needs a surface marked stop")
+        elif not stop.semi_diameter:
+            problems.append(f"aperture float_by_stop needs a semi_diameter on the stop surface {stop.index}")
     if problems:
         raise unsupported("rtc cannot build this prescription: " + "; ".join(problems), problems)
     configs = p.get("configurations") or []
@@ -153,9 +173,17 @@ def _surface(k: int, s: dict[str, Any]):
         out.mech_semi_diameter, out.mech_fixed = float(s["mech_semi_diameter"]), True
     ap = s.get("aperture")
     if ap:
-        if ap["type"] != "circular" or ap.get("x_decenter") or ap.get("y_decenter"):
-            raise unsupported(f"{where} aperture {ap['type']} (rtc writes centred circular apertures only)")
-        out.aperture_code, out.ap_min, out.ap_max = 1, float(ap["min"]), float(ap["max"])
+        entry = SURFACE_APERTURES.get(ap["type"])
+        if entry is None:
+            raise unsupported(f"{where} aperture {ap['type']} (rtc writes {sorted(SURFACE_APERTURES)})")
+        out.aperture_code = entry[1]
+        if ap["type"].startswith("circular"):
+            out.ap_min, out.ap_max = float(ap["min"]), float(ap["max"])
+        elif ap["type"] == "spider":
+            out.ap_min, out.ap_max = float(ap["width"]), float(ap["arms"])
+        else:
+            out.ap_min, out.ap_max = float(ap["x_half"]), float(ap["y_half"])
+        out.ap_dx, out.ap_dy = float(ap["x_decenter"]), float(ap["y_decenter"])
     for column, solve in (s.get("solves") or {}).items():
         if solve["type"] == "variable" and column == "radius":
             out.solve_radius = 1
@@ -204,10 +232,12 @@ def solve_thickness(rows, k: int, height: float) -> float | None:
     return None if u == 0.0 else (height - y) / u
 
 
-def auto_semi_diameters(system, lens, config: int, waves: int, trace) -> dict[int, float]:
+def auto_semi_diameters(system, lens, config: int, waves: int, trace, *, experimental: bool = False) -> dict[int, float]:
     """自动半口径：各视场、各波长沿光瞳边缘的光线在每面的最大径向高度（OpticStudio 自动半口径的口径定义，未与它对账）。
     trace(wave, hx, hy, px, py) → rtc RayBlock。
     Automatic semi-diameters: the largest radial height of the pupil-rim rays of every field and wavelength."""
+    if experimental:
+        return _adaptive_semi_diameters(system, lens, waves, trace)
     sx, sy = system._field_scale()
     angles = np.linspace(0.0, 2.0 * np.pi, RIM_RAYS, endpoint=False)
     px, py = np.cos(angles), np.sin(angles)
@@ -227,17 +257,81 @@ def auto_semi_diameters(system, lens, config: int, waves: int, trace) -> dict[in
     return best
 
 
+def _widen_to_rim(local, trace, wave: int, hx: float, hy: float, px, py) -> None:
+    """用这些光瞳方向的光线加宽 local（各面径向高度）；追迹失败的光线缩小光瞳重试。"""
+    for retry in range(20):
+        scale = 1.0 - 0.05 * retry
+        block = trace(wave, np.full(px.size, hx), np.full(px.size, hy), scale * px, scale * py)
+        for k, index in enumerate(block.surface_index):
+            # 后面的面失败不能抹掉前面已经到达的交点；失败面及其后不计。
+            ok = (block.error == 0) | (np.abs(block.error) > index)
+            radius = np.hypot(block.x[:, k], block.y[:, k])
+            valid = ok & np.isfinite(radius)
+            if valid.any():
+                local[k] = max(local[k], float(radius[valid].max()))
+        failed = block.error != 0
+        if not failed.any():
+            return
+        px, py = px[failed], py[failed]
+
+
+def _adaptive_semi_diameters(system, lens, waves: int, trace) -> dict[int, float]:
+    """R5 候选路径（SDMA 余量），不进入优化每步的默认重算。
+
+    旋转对称系统只沿 ±视场方向取边缘光线（轴上视场取 ±y）：truth.json 的 34 个旋转对称变体逐面相差不超过 3.4e-10 mm，
+    带渐晕因子时也成立。非旋转对称面型没有对上（reflective_biconic、reflective_toroidal 的面 5），
+    暂用嵌套方位角采样，快速模式从 32 个方向开始检查相对增长 1e-4，最多累计 256 个方向。
+    追迹失败的光线按 0.05 的光瞳步长缩小，最多 19 次；各面在失败前的交点仍有效。
+    面孔径不影响自动半口径：iris 带 6 mm 圆孔时面 1 报 7.221506，与去掉所有面孔径的 iris_no_apertures 逐面相同。
+    """
+    parts = lens.raw.get("SDMA", "SDMA 0 1 0").split()[1:]
+    if len(parts) != 3:
+        raise ValueError("SDMA 应包含百分比、快速模式开关、毫米余量三列")
+    percent, fast, margin = map(float, parts)
+    if not all(math.isfinite(x) for x in (percent, fast, margin)) or fast not in (0.0, 1.0):
+        raise ValueError("SDMA 余量必须有限，快速模式开关须为 0 或 1")
+    sx, sy = system._field_scale()
+    rotational = not any(s.type.upper() in NON_ROTATIONAL_TYPES for s in lens.surfaces)
+    best = np.zeros(len(system.items))
+    for x, y, _ in lens.fields:
+        hx, hy = x / sx if sx else 0.0, y / sy if sy else 0.0
+        for wave in range(1, waves + 1):
+            local = np.zeros_like(best)
+            if rotational:
+                length = math.hypot(hx, hy)
+                ux, uy = (hx / length, hy / length) if length else (0.0, 1.0)
+                _widen_to_rim(local, trace, wave, hx, hy, np.array([ux, -ux]), np.array([uy, -uy]))
+            else:
+                for count in (2, 4, 8, 16, 32, 64, 128, 256):
+                    previous = local.copy()
+                    angles = np.array([0.0, np.pi]) if count == 2 else np.arange(1, count, 2) * (2 * np.pi / count)
+                    _widen_to_rim(local, trace, wave, hx, hy, np.cos(angles), np.sin(angles))
+                    if fast and count >= 32 and np.all(local <= previous * 1.0001):
+                        break
+            best = np.maximum(best, local)
+    out = {}
+    for it, radius in zip(system.items, best):
+        if it.surface.semi_fixed:
+            out[it.index] = it.semi
+        elif not it.is_stop and not it.is_image:
+            out[it.index] = float(radius) * (1.0 + 0.01 * abs(percent)) + abs(margin)
+        else:
+            out[it.index] = float(radius)
+    return out
+
+
 # ---- .zmx ----
 
 # dump 自己生成的文件头行；其余文件头行（偏振 POLS、膜层文件 COFN、玻璃替换模板 GSTD…）rtc 不建模，从读入的文件原样带过去
 # header lines dump writes itself; the others (POLS polarization, COFN coating files, GSTD, …) are not modelled by rtc and
 # are carried over verbatim from the file that was read
-GENERATED_HEADER = frozenset({"VERS", "MODE", "NAME", "UNIT", "ENPD", "OBNA", "ENVD", "GCAT", "RAIM", "FTYP", "XFLN", "YFLN",
-                              "FWGN", "VDXN", "VDYN", "VCXN", "VCYN", "VANN", "WAVM", "PWAV", "XFLD", "YFLD"})
+GENERATED_HEADER = frozenset({"VERS", "MODE", "NAME", "UNIT", "ENPD", "OBNA", "FLOA", "ENVD", "GCAT", "RAIM", "FTYP",
+                              "XFLN", "YFLN", "FWGN", "VDXN", "VDYN", "VCXN", "VCYN", "VANN", "WAVM", "PWAV", "XFLD",
+                              "YFLD"})
 # 面块里 rtc 不建模、但 OpticStudio 存盘总会写的显示类行：原样带过去 / display lines OpticStudio always saves: carried over
 SURFACE_PASSTHROUGH = ("HIDE", "MIRR", "SLAB", "POPS", "FIMP", "SSID")
 # 面块里 rtc 建模并自己写出的行 / surface lines rtc models and writes itself
-SURFACE_MODELLED = frozenset({"VDSZ", "VCON", "MAZH", "CLAP", "FLAP"})
+SURFACE_MODELLED = frozenset({"VDSZ", "VCON", "MAZH", "CLAP", "FLAP", "OBSC", "SQAP", "SQOB", "ELAP", "ELOB", "SPID", "OBDC"})
 
 
 def carried_lines(text: str) -> dict[str, list[str]]:
@@ -276,11 +370,13 @@ def dump(lens, title: str | None = None, carried: dict[str, list[str]] | None = 
     带过去的行，其余行由 OpticStudio 打开时取默认值。
     An rtc lens → .zmx text in the line format OpticStudio 24.1 saves: what the rtc lens model holds plus the lines in
     carried (from carried_lines); OpticStudio takes defaults for the rest."""
-    from rtc.material.types import Catalog, Model
+    from rtc.material.types import Catalog, Mirror, Model
 
     lines = ["VERS 231205 0 20120530 20120530", "MODE SEQ", f"NAME {title if title is not None else lens.name}", "UNIT MM X W X CM MR CPMM"]
     if lens.aperture_type == "OBNA":
         lines.append(f"OBNA {_num(lens.aperture_value)} 0")
+    elif lens.aperture_type == "FLOA":
+        lines.append("FLOA")
     else:
         lines.append(f"ENPD {_num(lens.aperture_value)}")
     env = lens.environment
@@ -294,8 +390,9 @@ def dump(lens, title: str | None = None, carried: dict[str, list[str]] | None = 
     lines.append("XFLN " + " ".join(_num(x) for x, _, _ in lens.fields))
     lines.append("YFLN " + " ".join(_num(y) for _, y, _ in lens.fields))
     lines.append("FWGN " + " ".join(_num(w) for _, _, w in lens.fields))
-    for key in ("VDXN", "VDYN", "VCXN", "VCYN", "VANN"):
-        lines.append(f"{key} " + " ".join("0" for _ in lens.fields))
+    vig = lens.vignetting or [(0.0,) * 5] * len(lens.fields)
+    for key, values in zip(("VDXN", "VDYN", "VCXN", "VCYN", "VANN"), zip(*vig)):
+        lines.append(f"{key} " + " ".join(_num(v) for v in values))
     for k, (um, weight) in enumerate(lens.active_wavelengths, start=1):
         lines.append(f"WAVM {k} {_num(um)} {_num(weight)}")
     lines.append(f"PWAV {int(lens.primary_wave)}")
@@ -323,6 +420,8 @@ def dump(lens, title: str | None = None, carried: dict[str, list[str]] | None = 
         spec = s.material
         if isinstance(spec, Model):
             lines.append(f"  GLAS ___BLANK 1 0 {_num(spec.nd)} {_num(spec.vd)} {_num(spec.dpgf)} 0 0 0 0 0 ")
+        elif isinstance(spec, Mirror):
+            lines.append("  GLAS MIRROR 0 0 1.5 40 0 0 0 0 0 0 ")
         elif isinstance(spec, Catalog):
             lines.append(f"  GLAS {spec.name} 0 0 1.5 40 0 0 0 0 0 0 ")
         if s.conic:
@@ -331,12 +430,14 @@ def dump(lens, title: str | None = None, carried: dict[str, list[str]] | None = 
             lines.append("  VCON")
         lines.append(f"  DIAM {_num(s.semi_diameter)} {1 if s.semi_fixed else 0} 0 0 1 \"\"")
         lines.append(f"  MEMA {_num(s.mech_semi_diameter)} {1 if s.mech_fixed else 0} 0 0 1 \"\"")
-        if s.aperture_code == 1:
-            lines.append(f"  CLAP {_num(s.ap_min)} {_num(s.ap_max)} 0")
-        elif s.aperture_code == 10:
-            lines.append(f"  FLAP {_num(s.ap_min)} {_num(s.ap_max)} 0")
-        elif s.aperture_code:
-            raise unsupported(f"surface {s.index} aperture code {s.aperture_code} cannot be written by rtc")
+        if s.aperture_code:
+            line = APERTURE_LINES_BY_CODE.get(s.aperture_code)
+            if line is None:
+                raise unsupported(f"surface {s.index} aperture code {s.aperture_code} cannot be written by rtc")
+            maximum = s.semi_diameter if s.aperture_code == 10 else s.ap_max
+            lines.append(f"  {line} {_num(s.ap_min)} {_num(maximum)} 0")
+            if s.ap_dx or s.ap_dy:
+                lines.append(f"  OBDC {s.ap_dx:.12E} {s.ap_dy:.12E}")
         lines.extend(f"  {s.raw[key]}" for key in SURFACE_PASSTHROUGH if key in s.raw)
     # 评价函数行在面之后、多重结构之前（OpticStudio 存盘的顺序；放在 MNUM 之后会被读成多重结构行）
     # merit rows follow the surfaces and precede the multi-configuration block, as OpticStudio saves them

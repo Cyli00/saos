@@ -90,12 +90,11 @@ class Operands:
         return self.system.exit_pupil()[0]
 
     def expd(self) -> float:
-        """出瞳直径。"""
+        """出瞳直径：光阑处边缘光线半径 × 出瞳放大率 × 2（不是机械半口径，见 OpticalSystem.stop_pupil_radius）。"""
         z, mag = self.system.exit_pupil()
         if self.system.stop is None:
             return float("nan")
-        r_stop = self.system.items[self.system.stop].semi
-        return 2.0 * abs(mag) * r_stop
+        return 2.0 * abs(mag) * self.system.stop_pupil_radius()
 
     # ---- 像质 ----
     def strh(self, n: int = 24, image_pixels: int = 48, reference: str = "planar",

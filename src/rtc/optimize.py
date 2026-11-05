@@ -12,12 +12,9 @@ Zemax 的 DLS 内部细节未公开，这里只做"算法同类"（ADR-0001 第 
 
 from __future__ import annotations
 
-import copy
-from dataclasses import replace
 
 import numpy as np
 
-from . import geometry
 from .adtrace import Variable, stack, trace_ad, variables_from_lens
 from .system import OpticalSystem
 
@@ -90,33 +87,9 @@ class Design:
     # ---- 把变量写回一个可用的系统副本（优化完取结果用）----
 
     def system_with(self, theta) -> OpticalSystem:
-        vals = {v.key(): float(t) for v, t in zip(self.variables, theta)}
-        sys = copy.copy(self.system)
-        sys.items = []
-        z = self.system.items[0].vertex_z if self.system.items else 0.0
-        for k, it in enumerate(self.system.items):
-            surf = copy.copy(it.surface)
-            surf.params = dict(it.surface.params)
-            for (i, field, pa), val in vals.items():
-                if i != k:
-                    continue
-                if field == "param":
-                    surf.params[pa] = val
-                elif field != "thickness":
-                    setattr(surf, field, val)
-            thick = vals.get((k, "thickness", 0), it.thickness)
-            focal = it.focal
-            if it.type == "PARAXIAL" and focal is not None:
-                focal = surf.params.get(1, focal)
-            # 顶点位置由前面各面厚度累加而来，改了厚度必须重算，否则追迹仍用旧位置
-            sys.items.append(replace(it, surface=surf, shape=geometry.make(surf),
-                                     thickness=thick, focal=focal, vertex_z=z))
-            if np.isfinite(thick):
-                z += thick
-        sys.image_z = z
-        # 浅拷贝带着原系统的内核数据与入瞳缓存，换了 items 必须丢掉
-        sys.invalidate()
-        return sys
+        from .adtrace import system_with_variables
+
+        return system_with_variables(self.system, self.variables, theta)
 
 
 def lm(fun, x0, *, max_iter: int = 100, tol: float = 1e-12, lam0: float = 1e-3,

@@ -203,6 +203,8 @@ def fingerprint(desc: dict[str, Any], environment: Any = ()) -> dict[str, Any]:
     }
     if "afocal_units" in ap:
         out["aperture"]["afocal_units"] = ap["afocal_units"]
+    if ap.get("type") == "FloatByStopSize":
+        out["aperture"].pop("value", None)
     if "configurations" in desc:
         out["configurations"] = _configurations(desc["configurations"])
     for key in ("environment", "apodization", "polarization"):
@@ -215,6 +217,10 @@ def fingerprint(desc: dict[str, Any], environment: Any = ()) -> dict[str, Any]:
 
 def _align(approved: dict[str, Any], current: dict[str, Any]) -> None:
     """确认时还没有的指纹项从当前指纹里去掉，旧的确认照样适用。/ Drop from current what the approved fingerprint predates."""
+    if approved.get("aperture", {}).get("type") == current.get("aperture", {}).get("type") == "FloatByStopSize":
+        # 旧确认记录可能含无效的系统孔径数值；光阑身份仍由面的 stop 标志比较。
+        approved["aperture"].pop("value", None)
+        current["aperture"].pop("value", None)
     for key in LATER_KEYS:
         if key not in approved:
             current.pop(key, None)

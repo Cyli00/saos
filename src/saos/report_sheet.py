@@ -211,7 +211,9 @@ def _section(viz: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, 
         line = [P(p) for p in s.get(profiles.get(str(s["index"]), "profile_y")) or s["profile_y"]]
         if line and line[0][1] > line[-1][1]:
             line.reverse()
-        out.append({**s, "profile_y": line})
+        mask_key = profiles.get(str(s["index"]), "profile_y")
+        masks = (s.get("obscuration") or {}).get(mask_key, [])
+        out.append({**s, "profile_y": line, "obscuration": {"profile_y": [[P(p) for p in row] for row in masks]}})
     fan = "py" if sec.get("fan") != "px" else "px"
     return out, [{**r, "points": [P(p) for p in r["points"]]} for r in rays if abs(r.get(fan, 0)) < 1e-12 and r.get("points")]
 
@@ -245,6 +247,9 @@ def lens_svg(viz: dict[str, Any], width: int = 560, height: int = 300) -> str | 
             out.append(f'<path class="img" d="{path(s["profile_y"])}"/>')
     for r in rays:
         out.append(f'<path class="ray" stroke="{FIELD_INK[r.get("field", 0) % len(FIELD_INK)]}" d="{path(r["points"])}"/>')
+    for s in surfaces:
+        for points in (s.get("obscuration") or {}).get("profile_y", []):
+            out.append(f'<path class="img" stroke-dasharray="3 2" d="{path(points)}"/>')
     image = surfaces[-1] if surfaces else None
     if image:
         out.append(f'<path class="img" d="{path(image["profile_y"])}"/>')

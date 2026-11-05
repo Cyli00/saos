@@ -39,7 +39,7 @@ class Variable:
     """一个优化变量：``system.items[item]`` 上的某个标量。"""
 
     item: int        # OpticalSystem.items 的下标（不是 .zmx 的面号）
-    field: str       # "curvature" | "conic" | "thickness" | "param"
+    field: str       # 曲率、圆锥、厚度、参数或光阑半口径
     param: int = 0   # field == "param" 时的参数号
 
     def key(self):
@@ -49,6 +49,8 @@ class Variable:
         it = system.items[self.item]
         if self.field == "thickness":
             return float(it.thickness)
+        if self.field == "semi_diameter":
+            return float(it.semi)
         if self.field == "param":
             return float(it.surface.params.get(self.param, 0.0))
         return float(getattr(it.surface, self.field))
@@ -57,6 +59,8 @@ class Variable:
         surf = system.items[self.item].index if system is not None else self.item
         if self.field == "param":
             return f"面{surf}.参数{self.param}"
+        if self.field == "semi_diameter":
+            return f"面{surf}.半口径"
         return f"面{surf}.{'曲率' if self.field == 'curvature' else '圆锥' if self.field == 'conic' else '厚度'}"
 
 
@@ -69,6 +73,8 @@ def variables_from_lens(system: OpticalSystem) -> list[Variable]:
             out.append(Variable(k, "curvature"))
         if getattr(s, "solve_thickness", 0) == 1:
             out.append(Variable(k, "thickness"))
+        if s.semi_variable:
+            out.append(Variable(k, "semi_diameter"))
         for p in sorted(s.variable_params):
             out.append(Variable(k, "param", p))
     return out
@@ -98,6 +104,8 @@ def _curvature_axis(it, axis: str):
         return it.surface.curvature
     if t == "TOROIDAL":
         return 0.0 if axis == "x" else it.surface.curvature
+    if t == "EVENASPH":
+        return it.surface.curvature + 2.0 * it.surface.params.get(1, 0.0)
     return it.surface.curvature
 
 
@@ -123,7 +131,8 @@ def _dual_items(system: OpticalSystem, variables: list[Variable], theta):
         if it.type == "PARAXIAL" and focal is not None:
             focal = surf.params.get(1, focal)
         new = replace(it, surface=surf, shape=geometry.make(surf), thickness=thick,
-                      vertex_z=z, focal=focal)
+                      vertex_z=z, focal=focal,
+                      semi=tang.get((k, "semi_diameter", 0), D.Dual.konst(it.semi)))
         items.append(new)
         tv = thick.v if isinstance(thick, D.Dual) else thick
         if np.isfinite(float(np.ravel(tv)[0])):
@@ -139,7 +148,8 @@ def _paraxial_dual(items, y, u, axis: str = "y"):
         if k > 0:
             y = y + u * items[k - 1].thickness
         if it.type == "PARAXIAL" and float(np.ravel(np.asarray(getattr(it.focal, 'v', it.focal or 0.0)))[0]) != 0.0:
-            ua = u - y / it.focal
+            ua = (n * u - y / it.focal) / it.n_after
+            n = it.n_after
         else:
             c = _curvature_axis(it, axis)
             n2 = it.n_after
@@ -165,16 +175,25 @@ def _const_like(value, shape):
     return D.Dual(np.broadcast_to(np.asarray(value, float), shape).copy())
 
 
-def _launch_dual(system: OpticalSystem, items, px, py, hx, hy, aim: bool):
+def _launch_dual(system: OpticalSystem, items, px, py, hx, hy, aim: bool, variables, theta):
     """发射。EPD 且不做实际瞄准时，入瞳位置的参数导数也传播（Dual）；否则取 float 结果当常量。"""
     from .trace import _aim, _launch
 
     shape = np.shape(px)
-    if system.lens.aperture_type == "EPD" and not aim:
-        r = system.pupil_radius()
-        z_ep = _entrance_pupil_z(items, system.stop)
-        x0 = _const_like(r * np.asarray(px, float), shape)
-        y0 = _const_like(r * np.asarray(py, float), shape)
+    if system.lens.aperture_type in ("EPD", "FLOA") and not aim and not system.finite_object:
+        primary = system.primary_system()
+        reference = items if primary is system else _dual_items(primary, variables, theta)
+        if system.lens.aperture_type == "FLOA":
+            primary.stop_semi_diameter()
+            a = _paraxial_dual(reference, D.Dual.konst(1.0), D.Dual.konst(0.0))[system.stop][0]
+            if not np.isfinite(a.v) or abs(float(a.v)) < 1e-14:
+                raise ValueError("光阑传递系数为零，半口径导数没有定义")
+            r = reference[system.stop].semi / abs(a)
+        else:
+            r = D.Dual.konst(system.pupil_radius())
+        z_ep = _entrance_pupil_z(reference, system.stop)
+        x0 = r * _const_like(px, shape)
+        y0 = r * _const_like(py, shape)
         if z_ep is None:
             z0 = _const_like(0.0, shape)
         else:
@@ -187,6 +206,8 @@ def _launch_dual(system: OpticalSystem, items, px, py, hx, hy, aim: bool):
     # OBNA / 实际瞄准：发射环节当成常量（不参与求导，见模块 docstring）
     x0, y0, z0, d = _launch(system, px, py, hx, hy)
     if aim:
+        if any(v.field == "semi_diameter" for v in variables):
+            raise NotImplementedError("实际瞄准的光阑半口径导数尚未实现，不能把瞄准结果当常量优化")
         x0, y0, z0, d = _aim(system, x0, y0, z0, d, px, py)
     return (_const_like(x0, np.shape(x0)), _const_like(y0, np.shape(y0)),
             _const_like(z0, np.shape(z0)),
@@ -217,16 +238,69 @@ def _refract_dual(L, M, N, Nx, Ny, Nz, n1: float, n2: float):
     return out, tir
 
 
+def _reflect_dual(L, M, N, Nx, Ny, Nz):
+    """反射（Dual 版）：``d′ = d − 2(d·N)N``。反射不产生全反射，也不换介质。"""
+    dn = L * Nx + M * Ny + N * Nz
+    flip = dn.v > 0.0
+    Nx = D.where(flip, -Nx, Nx)
+    Ny = D.where(flip, -Ny, Ny)
+    Nz = D.where(flip, -Nz, Nz)
+    g = D.where(flip, dn, -dn) * 2.0   # = 2·|d·N|，法线已翻到入射侧，d′ = d + 2|d·N|·N
+    Lt = L + g * Nx
+    Mt = M + g * Ny
+    Nt = N + g * Nz
+    norm = D.sqrt(Lt * Lt + Mt * Mt + Nt * Nt)
+    return Lt / norm, Mt / norm, Nt / norm
+
+
 def _is_lens(it) -> bool:
     return it.type == "PARAXIAL" and it.focal is not None and float(np.ravel(np.asarray(getattr(it.focal, 'v', it.focal)))[0]) != 0.0
+
+
+def system_with_variables(system: OpticalSystem, variables: list[Variable], theta) -> OpticalSystem:
+    """把变量写入独立的镜头与 items，供求交值、差分和优化终点共同使用。"""
+    theta = np.asarray(theta, dtype=float)
+    if theta.shape != (len(variables),) or not np.all(np.isfinite(theta)):
+        raise ValueError("变量值须为与变量表等长的一维有限数组")
+    if len({v.key() for v in variables}) != len(variables):
+        raise ValueError("变量表不能重复同一个参数")
+    if not variables:
+        return system
+    lens = copy.deepcopy(system.lens)
+    for it in system.items:
+        surface = copy.deepcopy(it.surface)
+        surface.thickness, surface.semi_diameter = it.thickness, it.semi
+        lens.surfaces[lens.surfaces.index(lens.surface(it.index))] = surface
+    for v, value in zip(variables, theta):
+        if not 0 <= v.item < len(system.items):
+            raise ValueError(f"变量面下标越界：{v.item}")
+        s = lens.surface(system.items[v.item].index)
+        if v.field == "param":
+            s.params[v.param] = float(value)
+        elif v.field in ("curvature", "conic", "thickness", "semi_diameter"):
+            if v.field == "semi_diameter":
+                if lens.aperture_type != "FLOA" or not s.is_stop or value <= 0:
+                    raise ValueError("半口径变量仅用于 Float By Stop Size 的光阑，且必须大于零")
+                if s.aperture_code == 10:
+                    s.ap_max = float(value)
+            setattr(s, v.field, float(value))
+        else:
+            raise ValueError(f"未知变量字段：{v.field}")
+    for row in lens.mce:
+        if row.op == "THIC" and row.config == system.config:
+            row.value = lens.surface(row.surface).thickness
+    return OpticalSystem(lens, wavelength_um=system.wavelength, config=system.config,
+                         aim_scale=system.aim_scale, glasses=system.glasses, media=system._media,
+                         allow_unverified=system.allow_unverified)
 
 
 def trace_ad(system: OpticalSystem, px, py, variables: list[Variable], theta,
              hx: float = 0.0, hy: float = 0.0, aim: bool | None = None, _phase: bool = True) -> ADBlock:
     """AD 追迹一批光线，返回每个面每列都是 ``Dual`` 的结果。``phase`` 列同 ``trace``，以同视场主光线为零。"""
+    system = system_with_variables(system, variables, theta)
     px = np.atleast_1d(np.asarray(px, float))
     py = np.atleast_1d(np.asarray(py, float))
-    px, py = np.broadcast_arrays(px, py)
+    px, py, hx, hy = (v.ravel() for v in np.broadcast_arrays(px, py, hx, hy))
     n_ray = px.size
     do_aim = (system.lens.ray_aiming == 2) if aim is None else aim
 
@@ -236,7 +310,8 @@ def trace_ad(system: OpticalSystem, px, py, variables: list[Variable], theta,
     chief = None
     if _phase and any(_is_lens(it) for it in items):
         chief = trace_ad(system, [0.0], [0.0], variables, theta, hx, hy, aim, _phase=False).cols
-    X, Y, Z, (L, M, N) = _launch_dual(system, items, px, py, hx, hy, do_aim)
+    px, py = system.vignetted_pupil(px, py, hx, hy)
+    X, Y, Z, (L, M, N) = _launch_dual(system, items, px, py, hx, hy, do_aim, variables, theta)
 
     n_items = len(items)
     cols = {k: [] for k in ("x", "y", "z", "l", "m", "n", "opl", "phase")}
@@ -270,7 +345,7 @@ def trace_ad(system: OpticalSystem, px, py, variables: list[Variable], theta,
             dt = D.where(good, dt, D.Dual.konst(0.0))
 
         if k > 0:
-            opl = opl + n_cur * (D.Dual(t, np.zeros((F.d.shape[0], n_ray))) + dt)
+            opl = opl + abs(n_cur) * (D.Dual(t, np.zeros((F.d.shape[0], n_ray))) + dt)
         tdt = D.Dual(t, np.zeros((F.d.shape[0], n_ray))) + dt
         X = X + L * tdt
         Y = Y + M * tdt
@@ -287,7 +362,7 @@ def trace_ad(system: OpticalSystem, px, py, variables: list[Variable], theta,
             ux = (n_cur[0] * L / N - X / it.focal) / n2
             uy = (n_cur[0] * M / N - Y / it.focal) / n2
             norm = D.sqrt(ux * ux + uy * uy + 1.0)
-            L, M, N = ux / norm, uy / norm, 1.0 / norm
+            L, M, N = it.sign * ux / norm, it.sign * uy / norm, it.sign / norm
             if chief is not None:
                 phase = phase + _paraxial_lens_phase(
                     D.sqrt, it.focal, n_cur[0], n2, X, Y, L, M, N,
@@ -297,15 +372,19 @@ def trace_ad(system: OpticalSystem, px, py, variables: list[Variable], theta,
             n2 = it.n_after
             Nx, Ny, Nz = -zx, -zy, D.Dual.konst(np.ones_like(np.asarray(X.v, float)))
             nn = D.sqrt(Nx * Nx + Ny * Ny + Nz * Nz)
-            (L, M, N), _ = _refract_dual(L, M, N, Nx / nn, Ny / nn, Nz / nn, n_cur[0], n2)
+            if it.reflect:
+                L, M, N = _reflect_dual(L, M, N, Nx / nn, Ny / nn, Nz / nn)
+            else:
+                (L, M, N), _ = _refract_dual(L, M, N, Nx / nn, Ny / nn, Nz / nn, n_cur[0], n2)
             n_cur = np.full(n_ray, n2)
 
         cols["x"].append(X)
         cols["y"].append(Y)
         cols["z"].append(zloc)
-        cols["l"].append(L)
-        cols["m"].append(M)
-        cols["n"].append(N)
+        s = it.sign if not isinstance(it.sign, D.Dual) else 1.0
+        cols["l"].append(L * s)
+        cols["m"].append(M * s)
+        cols["n"].append(N * s)
         cols["opl"].append(opl)
         cols["phase"].append(phase)
 

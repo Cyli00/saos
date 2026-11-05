@@ -145,7 +145,7 @@ def variable_step(backend, key: str) -> float:
     h = semi(backend, int(surface))
     if param == "curvature":
         return max(1e-7 * abs(value), 2e-7 / (h * h))
-    if param == "thickness":
+    if param in ("thickness", "semi_diameter"):
         return max(1e-7 * abs(value), 1e-7)
     if param == "conic":
         return max(1e-7 * abs(value), 1e-7)
@@ -405,7 +405,7 @@ def _keep_signs(problem: Problem, base: np.ndarray, x: np.ndarray) -> np.ndarray
     """扰动后的正厚度不翻成负值或零：最多缩到原来的 20%。/ A positive thickness stays positive: at most down to 20%."""
     out = x.copy()
     for j, key in enumerate(problem.keys):
-        if key.endswith(".thickness") and base[j] > 0:
+        if key.endswith((".thickness", ".semi_diameter")) and base[j] > 0:
             out[j] = max(out[j], 0.2 * base[j])
         lo_hi = problem.bounds[j]
         if lo_hi is not None:

@@ -1067,14 +1067,15 @@ class ZosBackend(Backend):
         out: dict[str, Any] = {"type": str(data.CurrentType)}
         settings = data.CurrentTypeSettings
         for attr in ("_S_CircularAperture", "_S_CircularObscuration", "_S_RectangularAperture", "_S_RectangularObscuration",
-                     "_S_EllipticalAperture", "_S_EllipticalObscuration"):
+                     "_S_EllipticalAperture", "_S_EllipticalObscuration", "_S_Spider"):
             try:
                 s = getattr(settings, attr)
             except Exception:  # noqa: BLE001 - 不是这种孔径
                 continue
             if s is None:
                 continue
-            for key in ("MinimumRadius", "MaximumRadius", "XHalfWidth", "YHalfWidth", "ApertureXDecenter", "ApertureYDecenter"):
+            for key in ("MinimumRadius", "MaximumRadius", "XHalfWidth", "YHalfWidth", "NumberOfArms", "WidthOfArms",
+                        "ApertureXDecenter", "ApertureYDecenter"):
                 try:
                     out[key] = float(getattr(s, key))
                 except Exception:  # noqa: BLE001 - 该孔径类型没有这个量
@@ -1286,9 +1287,10 @@ class ZosBackend(Backend):
         sd.Environment.Pressure = env["pressure"]
 
         aperture_type = APERTURES[p["aperture"]["type"]]
-        sd.Aperture.ApertureType = getattr(zosapi.SystemData.ZemaxApertureType, aperture_type)
-        if p["aperture"]["value"] is not None:
-            sd.Aperture.ApertureValue = p["aperture"]["value"]
+        if aperture_type != "FloatByStopSize":
+            sd.Aperture.ApertureType = getattr(zosapi.SystemData.ZemaxApertureType, aperture_type)
+            if p["aperture"]["value"] is not None:
+                sd.Aperture.ApertureValue = p["aperture"]["value"]
         # 光阑在物镜后焦面时入瞳在无穷远；用 OpticStudio 的物方远心设置表达，避免光线瞄准在退化情形下失败
         sd.Aperture.TelecentricObjectSpace = bool(p.get("telecentric_object", False))
         sd.Aperture.AFocalImageSpace = p["afocal"] is not None
@@ -1346,6 +1348,10 @@ class ZosBackend(Backend):
         for k, s in enumerate(surfaces, start=1):
             if s["stop"]:
                 lde.GetSurfaceAt(k).IsStop = True
+        # Float By Stop Size 在光阑定下来之后再设：它把"光阑面给浮动孔径"应用给当时的光阑，先设会打到默认光阑面上
+        # （2026-11-04 实测：iris 的最后一面被打成 FloatingAperture 与 0.001 的半口径，挡掉几乎全部光线）
+        if aperture_type == "FloatByStopSize":
+            sd.Aperture.ApertureType = zosapi.SystemData.ZemaxApertureType.FloatByStopSize
         # 混合模式：每个 NonSequential 面一组物体，NCE.SetActiveSurface 选组（2024 R1 实测：组内物体号从 1 起，保存后保留）
         # mixed mode: one object group per NonSequential surface, selected with NCE.SetActiveSurface (numbered from 1 within the group)
         for k, s in enumerate(surfaces, start=1):
@@ -1360,6 +1366,19 @@ class ZosBackend(Backend):
             with _named("configurations"):
                 self._build_configurations(zosapi, p["configurations"])
         fields.ClearVignetting()
+        # 渐晕因子在字段清空之后写入（ClearVignetting 会把它们清零），逐视场回读核对
+        vig = f["vignetting"]
+        if vig:
+            for i in range(len(f["y"])):
+                row = fields.GetField(i + 1)
+                row.VDX, row.VDY = vig["vdx"][i], vig["vdy"][i]
+                row.VCX, row.VCY = vig["vcx"][i], vig["vcy"][i]
+                row.VAN = vig["van"][i]
+                values = [float(getattr(row, a)) for a in ("VDX", "VDY", "VCX", "VCY", "VAN")]
+                wanted = [vig[k][i] for k in ("vdx", "vdy", "vcx", "vcy", "van")]
+                if not all(_same(a, b) for a, b in zip(values, wanted)):
+                    raise SaosError(ErrorCode.BAD_ARGS,
+                                    f"field {i + 1}: OpticStudio kept vignetting {values} instead of {wanted}")
 
         # OpticStudio 遇到不成立的组合会悄悄改设置，搭完回读一次
         got = {"aperture.type": (str(sd.Aperture.ApertureType), aperture_type), "fields.type": (str(fields.GetFieldType()), field_type),
@@ -2388,6 +2407,10 @@ class ZosBackend(Backend):
                 item["profile_y"] = [apply(tf, (x, y, s or 0.0)) for (x, y), s in zip(line_y, sag_y)]
                 item["profile_x"] = [apply(tf, (x, y, s or 0.0)) for (x, y), s in zip(line_x, sag_x)]
                 item["rim"] = [apply(tf, (x, y, s or 0.0)) for (x, y), s in zip(rim, sag_rim)]
+                masks = geometry.obscuration_paths(self._aperture_dict(row), sd)
+                if any(masks.values()):
+                    item["obscuration"] = {key: [[apply(tf, (x, y, self._sag(i, x, y) or 0.0)) for x, y in line]
+                                                   for line in paths] for key, paths in masks.items()}
             surfaces.append(item)
         timings["geometry"] = round(time.monotonic() - started, 2)
         started = time.monotonic()

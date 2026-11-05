@@ -1,0 +1,17 @@
+{
+  "title": "reflective: coaxial parabolic primary with a Mangin secondary, the image behind the primary (test case)",
+  "aperture": {"type": "entrance_pupil_diameter", "value": 80},
+  "fields": {"type": "angle", "x": [0, 0, 0.1], "y": [0, 0.2, 0.1]},
+  "wavelengths": {"um": [0.4861, 0.5876, 0.6563], "weights": [1, 1, 1], "primary": 2},
+  "catalogs": ["SCHOTT"],
+  "ray_aiming": "off",
+  "object": {"thickness": "inf"},
+  "surfaces": [
+    {"radius": -800, "conic": -1, "thickness": -300, "material": "MIRROR", "stop": true, "semi_diameter": 45,
+     "comment": "primary, central obscuration",
+     "aperture": {"type": "circular_obscuration", "min": 0, "max": 15}},
+    {"radius": -3000, "thickness": -8, "material": "N-BK7", "comment": "Mangin front, refraction into the glass"},
+    {"radius": -380, "thickness": 8, "material": "MIRROR", "comment": "Mangin back, reflection inside the glass"},
+    {"radius": -3000, "thickness": 335.68, "comment": "Mangin front again, refraction out into air, through the primary's hole"}
+  ]
+}

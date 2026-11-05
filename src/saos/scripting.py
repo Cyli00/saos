@@ -99,8 +99,8 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
 
         self._editing("solve")
         what, ref, param = parse_key(key)
-        if what != "surface" or not (param in ("radius", "thickness", "conic") or PAR_RE.match(param)):
-            raise SaosError(ErrorCode.BAD_ARGS, f"solves are set on <surface>.radius|thickness|conic|par<N>, got {key!r}")
+        if what != "surface" or not (param in ("radius", "thickness", "conic", "semi_diameter") or PAR_RE.match(param)):
+            raise SaosError(ErrorCode.BAD_ARGS, f"求解参数应为 <surface>.radius|thickness|conic|semi_diameter|par<N>，收到 {key!r}")
         allowed = SOLVE_PARAMETERS.get(kind)
         if allowed is None or set(parameters) - set(allowed) or not REQUIRED_SOLVE_PARAMETERS.get(kind, set()) <= set(parameters):
             raise SaosError(ErrorCode.BAD_ARGS, f"solve kinds and their parameters: {SOLVE_PARAMETERS}; "

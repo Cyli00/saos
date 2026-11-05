@@ -114,6 +114,28 @@ def test_aperture_outline_chord_and_extent():
     assert geometry.aperture({"type": "None"}, 0.4) == {"shape": "circle", "hx": 0.4, "hy": 0.4, "dx": 0.0, "dy": 0.0, "rmin": 0.0, "explicit": False}
 
 
+@pytest.mark.parametrize("spec", [
+    {"type": "CircularObscuration", "MinimumRadius": 0, "MaximumRadius": 15},
+    {"type": "CircularAperture", "MinimumRadius": 15, "MaximumRadius": 45},
+])
+def test_obscuration_does_not_remove_material_from_the_structural_domain(spec):
+    ap = geometry.aperture(spec, 45)
+    assert ap["hx"] == ap["hy"] == 45
+    assert ap["rmin"] == 0
+    masks = geometry.obscuration_paths(spec, 45)
+    assert len(masks["profile_y"]) == 1
+    assert masks["profile_y"][0][0] == pytest.approx((0, -15))
+    assert masks["profile_y"][0][-1] == pytest.approx((0, 15))
+
+
+def test_decentered_obscuration_profile_is_clipped_to_outer_edge():
+    masks = geometry.obscuration_paths({"type": "RectangularObscuration", "XHalfWidth": 2,
+                                        "YHalfWidth": 4, "ApertureYDecenter": 4}, 5)
+    assert masks["profile_y"][0][0] == pytest.approx((0, 0))
+    assert masks["profile_y"][0][-1] == pytest.approx((0, 5))
+    assert all(math.hypot(x, y) <= 5 + 1e-12 for line in masks["rim"] for x, y in line)
+
+
 def test_a_surface_whose_sag_is_undefined_inside_its_edge_is_found_from_radius_and_conic():
     # fiber-var-zoom 第 16 轮的 S4：双圆锥面的实数定义域只有几微米，半口径却是 125 µm，OpticStudio 不报错
     def row(i, kind, radius, conic, sd, mech=None):

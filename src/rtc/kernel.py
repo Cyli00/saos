@@ -231,6 +231,8 @@ def _clipped(ap, x, y):
     a = ap[1]
     b = ap[2]
     r2 = dx * dx + dy * dy
+    if code == 1 or code == 2 or code == 10:
+        r2 *= ap[6]
     if code == 1:
         return r2 > b * b or r2 < a * a
     if code == 2:
@@ -239,7 +241,7 @@ def _clipped(ap, x, y):
         n_arm = int(b)
         half = abs(a) * 0.5
         for k in range(n_arm):
-            th = math.pi * k / n_arm
+            th = -2.0 * math.pi * k / n_arm
             ct = math.cos(th)
             st = math.sin(th)
             if ct * dx + st * dy >= 0.0 and abs(-st * dx + ct * dy) <= half:
@@ -250,7 +252,7 @@ def _clipped(ap, x, y):
         return not inside if code == 4 else inside
     if code == 6 or code == 7:
         q = (dx * dx) / (a * a) + (dy * dy) / (b * b) if a != 0.0 and b != 0.0 else math.inf
-        return not (q < 1.0) if code == 6 else q < 1.0
+        return not (q < 1.0) if code == 6 else q <= 1.0
     r = ap[5]  # 浮动孔径
     return 0.0 < r * r and r * r < r2
 
@@ -278,16 +280,37 @@ def _refract(L, M, N, zx, zy, n1, n2):
 
 
 @njit(**_JIT)
+def _reflect(L, M, N, zx, zy):
+    """反射面：d′ = d − 2(d·N)N，法线取 ( −∂z/∂x, −∂z/∂y, 1 ) 并归一化。"""
+    nx = -zx
+    ny = -zy
+    nz = 1.0
+    norm = math.sqrt(nx * nx + ny * ny + nz * nz)
+    nx, ny, nz = nx / norm, ny / norm, nz / norm
+    dn = L * nx + M * ny + N * nz
+    if dn > 0.0:
+        nx, ny, nz = -nx, -ny, -nz
+        dn = -dn
+    g = -2.0 * dn
+    lt = L + g * nx
+    mt = M + g * ny
+    nt = N + g * nz
+    s = math.sqrt(lt * lt + mt * mt + nt * nt)
+    return lt / s, mt / s, nt / s
+
+
+@njit(**_JIT)
 def _paraxial_lens(L, M, N, X, Y, f, n1, n2):
     # 近轴薄透镜（OpticStudio 24.1 实测，面后为 N-BK7、N-SF6 时差 ≤ 7e-18）：n'·tan u' = n·tan u − y/f
     ux = (n1 * L / N - X / f) / n2
     uy = (n1 * M / N - Y / f) / n2
     s = math.sqrt(ux * ux + uy * uy + 1.0)
-    return ux / s, uy / s, 1.0 / s
+    sign = -1.0 if n2 < 0.0 else 1.0
+    return sign * ux / s, sign * uy / s, sign / s
 
 
 @njit(**_JIT)
-def _to_stop(kind, P, vz, nafter, n0, stop, X, Y, Z, L, M, N):
+def _to_stop(kind, P, vz, nafter, ref, n0, stop, X, Y, Z, L, M, N):
     """瞄准用：追到光阑面，返回交点 (x, y)；不裁剪、不算光程（同 trace._trace_wo_aim）。"""
     n_cur = n0
     for k in range(stop + 1):
@@ -301,24 +324,28 @@ def _to_stop(kind, P, vz, nafter, n0, stop, X, Y, Z, L, M, N):
             L, M, N = _paraxial_lens(L, M, N, X, Y, P[k, _FOCAL], n_cur, nafter[k])
         else:
             _, zx, zy = _sag(kind[k], P[k], X, Y)
-            L, M, N, _ = _refract(L, M, N, zx, zy, n_cur, nafter[k])
+            if ref[k]:
+                L, M, N = _reflect(L, M, N, zx, zy)
+            else:
+                L, M, N, _ = _refract(L, M, N, zx, zy, n_cur, nafter[k])
         n_cur = nafter[k]
     return X, Y
 
 
 @njit(**_JIT)
-def _aim(kind, P, vz, nafter, n0, stop, x0, y0, z0, L, M, N, tx, ty, h, cap):
-    """EPD 实际瞄准：调发射位置，使光线落在光阑面 (tx, ty)；差分雅可比的 2×2 Newton，步长限幅。"""
+def _aim(kind, P, vz, nafter, ref, n0, stop, x0, y0, z0, L, M, N, tx, ty, h, cap):
+    """EPD / Float By Stop Size 的实际瞄准：调发射位置，使光线落在光阑面 (tx, ty)；
+    差分雅可比的 2×2 Newton，步长限幅。"""
     for _ in range(60):
-        sx, sy = _to_stop(kind, P, vz, nafter, n0, stop, x0, y0, z0, L, M, N)
+        sx, sy = _to_stop(kind, P, vz, nafter, ref, n0, stop, x0, y0, z0, L, M, N)
         hx = sx - tx
         hy = sy - ty
         if not (math.isfinite(hx) and math.isfinite(hy)):
             break
         if _max(abs(hx), abs(hy)) < 1e-13:
             break
-        ax, ay = _to_stop(kind, P, vz, nafter, n0, stop, x0 + h, y0, z0, L, M, N)
-        bx, by = _to_stop(kind, P, vz, nafter, n0, stop, x0, y0 + h, z0, L, M, N)
+        ax, ay = _to_stop(kind, P, vz, nafter, ref, n0, stop, x0 + h, y0, z0, L, M, N)
+        bx, by = _to_stop(kind, P, vz, nafter, ref, n0, stop, x0, y0 + h, z0, L, M, N)
         jxx = (ax - sx) / h
         jyx = (ay - sy) / h
         jxy = (bx - sx) / h
@@ -336,12 +363,12 @@ def _aim(kind, P, vz, nafter, n0, stop, x0, y0, z0, L, M, N, tx, ty, h, cap):
 
 
 @njit(**_JIT)
-def _one(i, kind, P, AP, vz, nafter, index, n0, stop, x0, y0, z0, L0, M0, N0, aim, tx, ty, h, cap,
+def _one(i, kind, P, AP, vz, nafter, ref, sign, index, n0, stop, x0, y0, z0, L0, M0, N0, aim, tx, ty, h, cap,
          ox, oy, oz, ol, om, on, oopl, err, vig):
     S = kind.size
     X, Y, Z, L, M, N = x0[i], y0[i], z0[i], L0[i], M0[i], N0[i]
     if aim:
-        X, Y = _aim(kind, P, vz, nafter, n0, stop, X, Y, Z, L, M, N, tx[i], ty[i], h, cap)
+        X, Y = _aim(kind, P, vz, nafter, ref, n0, stop, X, Y, Z, L, M, N, tx[i], ty[i], h, cap)
     n_cur = n0
     opl = 0.0
     e = 0
@@ -354,7 +381,7 @@ def _one(i, kind, P, AP, vz, nafter, index, n0, stop, x0, y0, z0, L0, M0, N0, ai
             done = k
             break
         if k > 0:
-            opl = opl + n_cur * t
+            opl = opl + abs(n_cur) * t
         X = X + t * L
         Y = Y + t * M
         Z = Z + t * N
@@ -367,16 +394,20 @@ def _one(i, kind, P, AP, vz, nafter, index, n0, stop, x0, y0, z0, L0, M0, N0, ai
             n_cur = n2
         else:
             _, zx, zy = _sag(kind[k], P[k], X, Y)
-            L, M, N, tir = _refract(L, M, N, zx, zy, n_cur, n2)
-            if tir:
-                e = -index[k]
+            if ref[k]:
+                L, M, N = _reflect(L, M, N, zx, zy)
+            else:
+                L, M, N, tir = _refract(L, M, N, zx, zy, n_cur, n2)
+                if tir:
+                    e = -index[k]
             n_cur = n2
         ox[i, k] = X
         oy[i, k] = Y
         oz[i, k] = Z - vz[k]
-        ol[i, k] = L
-        om[i, k] = M
-        on[i, k] = N
+        # 对外报告的方向余弦带上 σ（反射一次翻一次），与 OpticStudio 批量追迹同口径；追迹内部仍用几何方向
+        ol[i, k] = L * sign[k]
+        om[i, k] = M * sign[k]
+        on[i, k] = N * sign[k]
         oopl[i, k] = opl
         if e != 0:
             done = k + 1
@@ -394,28 +425,29 @@ def _one(i, kind, P, AP, vz, nafter, index, n0, stop, x0, y0, z0, L0, M0, N0, ai
 
 
 @njit(**_JIT)
-def _trace_serial(kind, P, AP, vz, nafter, index, n0, stop, x0, y0, z0, L0, M0, N0, aim, tx, ty, h, cap,
+def _trace_serial(kind, P, AP, vz, nafter, ref, sign, index, n0, stop, x0, y0, z0, L0, M0, N0, aim, tx, ty, h, cap,
                   ox, oy, oz, ol, om, on, oopl, err, vig):
     for i in range(x0.size):
-        _one(i, kind, P, AP, vz, nafter, index, n0, stop, x0, y0, z0, L0, M0, N0, aim, tx, ty, h, cap,
+        _one(i, kind, P, AP, vz, nafter, ref, sign, index, n0, stop, x0, y0, z0, L0, M0, N0, aim, tx, ty, h, cap,
              ox, oy, oz, ol, om, on, oopl, err, vig)
 
 
 @njit(parallel=True, **_JIT)
-def _trace_parallel(kind, P, AP, vz, nafter, index, n0, stop, x0, y0, z0, L0, M0, N0, aim, tx, ty, h, cap,
+def _trace_parallel(kind, P, AP, vz, nafter, ref, sign, index, n0, stop, x0, y0, z0, L0, M0, N0, aim, tx, ty, h, cap,
                     ox, oy, oz, ol, om, on, oopl, err, vig):
     for i in prange(x0.size):
-        _one(i, kind, P, AP, vz, nafter, index, n0, stop, x0, y0, z0, L0, M0, N0, aim, tx, ty, h, cap,
+        _one(i, kind, P, AP, vz, nafter, ref, sign, index, n0, stop, x0, y0, z0, L0, M0, N0, aim, tx, ty, h, cap,
              ox, oy, oz, ol, om, on, oopl, err, vig)
 
 
 class Packed:
     """一个 OpticalSystem 的面数据，按内核布局排好。"""
 
-    __slots__ = ("kind", "P", "AP", "vz", "nafter", "index", "n0", "stop")
+    __slots__ = ("kind", "P", "AP", "vz", "nafter", "ref", "sign", "index", "n0", "stop")
 
-    def __init__(self, kind, P, AP, vz, nafter, index, n0, stop):
-        self.kind, self.P, self.AP, self.vz, self.nafter, self.index, self.n0, self.stop = kind, P, AP, vz, nafter, index, n0, stop
+    def __init__(self, kind, P, AP, vz, nafter, ref, sign, index, n0, stop):
+        self.kind, self.P, self.AP, self.vz, self.nafter, self.ref, self.sign = kind, P, AP, vz, nafter, ref, sign
+        self.index, self.n0, self.stop = index, n0, stop
 
 
 def pack(system) -> Packed | None:
@@ -426,7 +458,7 @@ def pack(system) -> Packed | None:
     S = len(items)
     kind = np.empty(S, np.int64)
     P = np.zeros((S, _NP))
-    AP = np.zeros((S, 6))
+    AP = np.zeros((S, 7))
     for k, it in enumerate(items):
         s = it.surface
         code = _KINDS.get(it.type)
@@ -458,13 +490,16 @@ def pack(system) -> Packed | None:
         ap = s.aperture_code
         if ap not in _APERTURES:
             return None
-        AP[k] = (ap, s.ap_min, s.ap_max, s.ap_dx, s.ap_dy, (it.semi or s.ap_max) if ap == 10 else 0.0)
+        epsilon = 1.0 - (1e-7 if it.is_stop and system.lens.ray_aiming > 0 else 1e-8)
+        AP[k] = (ap, s.ap_min, s.ap_max, s.ap_dx, s.ap_dy, (it.semi or s.ap_max) if ap == 10 else 0.0, epsilon)
         kind[k] = code
     vz = np.array([it.vertex_z for it in items], dtype=np.float64)
     nafter = np.array([it.n_after for it in items], dtype=np.float64)
+    ref = np.array([bool(it.reflect) for it in items], dtype=np.bool_)
+    sign = np.array([float(it.sign) for it in items], dtype=np.float64)
     index = np.array([it.index for it in items], dtype=np.int64)
     stop = -1 if system.stop is None else int(system.stop)
-    return Packed(kind, P, AP, vz, nafter, index, float(system.n_before(0)), stop)
+    return Packed(kind, P, AP, vz, nafter, ref, sign, index, float(system.n_before(0)), stop)
 
 
 def trace(packed: Packed, x0, y0, z0, d, aim: bool = False, tx=None, ty=None, aim_scale: float = 1.0):
@@ -487,8 +522,8 @@ def trace(packed: Packed, x0, y0, z0, d, aim: bool = False, tx=None, ty=None, ai
     out = [np.empty((n_ray, S)) for _ in range(7)]
     err = np.zeros(n_ray, np.int64)
     vig = np.zeros(n_ray, np.int64)
-    args = (packed.kind, packed.P, packed.AP, packed.vz, packed.nafter, packed.index, packed.n0, max(packed.stop, 0),
-            x0, y0, z0, L0, M0, N0, aim, tx, ty, h, cap, *out, err, vig)
+    args = (packed.kind, packed.P, packed.AP, packed.vz, packed.nafter, packed.ref, packed.sign, packed.index, packed.n0,
+            max(packed.stop, 0), x0, y0, z0, L0, M0, N0, aim, tx, ty, h, cap, *out, err, vig)
     if n_ray >= PARALLEL_MIN_RAYS:
         with _LOCK:
             _trace_parallel(*args)

@@ -46,7 +46,10 @@ def effl(system: OpticalSystem) -> float:
     m, n = float(block.m[0, -2]), float(block.n[0, -2])
     if m == 0.0:
         return float("inf")
-    return -h * n / m / abs(_image_index(system))
+    # RayBlock 的方向余弦乘过反射符号 σ，坐标系因此是左手的：把 m 乘回 σ 才是沿传播方向的角度。
+    # 单凹面镜 R = −800 时给 +400（= |R|/2），两次反射的系统不受影响。
+    sigma = float(system.items[-2].sign)
+    return -h * abs(n) * sigma / m / abs(_image_index(system))
 
 
 def isfn(system: OpticalSystem) -> float:
@@ -85,7 +88,11 @@ def tthi(lens, first: int, last: int, config: int = 1) -> float:
 
 def petzval_radius(system: OpticalSystem) -> float:
     """PETZ。手册：指定波长下的 Petzval 曲率半径，非近轴系统无效。按 Σφ/(n·n′) 求和（φ = c·(n′ − n)，理想透镜 φ = 1/f，
-    曲率取 y 截面的近轴曲率），半径 = −1/(n_像·Σ)。"""
+    曲率取 y 截面的近轴曲率），半径 = −1/(n_像·Σ)。
+
+    n、n′ 用带符号的折射率：反射面 n′ = −n，于是 φ = −2nc、n·n′ = −n²，两面都进 Σ；像方折射率取绝对值，
+    因为反射系统的符号只是记账（单凹面镜 R = −800 给 PETZ = +400，与 f = |R|/2 一致）。
+    """
     total = 0.0
     for k, it in enumerate(system.items[:-1]):
         n1, n2 = system.n_before(k), it.n_after
@@ -96,4 +103,4 @@ def petzval_radius(system: OpticalSystem) -> float:
         total += power / (n1 * n2)
     if total == 0.0:
         return float("inf")
-    return -1.0 / (_image_index(system) * total)
+    return -1.0 / (abs(_image_index(system)) * total)

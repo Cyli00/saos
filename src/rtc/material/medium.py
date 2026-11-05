@@ -9,10 +9,12 @@ from .air import n_air
 from .formulas import FORMULAS, wavelengths
 from .model import model_index
 from .thermal import delta_absolute_index
-from .types import Catalog, Environment, MaterialInvalid, MaterialSpec, MaterialUnsupported, Model
+from .types import Catalog, Environment, MaterialInvalid, MaterialSpec, MaterialUnsupported, Mirror, Model
 
 
 class Medium:
+    reflect = False
+
     def index(self, wavelength_um, environment: Environment):
         if not isinstance(environment, Environment):
             raise MaterialInvalid("材料计算须显式提供 Environment")
@@ -34,6 +36,18 @@ class Air(Medium):
 
     def path(self, environment):
         return "air"
+
+
+class MirrorMedium(Medium):
+    """反射面：光不穿过它，折射率取入射侧的值；带符号的记账在 ``rtc.system`` 里做。"""
+
+    reflect = True
+
+    def _index(self, w, env):
+        return np.ones_like(w)
+
+    def path(self, environment):
+        return "mirror"
 
 
 @dataclass(frozen=True)
@@ -89,12 +103,16 @@ class ModelGlass(Medium):
 def resolve(spec: MaterialSpec, catalog=None, catalogs=None) -> Medium:
     if spec is None:
         return Air()
+    if isinstance(spec, Mirror):
+        return MirrorMedium()
     if isinstance(spec, Model):
         return ModelGlass(spec)
     if not isinstance(spec, Catalog):
         raise MaterialInvalid(f"不支持的材料描述：{type(spec).__name__}")
-    if spec.name in ("MIRROR", "ABSORB") or spec.name.endswith(".ZTG"):
-        raise MaterialUnsupported(f"{spec.name}: 反射、吸收或表格介质尚未接入序列追迹")
+    if spec.name == "MIRROR":
+        return MirrorMedium()
+    if spec.name == "ABSORB" or spec.name.endswith(".ZTG"):
+        raise MaterialUnsupported(f"{spec.name}: 吸收或表格介质尚未接入序列追迹")
     if catalog is None:
         raise MaterialUnsupported(f"{spec.name}: 未提供玻璃目录")
     try:

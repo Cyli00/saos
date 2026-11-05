@@ -113,13 +113,24 @@ def test_settings_rtc_cannot_reproduce_are_refused(recorded, tmp_path):
     with pytest.raises(SaosError) as err:
         RtcBackend(LENS, tilted)
     assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED and "tilt" in err.value.message
-    for old, new, word in (("GLAS N-SF2", "GLAS MIRROR", "mirror"),
-                           # 物方 NA 的发射与瞄准没对上 OpticStudio（piB 差 0.096 mm）/ object space NA does not match OpticStudio
+    for old, new, word in (# 物方 NA 的发射与瞄准没对上 OpticStudio（piB 差 0.096 mm）/ object space NA does not match OpticStudio
                            ("ENPD 10", "OBNA 0.05", "entrance pupil diameter"),
-                           ("TYPE EVENASPH", "TYPE BINARY_2", "not reconciled")):
+                           ("TYPE EVENASPH", "TYPE BINARY_2", "not reconciled"),
+                           # 读得懂不等于放行：这些孔径只有候选验收 / readable apertures stay refused until reconciled
+                           ("TYPE EVENASPH", "TYPE EVENASPH\n  ELAP 2 1 0", "aperture code 6"),
+                           ("TYPE EVENASPH", "TYPE EVENASPH\n  SPID 0.5 4 0", "aperture code 3")):
         with pytest.raises(SaosError) as err:
             RtcBackend(_zmx_text(tmp_path, old, new))
         assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED and word in err.value.message, (new, err.value.message)
+
+
+def test_only_standard_mirrors_without_ray_aiming_are_admitted(tmp_path):
+    mirror = _zmx_text(tmp_path, "GLAS N-SF2", "GLAS MIRROR")
+    assert RtcBackend(mirror).lens.surface(2).mirror
+    mirror.write_text(mirror.read_text(encoding="utf-8").replace("RAIM 0 0", "RAIM 0 2", 1), encoding="utf-8")
+    with pytest.raises(SaosError) as err:
+        RtcBackend(mirror)
+    assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED and "real ray aiming" in err.value.message
 
 
 def test_swaps_follow_the_material_admission_table(tmp_path, monkeypatch):

@@ -40,6 +40,8 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
   - 交付（zemax 最后优化、交付轮测量、公差、报告）用 ZOS，许可不足时报告失败，不改用 rtc；`lens describe` 在 rtc 上出模型页，剖面图由 saos 用流程图窗口同一份 viz 数据画（2026-11-03 用户决定）。许可计数见技能 `references/session.md`。
   - `saos daemon use rtc|zos` 固定后端只在当时的流程阶段内有效，阶段一变自动回到按阶段选择；rtc 上没有 `ctx.system`，检查与脚本经 `ctx` 读写，rtc 算不了的判定条目列入 `backend_unsupported`。
   - 切换时镜头经 `.zmx` 交接后逐值比对，不一致仍交给 rtc、差异记为未对账（2026-10-30 用户决定）。
+  - rtc 按 `docs/plans/rtc-iris-mirror.md` 先补孔径光阑（Float By Stop Size，其光阑半口径可作设计变量、列为结构项）与同轴反射镜，各用 `tests/fixtures/cases/` 新增的专用案例 `iris`、`reflective` 对账；坐标断点与倾斜偏心在两者对账通过后单独立项；CODE V 只作语义交叉核对和优化基准，真值仍只认 OpticStudio（2026-11-04 用户决定）。第一版实现中质量不够的部分直接舍去、恢复拒绝并标为重修，从定义和实测重写，不在旧代码上补；`iris`、`reflective` 重设以覆盖后续验证，变体的 `.zmx` 文本与真值合并到 `tests/fixtures/cases/truth.json`，一个变体一行（2026-11-04 用户决定）。
+  - 实现 iris/mirror 计划时，优先整合代码，最后统一测试；并行写入停止后以当前工作区文件为准继续整合（2026-11-04 用户决定）。
   - 在 OpticStudio 上的脚本可用 rtc 内存副本 `ctx.fast()` 探索，结果推回后先用 OpticStudio 局部优化按评价函数收尾，再判定和记录轮次（2026-10-28 用户决定）；专家类用 rtc 做非球面排名与玻璃坐标。
 - **ZOS 原生镜头权威保存**：`.zmx` 由 OpticStudio 保存，包含当前处方、求解与评价函数；rtc 实例按 OpticStudio 24.1 的行格式写回它建模的部分（处方、变量、评价函数行），其余行原样带过去，没见过的行拒绝加载；JSON 处方只是建模输入。带 `.optiland.json` 的旧文件不可加载或覆盖，旧双后端任务不追加新计算证据。迁移时新建任务，按原处方重建或导入另存的 ZOS 原生镜头，重新确认与实测；不继承旧指标。
   - **脚本编辑只经公开 ZOS-API**：`ctx.merit_add`、`ctx.solve`、`ctx.insert_surface`、`ctx.change_surface_type` 直接改当前镜头；评价函数行经 `.MF` 文件整批载入并另存回读核对（1501 行由逐行 9.8 s 降到约 65 ms，2026-10-27 实测）。不调用 OpticStudio 未公开的内部组件（如 `ZemaxEngine.dll`）：接口无文档、随版本变化，且绕开许可计数。

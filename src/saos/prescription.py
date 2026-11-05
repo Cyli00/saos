@@ -419,7 +419,7 @@ def _surface(s: Any, name: str, image: bool = False) -> dict[str, Any]:
 
 def _fields(f: Any) -> dict[str, Any]:
     f = _dict(f, "fields")
-    _known(f, {"type", "y", "x", "weights", "normalization"}, "fields")
+    _known(f, {"type", "y", "x", "weights", "normalization", "vignetting"}, "fields")
     kind = _choice(f.get("type"), FIELDS, "fields.type")
     ys = [_finite(y, "fields.y") for y in _list(f.get("y"), "fields.y")]
     if not ys:
@@ -431,7 +431,34 @@ def _fields(f: Any) -> dict[str, Any]:
     if kind == "angle" and any(abs(v) >= 90 for v in xs + ys):
         raise _bad("fields: angle fields must stay below 90 degrees; use theodolite_angle beyond")
     return {"type": kind, "y": ys, "x": xs, "weights": weights,
-            "normalization": _choice(f.get("normalization", "radial"), NORMALIZATIONS, "fields.normalization")}
+            "normalization": _choice(f.get("normalization", "radial"), NORMALIZATIONS, "fields.normalization"),
+            "vignetting": _vignetting(f.get("vignetting"), len(ys))}
+
+
+VIGNETTING = ("vdx", "vdy", "vcx", "vcy", "van")
+
+
+def _vignetting(value: Any, count: int) -> dict[str, list[float]] | None:
+    """视场渐晕因子：{"vdx": [...], ...}，每项写一个数（所有视场共用）或每个视场一个数。
+
+    定义见 OpticStudio 手册「Vignetting Factors」：VDX/VDY 是入瞳偏心，VCX/VCY 是压缩比，VAN 是切向角（度）。
+    """
+    if value is None:
+        return None
+    d = _dict(value, "fields.vignetting")
+    _known(d, set(VIGNETTING), "fields.vignetting")
+    out: dict[str, list[float]] = {}
+    for key in VIGNETTING:
+        if key not in d:
+            out[key] = [0.0] * count
+            continue
+        raw = _list(d[key], f"fields.vignetting.{key}")
+        if len(raw) == 1:
+            raw = raw * count
+        if len(raw) != count:
+            raise _bad(f"fields.vignetting.{key} needs 1 or {count} values")
+        out[key] = [_finite(v, f"fields.vignetting.{key}") for v in raw]
+    return out
 
 
 def _afocal(value: Any) -> dict[str, Any] | None:
@@ -1078,9 +1105,13 @@ System fields
   aperture.type: object_na, entrance_pupil_diameter, image_f_number,
     working_f_number, object_cone_angle (half angle in degrees), float_by_stop.
     float_by_stop forbids value and requires semi_diameter on the stop surface.
+    FLOA 仅定义系统孔径；没有显式面孔径时，光阑半口径本身不挡光。
+    rtc 瞄准 off 时可用 ctx.solve("6.semi_diameter", "variable") 设置光阑变量；
+    目前仅在内存中保存变量标志，.zmx 保存半口径数值，重新加载后需重设变量。
   fields.type: object_height, angle (<90 degrees), paraxial_image_height,
     real_image_height, theodolite_angle. x defaults to 0 and weights to 1;
     normalization is radial (default) or rectangular.
+    vignetting: {"vdx", "vdy", "vcx", "vcy", "van"}, each one value or one per field.
   wavelengths: um and weights arrays; primary is a 1-based wavelength number.
   environment defaults: temperature 20 C, pressure 1 atm, adjust_index false.
   ray_aiming: off, paraxial, real.

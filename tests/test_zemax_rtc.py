@@ -18,6 +18,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from case_variants import truth
 from saos import fast as fast_mod
 from saos import prescription
 from saos.kit import KitMethods
@@ -140,6 +141,39 @@ def test_rtc_copy_matches_opticstudio_and_is_faster(zos, stop_behind):
           f"OpticStudio {timings['opticstudio']:.2f} s, rtc {timings['rtc']:.2f} s, "
           f"×{timings['opticstudio'] / timings['rtc']:.1f}")
     assert timings["rtc"] < timings["opticstudio"]
+
+
+CASES = Path(__file__).parent / "fixtures" / "cases"
+
+
+def _case(name: str) -> dict:
+    return json.loads((CASES / f"{name}.json").read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("name", ["iris", "reflective"])
+def test_case_copy_matches_opticstudio_ray_by_ray(zos, name):
+    """iris（Float By Stop Size + 面孔径）与 reflective（两次反射、负厚度、中心遮挡、穿过主镜孔）：
+    面 2 与像面逐条光线对照，并核对 EPDI、EFFL、WFNO 与自动半口径。"""
+    model = _case(name)
+    zos.build(prescription.normalize(model))
+    ctx = Ctx(zos)
+    fast = ctx.fast()
+    image = ctx.surface(-1)
+    fields = fast_mod.field_points(fast.backend.lens)
+    tol = 1e-6 if model["ray_aiming"] == "real" else 1e-9
+    reference = truth(name)
+
+    for to in (2, image):
+        diff = fast.compare(ctx, fields, wave=[1, 2, 3], grid=7, to=to)
+        print(f"\n[{name}] surface {to}: {diff}")
+        assert diff["ok_one_side"] == 0
+        assert max(diff["max_dx"], diff["max_dy"], diff["max_dz"]) < tol
+
+    for operand in ("EPDI", "EFFL", "WFNO"):
+        got = fast.backend.operand(operand, 0, 0, [])
+        want = ctx.op(operand, 0, 0)
+        assert got == pytest.approx(want, rel=1e-6), operand
+        assert got == pytest.approx(reference["operands"][operand], rel=1e-6), operand
 
 
 IN_DAEMON = '''
