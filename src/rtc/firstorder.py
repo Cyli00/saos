@@ -99,7 +99,7 @@ def petzval_radius(system: OpticalSystem) -> float:
         if it.type == "PARAXIAL":
             continue
         n1, n2 = system.n_before(k), it.n_after
-        total += system.curvature_axis(it, "y") * (n2 - n1) / (n1 * n2)
+        total += it.shape.vertex_curvature("y") * (n2 - n1) / (n1 * n2)
     if total == 0.0:
         return float("inf")
     return -1.0 / (abs(_image_index(system)) * total)

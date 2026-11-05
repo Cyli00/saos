@@ -17,7 +17,7 @@ import numpy as np
 
 from . import dual as D
 from . import geometry, kernel
-from .system import OpticalSystem, paraxial_rays
+from .system import OpticalSystem, na_pupil_radius, stop_transfer
 from .trace import aim_by_position, launched, paraxial_lens_phase
 
 
@@ -170,8 +170,7 @@ def _vector(value, P: int) -> np.ndarray:
 
 def _pupil(system: OpticalSystem, reference, primary: OpticalSystem, P: int):
     """入瞳半径和位置对变量的导数 (dr, dz_ep)，形状 (P,)。入瞳按主波长定（见 OpticalSystem.pupil_reference）。"""
-    a = D._as(paraxial_rays(reference, D.Dual.konst(1.0), D.Dual.konst(0.0))[system.stop][0])
-    b = D._as(paraxial_rays(reference, D.Dual.konst(0.0), D.Dual.konst(1.0))[system.stop][0])
+    a, b = (D._as(v) for v in stop_transfer(reference, system.stop))
     z_ep = b / a if abs(float(np.ravel(a.v)[0])) >= 1e-12 else None
     r = None
     if system.lens.aperture_type == "FLOA":
@@ -180,8 +179,7 @@ def _pupil(system: OpticalSystem, reference, primary: OpticalSystem, P: int):
             raise ValueError("光阑传递系数为零，半口径导数没有定义")
         r = reference[system.stop].semi / abs(a)
     elif system.lens.aperture_type == "OBNA" and z_ep is not None:
-        na = system.lens.aperture_value
-        r = abs(z_ep + (system.object_thickness if system.finite_object else 0.0)) * (na / np.sqrt(max(1e-300, 1.0 - na * na)))
+        r = na_pupil_radius(z_ep, system.object_thickness if system.finite_object else 0.0, system.lens.aperture_value)
     return _vector(r, P), _vector(z_ep, P)
 
 

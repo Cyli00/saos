@@ -50,7 +50,7 @@ def test_even_asphere_r2_term_adds_twice_its_value_to_the_paraxial_curvature():
     asphere = OpticalSystem(_lens(kind="EVENASPH", params={1: alpha}))
     standard = OpticalSystem(_lens(r1=1 / (1 / 50.0 + 2 * alpha)))
     assert firstorder.effl(asphere) == pytest.approx(firstorder.effl(standard), rel=1e-7)
-    assert asphere.curvature_axis(asphere.items[0], "y") == pytest.approx(1 / 50.0 + 2 * alpha, rel=1e-15)
+    assert asphere.items[0].shape.vertex_curvature("y") == pytest.approx(1 / 50.0 + 2 * alpha, rel=1e-15)
 
 
 def test_totr_and_tthi_sum_the_vertex_spacings():

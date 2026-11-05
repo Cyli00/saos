@@ -72,6 +72,16 @@ def paraxial_rays(items, y, u, n: float = 1.0, axis: str = "y"):
     return rows
 
 
+def stop_transfer(items, stop: int, axis: str = "y"):
+    """第 1 面到光阑面的近轴传递系数 (A, B)：y_stop = A·y1 + B·u1。入瞳、Float By Stop Size、OBNA 都由它们定义。"""
+    return paraxial_rays(items, 1.0, 0.0, axis=axis)[stop][0], paraxial_rays(items, 0.0, 1.0, axis=axis)[stop][0]
+
+
+def na_pupil_radius(z_ep, object_distance: float, na: float):
+    """OBNA 的入瞳半径：物点到入瞳的距离 × tanθ，物方 NA = sinθ（手册 §14.32，物方 n = 1）。"""
+    return abs(z_ep + object_distance) * (na / np.sqrt(max(1e-300, 1.0 - na * na)))
+
+
 class OpticalSystem:
     """一个结构、一个波长下的可追迹系统。
 
@@ -244,10 +254,6 @@ class OpticalSystem:
         return np.tan(np.radians(np.asarray(hx, dtype=float) * sx)), np.tan(np.radians(np.asarray(hy, dtype=float) * sy))
 
     # ---- 近轴 ----
-    def curvature_axis(self, it: "Item", axis: str) -> float:
-        """某一方向上的近轴曲率，规则在面型类里（geometry.Shape.vertex_curvature）。"""
-        return it.shape.vertex_curvature(axis)
-
     def _paraxial(self, y: float, u: float, k0: int = 0, n: float | None = None, axis: str = "y"):
         """逐面近轴追迹，见 :func:`paraxial_rays`。"""
         return paraxial_rays(self.items[k0:], y, u, self.n_before(k0) if n is None else n, axis)
@@ -331,8 +337,7 @@ class OpticalSystem:
         """从第 1 面到光阑面的近轴传递系数 B：y_stop = B·u0（锚在第 1 面轴上）。"""
         if self.stop is None:
             return 0.0
-        rows = self._paraxial(0.0, 1.0, axis=axis)
-        return rows[self.stop][0]
+        return stop_transfer(self.items, self.stop, axis)[1]
 
     def entrance_pupil(self) -> tuple[float, float]:
         """(入瞳相对第 1 面的位置 z_ep, 光阑的顶点 z)。z_ep=inf 表示入瞳在无穷远。"""
@@ -343,8 +348,7 @@ class OpticalSystem:
     def _find_entrance_pupil(self) -> tuple[float, float]:
         if self.stop is None:
             return 0.0, self.items[0].vertex_z
-        A = self._paraxial(1.0, 0.0)[self.stop][0]
-        B = self._paraxial(0.0, 1.0)[self.stop][0]
+        A, B = stop_transfer(self.items, self.stop)
         if abs(A) < 1e-12:
             return float("inf"), self.items[self.stop].vertex_z
         return B / A, self.items[self.stop].vertex_z
@@ -428,7 +432,7 @@ class OpticalSystem:
         if getattr(self, "_float_pupil_radius", None) is None:
             if self.stop is None:
                 raise NotImplementedError("系统里没有光阑面，Float By Stop Size 没有定义")
-            transfer = self._paraxial(1.0, 0.0)[self.stop][0]
+            transfer = stop_transfer(self.items, self.stop)[0]
             if not (np.isfinite(float(transfer)) and float(transfer) != 0.0):
                 raise NotImplementedError("第 1 面到光阑面的近轴传递系数为 0，Float By Stop Size 的入瞳半径无定义")
             self._float_pupil_radius = self.stop_semi_diameter() / abs(float(transfer))
@@ -452,13 +456,10 @@ class OpticalSystem:
             return self.lens.aperture_value / 2.0
         if self.lens.aperture_type == "FLOA":
             return self.float_stop_pupil_radius()
-        # OBNA：物方 NA = n·sin(近轴边缘光线角)（手册 §14.32，物方 n = 1）；入瞳半径 = 物点到入瞳的距离 × tanθ
         z_ep, _ = self.entrance_pupil()
-        na = self.lens.aperture_value
         if not np.isfinite(z_ep):
-            return float(na)
-        span = z_ep + (self.object_thickness if self.finite_object else 0.0)
-        return abs(span) * na / np.sqrt(max(1e-300, 1.0 - na * na))
+            return float(self.lens.aperture_value)
+        return na_pupil_radius(z_ep, self.object_thickness if self.finite_object else 0.0, self.lens.aperture_value)
 
     def pupil_reference(self) -> tuple[float, float]:
         """发射用的入瞳 (位置 z_ep, 半径 R)，按**主波长**定，所有波长共用。
