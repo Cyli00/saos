@@ -13,7 +13,7 @@ rtc（ray tracing core，`src/rtc/`）提供材料层与编译追迹内核；本
 - **错误码**：牌号不在在用目录、nd ≤ 0 或非有限、材料字典键不对 → `BAD_ARGS`；越过 LD、公式未实现、未准入、MIRROR/ZTG → `BACKEND_UNSUPPORTED`。
 - **材料值**：`get("N.material")` 在 ZOS 与 rtc 上对模型玻璃都返回 `{nd, vd, dpgf}`；rtc 的 `surfaces()` 写成文字 `MODEL nd vd dpgf`。
   `fast.push` 把 nd/vd/dpgf 的改动合成整块 `N.material` 写回。LD 不覆盖 F–C 线的目录玻璃（红外材料）没有可转模型的 nd/Vd，改 nd/vd 时拒绝。
-- **加速**：rtc 内核由 numba 编译（`RTC_KERNEL=numpy` 改走 numpy 参照实现，`RTC_THREADS` 设线程数，缺省为逻辑核数减 2）；
+- **加速**：rtc 内核由 numba 编译（`RTC_THREADS` 设线程数，缺省为逻辑核数减 2；numpy 参照实现已于 2026-11-05 删除，见 `rtc-unify.md`）；
   RtcBackend 跨改参数复用介质与折射率缓存，非主波长系统借主波长系统取光阑半径；`kit.spot` 用数组组织光线（ZOS 后端同样受益）。
 
 ## 扩大准入
@@ -40,7 +40,7 @@ LD 外的点只记录 OpticStudio 的值。某个环境失败记入 `failed_envi
 - 2026-10-28 已运行：`saos.rtc_golden`（SCHOTT OHARA HOYA CDGM NHG MISC，10 个样品、1,040 点，LD 内 1,001 点与 INDX 全部逐位相同）并 `--admit` 新增 13 条路径；`SAOS_RUN_ZEMAX=1 uv run pytest tests/test_zemax_rtc.py -q` 6 passed、1 skipped；rtc 的 `tools/compare_golden.py` 位置差 ≤ 1.1e-11 mm，OPL 差 2.96e-2 mm 为已知的 PARAXIAL 问题，`--aim` 下 piB 不收敛同 ADR-0014。
 - 证据已归档到 rtc 的 `fixtures/golden/material-indx`（summary.json、indx.jsonl 与 README），`tests/test_material_golden.py` 逐点回归；以后扩大准入照此归档，summary 现在会记下 `catalogs` 与每个样品的 `catalog`。
 - 2026-10-28 第二次采集（SCHOTT OHARA HOYA CDGM NHG MISC INFRARED BIREFRINGENT LZOS HIKARI MICRO_RESIST_TECHNOLOGY DOWSIL_MS；14 种目录玻璃 + 4 组模型、1,807 点，LD 内 1,677 点逐位相同）新准入公式 6、7、8、9、11、12、13 的 20 条路径，golden 已替换为这次的数据，准入表里 33 条证据改指它。仍未覆盖：公式 4、10（本机 Glasscat 没有这两种公式的玻璃）、公式 3 参考温度 25 °C 的玻璃、`catalog:13:pressure`。
-- 编译内核对 BICONIC/TOROIDAL/PARAXIAL 只与 numpy 实现同构，未在这些面型上逐条比较。
+- 编译内核对 BICONIC/TOROIDAL/PARAXIAL 当时只与 numpy 实现同构；numpy 实现删除后，这些面型由 `tests/rtc/test_omnibus_lock.py` 的快照和差分校验覆盖，仍未与 OpticStudio 逐条比较。
 - 已修（2026-10-28）：PARAXIAL 面的出射规则改为 OpticStudio 实测的 `n'·tan u' = n·tan u − y/f` 并更新当前折射率（面后为玻璃时
   此前像面差 2.6 mm）；光程差 2.96e-2 mm 是理想透镜相位混进了 opl，与折射率无关，现在 opl 与批量追迹同口径（≤ 2.1e-12 mm），
   相位在 `RayBlock.phase`。saos 建副本时不再拿 PARAXIAL 面的 conic 核对（ZOS-API 读作 inf、文件为 0），此前带 PARAXIAL 面的镜头都建不了副本。

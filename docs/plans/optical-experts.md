@@ -40,7 +40,7 @@ def run(ctx):
 - `AsphereProfile(surface_type=..., coefficients=(...), settings={...}, steps=(...))` 配置其他面型。QTypeAsphere 必须显式给出该版本的参数列、归一化设置和差分步长，不猜列号或类型选择器。
 - 默认从当前 MFE 行构造带权残差：`e_i = sign(value-target)·sqrt(contribution_i/100)·merit`。边界操作数（OPGT、OPLT、MNCT 等，`saos.ctx.rows` 生成的约束行都是）满足时贡献为 0，value-target 却不为 0，所以不按权重重算。正权重行贡献合计不为 100% 时要求提供 `residual(ctx)`；单个 scalar merit 不足以还原残差雅可比。
 - 有限差分每面需要 2×系数数量次残差计算，以及临时快照操作。默认步长按口径与阶数缩放，控制边缘 sag 扰动。
-- `engine="rtc"`（ADR-0015）：候选面在 OpticStudio 上转成零系数偶次非球面后交给 rtc 副本（`freeze_solves=True`，建立时与 OpticStudio 对照追迹）。残差是各视场、各有效波长 `grid`×`grid`（默认 7）光瞳内光线相对主波长主光线的像面横向偏差，按 √(视场权重×波长权重) 加权；雅可比由一次前向 AD 追迹给出，像面前一面厚度作对焦补偿从残差和各列投影掉。只接 EvenAspheric `par2…par12`，不接 `residual`、`slope_vector`；ADR-0014 拒绝的镜头在建副本时报 `BACKEND_UNSUPPORTED`；实际瞄准时 AD 把发射当常量，光阑前的候选面同样报 `BACKEND_UNSUPPORTED`。`run()` 的优化与接受仍按 MFE 在 OpticStudio 上做，两种 engine 的残差定义不同，排名可能不同。结果带 `engine`、`residual_rows`（参与排名的残差行数）、`rtc` 与 `agreement`。
+- `engine="rtc"`（ADR-0015）：候选面在 OpticStudio 上转成零系数偶次非球面后交给 rtc 副本（`freeze_solves=True`，建立时与 OpticStudio 对照追迹）。残差是各视场、各有效波长 `grid`×`grid`（默认 7）光瞳内光线相对主波长主光线的像面横向偏差，按 √(视场权重×波长权重) 加权；雅可比由一次前向 AD 追迹给出，像面前一面厚度作对焦补偿从残差和各列投影掉。只接 EvenAspheric `par2…par12`，不接 `residual`、`slope_vector`；ADR-0014 拒绝的镜头在建副本时报 `BACKEND_UNSUPPORTED`；实际瞄准时雅可比带瞄准解的隐函数项，光阑前的候选面不再拒绝（2026-11-05，已与中心差分核对，未与 OpticStudio 的排名对比）。`run()` 的优化与接受仍按 MFE 在 OpticStudio 上做，两种 engine 的残差定义不同，排名可能不同。结果带 `engine`、`residual_rows`（参与排名的残差行数）、`rtc` 与 `agreement`。
 - `candidate_filter(ctx, surface)` 可加入口径、厚度、曲率等限制；`feasible(ctx, surface)` 执行实际有效性判定，必须返回 bool。
 - 单面偏好、空气邻接与胶合面排除根据当前介质拓扑决定，不按面号奇偶猜元件。
 - `optimizer(ctx)` 可替换默认局部优化。默认复用 backend.optimize 的预算和取消处理。
