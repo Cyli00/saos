@@ -46,7 +46,7 @@
 | 单光线 RAID、RANG、RAGX、RAED | `operands__OO_RANG.c`、`operands__OO_RAED.c`、`operands__OO_RAGX.c` | 都是先 SetUpRay 再追迹，按操作数编号取不同分量；追迹失败时区分全反射和其他失败，给出不同错误码。手册：RANG 是光线折射或反射后与面法线的夹角 | 操作数值和全反射时的错误语义都要对账 |
 | QuickFocus | `analysis__QuickFocus.c`、`analysis__QuickFocus2.c`；`GetRms` 与 `focus` 未收录 | 从像面前一面开始向前查找，跳过带标志的面，调整找到的那个面上的一个长度字段，结束时写回每个结构的记录。某个系统标志为 0 时，先用光瞳 0.5 处的光线与光轴交点给出初值。之后最多迭代 10 次（调用方可另给次数）：步长逐次加倍直到 RMS 不再下降，再用三点抛物线求顶点。步长 ≤ 1e-6 时停止；第 3 次之后新 RMS > 0.9999 × 上次时也停止。判据（径向 / x / y / 波前）由 QuickFocus2 的参数选择 | 被调整的是哪个量、RMS 怎样采样，都要靠对账确定；先对齐点列径向 RMS |
 | ETVA、ETGT、MNET（SSAG 已验证） | `operands__OO_ETVA.c`、`operands__OO_MNET.c`、`operands__OO_SSAG.c` | `NOTES.md`：SSAG、ETVA 的几何计算全部在函数内完成，不调用外部函数 | 边缘取哪个半口径要对账；显式孔径与浮动孔径两种都要测 |
-| STRH | `operands__OO_STRH.c`、`psf__get_psf_data.c`；`get_strh` 未收录 | 采样参数被限制在 1–10。rtc 已有 `strh` 与 `opd_map` | 先厘清 PARAXIAL 面的 OPD 是否已修复：ADR-0014 记录与 golden 相差 2.96e-2 mm，rtc 的 GAP-ANALYSIS 第 3 节则称已对上（≤ 1e-5 waves） |
+| STRH | `operands__OO_STRH.c`、`psf__get_psf_data.c`；`get_strh` 未收录 | 采样参数被限制在 1–10。rtc 已有 `strh` 与 `opd_map` | 先厘清 PARAXIAL 面的 OPD 是否已修复：ADR-0014 记录与 golden 相差 2.96e-2 mm，rtc 的 `psf.opd_map` 则已对上 OPDC（≤ 1e-5 waves，2026-10-28） |
 
 ## 第二批
 

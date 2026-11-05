@@ -113,7 +113,7 @@ class MCEOperand:
     config: int
     value: float
     #: 值单元格之后的求解数据列（原样保留，列语义只部分标定）。三件最终镜头的 THIC 都没有求解；
-    #: 中间轮次出现过 pickup（scale −1 / offset 0.1），见 docs/plans/rtc/GAP-ANALYSIS.md「多重结构」。
+    #: 中间轮次出现过 pickup（scale −1 / offset 0.1），见 docs/plans/rtc/SURFACE-PARAMS.md「其它实测事实」。
     solve: list[float] = field(default_factory=list)
     raw: str = ""
     #: pickup 的 (scale, offset)：值 = scale·源厚度 + offset。
@@ -156,7 +156,7 @@ class Lens:
     surfaces: list[Surface] = field(default_factory=list)
     num_configs: int = 1
     #: 保存文件时选中的结构（``MNUM`` 第 2 个数）。实测：piA 1 / piB 1 / codex 5，
-    #: 与 golden ``info.csv`` 的 ``current_config`` 逐位一致（docs/plans/rtc/HANDOFF.md §6.4 说的就是这个）。
+    #: 与 golden ``info.csv`` 的 ``current_config`` 逐位一致（见 docs/plans/rtc/SURFACE-PARAMS.md「其它实测事实」）。
     current_config: int = 1
     mce: list[MCEOperand] = field(default_factory=list)
     mfe: list[MFERow] = field(default_factory=list)

@@ -1,7 +1,7 @@
 """操作数（都是追迹结果的后处理）。
 
 已验证：REAX / REAY / REAC / INDX / SSAG / EXPP / EXPD（对 oracle 批量追迹与操作数实测）。
-未验证：CTGT/CTLT/ETGT/MNET/MNCT/MNCA（定义按手册写，缺 oracle 对照，见 GAP-ANALYSIS）。
+未验证：CTGT/CTLT/ETGT/MNET/MNCT/MNCA（定义按手册写，缺 oracle 对照）。
 """
 
 from __future__ import annotations

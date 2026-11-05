@@ -15,9 +15,7 @@
 
 rtc 追迹内核的依据（文中的 `fixtures/`、`tools/`、`oracle/` 是原 rtc 仓库的路径）：
 
-- [rtc/SURFACE-PARAMS.md](rtc/SURFACE-PARAMS.md)：面型参数编号对照。
+- [rtc/SURFACE-PARAMS.md](rtc/SURFACE-PARAMS.md)：面型参数编号对照，以及其它实测事实和未定项。
 - [rtc/MATERIAL.md](rtc/MATERIAL.md)：材料与色散公式。
-- [rtc/GAP-ANALYSIS.md](rtc/GAP-ANALYSIS.md)：逐项差距。
-- [rtc/HANDOFF.md](rtc/HANDOFF.md)：追迹细节的排查记录。
 
 已取代的 Optiland 整合计划与实验留在提交历史里（`git log --oneline --grep optiland`）。其他待办见 [TODO.md](../../TODO.md)。
