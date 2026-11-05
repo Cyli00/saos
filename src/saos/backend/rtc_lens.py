@@ -241,19 +241,19 @@ def auto_semi_diameters(system, lens, config: int, waves: int, trace, *, experim
     sx, sy = system._field_scale()
     angles = np.linspace(0.0, 2.0 * np.pi, RIM_RAYS, endpoint=False)
     px, py = np.cos(angles), np.sin(angles)
+    hx = np.repeat([x / sx if sx else 0.0 for x, _, _ in lens.fields], RIM_RAYS)
+    hy = np.repeat([y / sy if sy else 0.0 for _, y, _ in lens.fields], RIM_RAYS)
+    px, py = np.tile(px, len(lens.fields)), np.tile(py, len(lens.fields))
     best: dict[int, float] = {}
-    for x, y, _ in lens.fields:
-        hx = x / sx if sx else 0.0
-        hy = y / sy if sy else 0.0
-        for w in range(1, waves + 1):
-            block = trace(w, np.full(RIM_RAYS, hx), np.full(RIM_RAYS, hy), px, py)
-            ok = block.error == 0
-            for k, index in enumerate(block.surface_index):
-                if not ok.any():
-                    continue
-                r = float(np.nanmax(np.hypot(block.x[ok, k], block.y[ok, k])))
-                if math.isfinite(r):
-                    best[index] = max(best.get(index, 0.0), r)
+    for w in range(1, waves + 1):
+        block = trace(w, hx, hy, px, py)
+        ok = block.error == 0
+        if not ok.any():
+            continue
+        radius = np.fmax.reduce(np.hypot(block.x[ok], block.y[ok]), axis=0)
+        for index, r in zip(block.surface_index, radius.tolist()):
+            if math.isfinite(r):
+                best[index] = max(best.get(index, 0.0), r)
     return best
 
 

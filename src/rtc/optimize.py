@@ -1,13 +1,6 @@
-"""阻尼最小二乘（DLS）。
+"""最小二乘设计：变量 → 系统 → 光线 → 残差和雅可比。雅可比走切向（:mod:`rtc.adtrace`），一次追迹给出全部变量列。
 
-雅可比走**前向自动微分**（:mod:`rtc.adtrace`）：一次追迹给出全部变量列，
-不再用中心差分。求交用隐函数定理 ``dt/dθ = −F_θ/F_t``，Newton 迭代本身不展开。
-
-Zemax 的 DLS 内部细节未公开，这里只做"算法同类"（ADR-0001 第 3 节）：
-阻尼系数初值、下降判据、收敛判据都是自定的，不保证与 OpticStudio 逐迭代相同。
-
-``lm`` 保持原来的调用方式（``lm(residual, x0)``），那时才会回退到中心差分；
-传 :class:`Design` 则用 AD。
+带约束的生产优化器是 :mod:`saos.backend.rtc_optim`。
 """
 
 from __future__ import annotations
@@ -92,63 +85,3 @@ class Design:
         from .adtrace import system_with_variables
 
         return system_with_variables(self.system, self.variables, theta)
-
-
-def lm(fun, x0, *, max_iter: int = 100, tol: float = 1e-12, lam0: float = 1e-3,
-       verbose: bool = False):
-    """最小化 ||residual(x)||²。
-
-    ``fun`` 可以是残差函数（返回 (m,) 数组，雅可比用中心差分），
-    也可以是 :class:`Design`（雅可比用 AD）。
-    """
-    has_ad = isinstance(fun, Design)
-    residual = fun.residual if has_ad else fun
-
-    x = np.asarray(x0, dtype=float).copy()
-    r = np.asarray(residual(x), dtype=float).ravel()
-    cost = float(r @ r)
-    lam = lam0
-    dx = np.zeros_like(x)
-    it = 0
-    for it in range(max_iter):
-        if has_ad:
-            r, J = fun.jacobian(x)
-            r = np.asarray(r, dtype=float).ravel()
-        else:
-            J = _jacobian(residual, x, r)
-        A = J.T @ J
-        g = J.T @ r
-        improved = False
-        for _ in range(12):
-            try:
-                dx = np.linalg.solve(A + lam * np.diag(np.maximum(np.diag(A), 1e-12)), -g)
-            except np.linalg.LinAlgError:
-                lam *= 10.0
-                continue
-            rn = np.asarray(residual(x + dx), dtype=float).ravel()
-            cn = float(rn @ rn)
-            if cn < cost:
-                x, r, cost = x + dx, rn, cn
-                lam = max(lam / 3.0, 1e-12)
-                improved = True
-                break
-            lam *= 10.0
-        if verbose:
-            print(f"  iter {it:3d} cost={cost:.6e} lam={lam:.1e}")
-        if not improved or np.max(np.abs(dx)) < tol:
-            break
-    return x, cost, it + 1
-
-
-def _jacobian(residual, x, r0):
-    """中心差分雅可比（只在 ``lm`` 拿到普通残差函数时用）。"""
-    n = x.size
-    J = np.zeros((r0.size, n))
-    for i in range(n):
-        h = 1e-7 * max(1.0, abs(x[i]))
-        xp = x.copy()
-        xp[i] += h
-        xm = x.copy()
-        xm[i] -= h
-        J[:, i] = (np.asarray(residual(xp)).ravel() - np.asarray(residual(xm)).ravel()) / (2 * h)
-    return J

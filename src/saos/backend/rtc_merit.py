@@ -147,8 +147,10 @@ class Segment:
     lo: int
     hi: int
     groups: dict[int, list[int]]
-    pupils: dict[tuple, tuple[np.ndarray, np.ndarray, dict]]
+    pupils: dict[tuple, dict]
     wavefront: set[tuple]
+    # 波长 → 这一波长所有视场拼成的一批 (px, py, hx, hy) / wave → one batch of all its fields
+    batches: dict[int, tuple[np.ndarray, ...]]
 
 
 class Evaluator:
@@ -182,9 +184,15 @@ class Evaluator:
                     points[point] = len(points)
                 if row.type in WAVEFRONT:
                     wavefront.add(key)
-        pupils = {key: (np.array([p[0] for p in points]), np.array([p[1] for p in points]), points)
-                  for key, points in wanted.items()}
-        return Segment(lo, hi, _groups(rows, lo, hi), pupils, wavefront)
+        rays: dict[int, list[tuple[float, float, float, float]]] = {}
+        spans = {}
+        for key, points in wanted.items():
+            batch = rays.setdefault(key[0], [])
+            spans[key] = slice(len(batch), len(batch) + len(points))
+            batch += [(px, py, key[1], key[2]) for px, py in points]
+        batches = {wave: tuple(np.array(batch).T) for wave, batch in rays.items()}
+        pupils = {key: {"index": points, "rays": spans[key]} for key, points in wanted.items()}
+        return Segment(lo, hi, _groups(rows, lo, hi), pupils, wavefront, batches)
 
     # 每次求值前检查一遍能不能算，免得优化跑到一半才发现 / checked once before evaluating, not mid-optimisation
     @staticmethod
@@ -280,15 +288,18 @@ class Evaluator:
         out = {}
         backend = self.backend
         waves = len(backend.lens.active_wavelengths)
-        for key, (px, py, points) in segment.pupils.items():
-            wave, hx, hy = key
+        whole = {}
+        for wave, batch in segment.batches.items():
             if not 1 <= wave <= waves:
                 raise SaosError(ErrorCode.BAD_ARGS, f"merit rows use wavelength {wave}; the lens has 1–{waves}")
-            system = backend._system(wave)
             try:
-                block = trace(system, px, py, hx, hy)
+                whole[wave] = trace(backend._system(wave), *batch)
             except NotImplementedError as exc:
                 raise unsupported(f"rtc: {exc}") from exc
+        for key, pupil in segment.pupils.items():
+            points = pupil["index"]
+            system = backend._system(key[0])
+            block = whole[key[0]].part(pupil["rays"])
             image = len(system.items) - 1
             ok = (block.error == 0) & (block.vig == 0)
             entry = {"index": points, "block": block, "system": system, "x": block.x[:, image], "y": block.y[:, image], "ok": ok,
@@ -299,7 +310,7 @@ class Evaluator:
                 except NotImplementedError as exc:
                     raise unsupported(f"rtc: {exc}") from exc
                 except ValueError as exc:
-                    opd, good = np.full(len(px), np.nan), np.zeros(len(px), dtype=bool)
+                    opd, good = np.full(len(points), np.nan), np.zeros(len(points), dtype=bool)
                     entry["opd_error"] = str(exc)
                 entry["opd"] = opd / (system.wavelength * 1e-3)
                 entry["opd_ok"] = good

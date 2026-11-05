@@ -19,7 +19,7 @@ import numpy as np
 from case_variants import CASES, pupil_grid
 from rtc import firstorder, zmx
 from rtc.adtrace import Variable
-from rtc.optimize import Design, lm
+from rtc.optimize import Design
 from rtc.system import OpticalSystem
 from rtc.trace import trace
 from saos.backend import rtc_lens
@@ -168,6 +168,30 @@ class TimedDesign(Design):
             raise ValueError("rtc 候选的雅可比不是有限值")
         self._keep_best(theta, r)
         return r, jacobian
+
+
+def lm(design: Design, x0, *, max_iter: int, tol: float = 1e-12, lam0: float = 1e-3):
+    """基准里 rtc 一侧的无约束阻尼最小二乘，只负责走到 ``design.best``。"""
+    x = np.asarray(x0, dtype=float).copy()
+    cost = float(np.sum(design.residual(x) ** 2))
+    lam = lam0
+    for _ in range(max_iter):
+        r, jacobian = design.jacobian(x)
+        hessian = jacobian.T @ jacobian
+        gradient = jacobian.T @ r
+        improved = False
+        for _ in range(12):
+            dx = np.linalg.solve(hessian + lam * np.diag(np.maximum(np.diag(hessian), 1e-12)), -gradient)
+            trial = float(np.sum(design.residual(x + dx) ** 2))
+            if trial < cost:
+                x, cost = x + dx, trial
+                lam = max(lam / 3.0, 1e-12)
+                improved = True
+                break
+            lam *= 10.0
+        if not improved or np.max(np.abs(dx)) < tol:
+            break
+    return x, cost
 
 
 class Context(KitMethods):

@@ -7,7 +7,8 @@
 - :mod:`rtc.trace`：发射与瞄准约定、RayBlock、理想透镜相位
 - :mod:`rtc.psf`：出瞳、OPD、FFT/Huygens PSF、Strehl/STRH
 - :mod:`rtc.operands`：派生操作数
-- :mod:`rtc.adtrace` / :mod:`rtc.optimize`：前向 AD 与 DLS
+- :mod:`rtc.adtrace`：优化雅可比，给内核的单步播设计变量的切向种子
+- :mod:`rtc.optimize`：最小二乘设计（残差和雅可比），带约束的生产优化器在 :mod:`saos.backend.rtc_optim`
 - :mod:`rtc.cli`：``uv run python -m rtc.cli sag|trace|psf`` 命令行
 
 逐项差距见 ``docs/plans/rtc/GAP-ANALYSIS.md``。

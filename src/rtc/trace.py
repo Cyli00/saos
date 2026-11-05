@@ -43,6 +43,11 @@ class RayBlock:
     vig: np.ndarray    # int，0 = 未渐晕·未遮挡
     surface_index: list[int]
 
+    def part(self, rays: slice) -> "RayBlock":
+        """一段连续光线的视图，不复制。"""
+        return RayBlock(self.x[rays], self.y[rays], self.z[rays], self.l[rays], self.m[rays], self.n[rays], self.opl[rays],
+                        self.phase[rays], self.error[rays], self.vig[rays], self.surface_index)
+
     def at(self, surf: int) -> dict:
         k = self.surface_index.index(surf)
         return {

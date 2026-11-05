@@ -291,7 +291,7 @@ def test_batched_ray_operands_match_individual_operands(monkeypatch):
 
 
 @needs_glass
-def test_wavefront_evaluation_uses_one_trace_per_field_and_wavelength(monkeypatch):
+def test_wavefront_evaluation_uses_one_trace_per_wavelength(monkeypatch):
     from rtc import trace as trace_module
     from rtc.psf import opd_rays
 
@@ -314,7 +314,7 @@ def test_wavefront_evaluation_uses_one_trace_per_field_and_wavelength(monkeypatc
     monkeypatch.setattr(trace_module, "trace", counted)
     result = evaluator.evaluate()
     assert [v for row, v in zip(rows, result.values) if row.type == "OPDC"] == pytest.approx(expected, abs=1e-9)
-    assert len(calls) == len(backend.lens.fields) * len(backend.lens.active_wavelengths)
+    assert len(calls) == len(backend.lens.active_wavelengths)
 
 
 @needs_glass

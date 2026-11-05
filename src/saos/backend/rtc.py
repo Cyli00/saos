@@ -881,6 +881,9 @@ class RtcBackend(Backend):
                             "adjust_index": lens.environment.adjust},
         }
 
+    def surface_count(self) -> int:
+        return len(self._need_lens().surfaces)
+
     def surfaces(self) -> list[dict[str, Any]]:
         self._need_lens()
         return [{"index": s.index, "type": s.type, "comment": s.comment, "radius": self._radius(s),
