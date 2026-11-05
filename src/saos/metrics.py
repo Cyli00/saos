@@ -221,7 +221,7 @@ for _id, _name, _unit, _op in (
     ("entrance_pupil_position", "入瞳位置", "mm", "ENPP"),
     ("exit_pupil_diameter", "出瞳直径", "mm", "EXPD"),
     ("exit_pupil_position", "出瞳位置", "mm", "EXPP"),
-    ("petzval", "Petzval 曲率", "1/mm", "PETZ"),
+    ("petzval", "Petzval 半径", "mm", "PETZ"),
 ):
     CATALOG[_id] = Metric(_id, _name, _unit, "scalar", _operand(_op), {"wave": WAVE}, operand=_op)
 
