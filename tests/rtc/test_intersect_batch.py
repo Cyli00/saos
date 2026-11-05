@@ -1,5 +1,5 @@
-"""求交的两种独立解法互相核对：各面型的 intersect_batch（二次曲面闭式解、非球面从闭式解起的 Newton）与通用的
-bracket_newton，并检查交点满足矢高方程。只能抓实现错误，不替代 oracle 回归。
+"""求交的两种独立解法互相核对：各面型自己的求交方式（二次曲面闭式解、非球面从闭式解起的 Newton）与通用的括号保护
+Newton，并检查交点满足矢高方程。只能抓实现错误，不替代 oracle 回归。
 
 与 OpticStudio 的对照见 tools/compare_golden.py（三件历史镜头）和 saos 的 tests/test_zemax_rtc.py（4 面双胶合）。
 """
@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from rtc import geometry
+from rtc import geometry, kernel
 from rtc.zmx import Surface
 
 
@@ -32,12 +32,11 @@ def _rays(n: int = 400, seed: int = 7):
 def test_shape_solver_matches_the_general_solver(surface):
     shape = geometry.make(surface)
     rays = _rays()
-    t_batch = shape.intersect_batch(*rays)
-    t_general = geometry.bracket_newton(shape.sag, *rays)
+    t_batch = kernel.intersect(shape.mode, shape.row(), *rays)
+    t_general = kernel.intersect(kernel.BRACKET, shape.row(), *rays)
     hit = np.isfinite(t_batch)
     assert hit.mean() > 0.9 and np.isfinite(t_general[hit]).all()
     assert np.max(np.abs(t_batch[hit] - t_general[hit])) < 1e-10
-    assert shape.intersect_value(*(float(a[0]) for a in rays)) == t_batch[0]
     # 交点满足矢高方程 / the intersection satisfies the sag equation
     x = rays[0] + t_batch * rays[3]
     y = rays[1] + t_batch * rays[4]
@@ -49,5 +48,5 @@ def test_shape_solver_matches_the_general_solver(surface):
 def test_conic_miss_is_nan():
     shape = geometry.make(Surface(index=1, type="STANDARD", curvature=1 / 5.0))
     # 半径 5 的球，离轴 8 mm 平行入射：错过曲面 / a ray 8 mm off axis misses a sphere of radius 5
-    t = shape.intersect_batch([8.0, 1.0], [0.0, 0.0], [-10.0, -10.0], [0.0, 0.0], [0.0, 0.0], [1.0, 1.0])
+    t = kernel.intersect(shape.mode, shape.row(), [8.0, 1.0], [0.0, 0.0], [-10.0, -10.0], [0.0, 0.0], [0.0, 0.0], [1.0, 1.0])
     assert np.isnan(t[0]) and np.isfinite(t[1])

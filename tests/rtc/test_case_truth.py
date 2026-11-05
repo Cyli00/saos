@@ -1,6 +1,6 @@
 """rtc 与 OpticStudio 真值逐条比对；真值由 tests/test_zemax_cases.py 录入，这里只回放，不启动 OpticStudio。
 
-比对的是位置、方向、错误码、渐晕码、光程、一阶量、自动半口径和波前，内核和 RTC_KERNEL=numpy 两条路径都跑。
+比对的是位置、方向、错误码、渐晕码、光程、一阶量、自动半口径和波前。
 通过不代表生产放行：准入由 saos.backend.rtc 的 _file_problems 决定。
 覆盖自检断言真值本身有判别力，案例改坏了（比如视场全被挡、孔径碰不到光线）会直接报错。
 """
@@ -73,20 +73,11 @@ def _compare(systems, truth_rows, surface: int, *, position_tol=POSITION_TOL, di
     assert np.abs(got[alive, 5:8] - want[alive, 5:8]).max(initial=0.0) < direction_tol
 
 
-@pytest.fixture(params=["kernel", "numpy"])
-def path(request, monkeypatch):
-    if request.param == "numpy":
-        monkeypatch.setenv("RTC_KERNEL", "numpy")
-    else:
-        monkeypatch.delenv("RTC_KERNEL", raising=False)
-    return request.param
-
-
 # ---------------------------------------------------------------- 光线、光程、一阶量
 
 
 @pytest.mark.parametrize("name", RAY_VARIANTS)
-def test_rays_match_opticstudio_at_the_image_and_surface_by_surface(name, path):
+def test_rays_match_opticstudio_at_the_image_and_surface_by_surface(name):
     record = _truth(name)
     lens = _lens(name)
     systems = _systems(lens)
@@ -132,7 +123,7 @@ def test_real_aiming_changes_the_recorded_expd():
 
 
 @pytest.mark.parametrize("name", ["iris_vignetting", "iris_set_vignetting"])
-def test_off_table_fields_match_opticstudio(name, path):
+def test_off_table_fields_match_opticstudio(name):
     record = _truth(name)
     _compare(_systems(_lens(name)), record["off_table"], record["image_surface"])
 
@@ -166,26 +157,17 @@ def test_aperture_roundtrip_uses_recorded_native_format(variant):
     _compare(_systems(loaded), _truth(variant.name)["rays"], max(s.index for s in loaded.surfaces))
 
 
-def _clipped_on_path(system, item, x, y, aiming, path) -> list[bool]:
-    if path == "numpy":
-        return aperture_clipped(item, x, y, aiming=aiming).tolist()
-    from rtc.kernel import _clipped, pack
-
-    ap = pack(system).AP[system.items.index(item)]
-    return [bool(_clipped(ap, a, b)) for a, b in zip(x, y)]
-
-
-def test_spider_has_four_opposite_arms(path):
+def test_spider_has_four_opposite_arms():
     system = OpticalSystem(_lens("iris_spider_decentred"))
     item = next(it for it in system.items if it.surface.aperture_code == 3)
     x = np.array([1.0, -1.0, 0.0, 0.0, 1.0, -1.0]) + item.surface.ap_dx
     y = np.array([0.0, 0.0, 1.0, -1.0, 1.0, -1.0]) + item.surface.ap_dy
-    assert _clipped_on_path(system, item, x, y, False, path) == [True, True, True, True, False, False]
+    assert aperture_clipped(item, x, y).tolist() == [True, True, True, True, False, False]
 
 
 @pytest.mark.parametrize("aiming", [False, True])
 @pytest.mark.parametrize("code", [1, 2, 10])
-def test_circular_edges_follow_gold_standard_squared_radius_tolerance(code, aiming, path):
+def test_circular_edges_follow_gold_standard_squared_radius_tolerance(code, aiming):
     lens = _lens("iris")
     lens.ray_aiming = 2 if aiming else 0
     stop = lens.surface(lens.stop_index)
@@ -197,15 +179,15 @@ def test_circular_edges_follow_gold_standard_squared_radius_tolerance(code, aimi
     expected = {1: [True, False, False, False, True],
                 2: [False, True, True, True, False],
                 10: [False, False, False, False, True]}[code]
-    assert _clipped_on_path(system, system.items[system.stop], x, np.zeros_like(x), aiming, path) == expected
+    assert aperture_clipped(system.items[system.stop], x, np.zeros_like(x), aiming=aiming).tolist() == expected
 
 
-def test_elliptical_obscuration_includes_its_boundary(path):
+def test_elliptical_obscuration_includes_its_boundary():
     lens = _lens("iris")
     stop = lens.surface(lens.stop_index)
     stop.aperture_code, stop.ap_min, stop.ap_max = 7, 2.0, 1.0
     system = OpticalSystem(lens)
-    assert _clipped_on_path(system, system.items[system.stop], np.array([2.0]), np.array([0.0]), False, path) == [True]
+    assert aperture_clipped(system.items[system.stop], [2.0], [0.0])[0]
 
 
 # ---------------------------------------------------------------- 自动半口径
@@ -240,7 +222,7 @@ def test_experimental_adaptive_sampling_is_bounded():
 
 
 @pytest.mark.parametrize("name", [v.name for v in ALL if v.opd])
-def test_experimental_opdc_matches_opticstudio(name, path):
+def test_experimental_opdc_matches_opticstudio(name):
     system = OpticalSystem(_lens(name))
     for field in _truth(name)["opd"]:
         rows = np.asarray(field["rows"], dtype=float)

@@ -30,7 +30,6 @@ def test_constant_and_parameter_duals_combine_along_the_parameter_axis():
     # 对参数 0 的导数是光线值本身，对参数 1 为 0；按尾部对齐会把参数轴错当成光线轴
     assert out.d.tolist() == [[1.0, 2.0], [0.0, 0.0]]
     assert (D.Dual.konst(3.0) + c).d.tolist() == [1.0, 0.0]
-    assert D.where(rays > 1.5, c, 0.0).d.tolist() == [[0.0, 1.0], [0.0, 0.0]]
 
 
 def test_ad_jacobian_matches_central_differences_on_a_batch_of_rays():

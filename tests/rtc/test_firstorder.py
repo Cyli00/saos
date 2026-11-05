@@ -82,7 +82,7 @@ def test_finite_object_launch_needs_the_unverified_switch():
 def test_object_height_field_starts_at_that_height():
     lens = _lens(object_thickness=100.0, aperture=("OBNA", 0.05), field_type="OP1")
     system = OpticalSystem(lens, allow_unverified=True)
-    from rtc.trace import _launch
+    from rtc.trace import launch
 
-    x0, y0, z0, _ = _launch(system, np.array([0.0]), np.array([0.0]), np.array([0.0]), np.array([1.0]))
+    x0, y0, z0, _ = launch(system, np.array([0.0]), np.array([0.0]), np.array([0.0]), np.array([1.0]))
     assert (float(x0[0]), float(y0[0]), float(z0[0])) == (0.0, 1.0, -100.0)

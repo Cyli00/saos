@@ -1,37 +1,24 @@
-"""自动微分追迹：给 DLS 提供雅可比。
+"""优化雅可比：给 rtc.kernel 的单步播下设计变量的切向种子，一次追迹得到全部变量列。
 
-设计（见 docs/plans/rtc/HANDOFF.md §8.2）：
+求交按隐函数定理 ``dt/dθ = −F_θ/F_t``，Newton 迭代本身不展开。发射对变量的依赖分三类：
 
-1. **求交**只用值做（与 float 路径同一套括号 + Newton 混合，初值也相同），
-   然后把解 ``t`` 当隐函数：``F(x0+t·l, y0+t·m) − (z0+t·n) = 0``，
-   由隐函数定理
-
-   ``dt/dθ = −F_θ / F_t``，``F_t = (∂z/∂x)·l + (∂z/∂y)·m − n``
-
-   其中 ``F_θ`` 是 ``t`` 固定时对参数的偏导（参数已经以 ``Dual`` 的形式挂在面型上，
-   所以这一步就是普通的 Dual 算术）。Newton 迭代本身不展开。
-2. **折射**用 ``dual.sqrt`` / ``dual.where`` 把整条链前向传播。
-3. **向量化切向**：每个变量占一个切向分量，一次追迹就得到全部雅可比列。
-
-明确不做的（不静默降级，调用方自己决定要不要用）：
-
-- ``BINARY_2`` 的衍射相位不参与求导（相位梯度对参数的导数没有传播；面形与折射仍然求导）。
-  三件最终镜头没有 Binary2 面，中间轮次才有。
-- 实际光线瞄准（``RAIM = 2``）与 ``OBNA`` 的发射环节不参与求导：取 float 瞄准/发射结果
-  后当成常量。三件最终镜头里只有 piB 是 ``RAIM = 2``。
+- 入瞳位置和半径：由光瞳的近轴量给出（``_pupil``）；
+- 有限物距的发射方向：朝向随变量移动的入瞳；
+- 实际瞄准：发射量 a 由 ``G(a, θ) = stop(a, θ) − target(θ) = 0`` 决定，``da/dθ = −J⁻¹·(∂stop/∂θ − ∂target/∂θ)``。
+  a 多占两个切向分量一起走完，到终点再线性组合，不用追两遍。
 """
 
 from __future__ import annotations
 
 import copy
-import math
 from dataclasses import dataclass, replace
 
 import numpy as np
 
 from . import dual as D
-from . import geometry
-from .system import OpticalSystem
+from . import geometry, kernel
+from .system import OpticalSystem, paraxial_rays
+from .trace import aim_by_position, launched, paraxial_lens_phase
 
 
 @dataclass(frozen=True)
@@ -80,186 +67,6 @@ def variables_from_lens(system: OpticalSystem) -> list[Variable]:
     return out
 
 
-class ADBlock:
-    """AD 追迹结果：每个面一列 ``Dual``（切向轴长 = 变量个数）。"""
-
-    def __init__(self, cols: dict[str, list], surface_index: list[int]):
-        self.cols = cols
-        self.surface_index = surface_index
-
-    def at(self, surf: int) -> dict:
-        j = self.surface_index.index(surf)
-        return {name: vals[j] for name, vals in self.cols.items()}
-
-
-def thickness_sensitivity(system: OpticalSystem, variables: list[Variable], theta) -> np.ndarray:
-    """各面厚度对变量的导数，形状 (面数, 变量数)。多重结构的 pickup 让一个面的厚度跟着另一个面走，
-    所以不一定是对角阵；厚度对变量线性，变量加 1 后重建系统读差值就是精确导数。"""
-    out = np.zeros((len(system.items), len(variables)))
-    thickness = [j for j, v in enumerate(variables) if v.field == "thickness"]
-    if not any(row.pickup for row in system.lens.mce):
-        for j in thickness:
-            out[variables[j].item, j] = 1.0
-        return out
-    base = np.array([it.thickness for it in system.items], dtype=float)
-    for j in thickness:
-        probe = np.array(theta, dtype=float)
-        probe[j] += 1.0
-        changed = system_with_variables(system, variables, probe)
-        with np.errstate(invalid="ignore"):
-            out[:, j] = np.nan_to_num(np.array([it.thickness for it in changed.items], dtype=float) - base)
-    return out
-
-
-def _dual_items(system: OpticalSystem, variables: list[Variable], theta):
-    """把参数值塞进面属性，返回 (Dual 化的 items, 参数个数)。
-
-    每个 item 都是浅拷贝：``surface`` 与 ``surface.params`` 是新对象，原件不动。
-    """
-    p = len(variables)
-    tang = {v.key(): D.Dual.param(float(theta[i]), i, p) for i, v in enumerate(variables)}
-    thickness = thickness_sensitivity(system, variables, theta)
-    items = []
-    z = D.Dual.konst(0.0)
-    for k, it in enumerate(system.items):
-        surf = copy.copy(it.surface)
-        surf.params = dict(it.surface.params)
-        surf.curvature = tang.get((k, "curvature", 0), D.Dual.konst(it.surface.curvature))
-        surf.conic = tang.get((k, "conic", 0), D.Dual.konst(it.surface.conic))
-        for (i, field, pa), val in tang.items():
-            if i == k and field == "param":
-                surf.params[pa] = val
-        thick = D.Dual(np.asarray(it.thickness, dtype=np.float64), thickness[k].copy()) if thickness[k].any() else D.Dual.konst(it.thickness)
-        focal = it.focal
-        if it.type == "PARAXIAL" and focal is not None:
-            focal = surf.params.get(1, focal)
-        new = replace(it, surface=surf, shape=geometry.make(surf), thickness=thick,
-                      vertex_z=z, focal=focal,
-                      semi=tang.get((k, "semi_diameter", 0), D.Dual.konst(it.semi)))
-        items.append(new)
-        tv = thick.v if isinstance(thick, D.Dual) else thick
-        if np.isfinite(float(np.ravel(tv)[0])):
-            z = z + thick
-    return items
-
-
-def _paraxial_dual(items, y, u, axis: str = "y"):
-    """逐面近轴追迹（Dual 版）。返回 [(y_at, u_before, u_after)]。"""
-    n = 1.0
-    rows = []
-    for k, it in enumerate(items):
-        if k > 0:
-            y = y + u * items[k - 1].thickness
-        if it.type == "PARAXIAL" and float(np.ravel(np.asarray(getattr(it.focal, 'v', it.focal or 0.0)))[0]) != 0.0:
-            ua = (n * u - y / it.focal) / it.n_after
-            n = it.n_after
-        else:
-            c = it.shape.vertex_curvature(axis)
-            n2 = it.n_after
-            ua = (n * u - y * c * (n2 - n)) / n2
-            n = n2
-        rows.append((y, u, ua))
-        u = ua
-    return rows
-
-
-def _entrance_pupil_z(items, stop: int):
-    """入瞳相对第 1 面的位置（Dual）：z_ep = B/A，A、B 是到光阑面的近轴矩阵元。"""
-    if stop is None:
-        return None
-    a = _paraxial_dual(items, D.Dual.konst(1.0), D.Dual.konst(0.0))[stop][0]
-    b = _paraxial_dual(items, D.Dual.konst(0.0), D.Dual.konst(1.0))[stop][0]
-    if abs(float(np.ravel(a.v)[0])) < 1e-12:
-        return None  # 入瞳在无穷远，EPD 发射面不动
-    return b / a
-
-
-def _const_like(value, shape):
-    return D.Dual(np.broadcast_to(np.asarray(value, float), shape).copy())
-
-
-def _launch_dual(system: OpticalSystem, items, px, py, hx, hy, aim: bool, variables, theta):
-    """发射。EPD 且不做实际瞄准时，入瞳位置的参数导数也传播（Dual）；否则取 float 结果当常量。"""
-    from .trace import _aim, _launch
-
-    shape = np.shape(px)
-    if system.lens.aperture_type in ("EPD", "FLOA") and not aim and not system.finite_object:
-        primary = system.primary_system()
-        reference = items if primary is system else _dual_items(primary, variables, theta)
-        if system.lens.aperture_type == "FLOA":
-            primary.stop_semi_diameter()
-            a = _paraxial_dual(reference, D.Dual.konst(1.0), D.Dual.konst(0.0))[system.stop][0]
-            if not np.isfinite(a.v) or abs(float(a.v)) < 1e-14:
-                raise ValueError("光阑传递系数为零，半口径导数没有定义")
-            r = reference[system.stop].semi / abs(a)
-        else:
-            r = D.Dual.konst(system.pupil_radius())
-        z_ep = _entrance_pupil_z(reference, system.stop)
-        x0 = r * _const_like(px, shape)
-        y0 = r * _const_like(py, shape)
-        if z_ep is None:
-            z0 = _const_like(0.0, shape)
-        else:
-            z0 = z_ep + _const_like(0.0, shape)
-        fx, fy = system.field_slopes(hx, hy)
-        norm = np.sqrt(fx * fx + fy * fy + 1.0)
-        return (x0, y0, z0,
-                (_const_like(fx / norm, shape), _const_like(fy / norm, shape),
-                 _const_like(1.0 / norm, shape)))
-    # OBNA / 实际瞄准：发射环节当成常量（不参与求导，见模块 docstring）
-    x0, y0, z0, d = _launch(system, px, py, hx, hy)
-    if aim:
-        if any(v.field == "semi_diameter" for v in variables):
-            raise NotImplementedError("实际瞄准的光阑半口径导数尚未实现，不能把瞄准结果当常量优化")
-        x0, y0, z0, d = _aim(system, x0, y0, z0, d, px, py)
-    return (_const_like(x0, np.shape(x0)), _const_like(y0, np.shape(y0)),
-            _const_like(z0, np.shape(z0)),
-            (_const_like(d[..., 0], shape), _const_like(d[..., 1], shape),
-             _const_like(d[..., 2], shape)))
-
-
-def _refract_dual(L, M, N, Nx, Ny, Nz, n1: float, n2: float):
-    """向量 Snell（Dual 版）。全反射时把切向清零，避免把 inf/nan 带进雅可比。"""
-    dn = L * Nx + M * Ny + N * Nz
-    flip = dn.v > 0.0
-    Nx = D.where(flip, -Nx, Nx)
-    Ny = D.where(flip, -Ny, Ny)
-    Nz = D.where(flip, -Nz, Nz)
-    cos1 = D.where(dn.v > 0.0, dn, -dn)
-    mu = n1 / n2
-    sin2_2 = mu * mu * (1.0 - cos1 * cos1)
-    tir = sin2_2.v > 1.0
-    cos2 = D.sqrt(D.maximum(1.0 - sin2_2, 0.0))
-    k = mu * cos1 - cos2
-    Lt = mu * L + k * Nx
-    Mt = mu * M + k * Ny
-    Nt = mu * N + k * Nz
-    norm = D.sqrt(Lt * Lt + Mt * Mt + Nt * Nt)
-    out = (Lt / norm, Mt / norm, Nt / norm)
-    if np.any(tir):
-        return tuple(D.where(tir, D.Dual.konst(0.0), o) for o in out), tir
-    return out, tir
-
-
-def _reflect_dual(L, M, N, Nx, Ny, Nz):
-    """反射（Dual 版）：``d′ = d − 2(d·N)N``。反射不产生全反射，也不换介质。"""
-    dn = L * Nx + M * Ny + N * Nz
-    flip = dn.v > 0.0
-    Nx = D.where(flip, -Nx, Nx)
-    Ny = D.where(flip, -Ny, Ny)
-    Nz = D.where(flip, -Nz, Nz)
-    g = D.where(flip, dn, -dn) * 2.0   # = 2·|d·N|，法线已翻到入射侧，d′ = d + 2|d·N|·N
-    Lt = L + g * Nx
-    Mt = M + g * Ny
-    Nt = N + g * Nz
-    norm = D.sqrt(Lt * Lt + Mt * Mt + Nt * Nt)
-    return Lt / norm, Mt / norm, Nt / norm
-
-
-def _is_lens(it) -> bool:
-    return it.type == "PARAXIAL" and it.focal is not None and float(np.ravel(np.asarray(getattr(it.focal, 'v', it.focal)))[0]) != 0.0
-
-
 def system_with_variables(system: OpticalSystem, variables: list[Variable], theta) -> OpticalSystem:
     """把变量写入独立的镜头与 items，供求交值、差分和优化终点共同使用。"""
     theta = np.asarray(theta, dtype=float)
@@ -297,98 +104,269 @@ def system_with_variables(system: OpticalSystem, variables: list[Variable], thet
                          allow_unverified=system.allow_unverified)
 
 
+def thickness_sensitivity(system: OpticalSystem, variables: list[Variable], theta) -> np.ndarray:
+    """各面厚度对变量的导数，形状 (面数, 变量数)。多重结构的 pickup 让一个面的厚度跟着另一个面走，
+    所以不一定是对角阵；厚度对变量线性，变量加 1 后重建系统读差值就是精确导数。"""
+    out = np.zeros((len(system.items), len(variables)))
+    thickness = [j for j, v in enumerate(variables) if v.field == "thickness"]
+    if not any(row.pickup for row in system.lens.mce):
+        for j in thickness:
+            out[variables[j].item, j] = 1.0
+        return out
+    base = np.array([it.thickness for it in system.items], dtype=float)
+    for j in thickness:
+        probe = np.array(theta, dtype=float)
+        probe[j] += 1.0
+        changed = system_with_variables(system, variables, probe)
+        with np.errstate(invalid="ignore"):
+            out[:, j] = np.nan_to_num(np.array([it.thickness for it in changed.items], dtype=float) - base)
+    return out
+
+
+def _dual_items(system: OpticalSystem, variables: list[Variable], theta, thickness: np.ndarray):
+    """面属性换成 Dual 的 items，只给近轴追迹和理想透镜相位用；原件不动。"""
+    p = len(variables)
+    tang = {v.key(): D.Dual.param(float(theta[i]), i, p) for i, v in enumerate(variables)}
+    items = []
+    for k, it in enumerate(system.items):
+        surf = copy.copy(it.surface)
+        surf.params = dict(it.surface.params)
+        surf.curvature = tang.get((k, "curvature", 0), surf.curvature)
+        surf.conic = tang.get((k, "conic", 0), surf.conic)
+        for (i, field, pa), val in tang.items():
+            if i == k and field == "param":
+                surf.params[pa] = val
+        thick = D.Dual(np.asarray(it.thickness, dtype=np.float64), thickness[k].copy()) if thickness[k].any() else it.thickness
+        focal = surf.params.get(1, it.focal) if it.type == "PARAXIAL" and it.focal is not None else it.focal
+        items.append(replace(it, surface=surf, shape=geometry.make(surf), thickness=thick, focal=focal,
+                             semi=tang.get((k, "semi_diameter", 0), it.semi)))
+    return items
+
+
+class ADBlock:
+    """AD 追迹结果：``at(面号)`` 返回各量的 ``Dual``，切向轴长 = 变量个数。"""
+
+    def __init__(self, out, tangents, slot, error, vig, phases, surface_index: list[int]):
+        self.out, self.tangents, self.slot, self.error, self.vig = out, tangents, slot, error, vig
+        self.phases = phases
+        self.surface_index = surface_index
+
+    def at(self, surf: int) -> dict:
+        k = self.surface_index.index(surf)
+        place = self.slot[k]
+        if place < 0:
+            raise KeyError(f"第 {surf} 面的切向没有记录，用 surfaces 参数要求它")
+        names = ("x", "y", "z", "l", "m", "n", "opl")
+        result = {name: D.Dual(self.out[:, k, c], np.moveaxis(self.tangents[:, place, :, c], 0, 1)) for c, name in enumerate(names)}
+        result["phase"] = self.phases[k]
+        return result
+
+
+def _vector(value, P: int) -> np.ndarray:
+    if not isinstance(value, D.Dual) or value.d.shape[0] == 0:
+        return np.zeros(P)
+    return np.ravel(value.d).copy()
+
+
+def _pupil(system: OpticalSystem, reference, primary: OpticalSystem, P: int):
+    """入瞳半径和位置对变量的导数 (dr, dz_ep)，形状 (P,)。入瞳按主波长定（见 OpticalSystem.pupil_reference）。"""
+    a = D._as(paraxial_rays(reference, D.Dual.konst(1.0), D.Dual.konst(0.0))[system.stop][0])
+    b = D._as(paraxial_rays(reference, D.Dual.konst(0.0), D.Dual.konst(1.0))[system.stop][0])
+    z_ep = b / a if abs(float(np.ravel(a.v)[0])) >= 1e-12 else None
+    r = None
+    if system.lens.aperture_type == "FLOA":
+        primary.stop_semi_diameter()
+        if not np.isfinite(a.v) or abs(float(a.v)) < 1e-14:
+            raise ValueError("光阑传递系数为零，半口径导数没有定义")
+        r = reference[system.stop].semi / abs(a)
+    elif system.lens.aperture_type == "OBNA" and z_ep is not None:
+        na = system.lens.aperture_value
+        r = abs(z_ep + (system.object_thickness if system.finite_object else 0.0)) * (na / np.sqrt(max(1e-300, 1.0 - na * na)))
+    return _vector(r, P), _vector(z_ep, P)
+
+
+def _launch_seed(system, n_ray, P, extra, qx, qy, hx, hy, dr, dz_ep, position_aim, x0, y0, z0):
+    """发射光线对变量的切向种子，形状 (光线, P + extra, 7)。瞄准解的那一部分由隐函数项补上。"""
+    seed = np.zeros((n_ray, P + extra, kernel.TANGENT))
+    if not system.finite_object:
+        if system.lens.aperture_type in ("EPD", "FLOA"):
+            seed[:, :P, 2] = dz_ep
+            if not position_aim:
+                seed[:, :P, 0] = qx[:, None] * dr
+                seed[:, :P, 1] = qy[:, None] * dr
+        return seed
+    legacy_obna = (system.lens.aperture_type == "OBNA" and system.object_thickness == 0.0
+                   and system.lens.field_type == "ANGLE" and not system.allow_unverified)
+    if legacy_obna:
+        return seed
+    # 有限物距：物点随入瞳移动（角度视场），发射方向指向入瞳上的 (qx·r, qy·r, z_ep)
+    dxo, dyo = np.zeros((n_ray, P)), np.zeros((n_ray, P))
+    if system.lens.field_type == "ANGLE":
+        tx, ty = system.field_slopes(hx, hy)
+        dxo, dyo = -np.asarray(tx)[:, None] * dz_ep, -np.asarray(ty)[:, None] * dz_ep
+    seed[:, :P, 0], seed[:, :P, 1] = dxo, dyo
+    if extra:
+        return seed
+    z_ep, r = system.pupil_reference()
+    vx, vy, vz = qx * r - x0, qy * r - y0, np.full(n_ray, z_ep) - z0
+    length = np.sqrt(vx * vx + vy * vy + vz * vz)[:, None]
+    dvx = qx[:, None] * dr - dxo
+    dvy = qy[:, None] * dr - dyo
+    dvz = np.broadcast_to(dz_ep, (n_ray, P))
+    projection = (vx[:, None] * dvx + vy[:, None] * dvy + vz[:, None] * dvz) / length ** 3
+    seed[:, :P, 3] = dvx / length - vx[:, None] * projection
+    seed[:, :P, 4] = dvy / length - vy[:, None] * projection
+    seed[:, :P, 5] = dvz / length - vz[:, None] * projection
+    return seed
+
+
+def _seed_aim_unknowns(seed, P, position_aim, d) -> None:
+    """瞄准未知量占最后两个切向分量：发射位置 (x0, y0) 或发射斜率 (ux, uy)。"""
+    if position_aim:
+        seed[:, P, 0] = 1.0
+        seed[:, P + 1, 1] = 1.0
+        return
+    w = 1.0 / d[:, 2]
+    ux, uy = d[:, 0] * w, d[:, 1] * w
+    w3 = w * w * w
+    seed[:, P, 3], seed[:, P, 4], seed[:, P, 5] = 1.0 / w - ux * ux / w3, -ux * uy / w3, -ux / w3
+    seed[:, P + 1, 3], seed[:, P + 1, 4], seed[:, P + 1, 5] = -ux * uy / w3, 1.0 / w - uy * uy / w3, -uy / w3
+
+
+def _target_tangent(system, primary, reference, variables, theta, links, dvz):
+    """光阑半径 (Rx, Ry) 对变量的导数，形状 (P, 2)：瞄准目标是 (px·Rx, py·Ry)。"""
+    P = len(variables)
+    if system.aim_scale is not None:
+        return np.zeros((P, 2))
+    if system.lens.aperture_type == "FLOA":
+        dR = _vector(reference[system.stop].semi, P)
+        return np.stack([dR, dR], axis=1)
+    if system.lens.aperture_type == "EPD" and not system.finite_object and system.lens.ray_aiming != 1:
+        # 主波长的实际边缘光线（轴上、平行入射、高度 EPD/2）在光阑面的高度
+        seed = np.zeros((1, P, kernel.TANGENT))
+        slot = np.full(len(primary.items), -1, np.int64)
+        slot[primary.stop] = 0
+        out, _, _, out_t = kernel.trace(primary.packed(), [0.0], [primary.lens.aperture_value / 2.0], [0.0], [[0.0, 0.0, 1.0]],
+                                        kernel.Tangents(seed, dvz, *links, slot))
+        dR = np.sign(out[0, primary.stop, 1]) * out_t[0, 0, :, 1]
+        return np.stack([dR, dR], axis=1)
+    # 其余定义未对账或只有近轴标量，每个雅可比只算一次，中心差分足够
+    out = np.zeros((P, 2))
+    for j in range(P):
+        step = 1e-6 * max(abs(theta[j]), 1e-3)
+        plus, minus = np.array(theta, dtype=float), np.array(theta, dtype=float)
+        plus[j] += step
+        minus[j] -= step
+        a = system_with_variables(primary, variables, plus).aim_target(1.0, 1.0)
+        b = system_with_variables(primary, variables, minus).aim_target(1.0, 1.0)
+        out[j] = (np.asarray(a, float) - np.asarray(b, float)) / (2.0 * step)
+    return out
+
+
+def _links(system, variables):
+    """设计变量落到面参数行的连接表，按面排好。"""
+    per_surface = [[] for _ in system.items]
+    for j, v in enumerate(variables):
+        for col, mult in system.items[v.item].shape.links(v.field, v.param):
+            per_surface[v.item].append((j, col, mult))
+    ptr = np.zeros(len(system.items) + 1, np.int64)
+    ptr[1:] = np.cumsum([len(rows) for rows in per_surface])
+    flat = [row for rows in per_surface for row in rows]
+    return (ptr, np.array([r[0] for r in flat], np.int64), np.array([r[1] for r in flat], np.int64),
+            np.array([r[2] for r in flat], np.float64))
+
+
+def _vertex_tangent(thickness: np.ndarray, extra: int) -> np.ndarray:
+    """面顶点 z 对变量的导数，形状 (面, P + extra)。"""
+    out = np.zeros((thickness.shape[0], thickness.shape[1] + extra))
+    out[1:, :thickness.shape[1]] = np.cumsum(thickness[:-1], axis=0)
+    return out
+
+
+def _run(system, primary, reference, variables, theta, qx, qy, hx, hy, do_aim, thickness, primary_thickness, links, wanted):
+    """追一批光线，返回 (out, 切向 (光线, 记录的面, P, 7), slot, error, vig)，切向里已含瞄准的隐函数项。"""
+    P = len(variables)
+    n_ray = qx.size
+    position_aim = do_aim and aim_by_position(system)
+    extra = 2 if do_aim else 0
+    x0, y0, z0, d = launched(system, qx, qy, hx, hy, do_aim)
+    x0, y0, z0 = (np.ascontiguousarray(np.broadcast_to(v, qx.shape), dtype=float) for v in (x0, y0, z0))
+    d = np.ascontiguousarray(d, dtype=float)
+    dr, dz_ep = _pupil(system, reference, primary, P) if system.stop is not None else (np.zeros(P), np.zeros(P))
+    seed = _launch_seed(system, n_ray, P, extra, qx, qy, hx, hy, dr, dz_ep, position_aim, x0, y0, z0)
+    if do_aim:
+        _seed_aim_unknowns(seed, P, position_aim, d)
+    slot = np.full(len(system.items), -1, np.int64)
+    rows = sorted(set(wanted) | ({system.stop} if do_aim else set()))
+    slot[rows] = np.arange(len(rows))
+    out, error, vig, tangents = kernel.trace(system.packed(), x0, y0, z0, d,
+                                             kernel.Tangents(seed, _vertex_tangent(thickness, extra), *links, slot))
+    if not do_aim:
+        return out, tangents, slot, error, vig
+    k = system.stop
+    target = _target_tangent(system, primary, reference, variables, theta, links, _vertex_tangent(primary_thickness, 0))
+    tx, ty = system.aim_target(qx, qy)
+    # 没瞄准到（退回近轴发射）的光线不满足 G = 0，隐函数项不成立，发射按常量处理
+    solved = (np.abs(out[:, k, 0] - tx) < 1e-8) & (np.abs(out[:, k, 1] - ty) < 1e-8) & (error == 0)
+    at_stop = tangents[:, slot[k]]
+    J = np.stack([at_stop[:, P:, 0], at_stop[:, P:, 1]], axis=1)  # (光线, 交点分量, 未知量)
+    solved &= np.abs(J[:, 0, 0] * J[:, 1, 1] - J[:, 0, 1] * J[:, 1, 0]) > 1e-300
+    rhs = np.stack([at_stop[:, :P, 0] - qx[:, None] * target[:, 0], at_stop[:, :P, 1] - qy[:, None] * target[:, 1]], axis=1)
+    da = np.zeros((n_ray, 2, P))
+    if P and solved.any():
+        da[solved] = -np.linalg.inv(J[solved]) @ rhs[solved]
+    return out, tangents[:, :, :P] + np.einsum("nsuc,nuj->nsjc", tangents[:, :, P:], da), slot, error, vig
+
+
+def _phases(system, out, tangents, slot, chief_out, chief_tangents, row, reference, P):
+    """各面累计的理想透镜相位，以同视场主光线为零；公式与浮点追迹共用 trace.paraxial_lens_phase。"""
+    def column(values, derivatives, k, c):
+        return D.Dual(values[:, k, c], np.moveaxis(derivatives[:, slot[k], :, c], 0, 1))
+
+    n_ray = out.shape[0]
+    accumulated = D.Dual(np.zeros(n_ray), np.zeros((P, n_ray)))
+    result = []
+    for k, it in enumerate(system.items):
+        if it.type == "PARAXIAL" and it.focal:
+            ray = [column(out, tangents, k, c) for c in (0, 1, 3, 4, 5)]
+            chief = [column(chief_out, chief_tangents, k, c)[row] for c in (0, 1, 3, 4, 5)]
+            accumulated = accumulated + paraxial_lens_phase(reference[k].focal, system.n_before(k), it.n_after, *ray, *chief)
+        result.append(accumulated)
+    return result
+
+
 def trace_ad(system: OpticalSystem, px, py, variables: list[Variable], theta,
-             hx: float = 0.0, hy: float = 0.0, aim: bool | None = None, _phase: bool = True) -> ADBlock:
-    """AD 追迹一批光线，返回每个面每列都是 ``Dual`` 的结果。``phase`` 列同 ``trace``，以同视场主光线为零。"""
+             hx=0.0, hy=0.0, aim: bool | None = None, surfaces: list[int] | None = None) -> ADBlock:
+    """一批光线的值和对变量的导数。``surfaces`` 是要切向的面号（默认全部）；光线多、变量多时只要像面能省内存。
+    ``phase`` 列同 ``trace``，以同视场主光线为零。"""
+    from .trace import aiming
+
+    theta = np.asarray(theta, dtype=float)
     system = system_with_variables(system, variables, theta)
-    px = np.atleast_1d(np.asarray(px, float))
-    py = np.atleast_1d(np.asarray(py, float))
-    px, py, hx, hy = (v.ravel() for v in np.broadcast_arrays(px, py, hx, hy))
-    n_ray = px.size
-    do_aim = (system.lens.ray_aiming == 2) if aim is None else aim
-
-    from .trace import _paraxial_lens_phase
-
-    items = _dual_items(system, variables, theta)
-    chief = None
-    if _phase and any(_is_lens(it) for it in items):
-        chief = trace_ad(system, [0.0], [0.0], variables, theta, hx, hy, aim, _phase=False).cols
-    px, py = system.vignetted_pupil(px, py, hx, hy)
-    X, Y, Z, (L, M, N) = _launch_dual(system, items, px, py, hx, hy, do_aim, variables, theta)
-
-    n_items = len(items)
-    cols = {k: [] for k in ("x", "y", "z", "l", "m", "n", "opl", "phase")}
-    opl = D.Dual.konst(np.zeros(n_ray))
-    phase = D.Dual.konst(np.zeros(n_ray))  # 理想透镜相位，同 trace._paraxial_phase
-    n_cur = np.full(n_ray, system.n_before(0))
-    lam = system.wavelength * 1e-3
-
-    for k, it in enumerate(items):
-        zloc = Z - it.vertex_z
-        xv = np.asarray(X.v, float).ravel()
-        yv = np.asarray(Y.v, float).ravel()
-        zv = np.asarray(zloc.v, float).ravel()
-        lv = np.asarray(L.v, float).ravel()
-        mv = np.asarray(M.v, float).ravel()
-        nv = np.asarray(N.v, float).ravel()
-        fshape = system.items[k].shape
-        t = fshape.intersect_batch(xv, yv, zv, lv, mv, nv)
-        good = np.isfinite(t)
-        t = np.where(good, t, 0.0)
-
-        # 隐函数定理：F 在 t 固定时对参数的偏导 / F 对 t 的偏导
-        xs = X + L * t
-        ys = Y + M * t
-        zs, zx, zy = it.shape.sag(xs, ys)
-        F = zs - (zloc + N * t)
-        ft = (np.asarray(zx.v, float) * lv + np.asarray(zy.v, float) * mv - nv)
-        safe = np.where(np.abs(ft) < 1e-14, 1e-14, ft)
-        dt = D.Dual(-F.v / safe, -F.d / safe)
-        if not np.all(good):
-            dt = D.where(good, dt, D.Dual.konst(0.0))
-
-        if k > 0:
-            opl = opl + abs(n_cur) * (D.Dual(t, np.zeros((F.d.shape[0], n_ray))) + dt)
-        tdt = D.Dual(t, np.zeros((F.d.shape[0], n_ray))) + dt
-        X = X + L * tdt
-        Y = Y + M * tdt
-        Z = Z + N * tdt
-        zloc = Z - it.vertex_z
-
-        zs, zx, zy = it.shape.sag(X, Y)
-        if it.shape.flat_intersection:
-            zx, zy = it.shape.refraction_gradient(X, Y)
-
-        if _is_lens(it):
-            n2 = it.n_after
-            # 同 trace：n'·tan u' = n·tan u − y/f
-            ux = (n_cur[0] * L / N - X / it.focal) / n2
-            uy = (n_cur[0] * M / N - Y / it.focal) / n2
-            norm = D.sqrt(ux * ux + uy * uy + 1.0)
-            L, M, N = it.sign * ux / norm, it.sign * uy / norm, it.sign / norm
-            if chief is not None:
-                phase = phase + _paraxial_lens_phase(
-                    D.sqrt, it.focal, n_cur[0], n2, X, Y, L, M, N,
-                    chief["x"][k], chief["y"][k], chief["l"][k], chief["m"][k], chief["n"][k])
-            n_cur = np.full(n_ray, n2)
-        else:
-            n2 = it.n_after
-            Nx, Ny, Nz = -zx, -zy, D.Dual.konst(np.ones_like(np.asarray(X.v, float)))
-            nn = D.sqrt(Nx * Nx + Ny * Ny + Nz * Nz)
-            if it.reflect:
-                L, M, N = _reflect_dual(L, M, N, Nx / nn, Ny / nn, Nz / nn)
-            else:
-                (L, M, N), _ = _refract_dual(L, M, N, Nx / nn, Ny / nn, Nz / nn, n_cur[0], n2)
-            n_cur = np.full(n_ray, n2)
-
-        cols["x"].append(X)
-        cols["y"].append(Y)
-        cols["z"].append(zloc)
-        s = it.sign if not isinstance(it.sign, D.Dual) else 1.0
-        cols["l"].append(L * s)
-        cols["m"].append(M * s)
-        cols["n"].append(N * s)
-        cols["opl"].append(opl)
-        cols["phase"].append(phase)
-
-    return ADBlock(cols, [it.index for it in items])
+    px, py, hx, hy = np.broadcast_arrays(*(np.atleast_1d(np.asarray(v, dtype=float)) for v in (px, py, hx, hy)))
+    px, py, hx, hy = (np.ascontiguousarray(v.ravel()) for v in (px, py, hx, hy))
+    qx, qy = (np.ascontiguousarray(v.ravel(), dtype=float) for v in system.vignetted_pupil(px, py, hx, hy))
+    do_aim = aiming(system) if aim is None else bool(aim) and system.stop is not None
+    P = len(variables)
+    thickness = thickness_sensitivity(system, variables, theta)
+    primary = system.primary_system()
+    primary_thickness = thickness if primary is system else thickness_sensitivity(primary, variables, theta)
+    reference = _dual_items(primary, variables, theta, primary_thickness)
+    links = _links(system, variables)
+    index = [it.index for it in system.items]
+    wanted = set(range(len(index))) if surfaces is None else {index.index(s) for s in surfaces}
+    lenses = [k for k, it in enumerate(system.items) if it.type == "PARAXIAL" and it.focal]
+    common = (primary, reference, variables, theta)
+    tail = (do_aim, thickness, primary_thickness, links, wanted | set(lenses))
+    out, tangents, slot, error, vig = _run(system, *common, qx, qy, hx, hy, *tail)
+    if lenses:
+        fields, row = np.unique(np.stack([hx, hy], axis=1), axis=0, return_inverse=True)
+        zero = np.zeros(len(fields))
+        fx, fy = np.ascontiguousarray(fields[:, 0]), np.ascontiguousarray(fields[:, 1])
+        cx, cy = (np.ascontiguousarray(np.ravel(v), dtype=float) for v in system.vignetted_pupil(zero, zero, fx, fy))
+        chief_out, chief_tangents, _, _, _ = _run(system, *common, cx, cy, fx, fy, *tail)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            phases = _phases(system, out, tangents, slot, chief_out, chief_tangents, np.ravel(row), reference, P)
+    else:
+        phases = [D.Dual(np.zeros(px.size), np.zeros((P, px.size)))] * len(index)
+    return ADBlock(out, tangents, slot, error, vig, phases, index)

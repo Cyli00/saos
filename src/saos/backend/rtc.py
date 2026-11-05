@@ -997,7 +997,7 @@ class RtcBackend(Backend):
 
     def _ray_value(self, op: str, index: int, system, block, ray: int, coords: tuple) -> float:
         """已追迹光线块中第 ray 条光线在面 index 上的光线操作数；coords 为 (Hx, Hy, Px, Py)。"""
-        from rtc.trace import _launch
+        from rtc.trace import launch
 
         if index < 1:
             raise SaosError(ErrorCode.BAD_ARGS, f"{op}: rays start at surface 1, got {index}")
@@ -1020,7 +1020,7 @@ class RtcBackend(Backend):
             d = np.array([block.l[ray, k - 1], block.m[ray, k - 1], block.n[ray, k - 1]])
         elif system.lens.ray_aiming == 0 or system.stop is None:
             try:
-                d = np.asarray(_launch(system, np.array([px]), np.array([py]), np.array([hx]), np.array([hy]))[3]).reshape(3)
+                d = np.asarray(launch(system, np.array([px]), np.array([py]), np.array([hx]), np.array([hy]))[3]).reshape(3)
             except NotImplementedError as exc:
                 raise _unsupported(f"rtc: {exc}") from exc
         else:

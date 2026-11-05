@@ -228,10 +228,6 @@ class AsphereExpert:
             primary = engine.optical_system(lens.primary_wave)
             item = {it.index: k for k, it in enumerate(primary.items)}
             image = primary.items[-1].index
-            # 实际瞄准时 AD 把发射当常量：光阑前的面改变瞄准，导数会漏掉这一项
-            if lens.ray_aiming == 2 and primary.stop is not None and any(item[s] < primary.stop for s in candidates):
-                raise SaosError(ErrorCode.BACKEND_UNSUPPORTED,
-                                "with real ray aiming, engine='rtc' cannot rank surfaces before the stop; use engine='opticstudio'")
             keys = [(s, int(key[3:])) for s in candidates for key in self.profile.coefficients]
             variables = [Variable(item[s], "param", n) for s, n in keys] + [Variable(item[image - 1], "thickness")]
             fields = fastmod.field_points(lens)
@@ -243,8 +239,8 @@ class AsphereExpert:
                 theta = np.asarray([v.value(system) for v in variables], dtype=float)
                 for (hx, hy), field_weight in zip(fields, field_weights):
                     session.budget.check()
-                    chief = trace_ad(primary, [0.], [0.], variables, theta, hx, hy).at(image)
-                    got = trace_ad(system, px, py, variables, theta, hx, hy).at(image)
+                    chief = trace_ad(primary, [0.], [0.], variables, theta, hx, hy, surfaces=[image]).at(image)
+                    got = trace_ad(system, px, py, variables, theta, hx, hy, surfaces=[image]).at(image)
                     scale = math.sqrt(max(field_weight, 0.)*max(float(wave_weight), 0.))
                     for axis in ("x", "y"):
                         r = got[axis] - chief[axis]

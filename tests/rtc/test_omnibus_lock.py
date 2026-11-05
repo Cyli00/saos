@@ -19,7 +19,9 @@ import omnibus
 from rtc import adtrace, firstorder, geometry, zmx
 from rtc import trace as tracing
 from rtc.adtrace import Variable
+from rtc.material.types import Mirror, Model
 from rtc.operands import Operands
+from rtc.system import OpticalSystem
 
 LOCK_FILE = Path(__file__).parent / "fixtures" / "golden" / "omnibus-lock.json"
 RAY_KEYS = ("x", "y", "z", "l", "m", "n", "opl", "phase")
@@ -121,7 +123,7 @@ def _step(variable: Variable, value: float) -> float:
     return {"curvature": 1e-7, "thickness": 1e-5, "conic": 1e-5, "semi_diameter": 1e-5}.get(variable.field, 1e-6 * max(abs(value), 1e-3))
 
 
-JACOBIAN_MODES = ["refractive_epd", "refractive_float", "reflective_epd", "piA", "codex"]
+JACOBIAN_MODES = [m.name for m in omnibus.MODES]
 
 
 @pytest.mark.parametrize("name", JACOBIAN_MODES)
@@ -135,7 +137,12 @@ def test_jacobian_matches_central_differences(name, wave):
     rays = _rays(system, lens)
     image = system.items[-1].index
     got = adtrace.trace_ad(system, rays[:, 2], rays[:, 3], variables, theta, rays[:, 0], rays[:, 1]).at(image)
-    alive = _trace(system, rays).error == 0
+    base = _trace(system, rays)
+    alive = base.error == 0
+    if lens.ray_aiming and system.stop is not None:
+        # 不收敛、退回近轴发射的光线在 θ 附近不连续，差分没有意义
+        tx, ty = system.aim_target(*system.vignetted_pupil(rays[:, 2], rays[:, 3], rays[:, 0], rays[:, 1]))
+        alive &= np.abs(base.x[:, system.stop] - tx) + np.abs(base.y[:, system.stop] - ty) < 1e-8
     for j, variable in enumerate(variables):
         h = _step(variable, theta[j])
         plus, minus = theta.copy(), theta.copy()
@@ -153,38 +160,68 @@ def test_jacobian_matches_central_differences(name, wave):
 # ---------------------------------------------------------------- 单步物理
 
 
-def _unit_rays(n=200, seed=0):
-    rng = np.random.default_rng(seed)
-    l, m = rng.uniform(-0.3, 0.3, n), rng.uniform(-0.3, 0.3, n)
-    return l, m, np.sqrt(1.0 - l * l - m * m), rng.uniform(-3, 3, n), rng.uniform(-3, 3, n)
+def _single_surface(kind="STANDARD", n2=None, mirror=False, **fields):
+    """平行光射到一个面上，返回这个面的系统；相位和光焦度都只由这一面决定。"""
+    surface = zmx.Surface(index=1, type=kind, thickness=10.0, **fields)
+    surface.material = Mirror() if mirror else (Model(n2, 64.17) if n2 else None)
+    lens = zmx.Lens(aperture_type="EPD", aperture_value=4.0, fields=[(0.0, 0.0, 1.0), (0.0, 5.0, 1.0)], num_fields=2, num_waves=1,
+                    wavelengths=[(0.55, 1.0)], primary_wave=1)
+    lens.vignetting = [(0.0,) * 5] * 2
+    lens.surfaces = [zmx.Surface(index=0, thickness=float("inf")), surface, zmx.Surface(index=2)]
+    surface.is_stop = True
+    return OpticalSystem(lens)
 
 
-def _normal(shape, x, y):
-    _, zx, zy = shape.sag(x, y)
-    w = np.sqrt(zx * zx + zy * zy + 1.0)
-    return -zx / w, -zy / w, 1.0 / w, zx, zy
+def _unit_rays():
+    v = np.linspace(-1.0, 1.0, 5)
+    px, py = np.meshgrid(v, v)
+    keep = px * px + py * py <= 1.0
+    return px[keep], py[keep]
 
 
 def test_refraction_is_diffraction_with_zero_phase():
-    l, m, n, x, y = _unit_rays()
-    nx, ny, nz, zx, zy = _normal(geometry.make(zmx.Surface(index=1, curvature=0.02, conic=-0.7)), x, y)
-    zero = np.zeros_like(x)
-    got = tracing._grating(l, m, n, nx, ny, nz, 1.0, 1.5168, zero, zero, zx, zy, 5.5e-4)
-    want = tracing._refract(l, m, n, nx, ny, nz, 1.0, 1.5168)
-    for a, b in zip(got[:3], want[:3]):
-        assert a == pytest.approx(b, abs=1e-14)
+    """同一个方程：相位系数全为零的二元面必须和普通非球面逐位一样。"""
+    common = dict(curvature=0.02, conic=-0.7)
+    plain = _single_surface("EVENASPH", n2=1.5168, params={1: 1e-5}, **common)
+    binary = _single_surface("BINARY_2", n2=1.5168, params={0: 1.0, 1: 1e-5, 13: 2.0, 14: 5.0}, **common)
+    px, py = _unit_rays()
+    a, b = tracing.trace(plain, px, py, 0.0, 1.0), tracing.trace(binary, px, py, 0.0, 1.0)
+    for key in RAY_KEYS:
+        assert getattr(a, key) == pytest.approx(getattr(b, key), abs=1e-11), key
 
 
 def test_a_phase_gradient_kicks_the_transverse_momentum():
-    """平面上 n'·L' = n·L + (λ/2π)·∂φ/∂x，这是光栅方程本身。"""
-    l, m, n, x, y = _unit_rays()
-    zero = np.zeros_like(x)
-    lam = 5.5e-4
-    phx, phy = 200.0 + 0 * x, -150.0 + 0 * x
-    got = tracing._grating(l, m, n, zero, zero, zero + 1.0, 1.0, 1.5, phx, phy, zero, zero, lam)
-    assert 1.5 * got[0] == pytest.approx(l + lam / (2 * np.pi) * phx, abs=1e-14)
-    assert 1.5 * got[1] == pytest.approx(m + lam / (2 * np.pi) * phy, abs=1e-14)
-    assert np.all(got[2] > 0.0)
+    """平面上 n'·L' = n·L + (λ/2π)·∂φ/∂x，这是光栅方程本身；相位还要加到光程上。"""
+    n2, rn, a1, a2 = 1.5, 5.0, -80.0, 6.0
+    system = _single_surface("BINARY_2", n2=n2, params={0: 1.0, 13: 2.0, 14: rn, 15: a1, 16: a2})
+    px, py = _unit_rays()
+    block = tracing.trace(system, px, py, 0.0, 1.0)
+    x, y = block.x[:, 0], block.y[:, 0]
+    rho2 = (x * x + y * y) / rn**2
+    g = 2.0 / rn**2 * (a1 + 2.0 * a2 * rho2)
+    c = system.wavelength * 1e-3 / (2.0 * np.pi)
+    incident = tracing.trace(_single_surface(), px, py, 0.0, 1.0)
+    assert np.all(block.n[:, 0] > 0.0), "透射光要继续向前"
+    n_after = system.items[0].n_after
+    assert n_after * block.l[:, 0] == pytest.approx(incident.l[:, 0] + c * g * x, abs=1e-13)
+    assert n_after * block.m[:, 0] == pytest.approx(incident.m[:, 0] + c * g * y, abs=1e-13)
+    assert block.opl[:, 0] == pytest.approx(c * (a1 * rho2 + a2 * rho2**2), abs=1e-13)
+
+
+def test_reflection_is_the_other_root_of_the_same_equation():
+    """反射 d' = d − 2(d·N)N，方向的切向分量不变。"""
+    system = _single_surface(curvature=-0.01, conic=-1.0, mirror=True)
+    px, py = _unit_rays()
+    block = tracing.trace(system, px, py, 0.0, 1.0)
+    incident = tracing.trace(_single_surface(), px, py, 0.0, 1.0)
+    shape = system.items[0].shape
+    _, zx, zy = shape.sag(block.x[:, 0], block.y[:, 0])
+    w = np.sqrt(zx * zx + zy * zy + 1.0)
+    N = np.stack([-zx / w, -zy / w, 1.0 / w], axis=1)
+    d = np.stack([incident.l[:, 0], incident.m[:, 0], incident.n[:, 0]], axis=1)
+    want = d - 2.0 * np.sum(d * N, axis=1, keepdims=True) * N
+    got = -np.stack([block.l[:, 0], block.m[:, 0], block.n[:, 0]], axis=1)  # 报告值带 σ = −1
+    assert got == pytest.approx(want, abs=1e-14)
 
 
 @pytest.mark.parametrize("kind, params, radius", [("STANDARD", {}, 50.0), ("EVENASPH", {1: 1e-3}, 50.0), ("BICONIC", {1: 100.0}, 50.0),

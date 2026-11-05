@@ -53,21 +53,23 @@ class Design:
     # ---- 残差 ----
 
     def _columns(self, tracer):
-        """残差的各列，同一视场的主光线只追一次。tracer(px, py, hx, hy) 返回像面的 x、y、opl、phase，可以是数组或 Dual。"""
+        """残差的各列。每个视场的主光线和普通光线合成一批，只追一次。tracer(px, py, hx, hy) 返回像面的 x、y、opl、phase，
+        可以是数组或 Dual。"""
         rays = np.asarray(self.rays, dtype=float)
         rays = rays[(rays[:, 2] != 0.0) | (rays[:, 3] != 0.0)]
         if not len(rays):
             raise ValueError("rays 里至少要有一条非主光线")
         fields, row = np.unique(rays[:, :2], axis=0, return_inverse=True)
-        row = np.ravel(row)
+        chief = np.ravel(row) + len(rays)
+        ordinary = np.arange(len(rays))
         zero = np.zeros(len(fields))
-        got = tracer(rays[:, 2], rays[:, 3], rays[:, 0], rays[:, 1])
-        ref = tracer(zero, zero, fields[:, 0], fields[:, 1])
+        got = tracer(np.r_[rays[:, 2], zero], np.r_[rays[:, 3], zero], np.r_[rays[:, 0], fields[:, 0]], np.r_[rays[:, 1], fields[:, 1]])
         columns = []
         if self.mode in ("transverse", "both"):
-            columns += [got["x"] - ref["x"][row], got["y"] - ref["y"][row]]
+            columns += [got["x"][ordinary] - got["x"][chief], got["y"][ordinary] - got["y"][chief]]
         if self.mode in ("wavefront", "both"):
-            columns.append((got["opl"] + got["phase"]) - (ref["opl"] + ref["phase"])[row])
+            path = got["opl"] + got["phase"]
+            columns.append(path[ordinary] - path[chief])
         return columns
 
     def residual(self, theta) -> np.ndarray:
@@ -79,7 +81,7 @@ class Design:
     def jacobian(self, theta):
         """返回 (残差, 雅可比)。雅可比由一次成批 AD 追迹得到，形状 (m, P)，行序与 residual 相同。"""
         image = self.system.items[-1].index
-        columns = self._columns(lambda px, py, hx, hy: trace_ad(self.system, px, py, self.variables, theta, hx, hy).at(image))
+        columns = self._columns(lambda px, py, hx, hy: trace_ad(self.system, px, py, self.variables, theta, hx, hy, surfaces=[image]).at(image))
         values = np.stack([np.ravel(c.v) for c in columns], axis=1)
         tangents = np.stack([c.d for c in columns], axis=2)  # (P, 光线, 列)
         return values.ravel(), np.moveaxis(tangents, 0, 2).reshape(values.size, len(self.variables))

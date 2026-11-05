@@ -634,9 +634,9 @@ def detector_spill(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], l
 
 
 # 面型 → 根号下的二次项来自哪几列：rotational 用 LDE 的半径与圆锥；biconic 另有 X 方向（参数 1 = Rx、参数 2 = kx，
-# 与 rtc.surface.sag 一致）；toroidal 只查 Y 方向轮廓（有限旋转半径不在 rtc 的已标定范围内）
+# 与 rtc.geometry 一致）；toroidal 只查 Y 方向轮廓（有限旋转半径不在 rtc 的已标定范围内）
 # which columns feed the square root: rotational uses the LDE radius and conic; biconic adds X (par 1 = Rx, par 2 = kx,
-# as rtc.surface.sag); toroidal checks the Y profile only (a finite rotation radius is outside rtc's calibrated range)
+# as rtc.geometry); toroidal checks the Y profile only (a finite rotation radius is outside rtc's calibrated range)
 _ROTATIONAL = {"STANDARD", "EVENASPH", "EVENASPHERE", "ODDASPH", "ODDASPHERE"}
 _BICONIC = {"BICONIC", "BICONICX", "BICONICZ", "BICONICZERNIKE"}
 _TOROIDAL = {"TOROIDAL"}

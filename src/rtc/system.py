@@ -52,6 +52,26 @@ class Item:
         return self.surface.type.upper()
 
 
+def paraxial_rays(items, y, u, n: float = 1.0, axis: str = "y"):
+    """逐面近轴追迹，返回 [(y_at, u_before, u_after)]，y_at 是该面顶点处的光线高度。float 和 Dual 都可以。
+
+    在光轴上它就是实光线的切向（iris、reflective、sequential 实测差 ≤ 4.4e-16）；单独保留是因为光瞳对设计变量的导数要二阶。
+    """
+    rows = []
+    for k, it in enumerate(items):
+        if k > 0:
+            y = y + u * items[k - 1].thickness
+        if it.type == "PARAXIAL" and it.focal:
+            # 与实际追迹同一规则 n'u' = n·u − y/f，之后换成面后折射率（面后是玻璃时出瞳才对）
+            ua = (n * u - y / it.focal) / it.n_after
+        else:
+            ua = (n * u - y * it.shape.vertex_curvature(axis) * (it.n_after - n)) / it.n_after
+        n = it.n_after
+        rows.append((y, u, ua))
+        u = ua
+    return rows
+
+
 class OpticalSystem:
     """一个结构、一个波长下的可追迹系统。
 
@@ -141,11 +161,9 @@ class OpticalSystem:
         return self._medium(s.material)[1]
 
     def packed(self):
-        """编译内核的面数据（rtc.kernel.pack），首次调用时排好；内核不覆盖本系统时为 None。"""
-        if not hasattr(self, "_packed"):
-            from . import kernel
-
-            self._packed = kernel.pack(self)
+        """编译内核的面数据，首次调用时排好。"""
+        if "_packed" not in self.__dict__:
+            self._packed = geometry.pack(self)
         return self._packed
 
     def invalidate(self) -> None:
@@ -222,15 +240,8 @@ class OpticalSystem:
         """
         if self.lens.field_type != "ANGLE":
             raise NotImplementedError(f"视场类型 {self.lens.field_type} 未实现（只支持角度视场）")
-        hx = np.asarray(hx, dtype=float)
-        hy = np.asarray(hy, dtype=float)
-        fx = [f[0] for f in self.lens.fields] or [0.0]
-        fy = [f[1] for f in self.lens.fields] or [0.0]
-        if self.lens.field_normalization == "rectangular":
-            sx, sy = max(abs(v) for v in fx), max(abs(v) for v in fy)
-        else:
-            sx = sy = max(float(np.hypot(a, b)) for a, b in zip(fx, fy))
-        return np.tan(np.radians(hx * sx)), np.tan(np.radians(hy * sy))
+        sx, sy = self._field_scale()
+        return np.tan(np.radians(np.asarray(hx, dtype=float) * sx)), np.tan(np.radians(np.asarray(hy, dtype=float) * sy))
 
     # ---- 近轴 ----
     def curvature_axis(self, it: "Item", axis: str) -> float:
@@ -238,25 +249,8 @@ class OpticalSystem:
         return it.shape.vertex_curvature(axis)
 
     def _paraxial(self, y: float, u: float, k0: int = 0, n: float | None = None, axis: str = "y"):
-        """逐面近轴追迹。返回 [(y_at, u_before, u_after)]，y_at 是该面顶点处的光线高度。"""
-        n = self.n_before(k0) if n is None else n
-        rows = []
-        for k in range(k0, len(self.items)):
-            it = self.items[k]
-            if k > k0:
-                y = y + u * self.items[k - 1].thickness
-            if it.type == "PARAXIAL" and it.focal:
-                # 与实际追迹同一规则 n'u' = n·u − y/f，之后换成面后折射率（面后是玻璃时出瞳才对）
-                ua = (n * u - y / it.focal) / it.n_after
-                n = it.n_after
-            else:
-                c = self.curvature_axis(it, axis)
-                n2 = it.n_after
-                ua = (n * u - y * c * (n2 - n)) / n2
-                n = n2
-            rows.append((y, u, ua))
-            u = ua
-        return rows
+        """逐面近轴追迹，见 :func:`paraxial_rays`。"""
+        return paraxial_rays(self.items[k0:], y, u, self.n_before(k0) if n is None else n, axis)
 
     def aim_target(self, px, py):
         """光阑面上的瞄准目标点（毫米）。
@@ -290,7 +284,7 @@ class OpticalSystem:
     def stop_radius(self) -> float:
         """EPD 系统的光阑半径：主波长的轴上实际边缘光线在光阑面的高度（见 :meth:`aim_target`），算一次后缓存。"""
         if getattr(self, "_stop_radius", None) is None:
-            from .trace import _trace_wo_aim
+            from .trace import stop_hits
 
             primary = self.lens.active_wavelengths[self.lens.primary_wave - 1][0]
             if primary != self.wavelength:
@@ -303,14 +297,14 @@ class OpticalSystem:
                 return self._stop_radius
             ref = self
             h = self.lens.aperture_value / 2.0
-            hit = _trace_wo_aim(ref, np.array([0.0]), np.array([h]), np.array([0.0]), np.array([[0.0, 0.0, 1.0]]))
-            self._stop_radius = abs(float(hit["y"][0]))
+            _, y = stop_hits(ref, np.array([0.0]), np.array([h]), np.array([0.0]), np.array([[0.0, 0.0, 1.0]]))
+            self._stop_radius = abs(float(y[0]))
         return self._stop_radius
 
     def _marginal_stop_height(self) -> float:
         """手册 §2.1.1.7：光阑半径由主波长下从物面中心出发的边缘光线追到光阑面确定；近轴瞄准用近轴光线，实际瞄准用实光线。
         边缘光线射向近轴入瞳边缘（y 方向）。"""
-        from .trace import _trace_wo_aim
+        from .trace import stop_hits
 
         z_ep, _ = self.entrance_pupil()
         r = self.pupil_radius()
@@ -327,8 +321,8 @@ class OpticalSystem:
         if self.lens.ray_aiming == 1:
             y1 = (y0 + u * self.object_thickness) if self.finite_object else y0
             return abs(float(self._paraxial(y1, u)[self.stop][0]))
-        hit = _trace_wo_aim(self, np.array([0.0]), np.array([y0]), np.array([z0]), d[None, :])
-        value = abs(float(hit["y"][0]))
+        _, y = stop_hits(self, np.array([0.0]), np.array([y0]), np.array([z0]), d[None, :])
+        value = abs(float(y[0]))
         if not np.isfinite(value):
             raise NotImplementedError("边缘光线追不到光阑面（手册：此时 OpticStudio 改用近轴光线定光阑半径，未实现）")
         return value
@@ -340,13 +334,6 @@ class OpticalSystem:
         rows = self._paraxial(0.0, 1.0, axis=axis)
         return rows[self.stop][0]
 
-    def paraxial_matrix_to(self, stop_index: int) -> tuple[float, float]:
-        """从第 1 面到光阑面的近轴 (A, B)：y_stop = A·y0 + B·u0。"""
-        stop_k = next(k for k, it in enumerate(self.items) if it.index == stop_index)
-        r1 = self._paraxial(1.0, 0.0)[: stop_k + 1]
-        r2 = self._paraxial(0.0, 1.0)[: stop_k + 1]
-        return r1[-1][0], r2[-1][0]
-
     def entrance_pupil(self) -> tuple[float, float]:
         """(入瞳相对第 1 面的位置 z_ep, 光阑的顶点 z)。z_ep=inf 表示入瞳在无穷远。"""
         if "_entrance_pupil" not in self.__dict__:
@@ -356,8 +343,8 @@ class OpticalSystem:
     def _find_entrance_pupil(self) -> tuple[float, float]:
         if self.stop is None:
             return 0.0, self.items[0].vertex_z
-        stop_index = self.items[self.stop].index
-        A, B = self.paraxial_matrix_to(stop_index)
+        A = self._paraxial(1.0, 0.0)[self.stop][0]
+        B = self._paraxial(0.0, 1.0)[self.stop][0]
         if abs(A) < 1e-12:
             return float("inf"), self.items[self.stop].vertex_z
         return B / A, self.items[self.stop].vertex_z
