@@ -210,9 +210,11 @@ ALL: list[Variant] = [
     Variant("iris_stop_front", "iris", "R1", _iris_stop_front),
     # ---- R2：改半口径后系统孔径要跟着变
     Variant("iris_semi_2", "iris", "R2", _iris_semi(2.0)),
-    # ---- R5：挡光、渐晕因子、取样、余量分开；余量只留两项同时给的一版，它同时定了公式和次序
+    # ---- R5：挡光、渐晕因子、取样、余量分开；余量的两项各单独一版，同时给的一版定次序
     Variant("iris_no_apertures", "iris", "R5", _iris_no_apertures),
     Variant("iris_fast_off", "iris", "R5", after=_semi_setting(fast=False), waves="none"),
+    Variant("iris_margin_percent", "iris", "R5", after=_semi_setting(percent=10.0), waves="none"),
+    Variant("iris_margin_mm", "iris", "R5", after=_semi_setting(margin=0.5), waves="none"),
     Variant("iris_margin_both", "iris", "R5", after=_semi_setting(margin=0.5, percent=10.0), waves="none"),
     # ---- R6
     Variant("iris_set_vignetting", "iris", "R6", after=_set_vignetting, off_table=OFF_TABLE),
@@ -231,7 +233,9 @@ ALL: list[Variant] = [
     Variant("reflective_one_mirror", "reflective", "奇数次反射、R8", _reflective_one_mirror, opd=True),
     Variant("reflective_no_obscuration", "reflective", "R8", _reflective_no_obscuration, opd=True),
     Variant("sequential_opd", "sequential", "R8：第 1 面弯曲的折射系统", opd=True),
-    # ---- R3：每种孔径一版，都带偏心；不偏心的情形由基础版面 1 的圆孔覆盖
+    # ---- R3：每种孔径有无偏心各一版
+    *[Variant(f"iris_{key}", "iris", "R3", _iris_added_aperture(ap), fields=_AXIAL_AND_EDGE, ring=0.7 if key == "spider" else None)
+      for key, ap in _APERTURES.items()],
     *[Variant(f"iris_{key}_decentred", "iris", "R3", _iris_added_aperture({**ap, "x_decenter": 0.3, "y_decenter": -0.2}),
               fields=_AXIAL_AND_EDGE, ring=0.7 if key == "spider" else None)
       for key, ap in _APERTURES.items()],

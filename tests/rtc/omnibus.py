@@ -92,6 +92,16 @@ def _diffractive() -> list[zmx.Surface]:
     ]
 
 
+def _diffractive_before_stop() -> list[zmx.Surface]:
+    """光阑在二元面和 Fresnel 面之后：相位的光焦度要进光瞳传递。"""
+    return [
+        _surface(1, "BINARY_2", radius=30.0, thickness=4.0, material=CROWN, params={0: 1.0, 13: 2.0, 14: 5.0, 15: -80.0, 16: 6.0}),
+        _surface(2, "FRESNELS", radius=-120.0, thickness=4.0, params={2: 1e-7}),
+        _surface(3, thickness=30.0, stop=True, semi=2.0),
+        _surface(4),
+    ]
+
+
 def _fixture(name: str) -> Callable[[], zmx.Lens]:
     return lambda: zmx.parse(LENSES / name)
 
@@ -116,11 +126,18 @@ MODES = [
     Mode("refractive_epd_finite_paraxial", lambda: _lens(_refractive(), aiming=1, object_distance=200.0,
                                                          fields=[(0.0, 0.0, 1.0), (0.0, 5.0, 1.0), (3.0, 3.0, 1.0)], field_type="OP1"),
          unverified=True, clips=(2, 3, 4, 5, 7, 8)),
+    # 角度视场的物点由入瞳位置定，变量和波长都经由它进发射
+    Mode("refractive_obna_finite_angle", lambda: _lens(_refractive(), aperture=("OBNA", 0.025), object_distance=200.0,
+                                                       fields=[(0.0, 0.0, 1.0), (0.0, 5.0, 1.0), (3.0, 3.0, 1.0)]), unverified=True),
+    Mode("refractive_obna_finite_angle_real", lambda: _lens(_refractive(), aperture=("OBNA", 0.025), aiming=2, object_distance=200.0,
+                                                            fields=[(0.0, 0.0, 1.0), (0.0, 5.0, 1.0), (3.0, 3.0, 1.0)]), unverified=True),
     Mode("reflective_epd", lambda: _lens(_reflective(), aperture=("EPD", 30.0), fields=[(0.0, 0.0, 1.0), (0.0, 0.3, 1.0), (0.2, 0.2, 1.0)]),
          clips=(1,)),
     Mode("reflective_float_real", lambda: _lens(_reflective(stop=2), aperture=("FLOA", 0.0), aiming=2,
                                                 fields=[(0.0, 0.0, 1.0), (0.0, 0.3, 1.0), (0.2, 0.2, 1.0)]), clips=(1,)),
     Mode("diffractive_epd", lambda: _lens(_diffractive(), fields=[(0.0, 0.0, 1.0), (0.0, 2.0, 1.0), (1.0, 1.0, 1.0)])),
+    Mode("diffractive_before_stop", lambda: _lens(_diffractive_before_stop(), aperture=("EPD", 4.0),
+                                                  fields=[(0.0, 0.0, 1.0), (0.0, 2.0, 1.0), (1.0, 1.0, 1.0)])),
     Mode("piA", _fixture("piA-r012.zmx")),
     Mode("piB", _fixture("piB-r007.zmx")),
     Mode("codex", _fixture("codex-r017.zmx")),
