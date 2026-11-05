@@ -2,7 +2,7 @@
 
 The outcome of this stage is a ledger of rounds judged against the demand and a final round decision: `achieved`, `exhausted`, `limit` or `stopped`. Leaving the approved structure sends you back to stage 2 ([the last section](#gate-expensive-runs-on-the-gap)).
 
-This stage computes on rtc ([session.md](session.md#two-backends-in-one-daemon)): `opt`, `check`, `scan`, `round` and the expert classes work there as described below, with the differences in [On the rtc instance](#on-the-rtc-instance). A check result's `backend_unsupported` names the items rtc cannot compute: rewrite them through `ctx` ([need.md](need.md#write-checks-that-measure-the-real-quantity)), or, for an analysis rtc lacks, pin OpticStudio for that step as [session.md](session.md#two-backends-in-one-daemon) describes.
+This stage computes on rtc ([session.md](session.md#two-backends-in-one-daemon)). A check result's `backend_unsupported` names the items rtc cannot compute: rewrite them through `ctx` ([need.md](need.md#write-checks-that-measure-the-real-quantity)), or, for an analysis rtc lacks, pin OpticStudio for that step as [session.md](session.md#two-backends-in-one-daemon) describes.
 
 ## Build a merit function that means the demand
 
@@ -12,16 +12,23 @@ This stage computes on rtc ([session.md](session.md#two-backends-in-one-daemon))
 - A merit value the backend cannot compute (for example 9e+09 when rays fail by total internal reflection) is a diagnosis signal: find the cause before going on.
 - When a search must use the demand's own measurement (`ctx.measure(ids)`, a scan's `measure`, a `minimize` plan), give it only the items its variables act on and that take well under a second. Leave slow items (a Huygens PSF series takes seconds) to `saos check --only` and the round. A Nelder–Mead on the full shortfall of the fibre probe (18 variables, one-hour budget) stopped unconverged after 48 evaluations.
 
-Tools: `opt vary --param radius|curvature|thickness|conic|par<N>|material`, `opt merit wizard|add|show`. Bounds belong in Zemax boundary operands, such as CTGT/CTLT/ETGT; there are no per-variable --min/--max flags. From a script, add rows in one checked batch with `ctx.merit_add`, design-rule constraints from `saos.ctx.rows`, and solves with `ctx.solve` ([scripting.md](scripting.md#editing-the-lens-from-a-script)).
+Tools: `opt vary --param radius|curvature|thickness|conic|par<N>|material`, `opt merit wizard|add|show`. Bounds belong in boundary operands (CTGT/CTLT, MNEG/MNEA/MNET for edges); there are no per-variable --min/--max flags. From a script, add rows in one checked batch with `ctx.merit_add`, design-rule constraints from `saos.ctx.rows`, and solves with `ctx.solve` ([scripting.md](scripting.md#editing-the-lens-from-a-script)).
 
-## Optimisers in OpticStudio
+## Optimisers
 
-- `opt local --algorithm auto|dls|od --max-seconds S` uses Zemax local optimisation. Auto selects DLS for sequential systems and orthogonal descent for non-sequential systems.
-- `opt hammer --max-seconds S` and `opt global --max-seconds S` run the native search tools until the budget, then cancel and leave the best system in the editor. Global search moves its ten best to `lenses/global/NNN/` (do not run next to existing `GLOPT_*` files). OpticStudio's Hammer writes no files: keep its result with `lens save`.
-- Glass substitution (`opt vary --param material --mode substitute`) happens only in Hammer or global search, within one catalog per surface. Without `--catalog` it uses `SAOS_CDGM_INPROD` (CDGM Standard or Preferred glasses; `SAOS_NHG_INPROD` is the same for New Huaguang), and the result names the catalog. `outside_catalog` lists surfaces whose current glass is not in it; pass `--catalog` per surface where the maker must stay.
-- Read `materials_changed`. A maker's full catalog often yields discontinued glasses (9 of 12 substitutions on the Cooke sample in SCHOTT were Obsolete); replace an `Obsolete` glass with one in production or ask the user before delivering it.
-- Material and asphere decisions beyond these: [Choose an expert](#choose-an-expert).
-- Where your own `saos.search` loops run: [scripting.md](scripting.md#choose-where-a-loop-runs).
+`opt local --max-seconds S` is local optimisation. `opt hammer --max-seconds S` and `opt global --max-seconds S` run until the budget, then cancel and leave the best system in the editor; global search moves its ten best to `lenses/global/NNN/`. Where your own `saos.search` loops run: [scripting.md](scripting.md#choose-where-a-loop-runs).
+
+**On rtc**, the default here:
+
+- **Merit rows.** Same row format and merit value as OpticStudio, saved in the `.zmx`. rtc computes the boundary, lens-data, arithmetic, aberration (TRAR/TRAX/TRAY/TRAC/TRCX/TRCY, OPDC/OPDX/OPDM with Int1 0 and one wavelength) and ray or system operands listed in `docs/plans/rtc-design-stage.md`; a batch with any other operand (ETGT, STHI, STRH, DISG, RAED, …) is refused whole and the merit function stays as it was. A merit function built on OpticStudio that uses refused operands is rebuilt with `opt merit wizard` and `ctx.merit_add`.
+- **Wizard.** RMS only, Gaussian quadrature, `start_at` keeps the rows before it.
+- **`opt local`.** Damped least squares where boundary rows are exact constraints, not penalties (after CODE V): read `constraints`, `violation.after` and `violated_after`. A start where a weighted row cannot be computed (a ray misses) is refused with the failing rows; diagnose it first. `--algorithm dls` only; `cycles` count iterations, `auto` stops at convergence or 200. Cancellation and time limits are checked before each evaluation; cancellation or an exception restores the last accepted point.
+- **`opt hammer|global`.** Hammer archives the systems it finds to `lenses/hammer/NNN/`. Only solutions meeting every constraint compete. Substitution picks among the 8 glasses of the catalog nearest in nd/νd to the current one, not the whole catalog. Material variables and a stop's variable semi-diameter live in memory only: after `lens load`, set them again.
+- **Plots and rounds.** Round plots are rtc's spot, ray fan and FFT MTF. Rounds carry `backend: rtc` and `provenance` (paths and operands not reconciled with OpticStudio). Judge and stop on them as usual; delivery re-measures the delivered round ([delivery.md](delivery.md#re-measure-on-opticstudio)).
+
+**On OpticStudio** (a pin, or a lens rtc cannot trace): `opt local --algorithm auto|dls|od` selects DLS for sequential systems and orthogonal descent for non-sequential ones. Do not run global search next to existing `GLOPT_*` files. Hammer writes no files: keep its result with `lens save`.
+
+**Glass substitution** (`opt vary --param material --mode substitute`) happens only in Hammer or global search, within one catalog per surface. Without `--catalog` it uses `SAOS_CDGM_INPROD` (CDGM Standard or Preferred glasses; `SAOS_NHG_INPROD` is the same for New Huaguang), and the result names the catalog. `outside_catalog` lists surfaces whose current glass is not in it; pass `--catalog` per surface where the maker must stay. Read `materials_changed`: a maker's full catalog often yields discontinued glasses (9 of 12 substitutions on the Cooke sample in SCHOTT were Obsolete); replace an `Obsolete` glass with one in production or ask the user before delivering it. Material and asphere decisions beyond these: [Choose an expert](#choose-an-expert).
 
 Read the result, not just the merit:
 
@@ -44,16 +51,7 @@ Two expert classes answer questions the optimisers never ask: which materials, a
 
 `.candidates(surface)` lists what it would try and leaves the lens unchanged; show the list to the user when the material choice is theirs. Record the result as a `materials` round.
 
-`ctx.AsphereExpert` places aspheres while the structure is chosen ([model.md](model.md#place-aspheres-before-approval)). Here it is the fallback for a monochromatic residual (spherical, coma, astigmatism) that stays the largest gap after the variables that move it are spent, when the demand allows aspheres: `.rank()` leaves the lens as it was; `.run(nas)` changes surface types and so the approved structure. Show the ranking to the user, run, describe the model again and get `saos lens approve` before `saos round --tier structure`.
-
-## On the rtc instance
-
-- **Merit rows.** Same row format and merit value as OpticStudio, saved in the `.zmx`. rtc computes the boundary, lens-data, arithmetic, aberration (TRAR/TRAX/TRAY/TRAC/TRCX/TRCY, OPDC/OPDX/OPDM with Int1 0 and one wavelength) and ray or system operands listed in `docs/plans/rtc-design-stage.md`; a batch with any other operand (ETGT, STHI, STRH, …) is refused whole and the merit function stays as it was. Bound edges with MNEG/MNEA/MNET over a surface range instead of ETGT. A merit function built on OpticStudio that uses refused operands is rebuilt with `opt merit wizard` and `ctx.merit_add` on the instance.
-- **Wizard.** RMS only, Gaussian quadrature, `start_at` keeps the rows before it.
-- **`opt local`.** Damped least squares where boundary rows are exact constraints, not penalties (after CODE V): read `constraints`, `violation.after` and `violated_after`. A start where a weighted row cannot be computed (a ray misses) is refused with the failing rows; diagnose it first. `--algorithm dls` only; `cycles` count iterations, `auto` stops at convergence or 200. Cancellation and time limits are checked before each evaluation; cancellation or an exception restores the last accepted point.
-- **`opt hammer|global`.** Same budget rules as OpticStudio; unlike OpticStudio's, rtc's Hammer archives the systems it finds to `lenses/hammer/NNN/`. Only solutions meeting every constraint compete. Substitution picks among the 8 glasses of the catalog nearest in nd/νd to the current one, not the whole catalog. Material variables live in memory only: after `lens load`, run `opt vary --param material` again.
-- **Plots.** Round plots are rtc's spot, ray fan and FFT MTF.
-- **Rounds** carry `backend: rtc` and `provenance` (paths and operands not reconciled with OpticStudio). Judge and stop on them as usual; delivery re-measures the delivered round ([delivery.md](delivery.md#re-measure-on-opticstudio)).
+`ctx.AsphereExpert` belongs to choosing the structure ([model.md](model.md#place-aspheres-before-approval)). Here it is the fallback for a monochromatic residual (spherical, coma, astigmatism) that stays the largest gap after the variables that move it are spent, when the demand allows aspheres. `.run(nas)` changes the approved structure: show the ranking to the user, run, describe the model again and get `saos lens approve` before `saos round --tier structure`.
 
 ## Record rounds
 
