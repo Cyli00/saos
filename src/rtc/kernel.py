@@ -490,18 +490,17 @@ def _walk(system, last, arrive, stop_on_tir, X, Y, Z, L, M, N, T, dvz, ptr, lvar
             root = 1.0 if mirror[k] else -1.0
             Ax, Ay, Az = n1 * L, n1 * M, n1 * N
             diffractive = row[NTERM] > 0.0 and row[ORDER] != 0.0
-            gx = gy = gz = gn = g = dg = 0.0
+            gx = gy = gn = g = dg = 0.0
             if diffractive:
                 phi, g, dg = _phase(row, X, Y)
                 # 相位加到光程上（手册 §2.3.1.2.10）
                 opl += c_phase * phi
-                # 三维梯度 (φx, φy, φx·zx + φy·zy) 去掉法向分量
+                # ∇φ_t 是 (φx, φy, 0) 在切平面的投影：它和切向量 (1, 0, zx)、(0, 1, zy) 的内积正好是 φx、φy
                 gx, gy = g * X, g * Y
-                gz = gx * zx + gy * zy
-                gn = gx * nx + gy * ny + gz * nz
+                gn = gx * nx + gy * ny
                 Ax += c_phase * (gx - gn * nx)
                 Ay += c_phase * (gy - gn * ny)
-                Az += c_phase * (gz - gn * nz)
+                Az -= c_phase * gn * nz
             an = Ax * nx + Ay * ny + Az * nz
             disc = an * an - (Ax * Ax + Ay * Ay + Az * Az) + n_out * n_out
             tir = disc < 0.0 and not mirror[k]
@@ -530,11 +529,10 @@ def _walk(system, last, arrive, stop_on_tir, X, Y, Z, L, M, N, T, dvz, ptr, lvar
                         T[j, 6] += c_phase * dop
                         dgx = dq * X + g * dx
                         dgy = dq * Y + g * dy
-                        dgz = dgx * zx + gx * dzx + dgy * zy + gy * dzy
-                        dgn = dgx * nx + gx * dnx + dgy * ny + gy * dny + dgz * nz + gz * dnz
+                        dgn = dgx * nx + gx * dnx + dgy * ny + gy * dny
                         dAx += c_phase * (dgx - dgn * nx - gn * dnx)
                         dAy += c_phase * (dgy - dgn * ny - gn * dny)
-                        dAz += c_phase * (dgz - dgn * nz - gn * dnz)
+                        dAz -= c_phase * (dgn * nz + gn * dnz)
                     dan = dAx * nx + Ax * dnx + dAy * ny + Ay * dny + dAz * nz + Az * dnz
                     dR = 0.0
                     if R > 0.0:
@@ -576,21 +574,20 @@ def _walk(system, last, arrive, stop_on_tir, X, Y, Z, L, M, N, T, dvz, ptr, lvar
 
 @njit(**_JIT)
 def _no_links(system, P):
+    """没有设计变量、不记录输出时 _walk 的只读参数；一批光线共用一份。"""
     S = system[0].size
-    return np.zeros((S, P)), np.zeros(S + 1, np.int64), np.zeros(0, np.int64), np.zeros(0, np.int64), np.zeros(0)
+    return (np.zeros((S, P)), np.zeros(S + 1, np.int64), np.zeros(0, np.int64), np.zeros(0, np.int64), np.zeros(0),
+            np.zeros((0, 0, TANGENT)), np.zeros((0, 0, 0, TANGENT)), np.zeros(0, np.int64))
 
 
 # ---------------------------------------------------------------- 瞄准：发射位置（物在无穷远的 EPD、Float By Stop Size）
 
 
 @njit(**_JIT)
-def _aim_position(system, stop, x0, y0, z0, l, m, n, tx, ty, cap):
+def _aim_position(system, stop, x0, y0, z0, l, m, n, tx, ty, cap, links):
     """调发射位置，使光线落在光阑面 (tx, ty)：2×2 Newton，雅可比来自切向，步长限幅。"""
-    dvz, ptr, lvar, lcol, lmult = _no_links(system, 2)
+    dvz, ptr, lvar, lcol, lmult, hole2, hole3, slot = links
     T = np.zeros((2, TANGENT))
-    hole2 = np.zeros((0, 0, TANGENT))
-    hole3 = np.zeros((0, 0, 0, TANGENT))
-    slot = np.zeros(0, np.int64)
     for _ in range(60):
         T[:] = 0.0
         T[0, 0] = 1.0
@@ -617,14 +614,16 @@ def _aim_position(system, stop, x0, y0, z0, l, m, n, tx, ty, cap):
 
 @njit(parallel=True, **_JIT)
 def _aim_positions_parallel(system, stop, x0, y0, z0, l, m, n, tx, ty, cap, ox, oy):
+    links = _no_links(system, 2)
     for i in prange(x0.size):
-        ox[i], oy[i] = _aim_position(system, stop, x0[i], y0[i], z0[i], l[i], m[i], n[i], tx[i], ty[i], cap)
+        ox[i], oy[i] = _aim_position(system, stop, x0[i], y0[i], z0[i], l[i], m[i], n[i], tx[i], ty[i], cap, links)
 
 
 @njit(**_JIT)
 def _aim_positions_serial(system, stop, x0, y0, z0, l, m, n, tx, ty, cap, ox, oy):
+    links = _no_links(system, 2)
     for i in range(x0.size):
-        ox[i], oy[i] = _aim_position(system, stop, x0[i], y0[i], z0[i], l[i], m[i], n[i], tx[i], ty[i], cap)
+        ox[i], oy[i] = _aim_position(system, stop, x0[i], y0[i], z0[i], l[i], m[i], n[i], tx[i], ty[i], cap, links)
 
 
 # ---------------------------------------------------------------- 瞄准：发射方向（OBNA、有限物距）
@@ -680,14 +679,11 @@ def _aim_newton(system, stop, x0, y0, z0, ux, uy, tx, ty, trust, T, dvz, ptr, lv
 
 
 @njit(**_JIT)
-def _aim_direction(system, stop, x0, y0, z0, ux, uy, tx, ty):
+def _aim_direction(system, stop, x0, y0, z0, ux, uy, tx, ty, links):
     """光瞳坐标从 0 按 s∈(0,1] 逐段增大，目标取 s·(tx, ty)，每段用上一段的解作初值。
     这样不会像直接 Newton 那样跳到圆柱面的反射分支；失败时步长减半，而不是换一个根。"""
-    dvz, ptr, lvar, lcol, lmult = _no_links(system, 2)
+    dvz, ptr, lvar, lcol, lmult, hole2, hole3, slot = links
     T = np.zeros((2, TANGENT))
-    hole2 = np.zeros((0, 0, TANGENT))
-    hole3 = np.zeros((0, 0, 0, TANGENT))
-    slot = np.zeros(0, np.int64)
     s = 0.0
     ds = 0.125
     while s < 1.0 - 1e-12:
@@ -706,14 +702,16 @@ def _aim_direction(system, stop, x0, y0, z0, ux, uy, tx, ty):
 
 @njit(parallel=True, **_JIT)
 def _aim_directions_parallel(system, stop, x0, y0, z0, ux, uy, tx, ty, ox, oy, ok):
+    links = _no_links(system, 2)
     for i in prange(x0.size):
-        ox[i], oy[i], ok[i] = _aim_direction(system, stop, x0[i], y0[i], z0[i], ux[i], uy[i], tx[i], ty[i])
+        ox[i], oy[i], ok[i] = _aim_direction(system, stop, x0[i], y0[i], z0[i], ux[i], uy[i], tx[i], ty[i], links)
 
 
 @njit(**_JIT)
 def _aim_directions_serial(system, stop, x0, y0, z0, ux, uy, tx, ty, ox, oy, ok):
+    links = _no_links(system, 2)
     for i in range(x0.size):
-        ox[i], oy[i], ok[i] = _aim_direction(system, stop, x0[i], y0[i], z0[i], ux[i], uy[i], tx[i], ty[i])
+        ox[i], oy[i], ok[i] = _aim_direction(system, stop, x0[i], y0[i], z0[i], ux[i], uy[i], tx[i], ty[i], links)
 
 
 # ---------------------------------------------------------------- 批量追迹
@@ -721,8 +719,10 @@ def _aim_directions_serial(system, stop, x0, y0, z0, ux, uy, tx, ty, ox, oy, ok)
 
 @njit(**_JIT)
 def _one(i, system, last, x0, y0, z0, d, seed, dvz, ptr, lvar, lcol, lmult, out, out_t, slot, error, vig):
-    P = seed.shape[1]
-    T = seed[i].copy() if P > 0 else np.zeros((0, TANGENT))
+    # P = 0 时是空数组，不写；普通追迹每条光线省一次分配
+    T = seed[i]
+    if seed.shape[1] > 0:
+        T = T.copy()
     _, _, e, v = _walk(system, last, False, True, x0[i], y0[i], z0[i], d[i, 0], d[i, 1], d[i, 2], T, dvz, ptr, lvar, lcol, lmult, i, out, out_t, slot)
     error[i] = e
     vig[i] = v
@@ -742,11 +742,8 @@ def _trace_serial(system, last, x0, y0, z0, d, seed, dvz, ptr, lvar, lcol, lmult
 
 @njit(**_JIT)
 def _hits(system, stop, x0, y0, z0, d, ox, oy):
-    dvz, ptr, lvar, lcol, lmult = _no_links(system, 0)
+    dvz, ptr, lvar, lcol, lmult, hole2, hole3, slot = _no_links(system, 0)
     T = np.zeros((0, TANGENT))
-    hole2 = np.zeros((0, 0, TANGENT))
-    hole3 = np.zeros((0, 0, 0, TANGENT))
-    slot = np.zeros(0, np.int64)
     for i in range(x0.size):
         ox[i], oy[i], _, _ = _walk(system, stop, True, False, x0[i], y0[i], z0[i], d[i, 0], d[i, 1], d[i, 2], T, dvz, ptr, lvar, lcol, lmult, -1, hole2, hole3, slot)
 
