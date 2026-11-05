@@ -157,17 +157,25 @@ def _mirror_lens(**changes) -> dict:
 
 
 @pytest.mark.parametrize("raw, words", [
-    (_mirror_lens(ray_aiming="real"), "mirrors with real ray aiming"),
     (_mirror_lens(surfaces=[{"type": "evenaspheric", "radius": -200, "thickness": -100, "material": "MIRROR", "stop": True}]), "mirror"),
-    (_mirror_lens(aperture={"type": "float_by_stop"}, ray_aiming="real",
-                  surfaces=[{"radius": 40, "thickness": 5, "material": {"model": {"nd": 1.5, "vd": 60}}},
-                            {"radius": "inf", "thickness": 40, "stop": True, "semi_diameter": 2}]), "float by stop size"),
 ])
 def test_paths_without_opticstudio_truth_are_refused(raw, words):
     with pytest.raises(SaosError) as exc:
         _built(raw)
     assert exc.value.code == ErrorCode.BACKEND_UNSUPPORTED
     assert words in " | ".join(exc.value.details["problems"])
+
+
+@pytest.mark.parametrize("raw, words", [
+    (_mirror_lens(ray_aiming="real"), "mirrors with real ray aiming"),
+    (_mirror_lens(aperture={"type": "float_by_stop"}, ray_aiming="real",
+                  surfaces=[{"radius": 40, "thickness": 5, "material": {"model": {"nd": 1.5, "vd": 60}}},
+                            {"radius": "inf", "thickness": 40, "stop": True, "semi_diameter": 2}]), "float by stop size"),
+])
+def test_real_aiming_on_a_stop_defined_aperture_or_a_mirror_is_built_and_labelled(raw, words):
+    backend = _built(raw)
+    assert words in " | ".join(backend.unverified())
+    assert math.isfinite(backend.operand("EFFL", 0, 0, []))
 
 
 def test_a_mirror_cannot_be_added_or_removed_on_a_built_lens():

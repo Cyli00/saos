@@ -33,8 +33,8 @@ SURFACE_APERTURES = {"None": 0, "CircularAperture": 1, "CircularObscuration": 2,
 # 系统孔径类型：OpticStudio 的名字 ↔ .zmx 的写法。float_by_stop 的孔径值由光阑半口径定，文件里没有数值。
 APERTURE_TYPES = {"EntrancePupilDiameter": "EPD", "ObjectSpaceNA": "OBNA", "FloatByStopSize": "FLOA"}
 APERTURE_NAMES = {v: k for k, v in APERTURE_TYPES.items()}
-# 与 OpticStudio 逐条追迹对过账的面型（.zmx 类型码）；rtc 另有的 BINARY_2、FRESNELS 尚未对账，一律拒绝
-# surface types reconciled ray by ray with OpticStudio; rtc's BINARY_2 and FRESNELS are not, so they are refused
+# 与 OpticStudio 逐条追迹对过账的面型（.zmx 类型码）；rtc 另有的 BINARY_2、FRESNELS 只在几个小样本上对过，没有真值回归，一律拒绝
+# surface types reconciled ray by ray with OpticStudio; rtc's BINARY_2 and FRESNELS were only spot-checked and have no truth regression, so they are refused
 RECONCILED_TYPES = ("STANDARD", "EVENASPH", "BICONIC", "BICONICX", "BICONICZ", "TOROIDAL", "PARAXIAL")
 GEOMETRY_TOL = 1e-9
 INDEX_TOL = 1e-8
@@ -274,10 +274,6 @@ class RtcBackend(Backend):
         # 下面几条路径没有 OpticStudio 真值，对账前拒绝（docs/plans/rtc-iris-mirror.md）
         # paths without OpticStudio truth yet are refused until reconciled
         mirrors = [s.index for s in lens.surfaces[1:] if s.mirror]
-        if lens.aperture_type == "FLOA" and lens.ray_aiming == 2:
-            out.append("float by stop size with real ray aiming (not reconciled with OpticStudio)")
-        if mirrors and lens.ray_aiming == 2:
-            out.append("mirrors with real ray aiming (not reconciled with OpticStudio)")
         for s in lens.surfaces[1:]:
             if s.aperture_code not in SURFACE_APERTURES.values():
                 out.append(f"surface {s.index} aperture code {s.aperture_code} (not reconciled with OpticStudio)")
@@ -578,6 +574,10 @@ class RtcBackend(Backend):
             out.append("光阑半口径内存变量：AD 与优化终点待对账，导出只保留固定数值")
         if lens.ray_aiming == 1:
             out.append("paraxial ray aiming")
+        if lens.ray_aiming == 2 and lens.aperture_type == "FLOA":
+            out.append("float by stop size with real ray aiming (EXPP and EXPD differ from OpticStudio by about 4e-6)")
+        if lens.ray_aiming == 2 and any(s.mirror for s in lens.surfaces[1:]):
+            out.append("mirrors with real ray aiming (rays match OpticStudio on the truth cases only)")
         for surface in lens.surfaces[1:]:
             shape = geometry.make(surface)
             if not getattr(shape, "verified", False):

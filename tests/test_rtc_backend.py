@@ -124,13 +124,11 @@ def test_settings_rtc_cannot_reproduce_are_refused(recorded, tmp_path):
         assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED and word in err.value.message, (new, err.value.message)
 
 
-def test_only_standard_mirrors_without_ray_aiming_are_admitted(tmp_path):
+def test_standard_mirrors_are_admitted_with_and_without_ray_aiming(tmp_path):
     mirror = _zmx_text(tmp_path, "GLAS N-SF2", "GLAS MIRROR")
     assert RtcBackend(mirror).lens.surface(2).mirror
     mirror.write_text(mirror.read_text(encoding="utf-8").replace("RAIM 0 0", "RAIM 0 2", 1), encoding="utf-8")
-    with pytest.raises(SaosError) as err:
-        RtcBackend(mirror)
-    assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED and "real ray aiming" in err.value.message
+    assert RtcBackend(mirror).lens.ray_aiming == 2
 
 
 def test_swaps_follow_the_material_admission_table(tmp_path, monkeypatch):
