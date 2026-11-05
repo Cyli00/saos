@@ -10,6 +10,16 @@ Models are built, saved, described and approved on rtc, like every stage before 
 - Keep sourced materials and mechanical semi-diameters (`lens set --param mech_semi_diameter`) in the model; the interference check uses the parts' outer edges.
 - Give surfaces what the model needs with `lens set`; hard limits belong in the demand.
 
+## Set the aperture and mirrors as the real system does
+
+These are part of the approved structure, so settle them with the form. Formats: `uv run saos lens build --help`.
+
+- **A physical iris or mount sets the beam:** use `float_by_stop`, where the stop's semi-diameter defines the system aperture. Give the stop an explicit circular aperture if it must also clip rays. Its semi-diameter may be a variable (`opt vary --param semi_diameter`); put the F-number requirement in the merit function, or the optimiser buys image quality by closing the iris.
+- **A coaxial reflective or catadioptric form:** Standard mirrors, negative thicknesses after a reflection, and decentred circular obscurations or rectangular apertures for holes and supports.
+- **A beam that clips off axis by design:** `fields.vignetting` describes it at launch.
+
+All of these compute on rtc, ray aiming off or real; real aiming with a stop-defined aperture or a mirror is listed in `computed_by`. A mirror on another surface type, other aperture shapes, tilts and folds keep the lens on OpticStudio for stages 1 to 3 (`backend_switch.stayed`), which holds a licence throughout: choose them when the optics needs them and tell the user why. rtc's wavefront operands refuse mirrors, and the wizard defaults to wavefront: for a reflective form on rtc, set its `data` to `SpotRadius`.
+
 ## Choose a starting form
 
 First list what the user fixed (element count, which parts move, positions, surface types, materials) and what they left free; "redesign L1 and L2" fixes the count and leaves the forms and positions free. For whatever is free, generate starts from sourced library designs and patent examples scaled to the demand, searching the patents by field, f-number, band, element count and power signs rather than recalling forms from memory, or synthesise them paraxially where the recipe says so. Use the most demanding field, f-number and spectral requirements to choose forms, and inspect first-order and third-order predictions before investing in optimisation. There is no candidate quota; a clearly suitable form may be used directly, with the reason in the model notes. Only a structure fixed in every part skips the search: show the user's reason and your feasibility verdict.
@@ -57,7 +67,7 @@ In an interactive job the user approves with the button in the workflow window (
 
 The approved structure is what `saos round` compares against:
 
-- **Structure (needs a new approval):** surface types, the class of medium (air, glass, mirror), aperture types, the stop, a flat Fresnel substrate or a tilted surface, and the system settings (system aperture type and value, telecentricity, ray aiming; fields and wavelengths may gain points at the end). In a non-sequential system: each object's type, reference object, Inside Of and medium class, and sources and detectors in full except their ray counts. Check conditions are part of the model too: the number of configurations, each multi-configuration row's operand and parameters, TEMP and PRES, environment temperature and pressure, apodization, polarization, the coating file and afocal units.
+- **Structure (needs a new approval):** surface types, the class of medium (air, glass, mirror), aperture types, the stop, a flat Fresnel substrate or a tilted surface, and the system settings (system aperture type, its value except under float by stop size, where the stop's semi-diameter is yours to change, telecentricity, ray aiming; fields and wavelengths may gain points at the end). In a non-sequential system: each object's type, reference object, Inside Of and medium class, and sources and detectors in full except their ray counts. Check conditions are part of the model too: the number of configurations, each multi-configuration row's operand and parameters, TEMP and PRES, environment temperature and pressure, apodization, polarization, the coating file and afocal units.
 - **Yours to change:** radii, thicknesses, conics, polynomial terms, tilt angles, aperture sizes, other multi-configuration values (zoom spacings and the like), glass choice and the coatings of surfaces this design makes. Glasses and coatings are recorded with every round.
 - **Environment surfaces** are locked further: material, coating, radius, conic, apertures and tilts; environment objects also their parameters, position and volume physics.
 

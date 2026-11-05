@@ -86,7 +86,7 @@ LDE 半径列 = Y–Z 截面曲线的曲率半径，圆锥列 = 该曲线的圆�
 | 1 | 焦距 f（空气中等效，0 = 无光焦度） | `PARM 1`（三件镜头都是 4.135） |
 | 2 | OPD Mode（0/1/2/3，见下） | `PARM 2`（三件镜头都是 1） |
 
-面形是平面；折射按 `u′ = u − y/f`。手册给出的四种 OPD 模式：
+面形是平面；折射按 `n'·tan u' = n·tan u − y/f`。手册给出的四种 OPD 模式：
 
 | Mode | 含义 |
 |---|---|
@@ -153,5 +153,30 @@ LDE 半径列 = Y–Z 截面曲线的曲率半径，圆锥列 = 该曲线的圆�
 - 以上全部需要 oracle（`SSAG` / `INDX` / `RAGA` 等）实测后才允许标为已验证
 
 已经实现、但尚无 oracle 数值证据（可以算，不能当交付依据）：
-Binary 2 的相位项、Fresnel、模型玻璃（21 组表内）、MCE pickup、圆形以外的孔径与渐晕码、
+Fresnel（Binary 2 的相位项已有小样本实测，见 `docs/plans/rtc-unify.md`，生产仍拒绝）、模型玻璃（21 组表内）、MCE pickup、圆形以外的孔径与渐晕码、
 Huygens PSF / STRH、DLS 的 AD 雅可比。
+
+## 其它实测事实
+
+从原 rtc 仓库的交接记录和差距分析搬来，文中的 `fixtures/` 已不在本仓库。
+
+文件与结构：
+- 保存时停在哪个结构，`LoadFile` 后 `MCE.CurrentConfiguration` 就是哪个：`MNUM` 第 2 列记的就是它（`codex-r017.zmx` 停在 5），拿结构 1 去比差 2e-2 mm。它与 MCE 行数不成比例（r012 是 1、有 6 行，r017 是 5、有 27 行），解析器按行形状识别 MCE 行。
+- 厚度 pickup：`值 = scale·源厚度 + offset`，`scale`、`offset` 取 `solve[5]`、`solve[6]`，源面号取 `solve[4]`；`solve[3]` 不是源结构号（r003 随结构变、r004 恒为 1，两份文件实测都来自同结构）。
+- AGF 有两种编码（`MISC2.AGF` 是 UTF-16LE，`SCHOTT.AGF` 是 ASCII），先看 BOM；按 UTF-16 解 ASCII 也会“成功”，只是解出乱码。
+
+追迹：
+- 只设通光半口径（`DIAM`）时 OpticStudio 不遮挡光线，渐晕不按 `DIAM` 判。
+- 双锥面的梯度要用 `(cx,kx,U)`、`(cy,ky,U)` 分别算，`dz/dx = x/(1+S)·[2c + z·(1+k)c²/S]`，`U = cx·x² + cy·y²`。旋转对称圆锥面上这个式子与 `c·x/S` 相等（2026-11-05 核对）；原记录说后者只在 k=0 成立，不对。
+- PARAXIAL 面：出射规则 `n'·tan u' = n·tan u − y/f`，之后换成 n'（2026-10-28，面后 N-BK7、N-SF6 差 ≤ 7e-18）；批量追迹的 OPL 列不含理想透镜相位，相位放 `RayBlock.phase`，波前用 `opl + phase`；相位是沿面积分 n'·(L', M') − n·(L, M)，以同视场主光线为零，入射光束有像差时 OpticStudio 的积分路径未公开，未对照。
+- OBNA 实际瞄准的目标是 `(px·Rx, py·Ry)`，Rx、Ry 是射向近轴入瞳 x、y 边缘的两条实光线的光阑落点，带符号（piB：−0.03752733、−0.02444421，光线差 ≤ 8.9e-7 mm，2026-11-05）。piB 的光阑 y 高度在边缘光线处几乎到极值，那里 Newton 到不了，但近轴方向本身就是解。直接二维 Newton 会在圆柱面焦散处跳到反射分支，逐坐标二分会落到沿轴穿过光阑的伪根，所以 `trace` 沿光瞳坐标延拓，Newton 单步限幅 |Δu| ≤ 0.02，不收敛就减半步长而不换根。
+- 模型玻璃的系数对 `(nd, 1/Vd)` 仿射回归残差 3.9e-2，不是简单线性关系（2026-10-26）。
+
+ZOS-API：
+- `GetOperandValue`：`SSAG`、`INDX` 固定评估第 1 个光学面，传面号无效；`CONF` 返回 0；`RAGA` 的 `field` 参数失效。
+- 批量追迹 `ReadNextResult` 的签名是 `out int, out int, out int, 11×out double`：光线序号、错误码、渐晕码，`x,y,z,l,m,n`，法线 3 列，OPL，最后一列恒为 1。错误码只确认了 2 = 折射失败或全反射。
+- `FRU__delta_init(): Attempt to start when running!` 是残留 `OpticStudio.exe` 进程的提示，不影响结果。
+
+仍未定：`HYPR` 语义（`codex` = 1、另两件 = 0，文档未查到，可在同一镜头上 A/B 追迹判断）；`PUSH` 第 6 列、`RAIM` 其余 8 列；`9e9`、`1e10` 哨兵的含义。
+
+评价函数规模：`codex-r017` 有 1440 个 `STHI`、1485 个 `OPGT`、287 个 `OPDX`，单次残差就是几千项。

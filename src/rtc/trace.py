@@ -115,17 +115,16 @@ def launch(system: OpticalSystem, px, py, hx=0.0, hy=0.0):
     """把归一化光瞳/视场坐标变成物理光线（起点 + 方向）。
 
     EPD / Float By Stop Size：在入瞳平面按半径 R·(px,py) 发射，方向取视场角。
-    OBNA：物在无穷远时 Zemax 把光阑中心对齐到第 1 面顶点，方向由物方 NA 决定
-    （oracle 实测：piB 在面 1 上所有光线的交点是 (0,0)，方向随 px、py 变化）。
+    OBNA：从物面射向近轴入瞳（piB 物在第 1 面，所有光线在面 1 的交点是 (0,0)，方向随 px、py 变化）。
     """
     z_ep, r = system.pupil_reference()
     px, py, hx, hy = np.broadcast_arrays(*(np.asarray(v, dtype=float) for v in (px, py, hx, hy)))
     pupil_aperture = system.lens.aperture_type in ("EPD", "FLOA")
-    legacy_obna = (system.lens.aperture_type == "OBNA" and system.object_thickness == 0.0
-                   and system.lens.field_type == "ANGLE" and not system.allow_unverified)
-    if system.finite_object and not legacy_obna:
-        # 手册 §2.1.1.7：瞄准关时从物面射向主波长轴上的近轴入瞳；实际瞄准从这里起步迭代
-        system.require_verified("有限物距的发射")
+    if system.finite_object:
+        # 手册 §2.1.1.7：瞄准关时从物面射向主波长轴上的近轴入瞳；实际瞄准从这里起步迭代。
+        # 物在第 1 面、角度视场的 OBNA（piB）已与 OpticStudio 对账（2026-11-05），其余有限物距路径未对账
+        if not (system.lens.aperture_type == "OBNA" and system.object_thickness == 0.0 and system.lens.field_type == "ANGLE"):
+            system.require_verified("有限物距的发射")
         if not np.isfinite(z_ep):
             raise NotImplementedError("入瞳在无穷远（物方远心）的有限物距发射未实现")
         xo, yo = system.object_point(hx, hy)
@@ -165,7 +164,7 @@ def aim(system: OpticalSystem, x0, y0, z0, d, px, py):
     """实际光线瞄准（RAIM = 2）：让光线打在光阑面的 ``aim_target`` 上，返回新的 (x0, y0, z0, d)。
 
     方向模式沿光瞳坐标延拓，不会跳到圆柱面的反射分支（piB 光阑落在面 9 的圆柱面上，多值根，见
-    docs/plans/rtc/HANDOFF.md §6.5）。与 OpticStudio 一致，不收敛时退回近轴发射方向并给警告（手册 §2.1.1.7）。
+    docs/plans/rtc/SURFACE-PARAMS.md「其它实测事实」）。与 OpticStudio 一致，不收敛时退回近轴发射方向并给警告（手册 §2.1.1.7）。
     """
     packed = system.packed()
     tx, ty = system.aim_target(px, py)
@@ -182,6 +181,13 @@ def aim(system: OpticalSystem, x0, y0, z0, d, px, py):
         span = np.where(off_axis, z_ep - z0, 1.0)
         start_x, start_y = np.where(off_axis, -x0 / span, 0.0), np.where(off_axis, -y0 / span, 0.0)
     ux, uy, ok = kernel.aim_directions(packed, x0, y0, z0, start_x, start_y, tx, ty)
+    # 不收敛的保留近轴发射的斜率。方向总朝 +z：入瞳是虚的时发射方向朝 −z，直接用它方向和光程都会反号
+    ux, uy = np.where(ok, ux, d[..., 0] / d[..., 2]), np.where(ok, uy, d[..., 1] / d[..., 2])
+    forward = _normalize(np.stack([ux, uy, np.ones_like(ux)], axis=-1))
+    if not ok.all():
+        # 边缘光线的落点可以恰好是光阑高度的极值（piB 的 y 向）：那里导数为零，Newton 到不了，但近轴方向本身就是解
+        hit_x, hit_y = stop_hits(system, x0, y0, z0, forward)
+        ok = ok | ((np.abs(hit_x - tx) < 1e-9) & (np.abs(hit_y - ty) < 1e-9))
     failed = int(np.count_nonzero(~ok))
     if failed:
         warnings.warn(
@@ -190,9 +196,7 @@ def aim(system: OpticalSystem, x0, y0, z0, d, px, py):
             RuntimeWarning,
             stacklevel=2,
         )
-    w = np.ones_like(ux)
-    aimed = _normalize(np.stack([ux, uy, w], axis=-1))
-    return x0, y0, z0, np.where(ok[..., None], aimed, d)
+    return x0, y0, z0, forward
 
 
 def stop_hits(system: OpticalSystem, x0, y0, z0, d):

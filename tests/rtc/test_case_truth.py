@@ -87,6 +87,17 @@ def test_rays_match_opticstudio_at_the_image_and_surface_by_surface(name):
         _compare(systems, rows, int(surface), **tolerances)
 
 
+@pytest.mark.parametrize("name, case", [("iris_real", "iris"), ("reflective_real", "reflective")])
+def test_the_production_backend_reproduces_real_aiming(name, case, tmp_path):
+    """这两条路径 2026-11-05 放开：不只内核，生产后端读入的文件也要对上真值。"""
+    path = tmp_path / f"{case}.zmx"
+    path.write_text((CASES / f"{case}.zmx").read_text(encoding="utf-16").replace("RAIM 0 0", "RAIM 0 2", 1), encoding="utf-16")
+    backend = RtcBackend(path, standalone=True)
+    systems = {wave: backend.optical_system(wave) for wave in range(1, len(backend.lens.active_wavelengths) + 1)}
+    record = _truth(name)
+    _compare(systems, record["rays"], record["image_surface"], **_tolerances(backend.lens))
+
+
 @pytest.mark.parametrize("name", RAY_VARIANTS)
 def test_optical_path_matches_plen(name):
     lens = _lens(name)
@@ -105,13 +116,22 @@ def test_optical_path_matches_plen(name):
 def test_first_order_quantities_match_opticstudio(name):
     want = _truth(name)["operands"]
     system = _primary(_lens(name))
-    operands = Operands(system)
     assert firstorder.entrance_pupil_diameter(system) == pytest.approx(want["EPDI"], rel=1e-9)
     assert firstorder.effl(system) == pytest.approx(want["EFFL"], rel=1e-9)
     assert firstorder.wfno(system) == pytest.approx(want["WFNO"], rel=1e-8)
     assert firstorder.entrance_pupil_position(system) == pytest.approx(want["ENPP"], rel=1e-9, abs=1e-9)
     assert firstorder.totr(system) == pytest.approx(want["TOTR"], rel=1e-12, abs=1e-12)
     assert firstorder.petzval_radius(system) == pytest.approx(want["PETZ"], rel=1e-9)
+
+
+EXIT_PUPIL_NAMES = [pytest.param(name, marks=pytest.mark.xfail(strict=True, reason="瞄准开时 OpticStudio 的出瞳随最大视场变，规则未定（docs/plans/rtc-unify.md）"))
+                    if name == "iris_real" else name for name in ALL_NAMES]
+
+
+@pytest.mark.parametrize("name", EXIT_PUPIL_NAMES)
+def test_exit_pupil_matches_opticstudio(name):
+    want = _truth(name)["operands"]
+    operands = Operands(_primary(_lens(name)))
     assert operands.expp() == pytest.approx(want["EXPP"], rel=1e-6)
     assert operands.expd() == pytest.approx(want["EXPD"], rel=1e-6)
 
@@ -314,5 +334,6 @@ def test_variant_differs_from_its_base(name, against):
 def test_semi_diameter_variants_recorded_their_settings():
     assert _truth("iris")["semi_settings"]["fast"] is True
     assert _truth("iris_fast_off")["semi_settings"]["fast"] is False
-    settings = _truth("iris_margin_both")["semi_settings"]
-    assert (settings["margin_mm"], settings["margin_percent"]) == pytest.approx((0.5, 10.0))
+    for name, margin in (("iris_margin_percent", (0.0, 10.0)), ("iris_margin_mm", (0.5, 0.0)), ("iris_margin_both", (0.5, 10.0))):
+        settings = _truth(name)["semi_settings"]
+        assert (settings["margin_mm"], settings["margin_percent"]) == pytest.approx(margin)

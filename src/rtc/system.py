@@ -46,6 +46,7 @@ class Item:
     #: 这一面之后的方向余弦符号 σ（反射一次翻一次）。追迹内部用几何方向，对外报告按 σ 乘回去，
     #: 与 OpticStudio 批量追迹一致：光线穿过奇数个反射面之后，它报的方向余弦仍是 σ·d。
     sign: float = 1.0
+    wavelength: float = 0.0  # 微米，衍射面的光焦度要用
 
     @property
     def type(self) -> str:
@@ -65,7 +66,10 @@ def paraxial_rays(items, y, u, n: float = 1.0, axis: str = "y"):
             # 与实际追迹同一规则 n'u' = n·u − y/f，之后换成面后折射率（面后是玻璃时出瞳才对）
             ua = (n * u - y / it.focal) / it.n_after
         else:
-            ua = (n * u - y * it.shape.vertex_curvature(axis) * (it.n_after - n)) / it.n_after
+            power = it.shape.vertex_curvature(axis) * (it.n_after - n)
+            if it.shape.diffractive:
+                power = power + it.shape.phase_power(it.wavelength)
+            ua = (n * u - y * power) / it.n_after
         n = it.n_after
         rows.append((y, u, ua))
         u = ua
@@ -101,7 +105,7 @@ class OpticalSystem:
         # 调用方可以给自己的玻璃库（例如 OpticStudio 实际使用的 Glasscat 目录）；默认用进程内共享的那份
         self.glasses = glasses if glasses is not None else catalog()
         # 默认用文件保存时选中的结构（MNUM 第 2 个数）。codex-r017 保存时停在第 5 个结构，
-        # 拿结构 1 去比会差 2e-2 mm（docs/plans/rtc/HANDOFF.md §6.4）。
+        # 拿结构 1 去比会差 2e-2 mm（docs/plans/rtc/SURFACE-PARAMS.md「其它实测事实」）。
         self.config = lens.current_config if config is None else config
         self.aim_scale = aim_scale
         self.wavelength = wavelength_um if wavelength_um is not None else lens.wavelengths[lens.primary_wave - 1][0]
@@ -140,6 +144,7 @@ class OpticalSystem:
                 medium=medium,
                 reflect=reflect,
                 sign=sigma,
+                wavelength=self.wavelength,
             )
             self.items.append(item)
             if np.isfinite(item.thickness):
@@ -178,7 +183,7 @@ class OpticalSystem:
 
     def invalidate(self) -> None:
         """改过 items 之后调用：丢掉由面数据导出的缓存（内核数据、入瞳、光阑半径、Float By Stop Size 的入瞳半径）。"""
-        for name in ("_packed", "_entrance_pupil", "_stop_radius", "_float_pupil_radius"):
+        for name in ("_packed", "_entrance_pupil", "_stop_radius", "_stop_hits", "_float_pupil_radius"):
             self.__dict__.pop(name, None)
         self.primary = None
 
@@ -227,7 +232,8 @@ class OpticalSystem:
         """有限物距：归一化视场 → 物面上的点 (x, y)；物面在第 1 面顶点之前 object_thickness 处。
 
         物高视场（FTYP 1）按 Hx、Hy 的归一化直接缩放。角度视场按手册"瞄准关时光线射向近轴入瞳"：
-        主光线从物点射向入瞳中心、与 z 轴夹角为视场角，所以物点 = −tanθ·(z_ep + 物距)。两者都未与 OpticStudio 对账。
+        主光线从物点射向入瞳中心、与 z 轴夹角为视场角，所以物点 = −tanθ·(z_ep + 物距)。z_ep 取主波长的：
+        物点不随波长变（2026-11-05 OpticStudio 实测，三个波长的物点逐位相同）。
         """
         hx = np.asarray(hx, dtype=float)
         hy = np.asarray(hy, dtype=float)
@@ -236,7 +242,7 @@ class OpticalSystem:
             return hx * sx, hy * sy
         if self.lens.field_type != "ANGLE":
             raise NotImplementedError(f"视场类型 {self.lens.field_type} 未实现（有限物距只支持角度与物高视场）")
-        z_ep, _ = self.entrance_pupil()
+        z_ep, _ = self.primary_system().entrance_pupil()
         if not np.isfinite(z_ep):
             raise NotImplementedError("入瞳在无穷远（物方远心）时角度视场没有物点定义")
         span = z_ep + self.object_thickness
@@ -265,8 +271,7 @@ class OpticalSystem:
         高度，所有波长共用（手册：光阑半径由主波长边缘光线追迹确定）。不读 LDE 的半口径：改过参数它就过时。
         2026-10-26 在光阑位于镜后的 4 面双胶合上与 OpticStudio 24.1 对照：它瞄准的光阑交点比这个半径短 2.8e-9（相对），
         是它自己的瞄准收敛误差；近轴高度 |A|·EPD/2 则差 1e-3 量级，不是它的定义。
-        OBNA：目标由近轴传递 × 物方 NA 给出，各方向分别算；``aim_scale`` 可用实测值覆盖
-        （Zemax 的 OBNA 光阑半径定义没有公开到可以纯推导的程度，见 GAP-ANALYSIS）。
+        有限物距（含 OBNA）：见 :meth:`_marginal_stop_hits`，两向分开、带符号。``aim_scale`` 可用实测值覆盖。
         """
         px = np.asarray(px, dtype=float)
         py = np.asarray(py, dtype=float)
@@ -279,6 +284,9 @@ class OpticalSystem:
             # Float By Stop Size：瞄准目标就是光阑的半口径本身，不经近轴换算（手册 §2.1.1.1）
             semi = self.stop_semi_diameter()
             return px * semi, py * semi
+        if self.finite_object and self.lens.ray_aiming != 1:
+            rx, ry = self._marginal_stop_hits()
+            return px * rx, py * ry
         if self.lens.aperture_type == "EPD" or self.allow_unverified:
             semi = self.stop_radius()
             return px * semi, py * semi
@@ -307,31 +315,64 @@ class OpticalSystem:
             self._stop_radius = abs(float(y[0]))
         return self._stop_radius
 
+    def _marginal_stop_hits(self) -> tuple[float, float]:
+        """有限物距：轴上物点射向近轴入瞳 x、y 边缘的两条实光线在光阑面的落点，带符号，两向分开算。
+
+        OpticStudio 的光阑落点就是 (px·Rx, py·Ry)。piB（2026-11-05 实测）是 (−0.03752733·px, −0.02444421·py)：
+        变形系统两向不同；入瞳是虚的时 px > 0 的光线朝 −x 走，所以是负的。
+        """
+        if getattr(self, "_stop_hits", None) is None:
+            from .trace import stop_hits
+
+            if self.lens.active_wavelengths[self.lens.primary_wave - 1][0] != self.wavelength:
+                self._stop_hits = self.primary_system()._marginal_stop_hits()
+                return self._stop_hits
+            z_ep, _ = self.entrance_pupil()
+            if not np.isfinite(z_ep):
+                raise NotImplementedError("入瞳在无穷远（物方远心）时没有边缘光线定义")
+            u = self.pupil_radius() / (z_ep + self.object_thickness)
+            start = (np.zeros(1), np.zeros(1), np.array([-self.object_thickness]))
+            norm = np.sqrt(1.0 + u * u)
+            rx = float(stop_hits(self, *start, np.array([[u / norm, 0.0, 1.0 / norm]]))[0][0])
+            ry = float(stop_hits(self, *start, np.array([[0.0, u / norm, 1.0 / norm]]))[1][0])
+            if not (np.isfinite(rx) and np.isfinite(ry)):
+                raise NotImplementedError("边缘光线追不到光阑面（手册：此时 OpticStudio 改用近轴光线定光阑半径，未实现）")
+            self._stop_hits = (rx, ry)
+        return self._stop_hits
+
     def _marginal_stop_height(self) -> float:
         """手册 §2.1.1.7：光阑半径由主波长下从物面中心出发的边缘光线追到光阑面确定；近轴瞄准用近轴光线，实际瞄准用实光线。
         边缘光线射向近轴入瞳边缘（y 方向）。"""
         from .trace import stop_hits
 
-        z_ep, _ = self.entrance_pupil()
+        if self.lens.ray_aiming == 1:
+            return self._paraxial_stop_height()
         r = self.pupil_radius()
         if not self.finite_object:
             y0, z0, d = r, 0.0, np.array([0.0, 0.0, 1.0])
-            u = 0.0
         else:
+            z_ep, _ = self.entrance_pupil()
             if not np.isfinite(z_ep):
                 raise NotImplementedError("入瞳在无穷远（物方远心）时没有边缘光线定义")
             z0, y0 = -self.object_thickness, 0.0
             d = np.array([0.0, r, z_ep - z0])
             d = d / np.linalg.norm(d)
-            u = r / (z_ep - z0)
-        if self.lens.ray_aiming == 1:
-            y1 = (y0 + u * self.object_thickness) if self.finite_object else y0
-            return abs(float(self._paraxial(y1, u)[self.stop][0]))
         _, y = stop_hits(self, np.array([0.0]), np.array([y0]), np.array([z0]), d[None, :])
         value = abs(float(y[0]))
         if not np.isfinite(value):
             raise NotImplementedError("边缘光线追不到光阑面（手册：此时 OpticStudio 改用近轴光线定光阑半径，未实现）")
         return value
+
+    def _paraxial_stop_height(self) -> float:
+        """轴上物点射向近轴入瞳边缘的近轴光线在光阑面的高度。"""
+        r = self.pupil_radius()
+        if not self.finite_object:
+            return abs(float(self._paraxial(r, 0.0)[self.stop][0]))
+        z_ep, _ = self.entrance_pupil()
+        if not np.isfinite(z_ep):
+            raise NotImplementedError("入瞳在无穷远（物方远心）时没有边缘光线定义")
+        u = r / (z_ep + self.object_thickness)
+        return abs(float(self._paraxial(u * self.object_thickness, u)[self.stop][0]))
 
     def pupil_transfer(self, axis: str = "y") -> float:
         """从第 1 面到光阑面的近轴传递系数 B：y_stop = B·u0（锚在第 1 面轴上）。"""
@@ -354,7 +395,10 @@ class OpticalSystem:
         return B / A, self.items[self.stop].vertex_z
 
     def exit_pupil(self) -> tuple[float, float]:
-        """出瞳：光阑被其后各面成像。返回 (相对像面的位置, 相对光阑半口径的放大率)。"""
+        """出瞳：光阑被其后各面成像。返回 (相对像面的位置, 相对光阑半口径的放大率)。
+
+        这里是近轴定义。OpticStudio 用小视场实光线，面很强时才明显：差距和它的规则见 docs/plans/rtc-unify.md。
+        """
         if self.stop is None:
             return 0.0, 1.0
         r1 = self._paraxial(1.0, 0.0, k0=self.stop)
@@ -439,16 +483,16 @@ class OpticalSystem:
         return self._float_pupil_radius
 
     def stop_pupil_radius(self) -> float:
-        """光阑面处的边缘光线高度：无穷远物体且瞄准 off 时用近轴高度，其余用实际高度；FLOA 用指定半口径。
+        """光阑面处的边缘光线高度：瞄准 off 时用近轴高度，其余用 :meth:`stop_radius`；FLOA 用指定半口径。
 
         EXPD 用它：reflective 案例的光阑半口径是 45 mm 而边缘光线只到 40 mm，OpticStudio 报的 EXPD 51.65 = 2×0.6456×40。
         """
         if self.lens.aperture_type == "FLOA":
             return self.stop_semi_diameter()
         # 光阑在反射镜之后时两种高度才分得开（reflective_stop_on_secondary）：瞄准 off 的 EXPD 18.94419 是近轴高度
-        # 9.46349 算出的，瞄准 real 的 18.97750 是实际高度 9.48013 算出的
-        if self.lens.ray_aiming == 0 and not self.finite_object:
-            return abs(self._paraxial(self.pupil_radius(), 0.0)[self.stop][0])
+        # 9.46349 算出的，瞄准 real 的 18.97750 是实际高度 9.48013 算出的。有限物距同样如此（2026-11-05，6 组 NA/物距差 ≤ 5.5e-8）
+        if self.lens.ray_aiming == 0:
+            return self._paraxial_stop_height()
         return self.stop_radius()
 
     def pupil_radius(self) -> float:

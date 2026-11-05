@@ -65,6 +65,10 @@ class Shape:
         """顶点处沿 x 或 y 的近轴曲率；float 和 Dual 都可以。"""
         return self.surface.curvature
 
+    def petzval_curvature(self):
+        """PETZ 用的曲率。近轴量计入的二次项，OpticStudio 的 PETZ 只有偶次非球面的 α₁ 计入（2026-11-05 实测）。"""
+        return self.vertex_curvature("y")
+
 
 class Standard(Shape):
     kind = "STANDARD"
@@ -144,6 +148,13 @@ class BiconicZernike(Biconic):
             return [(kernel.YP + param - 29, 1.0)]
         return super().links(field, param)
 
+    def vertex_curvature(self, axis: str):
+        # x²、y² 项（参数 14、30）改变顶点曲率，OpticStudio 的近轴量同样计入（2026-11-05 实测 EFLX、EFLY、ENPP）
+        return super().vertex_curvature(axis) + 2.0 * self.surface.params.get(14 if axis == "x" else 30, 0.0)
+
+    def petzval_curvature(self):
+        return self.surface.curvature
+
 
 class Toroidal(Shape):
     """旋转半径 = 0（无穷）时是圆柱面：Y 方向二次曲线 + 参数 2..8 的 y²..y¹⁴ 项；有限半径未标定。"""
@@ -171,7 +182,11 @@ class Toroidal(Shape):
         return []
 
     def vertex_curvature(self, axis: str):
-        return 0.0 if axis == "x" else self.surface.curvature
+        # y² 项（参数 2）改变顶点曲率，OpticStudio 的近轴量同样计入（2026-11-05 实测 EFLY、ENPP）
+        return 0.0 if axis == "x" else self.surface.curvature + 2.0 * self.surface.params.get(2, 0.0)
+
+    def petzval_curvature(self):
+        return self.surface.curvature
 
 
 class Paraxial(Shape):
@@ -193,6 +208,7 @@ class Binary2(EvenAsphere):
 
     参数表：0 = 衍射级次 M，1–8 = 基底的非球面项，13 = 最大项数 N，14 = 归一化半径 r_n，
     15 起 = 系数 A_1(ρ²)、A_2(ρ⁴)…（单位 rad，手册原文 "Coefficient in radians on ρ^2"…）。ρ² = (x² + y²)/r_n²。
+    r_n 缺省或为 0 时取 100（2026-11-05 OpticStudio 实测，读数与显式写 100 相同）。
 
     符号约定（手册 BINARY 1 的 "Coefficients Sign Conventions"）：正光焦度的二元面
     二次相位系数为负，且它给边缘光线加的是**负**光程——与 OPL += λ/(2π)·φ 一致。
@@ -203,6 +219,9 @@ class Binary2(EvenAsphere):
     diffractive = True
     mode = kernel.BRACKET
 
+    def _norm_radius(self) -> float:
+        return self.surface.params.get(14, 0.0) or 100.0
+
     def fill(self, row, params) -> None:
         super().fill(row, params)
         terms = int(params.get(13, 0.0))
@@ -210,14 +229,26 @@ class Binary2(EvenAsphere):
             raise NotImplementedError(f"BINARY_2 相位项数 {terms} 超过内核上限 {kernel.MAX_PHASE_TERMS}")
         row[kernel.NTERM] = max(terms, 0)
         row[kernel.ORDER] = params.get(0, 1.0)
-        row[kernel.RN] = params.get(14, 0.0) or 1.0
+        row[kernel.RN] = self._norm_radius()
         for i in range(1, terms + 1):
             row[kernel.PHASE + i - 1] = params.get(14 + i, 0.0)
 
     def links(self, field, param=0):
-        if field == "param" and 15 <= param < 15 + kernel.MAX_PHASE_TERMS:
-            return [(kernel.PHASE + param - 15, 1.0)]
+        if field == "param" and param in (0, 13, 14):
+            raise NotImplementedError(f"BINARY_2 的参数 {param}（衍射级次、项数、归一化半径）没有实现导数，不能作优化变量")
+        if field == "param" and param >= 15:
+            # 项数之外的系数不进实光线的相位；A_1 仍进近轴量，由 phase_power 单独传递
+            return [(kernel.PHASE + param - 15, 1.0)] if param < 15 + int(self.surface.params.get(13, 0.0)) else []
         return super().links(field, param)
+
+    def phase_power(self, wavelength_um: float):
+        """相位的二次项给的近轴光焦度：φ ≈ M·A_1·r²/r_n²，n'u' = n·u + (λ/2π)·∂φ/∂y = n·u − y·光焦度。OpticStudio 的近轴量同样计入（2026-11-05 实测 ENPP）。
+
+        不看项数：原始文件写 N=0 且带 A_1 时，OpticStudio 的实光线不用 A_1，近轴量却用（2026-11-05 实测，另存后 A_1 被删，两者才一致）。
+        """
+        params = self.surface.params
+        rn = self._norm_radius()
+        return -wavelength_um * 1e-3 / (2.0 * np.pi) * 2.0 * params.get(0, 1.0) * params.get(15, 0.0) / (rn * rn)
 
 
 class Fresnel(EvenAsphere):

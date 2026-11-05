@@ -193,10 +193,6 @@ def _launch_seed(system, n_ray, P, extra, qx, qy, hx, hy, dr, dz_ep, position_ai
                 seed[:, :P, 0] = qx[:, None] * dr
                 seed[:, :P, 1] = qy[:, None] * dr
         return seed
-    legacy_obna = (system.lens.aperture_type == "OBNA" and system.object_thickness == 0.0
-                   and system.lens.field_type == "ANGLE" and not system.allow_unverified)
-    if legacy_obna:
-        return seed
     # 有限物距：物点随入瞳移动（角度视场），发射方向指向入瞳上的 (qx·r, qy·r, z_ep)
     dxo, dyo = np.zeros((n_ray, P)), np.zeros((n_ray, P))
     if system.lens.field_type == "ANGLE":
@@ -282,7 +278,7 @@ def _vertex_tangent(thickness: np.ndarray, extra: int) -> np.ndarray:
 
 
 def _run(system, primary, reference, variables, theta, qx, qy, hx, hy, do_aim, thickness, primary_thickness, links, wanted):
-    """追一批光线，返回 (out, 切向 (光线, 记录的面, P, 7), slot, error, vig)，切向里已含瞄准的隐函数项。"""
+    """追一批光线，返回 (out, 切向 (光线, 记录的面, P, 7), slot, error, vig)，切向里已含瞄准的隐函数项，没瞄准到的光线为 NaN。"""
     P = len(variables)
     n_ray = qx.size
     position_aim = do_aim and aim_by_position(system)
@@ -304,8 +300,8 @@ def _run(system, primary, reference, variables, theta, qx, qy, hx, hy, do_aim, t
     k = system.stop
     target = _target_tangent(system, primary, reference, variables, theta, links, _vertex_tangent(primary_thickness, 0))
     tx, ty = system.aim_target(qx, qy)
-    # 没瞄准到（退回近轴发射）的光线不满足 G = 0，隐函数项不成立，发射按常量处理
-    solved = (np.abs(out[:, k, 0] - tx) < 1e-8) & (np.abs(out[:, k, 1] - ty) < 1e-8) & (error == 0)
+    # G = 0 只看光阑面：光阑之后才丢失的光线照样瞄准成功，它在丢失之前各面的导数要带隐函数项
+    solved = (np.abs(out[:, k, 0] - tx) < 1e-8) & (np.abs(out[:, k, 1] - ty) < 1e-8)
     at_stop = tangents[:, slot[k]]
     J = np.stack([at_stop[:, P:, 0], at_stop[:, P:, 1]], axis=1)  # (光线, 交点分量, 未知量)
     solved &= np.abs(J[:, 0, 0] * J[:, 1, 1] - J[:, 0, 1] * J[:, 1, 0]) > 1e-300
@@ -313,7 +309,10 @@ def _run(system, primary, reference, variables, theta, qx, qy, hx, hy, do_aim, t
     da = np.zeros((n_ray, 2, P))
     if P and solved.any():
         da[solved] = -np.linalg.inv(J[solved]) @ rhs[solved]
-    return out, tangents[:, :, :P] + np.einsum("nsuc,nuj->nsjc", tangents[:, :, P:], da), slot, error, vig
+    design = tangents[:, :, :P] + np.einsum("nsuc,nuj->nsjc", tangents[:, :, P:], da)
+    # 没瞄准到的光线退回近轴发射，隐函数项不成立，这里也没有传播发射方向的导数：标 NaN，不给缺项的有限值
+    design[~solved] = np.nan
+    return out, design, slot, error, vig
 
 
 def _phases(system, out, tangents, slot, chief_out, chief_tangents, row, reference, P):

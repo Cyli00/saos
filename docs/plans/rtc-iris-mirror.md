@@ -18,21 +18,21 @@
 | 能力 | 状态 | 现在的行为 | 位置 |
 |---|---|---|---|
 | Float By Stop Size，瞄准 off | 待对齐 | 当前仍是近轴传递系数；与UpdatePupil 的追迹标定分支映射未完成，见第 8 节 | `src/rtc/system.py` |
-| Float By Stop Size，瞄准 real | 候选 R1 | 底层浮点追迹与真值用例已接通，后端仍拒绝 | `src/rtc/trace.py`、`tests/rtc/test_case_truth.py` |
-| 光阑半口径当设计变量 | 部分实现 R2 | rtc 的 vary/solve、优化器、AD 支持 FLOA 光阑；变量标志仅保存在内存，实际瞄准的半口径 AD 拒绝 | `src/rtc/adtrace.py`、`src/saos/backend/rtc.py` |
-| 圆孔、圆遮挡、矩形孔（含偏心） | 待修 | 内核裁剪；`.zmx` 读写 `CLAP`、`OBSC`、`SQAP`、`OBDC` | `src/rtc/zmx.py:227` |
-| 浮动孔径（`FLAP`，类型码 10） | 保留 | 按面的半口径裁剪；只能从 `.zmx` 读入，处方写不了。真值在变体 `iris_floating`，待录入 | `src/rtc/kernel.py:490` |
+| Float By Stop Size，瞄准 real | 已放开 R1（2026-11-05 用户决定） | 真值光线对得上，EXPP、EXPD 差约 4e-6；生产可用，列在 `computed_by` | `src/rtc/trace.py`、`tests/rtc/test_case_truth.py` |
+| 光阑半口径当设计变量 | 部分实现 R2 | rtc 的 vary/solve、优化器、AD 支持 FLOA 光阑；变量标志仅保存在内存；实际瞄准的半口径导数带隐函数项，已与差分核对 | `src/rtc/adtrace.py`、`src/saos/backend/rtc.py` |
+| 圆孔、圆遮挡、矩形孔（含偏心） | 待修 | 内核裁剪；`.zmx` 读写 `CLAP`、`OBSC`、`SQAP`、`OBDC` | `src/rtc/zmx.py` |
+| 浮动孔径（`FLAP`，类型码 10） | 保留 | 按面的半口径裁剪；只能从 `.zmx` 读入，处方写不了。真值在变体 `iris_floating`，待录入 | `src/rtc/kernel.py` |
 | 蜘蛛、椭圆孔/遮挡、矩形遮挡 | 候选 R3 | 底层读写与裁剪已接通；蜘蛛改为整圈均布；后端仍拒绝 | `rtc_lens.from_prescription(experimental=True)` |
 | 用户定义孔径（8/9） | 不在范围内 | 拒绝 | 同上 |
 | 遮挡孔的画图与重叠检查 | 待验 R4 | 新增可选 obscuration 折线，窗口和报告叠画遮挡；实体检查不扣除遮挡区 | `src/saos/geometry.py`、`ui/static/app.js`、`report_sheet.py` |
 | 自动半口径与 OpticStudio 对账 | 候选 R5 | 默认保留 16 条边缘光线；experimental=True 对旋转对称系统已对上真值（第 9 节），非旋转对称面型未对上 | `rtc_lens.auto_semi_diameters` |
 | 视场渐晕因子：浮点追迹 | 已对账 R6 | 表外取曼哈顿距离最近的表内行，不插值（第 9 节）；模型描述保留真实因子 | `src/rtc/system.py` |
 | 视场渐晕因子：AD 追迹 | 待验 R6 | 共用浮点追迹的光瞳变换，已移除渐晕拒绝，新增非主波长中心差分用例；表外视场的 AD 没有单独用例 | `src/rtc/adtrace.py` |
-| 同轴反射：球面、圆锥面，瞄准 off | 待修 | 浮点、内核、AD 都有反射分支；真值在 `reflective` 及其变体 | `src/rtc/kernel.py:281` |
-| 非球面/双锥/环面反射镜、反射后的近轴面、反射镜配实际瞄准 | 候选 R7 | 反射后近轴方向已修；底层真值用例覆盖这些路径，后端继续拒绝 | `src/rtc/trace.py`、`kernel.py`、`adtrace.py` |
+| 同轴反射：球面、圆锥面，瞄准 off | 待修 | 浮点、内核、AD 都有反射分支；真值在 `reflective` 及其变体 | `src/rtc/kernel.py` |
+| 非球面/双锥/环面反射镜、反射后的近轴面 | 候选 R7 | 反射后近轴方向已修；底层真值用例覆盖这些路径，后端继续拒绝。Standard 反射镜配实际瞄准已放开（2026-11-05 用户决定），列在 `computed_by` | `src/rtc/trace.py`、`kernel.py`、`adtrace.py` |
 | 反射系统的波前、PSF、OPD 操作数 | 部分实现 R8 | OPD/FFT/Strehl/RMS 底层实验入口；操作数和默认入口仍拒绝镜面，Huygens 未实现 | `src/rtc/psf.py` |
 | 全反射 | 不改 | 记错误码 −面号，光线终止，和 OpticStudio 序列模式一致 | `kernel.py` |
-| CODE V 优化基准 | 待验 R9 | pythonnet COM，限时 AUT 与 rtc AD-DLS；两终点由 OpticStudio 同设置测光斑，尚未运行 | `tests/bench_codev.py` |
+| CODE V 优化基准 | 待验 R9 | pythonnet COM，限时 AUT 与 rtc AD-DLS；两终点由 OpticStudio 同设置测光斑，已运行，结果见第 9 节 | `tests/bench_codev.py` |
 | 坐标断点、面倾斜/偏心 | 未开始（阶段 C） | 拒绝 | `rtc.py:38`、`:326` |
 
 **历史：第一版舍去时删掉的东西**（本轮候选从定义和存盘样本重写，当前状态以上表为准）：
@@ -51,7 +51,7 @@
 
 | 来源 | 用途 | 注意 |
 |---|---|---|
-| OpticStudio 2024 R1 手册 | 系统孔径（Float By Stop Size）、面孔径类型（手册 §14.46，`trace.py:26` 已引用）、渐晕因子公式、坐标断点与 Tilt/Decenter 顺序、反射镜符号约定 | 真值以实测为准，手册只当线索 |
+| OpticStudio 2024 R1 手册 | 系统孔径（Float By Stop Size）、面孔径类型（手册 §14.46，`rtc.zmx.Surface.aperture_code` 已引用）、渐晕因子公式、坐标断点与 Tilt/Decenter 顺序、反射镜符号约定 | 真值以实测为准，手册只当线索 |
 | ZOS-API | `SystemData.Aperture.ApertureType = FloatByStopSize`；面孔径 `SurfaceApertureTypes.*`；`Field.VDX…VAN`；`SurfaceType.CoordinateBreak`；`TiltDecenterData`（Before/After、`ReverseThisSurface`）；`IBatchRayTrace` 逐条光线真值 | saos 的 ZOS 后端和 `prescription.py` 已能建这些结构（`prescription.py:47`、`:269`、`:1091`） |
 | `E:\gitProjects\test-core`（`INDEX.md`、`NOTES.md`） | `geometry__UpdateAperture.c` 等文件里的常数和控制流 | 沿用 [rtc-need-stage.md](rtc-need-stage.md#参照资料) 的读法限制：每条线索都要实测确认，不复制函数正文 |
 | `ref/repo/optiland`（MIT） | 反射：`rays/real_rays.py:215` `reflect`、`interactions/refractive_reflective_model.py`；坐标系：`coordinate_system.py`（`localize`/`globalize`）；孔径：`aperture/float_by_stop.py`、`physical_apertures/*`；`.zmx` 的 `COORDBRK`：`fileio/zemax/surfaces.py:321` | 只拿来对照算法和单测思路；optiland 不是 OpticStudio 的真值，不当对账依据 |
@@ -165,7 +165,7 @@
 | 两者 | 所有录入光线 `hx = 0`，视场全在 y 轴上 | x 视场、`VDX` 和 `VAN` 的方向没有判别力，表外视场也没样本 |
 | 两者 | 没有 OPD、波前读数；`INDX` 也没逐面录 | R8、D3 无从验证 |
 | `tests/rtc/test_paraxial_glass.py` | 第 1 面是平的近轴面 | 验证不了 R8 的第 1 个问题（弯曲第 1 面的 OPD），要在 `sequential` 上补 |
-| 测试 | 默认只走内核，`RTC_KERNEL=numpy` 的路径没和真值比 | `trace.py` 的反射与裁剪分支没有对账 |
+| 测试 | 当时默认只走内核，numpy 路径没和真值比 | 反射与裁剪分支没有对账；numpy 路径已于 2026-11-05 删除（`rtc-unify.md`） |
 
 **新案例**
 
@@ -198,7 +198,7 @@
 
 **每个案例和变体都录的真值**（`truth.json` 里变体名对应的一行）：11×11 光瞳网格，基础版录所有波长，变体只录主波长；每条光线的错误码、渐晕码和像面的 x、y、z、l、m、n；每个视场五条光线的逐面数据；`PLEN`；`EPDI`、`EFFL`、`WFNO`、`ENPP`、`EXPP`、`EXPD`、`PETZ`、`TOTR`；逐面逐波长的 `INDX`；逐面半口径和类型（Automatic/Fixed）。R5 的变体只录半口径和设置，不录光线。R8 的 Strehl 没有录，实现 R8 时再定怎么取。
 
-**覆盖自检**（`test_case_truth.py`）：离线测试断言真值本身有判别力，这样案例以后改坏了会直接报错：面 1 的圆孔和矩形孔都有首挡光线，越过光阑半口径的光线只在加了浮动孔径时被挡，每个视场至少有一半光线可用，主要变体相对基础版确有光线变化。比对同时跑内核和 `RTC_KERNEL=numpy` 两条路径。
+**覆盖自检**（`test_case_truth.py`）：离线测试断言真值本身有判别力，这样案例以后改坏了会直接报错：面 1 的圆孔和矩形孔都有首挡光线，越过光阑半口径的光线只在加了浮动孔径时被挡，每个视场至少有一半光线可用，主要变体相对基础版确有光线变化。
 
 ## 3. 执行流程
 
@@ -247,7 +247,7 @@
 
 验收：AD 雅可比和中心差分一致；优化后 `EPDI`、`WFNO` 跟 OpticStudio 重算一致。
 
-**R3 其余面孔径。** 每类先存盘确认 `.zmx` 列序（`SQOB`、`ELAP`、`ELOB`、`SPID`；`SPID` 列序宏里也没给），再放行。蜘蛛臂的分布：第一次录入的方位角扫描（4 臂，宽 0.5，轴上，光瞳半径 0.7）里，面 7 挡光的角度集中在 0°、90°、180°、270° 附近，是四个方向均布；第一版内核 `π·k/n` 配半线判定的 4 条臂落在同一个半平面；本轮改为 `−2π·k/n`，仍待用下述真值验收。每类各加一个面，再各加一个带偏心的面，用全光瞳光线比对渐晕码（第一次录入里，有无偏心首挡面不同的光线：矩形遮挡 10/162，椭圆孔 14/162，椭圆遮挡 10/162，蜘蛛 53/234，带最小半径的圆孔 22/162，都有判别力）。HANDOFF §10 记录过渐晕码值没有对账，这次一并核对。
+**R3 其余面孔径。** 每类先存盘确认 `.zmx` 列序（`SQOB`、`ELAP`、`ELOB`、`SPID`；`SPID` 列序宏里也没给），再放行。蜘蛛臂的分布：第一次录入的方位角扫描（4 臂，宽 0.5，轴上，光瞳半径 0.7）里，面 7 挡光的角度集中在 0°、90°、180°、270° 附近，是四个方向均布；第一版内核 `π·k/n` 配半线判定的 4 条臂落在同一个半平面；本轮改为 `−2π·k/n`，仍待用下述真值验收。每类各加一个面，再各加一个带偏心的面，用全光瞳光线比对渐晕码（第一次录入里，有无偏心首挡面不同的光线：矩形遮挡 10/162，椭圆孔 14/162，椭圆遮挡 10/162，蜘蛛 53/234，带最小半径的圆孔 22/162，都有判别力）。此前渐晕码值没有对账，这次一并核对。
 
 **R4 遮挡孔的画图与重叠检查。** 第一版把孔当成元件外缘（主镜半口径 45 mm 只画 ±8 mm），重叠检查跳过这一面。重做时外缘和孔分开：`hx/hy` 保持半口径，孔放单独字段。遮挡只挡光，零件不一定被挖空（曼金镜就不是），重叠检查要先定义遮挡区算不算实体。改动 `view.json` 字段要同步 `app.js`。
 
@@ -309,7 +309,7 @@ A、B 合入并对账通过后单独立项（第 5 节决定 3），本节只记
 - 膜层透过率和偏振；
 - 鬼像；
 - 非序列；
-- OBNA 实际瞄准不收敛，继续由 [rtc-need-stage.md](rtc-need-stage.md) 跟踪（第 5 节决定 4）。
+- OBNA 实际瞄准不收敛：原因是瞄准目标算错，2026-11-05 已修，规则见 [rtc/SURFACE-PARAMS.md](rtc/SURFACE-PARAMS.md)「其它实测事实」。
 
 ### 3.5 运行命令（由用户运行）
 
@@ -450,8 +450,8 @@ uv run python tests/bench_codev.py --case reflective --output "$TEMP/saos-codev-
 
 **未解决**
 
-- **`iris_real` 的 EXPP、EXPD。** 相对差 −4.0e-6、−3.9e-6，超过 1e-6 容差，用例保持失败，未放宽。EPDI、EFFL、WFNO 和逐光线都对得上；`iris_stop_front`（光阑前无透镜）和 `reflective_stop_on_secondary_real`（EPD）相差不超过 8.3e-8，所以只出现在 FLOA、实际瞄准、光阑前有透镜这一组合，只有这一个样本，无法定规则。生产拒绝 FLOA 配实际瞄准，不受影响。
+- **`iris_real` 的 EXPP、EXPD。** 相对差 −4.0e-6、−3.9e-6，超过 1e-6 容差，用例标严格 `xfail`，未放宽。2026-11-05 查明不是 FLOA 特有，也不是瞄准缓存或数值噪声：OpticStudio 的出瞳用一条小视场实主光线，瞄准开时读数还随最大视场变，这一部分规则未定，见 `rtc-unify.md`“查明的 OpticStudio 规则”。
 - **R5 非旋转对称面型。** `reflective_biconic`、`reflective_toroidal` 的面 5 既不符合 ±视场方向（偏小），也不符合整圈取样（偏大 0.037、0.70 mm），暂用嵌套采样，没有用例覆盖。
-- **R5 生产默认未切换。** 默认 16 点算法在 33 个变体中有 5 个偏差超过 1e-6，最大 0.70 mm（`reflective_toroidal`），旋转对称里最大 0.19 mm（`iris_set_vignetting`）；是否切换待用户决定。
+- **R5 生产默认未切换。** 默认 16 点算法在 33 个变体中有 5 个偏差超过 1e-6，最大 0.70 mm（`reflective_toroidal`），旋转对称里最大 0.19 mm（`iris_set_vignetting`）。决定不整体切换，见 `DESIGN.md`；旋转对称的规则已对账，单独启用是下一步。
 - **R9 基准只作参考。** `iris` 起点 RMS 均值 82.9 µm，rtc 47.7 µm（通过率 64–70%），CODE V 27.9 µm（42–48%）；`reflective` 起点 71.2 µm，rtc 28.6 µm，CODE V 38.0 µm（均 86%）。两边评价函数不同，也都没有焦距和通过率约束，不能据此判断优劣。rtc 两例都跑满 60 s 预算（`iris` 每次 AD 雅可比约 1.6 s，162 条光线），CODE V 0.25 s、0.09 s 正常结束；这不能归因于反射分支，`iris` 没有反射面反而更慢。
 - 其余第 7 节列出的项（半口径变量存盘、Huygens 反射、OPDX/RMS/Strehl 一致性、遮挡显示的人工检查、孔径边界容差）本轮未处理。
