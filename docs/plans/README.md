@@ -6,6 +6,7 @@
 - [需求环节脱离 OpticStudio](rtc-need-stage.md)：rtc 能力补齐、准入与 saos 集成的分批计划（ADR-0016）。
 - [设计轮次脱离 OpticStudio](rtc-design-stage.md)：rtc 实例上的评价函数、约束优化、搜索与交付前复测（ADR-0017）。
 - [rtc 补齐孔径光阑与反射面](rtc-iris-mirror.md)：Float By Stop Size、面孔径、渐晕因子、同轴反射镜的分阶段计划，坐标断点另行立项。D1/D2/D4/D5 修复、R1–R9 实现或候选入口已整合，第 7.3 节验证已运行，结果与未解决项见计划第 9 节。
+- [rtc 核心算法归一](rtc-unify.md)：一个带切向的单步派生追迹、雅可比、瞄准，只留一份实现。
 - [用 ZEBASE 选起点](zebase-starts.md)：草案，待确认许可条款后实现。
 
 已实现功能的接口与算法细节：

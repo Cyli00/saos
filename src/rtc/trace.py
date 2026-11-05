@@ -390,8 +390,8 @@ def _grating(L, M, N, Nx, Ny, Nz, n1, n2, phx, phy, zx, zy, lam):
     """衍射面的方向更新：折射与光栅合并成同一条切向波矢方程。
 
     ``n2·d′ = n1·d + (λ/2π)·∇φ_t + s·N``，其中 ∇φ_t 是相位梯度在**切平面**上的投影，
-    s 由 |d′| = 1 解出（取 d′·N > 0 的那个根）。相位梯度给的是 x/y 方向的偏导，
-    它在面上的三维梯度是 (φx, φy, φx·zx + φy·zy)，再去掉法向分量。
+    s 由 |d′| = 1 解出。法线已翻到入射侧（d·N < 0），透射光继续向前，取 d′·N < 0 的根。
+    相位梯度给的是 x/y 方向的偏导，它在面上的三维梯度是 (φx, φy, φx·zx + φy·zy)，再去掉法向分量。
     """
     n1 = np.broadcast_to(np.asarray(n1, dtype=float), L.shape)
     dn = L * Nx + M * Ny + N * Nz
@@ -411,7 +411,7 @@ def _grating(L, M, N, Nx, Ny, Nz, n1, n2, phx, phy, zx, zy, lam):
     an = Ax * Nx + Ay * Ny + Az * Nz
     disc = an * an - (Ax * Ax + Ay * Ay + Az * Az) + n2 * n2
     tir = disc < 0.0
-    s = -an + np.sqrt(np.maximum(disc, 0.0))
+    s = -an - np.sqrt(np.maximum(disc, 0.0))
     v = np.stack([Ax + s * Nx, Ay + s * Ny, Az + s * Nz], axis=-1) / n2
     v = _normalize(v)
     return v[..., 0], v[..., 1], v[..., 2], tir

@@ -137,7 +137,7 @@ class TimedDesign(Design):
         self.deadline = math.inf
         self.best, self.cost = self.values(), math.inf
 
-    def jacobian(self, theta):
+    def _check(self, theta):
         if time.monotonic() >= self.deadline:
             raise TimeoutError("rtc AD-DLS 达到预算")
         system = self.system_with(theta)
@@ -147,12 +147,26 @@ class TimedDesign(Design):
         reference = trace(system, np.zeros(len(chiefs)), np.zeros(len(chiefs)), chiefs[:, 0], chiefs[:, 1])
         if np.any(block.error) or np.any(reference.error):
             raise ValueError("rtc 候选有追迹失败的光线，不能用被清零的 AD 导数继续比较")
-        r, jacobian = super().jacobian(theta)
-        if not np.all(np.isfinite(r)) or not np.all(np.isfinite(jacobian)):
-            raise ValueError("rtc 候选的残差或雅可比不是有限值")
+
+    def _keep_best(self, theta, r):
+        if not np.all(np.isfinite(r)):
+            raise ValueError("rtc 候选的残差不是有限值")
         cost = float(r @ r)
         if cost < self.cost:
             self.best, self.cost = np.asarray(theta).copy(), cost
+
+    def residual(self, theta):
+        self._check(theta)
+        r = super().residual(theta)
+        self._keep_best(theta, r)
+        return r
+
+    def jacobian(self, theta):
+        self._check(theta)
+        r, jacobian = super().jacobian(theta)
+        if not np.all(np.isfinite(jacobian)):
+            raise ValueError("rtc 候选的雅可比不是有限值")
+        self._keep_best(theta, r)
         return r, jacobian
 
 

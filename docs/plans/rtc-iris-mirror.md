@@ -18,7 +18,7 @@
 | 能力 | 状态 | 现在的行为 | 位置 |
 |---|---|---|---|
 | Float By Stop Size，瞄准 off | 待对齐 | 当前仍是近轴传递系数；与UpdatePupil 的追迹标定分支映射未完成，见第 8 节 | `src/rtc/system.py` |
-| Float By Stop Size，瞄准 real | 候选 R1 | 底层浮点追迹与真值用例已接通，后端仍拒绝 | `src/rtc/trace.py`、`tests/rtc/test_iris_mirror_candidates.py` |
+| Float By Stop Size，瞄准 real | 候选 R1 | 底层浮点追迹与真值用例已接通，后端仍拒绝 | `src/rtc/trace.py`、`tests/rtc/test_case_truth.py` |
 | 光阑半口径当设计变量 | 部分实现 R2 | rtc 的 vary/solve、优化器、AD 支持 FLOA 光阑；变量标志仅保存在内存，实际瞄准的半口径 AD 拒绝 | `src/rtc/adtrace.py`、`src/saos/backend/rtc.py` |
 | 圆孔、圆遮挡、矩形孔（含偏心） | 待修 | 内核裁剪；`.zmx` 读写 `CLAP`、`OBSC`、`SQAP`、`OBDC` | `src/rtc/zmx.py:227` |
 | 浮动孔径（`FLAP`，类型码 10） | 保留 | 按面的半口径裁剪；只能从 `.zmx` 读入，处方写不了。真值在变体 `iris_floating`，待录入 | `src/rtc/kernel.py:490` |
@@ -182,7 +182,7 @@
 - 实测（遮挡半径 16 时）：EFFL 1439.84949，WFNO 18.19644，TOTR 343.68，主波长 11×11 网格各视场通过 84.0%、85.2%、86.4%。
 - 估算：像面 z = +35.7（在主镜之后），回程光束在主镜平面半径约 1.1 mm。
 
-**变体**：由基础版改处方副本得到，定义在 `tests/case_variants.py`，录真值的脚本和离线测试共用。OpticStudio 存盘的 `.zmx` 文本（第 3.1 节第 1 条的存盘证据）和读数一起放在 `tests/fixtures/cases/truth.json`，一个变体一行。基础版的 `.zmx` 单独放在案例目录。`admitted=True` 的变体进已放行路径的回归；候选在 `test_iris_mirror_candidates.py` 单独验收，失败不跳过，也不自动放行。
+**变体**：由基础版改处方副本得到，定义在 `tests/case_variants.py`，录真值的脚本和离线测试共用。OpticStudio 存盘的 `.zmx` 文本（第 3.1 节第 1 条的存盘证据）和读数一起放在 `tests/fixtures/cases/truth.json`，一个变体一行。基础版的 `.zmx` 单独放在案例目录。所有变体都在 `tests/rtc/test_case_truth.py` 逐条比对，失败不跳过；比对通过不等于放行，准入只看后端的拒绝清单。
 
 | 服务 | 变体 | 要录的真值 |
 |---|---|---|

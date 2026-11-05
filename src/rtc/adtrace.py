@@ -92,21 +92,23 @@ class ADBlock:
         return {name: vals[j] for name, vals in self.cols.items()}
 
 
-def _curvature_axis(it, axis: str):
-    """近轴曲率，支持 Dual（与 ``OpticalSystem.curvature_axis`` 同一条规则）。"""
-    t = it.type
-    if t in ("BICONICX", "BICONICZ"):
-        rx = it.surface.params.get(1, 0.0)
-        if axis == "x":
-            if isinstance(rx, D.Dual):
-                return D.where(rx.v == 0.0, 0.0, 1.0 / rx)
-            return 0.0 if rx == 0.0 else 1.0 / rx
-        return it.surface.curvature
-    if t == "TOROIDAL":
-        return 0.0 if axis == "x" else it.surface.curvature
-    if t == "EVENASPH":
-        return it.surface.curvature + 2.0 * it.surface.params.get(1, 0.0)
-    return it.surface.curvature
+def thickness_sensitivity(system: OpticalSystem, variables: list[Variable], theta) -> np.ndarray:
+    """各面厚度对变量的导数，形状 (面数, 变量数)。多重结构的 pickup 让一个面的厚度跟着另一个面走，
+    所以不一定是对角阵；厚度对变量线性，变量加 1 后重建系统读差值就是精确导数。"""
+    out = np.zeros((len(system.items), len(variables)))
+    thickness = [j for j, v in enumerate(variables) if v.field == "thickness"]
+    if not any(row.pickup for row in system.lens.mce):
+        for j in thickness:
+            out[variables[j].item, j] = 1.0
+        return out
+    base = np.array([it.thickness for it in system.items], dtype=float)
+    for j in thickness:
+        probe = np.array(theta, dtype=float)
+        probe[j] += 1.0
+        changed = system_with_variables(system, variables, probe)
+        with np.errstate(invalid="ignore"):
+            out[:, j] = np.nan_to_num(np.array([it.thickness for it in changed.items], dtype=float) - base)
+    return out
 
 
 def _dual_items(system: OpticalSystem, variables: list[Variable], theta):
@@ -116,6 +118,7 @@ def _dual_items(system: OpticalSystem, variables: list[Variable], theta):
     """
     p = len(variables)
     tang = {v.key(): D.Dual.param(float(theta[i]), i, p) for i, v in enumerate(variables)}
+    thickness = thickness_sensitivity(system, variables, theta)
     items = []
     z = D.Dual.konst(0.0)
     for k, it in enumerate(system.items):
@@ -126,7 +129,7 @@ def _dual_items(system: OpticalSystem, variables: list[Variable], theta):
         for (i, field, pa), val in tang.items():
             if i == k and field == "param":
                 surf.params[pa] = val
-        thick = tang.get((k, "thickness", 0), D.Dual.konst(it.thickness))
+        thick = D.Dual(np.asarray(it.thickness, dtype=np.float64), thickness[k].copy()) if thickness[k].any() else D.Dual.konst(it.thickness)
         focal = it.focal
         if it.type == "PARAXIAL" and focal is not None:
             focal = surf.params.get(1, focal)
@@ -151,7 +154,7 @@ def _paraxial_dual(items, y, u, axis: str = "y"):
             ua = (n * u - y / it.focal) / it.n_after
             n = it.n_after
         else:
-            c = _curvature_axis(it, axis)
+            c = it.shape.vertex_curvature(axis)
             n2 = it.n_after
             ua = (n * u - y * c * (n2 - n)) / n2
             n = n2
@@ -389,21 +392,3 @@ def trace_ad(system: OpticalSystem, px, py, variables: list[Variable], theta,
         cols["phase"].append(phase)
 
     return ADBlock(cols, [it.index for it in items])
-
-
-def stack(residuals) -> tuple[np.ndarray, np.ndarray]:
-    """把一组标量 ``Dual`` 残差堆成 (值, 雅可比)。雅可比形状 (len(residuals), P)。"""
-    vals = np.empty(len(residuals))
-    cols = []
-    p = 0
-    for i, r in enumerate(residuals):
-        r = r if isinstance(r, D.Dual) else D.Dual.konst(r)
-        vals[i] = float(np.ravel(r.v)[0])
-        flat = np.ravel(r.d)
-        p = max(p, flat.size)
-        cols.append(flat)
-    J = np.zeros((len(residuals), p))
-    for i, flat in enumerate(cols):
-        if flat.size:
-            J[i, : flat.size] = flat
-    return vals, J

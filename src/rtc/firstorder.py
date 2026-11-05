@@ -87,20 +87,19 @@ def tthi(lens, first: int, last: int, config: int = 1) -> float:
 
 
 def petzval_radius(system: OpticalSystem) -> float:
-    """PETZ。手册：指定波长下的 Petzval 曲率半径，非近轴系统无效。按 Σφ/(n·n′) 求和（φ = c·(n′ − n)，理想透镜 φ = 1/f，
+    """PETZ。手册：指定波长下的 Petzval 曲率半径，非近轴系统无效。按 Σφ/(n·n′) 求和（φ = c·(n′ − n)，
     曲率取 y 截面的近轴曲率），半径 = −1/(n_像·Σ)。
 
     n、n′ 用带符号的折射率：反射面 n′ = −n，于是 φ = −2nc、n·n′ = −n²，两面都进 Σ；像方折射率取绝对值，
     因为反射系统的符号只是记账（单凹面镜 R = −800 给 PETZ = +400，与 f = |R|/2 一致）。
+    理想透镜不计入：OpticStudio 在 reflective_one_mirror_paraxial、reflective_paraxial_after 上都等于去掉它之后的值。
     """
     total = 0.0
     for k, it in enumerate(system.items[:-1]):
+        if it.type == "PARAXIAL":
+            continue
         n1, n2 = system.n_before(k), it.n_after
-        if it.type == "PARAXIAL" and it.focal:
-            power = 1.0 / it.focal
-        else:
-            power = system.curvature_axis(it, "y") * (n2 - n1)
-        total += power / (n1 * n2)
+        total += system.curvature_axis(it, "y") * (n2 - n1) / (n1 * n2)
     if total == 0.0:
         return float("inf")
     return -1.0 / (abs(_image_index(system)) * total)

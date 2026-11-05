@@ -4,7 +4,7 @@
 
 # 开发约定
 - 测试与验证由用户运行：pytest、基准脚本和启动 OpticStudio 的命令，只在用户本轮明确要求时执行；交付时把“验证结果”写成建议用户运行的命令清单
-- 写测试：断言真实行为，不写只为通过而存在的测试；光学案例只用 `tests/fixtures/cases/` 的序列、非序列、混合模式、`iris`（孔径光阑）、`reflective`（同轴反射）五例（用法见该目录 README），不取 `work/` 里的任务
+- 写测试：断言真实行为，不写只为通过而存在的测试；光学案例只用 `tests/fixtures/cases/` 的序列、非序列、混合模式、`iris`（孔径光阑）、`reflective`（同轴反射）五例（用法见该目录 README），不取 `work/` 里的任务；rtc 内核的面型与模式覆盖另用 `tests/rtc/omnibus.py` 的全覆盖案例，它没有 OpticStudio 真值
 - 用户要求提交时，若本次改了工作流的阶段或命令，先同步 `docs/workflow.drawio` 与流程图窗口（`src/saos/ui/stage.py`、`src/saos/ui/static/app.js`），再提交
 - 有多个需要用户拍板的决定时，用 AskUserQuestion 逐题问，每题带推荐项
 - 用户的新决定写进 `DESIGN.md` 对应段落，一句话带日期；`docs/adr/` 是冻结的历史记录，只在追溯某个决定的来由时读，技能、`DESIGN.md`、README 和命令帮助都指向 `DESIGN.md`

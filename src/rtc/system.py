@@ -234,17 +234,8 @@ class OpticalSystem:
 
     # ---- 近轴 ----
     def curvature_axis(self, it: "Item", axis: str) -> float:
-        """某一方向上的近轴曲率。双锥面 X 方向用参数 1 的半径，圆柱面（旋转半径 0）X 方向无光焦度。"""
-        t = it.type
-        if t in ("BICONICX", "BICONICZ"):
-            rx = it.surface.params.get(1, 0.0)
-            return 0.0 if rx == 0.0 else 1.0 / rx if axis == "x" else it.surface.curvature
-        if t == "TOROIDAL":
-            return 0.0 if axis == "x" else it.surface.curvature
-        if t == "EVENASPH":
-            # 矢高里的 α₁r² 项改变顶点曲率：z ≈ (c/2 + α₁)r²，所以近轴曲率是 c + 2α₁
-            return it.surface.curvature + 2.0 * it.surface.params.get(1, 0.0)
-        return it.surface.curvature
+        """某一方向上的近轴曲率，规则在面型类里（geometry.Shape.vertex_curvature）。"""
+        return it.shape.vertex_curvature(axis)
 
     def _paraxial(self, y: float, u: float, k0: int = 0, n: float | None = None, axis: str = "y"):
         """逐面近轴追迹。返回 [(y_at, u_before, u_after)]，y_at 是该面顶点处的光线高度。"""

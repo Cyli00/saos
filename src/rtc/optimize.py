@@ -12,11 +12,11 @@ Zemax 的 DLS 内部细节未公开，这里只做"算法同类"（ADR-0001 第 
 
 from __future__ import annotations
 
-
 import numpy as np
 
-from .adtrace import Variable, stack, trace_ad, variables_from_lens
+from .adtrace import Variable, trace_ad, variables_from_lens
 from .system import OpticalSystem
+from .trace import trace
 
 
 class Design:
@@ -52,37 +52,37 @@ class Design:
 
     # ---- 残差 ----
 
+    def _columns(self, tracer):
+        """残差的各列，同一视场的主光线只追一次。tracer(px, py, hx, hy) 返回像面的 x、y、opl、phase，可以是数组或 Dual。"""
+        rays = np.asarray(self.rays, dtype=float)
+        rays = rays[(rays[:, 2] != 0.0) | (rays[:, 3] != 0.0)]
+        if not len(rays):
+            raise ValueError("rays 里至少要有一条非主光线")
+        fields, row = np.unique(rays[:, :2], axis=0, return_inverse=True)
+        row = np.ravel(row)
+        zero = np.zeros(len(fields))
+        got = tracer(rays[:, 2], rays[:, 3], rays[:, 0], rays[:, 1])
+        ref = tracer(zero, zero, fields[:, 0], fields[:, 1])
+        columns = []
+        if self.mode in ("transverse", "both"):
+            columns += [got["x"] - ref["x"][row], got["y"] - ref["y"][row]]
+        if self.mode in ("wavefront", "both"):
+            columns.append((got["opl"] + got["phase"]) - (ref["opl"] + ref["phase"])[row])
+        return columns
+
     def residual(self, theta) -> np.ndarray:
-        return self.jacobian(theta)[0]
+        """只算值，走编译内核：阻尼试探步不需要雅可比。"""
+        system, image = self.system_with(theta), self.system.items[-1].index
+        columns = self._columns(lambda px, py, hx, hy: trace(system, px, py, hx, hy).at(image))
+        return np.stack(columns, axis=1).ravel()
 
     def jacobian(self, theta):
-        """返回 (残差, 雅可比)。雅可比由一次 AD 追迹得到，形状 (m, P)。"""
-        sys = self.system
-        k_img = sys.items[-1].index
-        chiefs = {}
-        residuals = []
-
-        def chief(hx, hy):
-            key = (hx, hy)
-            if key not in chiefs:
-                b = trace_ad(sys, [0.0], [0.0], self.variables, theta, hx, hy)
-                chiefs[key] = b.at(k_img)
-            return chiefs[key]
-
-        for hx, hy, px, py in self.rays:
-            if px == 0.0 and py == 0.0:
-                continue
-            b = trace_ad(sys, [px], [py], self.variables, theta, hx, hy)
-            got = b.at(k_img)
-            ref = chief(hx, hy)
-            if self.mode in ("transverse", "both"):
-                residuals.append(got["x"][0] - ref["x"][0])
-                residuals.append(got["y"][0] - ref["y"][0])
-            if self.mode in ("wavefront", "both"):
-                residuals.append((got["opl"][0] + got["phase"][0]) - (ref["opl"][0] + ref["phase"][0]))
-        if not residuals:
-            raise ValueError("rays 里至少要有一条非主光线")
-        return stack(residuals)
+        """返回 (残差, 雅可比)。雅可比由一次成批 AD 追迹得到，形状 (m, P)，行序与 residual 相同。"""
+        image = self.system.items[-1].index
+        columns = self._columns(lambda px, py, hx, hy: trace_ad(self.system, px, py, self.variables, theta, hx, hy).at(image))
+        values = np.stack([np.ravel(c.v) for c in columns], axis=1)
+        tangents = np.stack([c.d for c in columns], axis=2)  # (P, 光线, 列)
+        return values.ravel(), np.moveaxis(tangents, 0, 2).reshape(values.size, len(self.variables))
 
     # ---- 把变量写回一个可用的系统副本（优化完取结果用）----
 

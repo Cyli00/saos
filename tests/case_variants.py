@@ -76,8 +76,6 @@ class Variant:
     ring: float | None = None
     #: 录 OPDC、OPDX 和 RMS 波前
     opd: bool = False
-    #: 这条路径现在是否已放行，离线比对只跑放行的
-    admitted: bool = False
 
     def prescription(self) -> dict[str, Any]:
         raw = copy.deepcopy(base(self.case))
@@ -120,11 +118,6 @@ def _iris_no_apertures(raw):
 
 def _iris_vignetting(raw):
     raw["fields"]["vignetting"] = copy.deepcopy(HANDWRITTEN_VIGNETTING)
-
-
-def _iris_vignetting_only(raw):
-    _iris_no_apertures(raw)
-    _iris_vignetting(raw)
 
 
 def _iris_added_aperture(aperture):
@@ -209,28 +202,24 @@ _APERTURES = {
 
 ALL: list[Variant] = [
     # ---- 基础版
-    Variant("iris", "iris", "A1、A2、渐晕码", waves="all", admitted=True),
-    Variant("iris_floating", "iris", "浮动孔径（类型码 10）", after=_floating_stop, admitted=True),
-    Variant("reflective", "reflective", "B、遮挡、穿过主镜孔、R8 的环形光瞳", waves="all", opd=True, admitted=True),
+    Variant("iris", "iris", "A1、A2、渐晕码、R5（fast 开）", waves="all"),
+    Variant("iris_floating", "iris", "浮动孔径（类型码 10）", after=_floating_stop),
+    Variant("reflective", "reflective", "B、遮挡、穿过主镜孔、R8 的环形光瞳", waves="all", opd=True),
     # ---- R1
     Variant("iris_real", "iris", "R1", _real),
     Variant("iris_stop_front", "iris", "R1", _iris_stop_front),
     # ---- R2：改半口径后系统孔径要跟着变
-    Variant("iris_semi_2", "iris", "R2", _iris_semi(2.0), admitted=True),
-    # ---- R5：把挡光、渐晕因子、取样、余量四个因素分开
-    Variant("iris_no_apertures", "iris", "R5", _iris_no_apertures, admitted=True),
-    Variant("iris_vignetting_only", "iris", "R5、R6", _iris_vignetting_only, waves="none"),
-    Variant("iris_fast_on", "iris", "R5", after=_semi_setting(fast=True), waves="none"),
+    Variant("iris_semi_2", "iris", "R2", _iris_semi(2.0)),
+    # ---- R5：挡光、渐晕因子、取样、余量分开；余量只留两项同时给的一版，它同时定了公式和次序
+    Variant("iris_no_apertures", "iris", "R5", _iris_no_apertures),
     Variant("iris_fast_off", "iris", "R5", after=_semi_setting(fast=False), waves="none"),
-    Variant("iris_margin_percent", "iris", "R5", after=_semi_setting(percent=10.0), waves="none"),
-    Variant("iris_margin_mm", "iris", "R5", after=_semi_setting(margin=0.5), waves="none"),
     Variant("iris_margin_both", "iris", "R5", after=_semi_setting(margin=0.5, percent=10.0), waves="none"),
     # ---- R6
-    Variant("iris_set_vignetting", "iris", "R6", after=_set_vignetting, off_table=OFF_TABLE, admitted=True),
-    Variant("iris_vignetting", "iris", "R6", _iris_vignetting, off_table=OFF_TABLE, admitted=True),
+    Variant("iris_set_vignetting", "iris", "R6", after=_set_vignetting, off_table=OFF_TABLE),
+    Variant("iris_vignetting", "iris", "R5、R6", _iris_vignetting, off_table=OFF_TABLE),
     # ---- R7
     Variant("reflective_real", "reflective", "R7", _real),
-    Variant("reflective_stop_on_secondary", "reflective", "R7", _reflective_stop_on_secondary, admitted=True),
+    Variant("reflective_stop_on_secondary", "reflective", "R7", _reflective_stop_on_secondary),
     Variant("reflective_stop_on_secondary_real", "reflective", "R7",
             lambda raw: (_reflective_stop_on_secondary(raw), _real(raw))),
     Variant("reflective_even_asphere", "reflective", "R7", _reflective_even_asphere),
@@ -239,15 +228,12 @@ ALL: list[Variant] = [
     Variant("reflective_paraxial_after", "reflective", "R7", _reflective_paraxial_after),
     Variant("reflective_one_mirror_paraxial", "reflective", "R7", _reflective_one_mirror_paraxial),
     # ---- 奇数次反射、R8
-    Variant("reflective_one_mirror", "reflective", "奇数次反射、R8", _reflective_one_mirror, opd=True, admitted=True),
-    Variant("reflective_no_obscuration", "reflective", "R8", _reflective_no_obscuration, opd=True, admitted=True),
-    Variant("sequential_opd", "sequential", "R8：第 1 面弯曲的折射系统", opd=True, admitted=True),
-    # ---- R3：每种孔径有无偏心各一版
-    *[Variant(f"iris_{key}", "iris", "R3", _iris_added_aperture(ap), fields=_AXIAL_AND_EDGE, ring=0.7 if key == "spider" else None)
-      for key, ap in _APERTURES.items()],
+    Variant("reflective_one_mirror", "reflective", "奇数次反射、R8", _reflective_one_mirror, opd=True),
+    Variant("reflective_no_obscuration", "reflective", "R8", _reflective_no_obscuration, opd=True),
+    Variant("sequential_opd", "sequential", "R8：第 1 面弯曲的折射系统", opd=True),
+    # ---- R3：每种孔径一版，都带偏心；不偏心的情形由基础版面 1 的圆孔覆盖
     *[Variant(f"iris_{key}_decentred", "iris", "R3", _iris_added_aperture({**ap, "x_decenter": 0.3, "y_decenter": -0.2}),
               fields=_AXIAL_AND_EDGE, ring=0.7 if key == "spider" else None)
       for key, ap in _APERTURES.items()],
 ]
 BY_NAME = {v.name: v for v in ALL}
-ADMITTED = [v.name for v in ALL if v.admitted]

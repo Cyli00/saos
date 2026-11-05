@@ -37,6 +37,10 @@ class Shape:
     def sag(self, x, y):
         raise NotImplementedError
 
+    def vertex_curvature(self, axis: str):
+        """顶点处沿 x 或 y 的曲率 ∂²z/∂axis²，近轴追迹用它；float 和 Dual 都可以。"""
+        return self.surface.curvature
+
     def refraction_gradient(self, x, y):
         """折射用的法线斜率 (dz/dx, dz/dy)。默认与矢高梯度相同；Fresnel 覆盖它。"""
         _, zx, zy = self.sag(x, y)
@@ -256,6 +260,10 @@ class EvenAsphere(Shape):
     kind = "EVENASPH"
     verified = True
 
+    def vertex_curvature(self, axis: str):
+        # 矢高里的 α₁r² 项改变顶点曲率：z ≈ (c/2 + α₁)r²
+        return self.surface.curvature + 2.0 * self.surface.params.get(1, 0.0)
+
     def sag(self, x, y):
         z, zx, zy = Standard(self.surface).sag(x, y)
         r2 = x * x + y * y
@@ -299,6 +307,12 @@ class Biconic(Shape):
     kind = "BICONICX"
     verified = True
 
+    def vertex_curvature(self, axis: str):
+        if axis != "x":
+            return self.surface.curvature
+        rx = self.surface.params.get(1, 0.0)
+        return 0.0 if _val(rx) == 0.0 else 1.0 / rx
+
     def sag(self, x, y):
         c = self.surface.curvature
         k = self.surface.conic
@@ -321,6 +335,7 @@ class BiconicZernike(Shape):
 
     kind = "BICONICZ"
     verified = True
+    vertex_curvature = Biconic.vertex_curvature
 
     def sag(self, x, y):
         z, zx, zy = Biconic(self.surface).sag(x, y)
@@ -346,6 +361,9 @@ class Toroidal(Shape):
 
     kind = "TOROIDAL"
     verified = True
+
+    def vertex_curvature(self, axis: str):
+        return 0.0 if axis == "x" else self.surface.curvature
 
     def sag(self, x, y):
         p = self.surface.params
@@ -400,6 +418,9 @@ class Binary2(Shape):
 
     def substrate(self):
         return EvenAsphere(self.surface)
+
+    def vertex_curvature(self, axis: str):
+        return self.substrate().vertex_curvature(axis)
 
     def sag(self, x, y):
         return self.substrate().sag(x, y)
@@ -459,6 +480,9 @@ class Fresnel(Shape):
     verified = False
     opd_supported = False
     flat_intersection = True
+
+    def vertex_curvature(self, axis: str):
+        return EvenAsphere(self.surface).vertex_curvature(axis)
 
     def sag(self, x, y):
         zero = x * 0.0
