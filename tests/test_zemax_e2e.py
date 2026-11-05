@@ -36,7 +36,7 @@ def sha(path: Path) -> str:
 
 def test_accepted_lens_io_errors_isolation_scripts_and_analyses(saos_home, monkeypatch):
     with design_session(saos_home, monkeypatch, "e2e-a") as (daemon, job_a, _):
-        entry = job_a.root / "lenses" / "zos-entry.zmx"
+        entry = job_a.root / "lenses" / "two_glass.zmx"
         assert entry.is_file()
         entry_hash = sha(entry)
         job_b = jobs.create_job("e2e-b")

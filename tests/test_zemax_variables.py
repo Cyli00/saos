@@ -133,7 +133,7 @@ def run(ctx):
 def test_parallel_matches_the_main_instance_on_the_accepted_lens(tmp_path, monkeypatch):
     """3 个 standalone worker 并发算出的 RSCE 与主实例逐个算的相同。 / Three standalone workers match the main instance one by one."""
     with design_session(tmp_path / "home", monkeypatch, "parallel") as (daemon, job, _):
-        lens = "zos-entry.zmx"
+        lens = "two_glass.zmx"
         r0 = ok(daemon.handle({"op": "lens.surfaces", "args": {"job": job.id}}))["surfaces"][1]["radius"]
         radii = [r0 * (1 + 0.002 * k) for k in range(30)]
         explore = job.root / "explore"

@@ -177,6 +177,7 @@ def test_rtc_asphere_ranking_runs_on_the_sequential_case_and_restores_the_lens(s
     assert "stopped_by" not in result and result["engine"] == "rtc"
     # 3 视场 × 3 波长，7×7 光瞳里落在单位圆内的 29 条光线，每条 x、y 两行；渐晕光线会被剔除
     assert 0 < result["residual_rows"] <= 3*3*29*2
+    assert result["residual_rows"] + result["dropped_rows"] == 3*3*29*2
     assert sorted(result["order"]) == [1, 3]
     assert all(r["improvement_factor"] >= 0 for r in result["selected"])
     assert ctx.backend.surfaces() == surfaces

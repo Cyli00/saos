@@ -233,7 +233,7 @@ class AsphereExpert:
             fields = fastmod.field_points(lens)
             field_weights = [float(f[2]) for f in lens.fields]
             px, py = (np.asarray(c, dtype=float) for c in zip(*pupil(self.grid)))
-            values, rows = [], []
+            values, rows, blocks = [], [], []
             for wave, (_, wave_weight) in enumerate(lens.active_wavelengths, 1):
                 system = engine.optical_system(wave)
                 theta = np.asarray([v.value(system) for v in variables], dtype=float)
@@ -246,10 +246,19 @@ class AsphereExpert:
                         r = got[axis] - chief[axis]
                         values.append(scale*np.ravel(r.v))
                         rows.append(scale*np.asarray(r.d).reshape(len(variables), -1).T)
+                        blocks.append((wave, hx, hy))
         finally:
             session.restore(base)
         e, J = np.concatenate(values), np.vstack(rows)
         usable = np.isfinite(e) & np.isfinite(J).all(axis=1)
+        # 丢失或瞄准不收敛的光线不进残差；数目随设计变，排名要带上这个信息才能比较
+        dropped: dict[tuple, int] = {}
+        start = 0
+        for block, part in zip(blocks, values):
+            count = int((~usable[start:start+part.size]).sum())
+            start += part.size
+            if count:
+                dropped[block] = dropped.get(block, 0)+count
         e, J = e[usable], J[usable]
         if not e.size:
             raise SaosError(ErrorCode.BAD_ARGS, "no ray reached the image in the rtc copy")
@@ -269,6 +278,8 @@ class AsphereExpert:
         result = rank_projection(e, models)
         result.update(excluded=excluded, surface_type=self.profile.surface_type, engine="rtc",
                       residual="transverse ray errors about the primary chief ray, focus compensated", residual_rows=int(usable.sum()),
+                      dropped_rows=int((~usable).sum()),
+                      dropped=[{"wave": wave, "hx": float(hx), "hy": float(hy), "rows": count} for (wave, hx, hy), count in dropped.items()],
                       backend=self.ctx.backend.identity(), rtc=engine.identity(), agreement=agreement,
                       slope_metric="base_conic_radial_rms_waves_per_radius")
         return result
