@@ -7,6 +7,7 @@ This stage computes on rtc ([session.md](session.md#two-backends-in-one-daemon))
 ## Build a merit function that means the demand
 
 - Optimise on smooth proxies: RMS spot or wavefront operands, Seidel terms, real-ray constraints. Judge with the demand checks. Step-like checks (ray counts, a field scanned in steps) give an optimiser almost no gradient.
+- Sample the pupil out to its rim (`r = 1`), especially when higher-order aspheric terms vary. Gaussian quadrature rings stop inside the rim, so an unguarded high-order asphere can lower the merit inside the outermost ring while throwing rim rays wild and collapsing full-aperture MTF or spot checks; add rim-ring ray operands (`TRAC`/`OPDC` or `REAX`/`REAY` at `px² + py² = 1`) whenever the wizard alone leaves the edge unsampled.
 - Weigh the merit function the way the demand weighs the objectives; the compromise should favour the user's objectives.
 - An optimiser exploits whatever the target leaves open. Physically impossible states (intersecting parts, a virtual focus, rays missing the image, light leaving the part) must make the target invalid, not cost a linear penalty. Make sure the merit cannot be satisfied by a loophole such as discarding light.
 - A merit value the backend cannot compute (for example 9e+09 when rays fail by total internal reflection) is a diagnosis signal: find the cause before going on.
