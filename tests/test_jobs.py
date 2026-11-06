@@ -14,7 +14,6 @@ def test_create_job_layout(saos_home):
     assert job.root.parent == saos_home / "jobs"
     assert job.id.endswith("-plan10x")
     assert job.lenses_dir.is_dir() and (job.root / "sources").is_dir()
-    # 核心工具不建配方目录 / the core creates no recipe folder
     assert not (job.root / "spec").exists()
     state = job.read_state()
     assert state["status"] == "created" and "spec" not in state

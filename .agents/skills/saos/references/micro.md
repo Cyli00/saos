@@ -1,6 +1,6 @@
 # Micro-optics measurements
 
-`from saos import micro` holds the layout-free measurements of fibre probes, endoscopes, fibre-tip printed lenses and miniature objectives, lifted from the fibre recipe and three zoom-probe jobs. Build a job's checks from them instead of copying recipe internals: a zoom-probe job that imported a recipe's private helper broke when the recipe changed. Each function's docstring has its exact definition.
+`from saos import micro` holds the layout-free measurements of fibre probes, endoscopes, fibre-tip printed lenses and miniature objectives, lifted from fibre-probe and zoom-probe jobs. Build a job's checks from them instead of copying another job's helpers: a zoom-probe job that imported another job's private helper broke when it changed. Each function's docstring has its exact definition.
 
 - **Validity:** a physically invalid state raises `micro.DesignFailure`; wrap a check in `micro.guarded(fn)` so it returns inf. `micro.once(ctx, key, compute)` is `ctx.memo` that also remembers a failure; put your own namespace first in `key`.
 - **Rays and focus:** `micro.trace`, `field_hits(ctx, fields, wave, n)` and `axis_hits` (cached per evaluation), `field_hits_raw` (uncached, after moving the plane), `ray_arrays`, `best_focus_dz(hits)`, `rms_radius(hits, dz)`, `centroid(hits)`.

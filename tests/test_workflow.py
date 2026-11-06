@@ -1127,7 +1127,7 @@ def test_changed_checks_re_measure_the_best_round_first(setup):
 
 
 def test_saos_code_used_by_checks_joins_the_method_version(setup):
-    """判定用到 kit 或配方库时，它们的源码哈希进入判定版本，并随证据留副本；没用到时版本不变。"""
+    """判定用到 kit 时，它的源码哈希进入判定版本，并随证据留副本；没用到时版本不变。"""
     daemon, job = setup
     checks = job.root / "checks"
     checks.mkdir(exist_ok=True)
@@ -1135,11 +1135,10 @@ def test_saos_code_used_by_checks_joins_the_method_version(setup):
     d = demand.validate(demand_with({**LENGTH, "check": {"script": "checks/length.py"}}))
     plain = demand.prepare_scripts(job.root, d)
     assert demand.CODE_KEY not in plain
-    (checks / "helper.py").write_text("from saos.recipes import fiber  # noqa\n", encoding="utf-8")
-    with_recipe = demand.prepare_scripts(job.root, d)
-    files = with_recipe[demand.CODE_KEY]["files"]
-    assert "src/saos/kit.py" in files and any(f.startswith("src/saos/recipes/fiber/") for f in files)
-    assert demand.method_digest(with_recipe) != demand.method_digest(plain)
+    (checks / "helper.py").write_text("from saos import kit  # noqa\n", encoding="utf-8")
+    with_kit = demand.prepare_scripts(job.root, d)
+    assert list(with_kit[demand.CODE_KEY]["files"]) == ["src/saos/kit.py"]
+    assert demand.method_digest(with_kit) != demand.method_digest(plain)
 
 
 def test_a_round_records_the_version_of_the_backend_that_measured_it(setup):

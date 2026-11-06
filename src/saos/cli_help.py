@@ -14,10 +14,10 @@ Output protocol (help itself is plain text):
   Non-finite results: infinity -> "inf"/"-inf", NaN -> null; numpy arrays -> lists.
 
 Process model:
-  Local: daemon control, job, demand, rule-out, stop, report, scan --show,
-    microscope adapt and library check/add/list/query. ui runs a local service.
-  Daemon: lens, opt, exec, check, round, scan execution and microscope
-    repro/accept/perturb/library verify. It owns the OpticStudio connection.
+  Local: daemon control, job, demand, rule-out, stop, report, scan --show.
+    ui runs a local service.
+  Daemon: lens, opt, exec, check, round and scan execution. It owns the
+    OpticStudio connection.
 """
 
 CONVENTIONS = """Long operations
@@ -53,13 +53,11 @@ Environment
   SAOS_POOL_IDLE_S: worker idle lifetime, default 600 seconds.
   SAOS_OPTICSTUDIO_DIR: OpticStudio installation; SAOS_BACKEND: auto (default), zos or rtc as
     daemon start --backend, fake for tool tests; SAOS_GLASSCAT: AGF folder for rtc,
-    default Documents/Zemax/Glasscat;
-    SAOS_LIBRARY: microscope starting-design library, default <repo>/library/microscope.
+    default Documents/Zemax/Glasscat.
 
 Help
   uv run saos <command> --help
   uv run saos <command> <subcommand> --help
-  uv run saos microscope library <subcommand> --help
 """
 
 GROUPS = {
@@ -139,7 +137,7 @@ COMMANDS = {
     "job create": (
         "Create a job from --name; no daemon needed.",
         "Returns job, path, state. Creates a timestamp-name id, job.json, lenses/ and\n"
-        "  sources/; recipe-specific directories are created only when used.\n"
+        "  sources/.\n"
         "  --mode interactive (default, designing from scratch): the user passes the gates\n"
         "  in the workflow window and may ask for changes there. --mode autonomous\n"
         "  (exercises, tests): the agent passes them with --reason and may stop without\n"
@@ -312,7 +310,7 @@ COMMANDS.update({
         "  invalid round (a check failed to run: continue) -> targets met with a model\n"
         "  glass (continue with materials) -> exhausted (every tier tried or ruled out\n"
         "  since the last gain of rel, default 0.01) -> continue with next_tier.\n"
-        "  Changed checks (including helpers/data and used recipe/kit code) remeasure\n"
+        "  Changed checks (including helpers/data and the kit code they use) remeasure\n"
         "  the earlier best archived round first: rebase_of, rebase.equivalent and diffs\n"
         "  describe the comparison. Relative agreement within 1e-9 and no check errors\n"
         "  keeps the window; otherwise a new window starts. Rebases do not consume a\n"
@@ -709,20 +707,7 @@ ARGUMENT_HELP = {
     "int1": "first integer operand parameter (default: %(default)s)",
     "int2": "second integer operand parameter (default: %(default)s)",
     "merit_action": "clear rows, build with wizard settings, add operands, or show rows",
-    "seed": "fixed random seed for reproducible perturbations",
-    "thickness_rel": "relative thickness perturbation limit (default: %(default)s)",
-    "extract": "extraction JSON; schema and source rules in docs/recipes/microscope/library.md",
-    "id": "microscope library entry id",
-    "catalogs": "ordered glass catalogs to search (default: %(default)s)",
-    "focal_length": "target objective focal length in mm",
-    "field_number": "objective field number in mm",
-    "tube_lens": "tube lens focal length in mm (default: %(default)s)",
-    "stop": "stop placement: rear_focal, printed or r<surface>",
-    "na": "target object-space numerical aperture",
-    "magnification": "target objective magnification",
-    "correction_class": "requested correction class (default: %(default)s)",
-    "working_distance": "minimum working distance in mm",
-    "limit": "maximum returned matches (default: %(default)s)",
+
 }
 ARGUMENT_HELP.update({f"d{i}": f"operand data parameter {i} (default: %(default)s)" for i in range(1, 7)})
 

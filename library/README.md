@@ -12,4 +12,4 @@
 | [mechanics/](mechanics/README.md) | 镜坯与镜筒、隔圈材料的膨胀系数、密度、模量，带出处等级 | 反射、折反射、无热化 |
 | [coatings/](coatings/README.md) | 红外、紫外和金属膜层材料的 n、k 表及生成 SAOS_COATING.DAT 的脚本 | 膜层与偏振透过率 |
 | [patents/](patents/README.md) | 2456 个专利实施例（CODE V .seq 原文件）及按规格检索的索引 | 建模起型（`saos.starts.patents`） |
-| [microscope/](microscope/README.md) | 显微物镜的初始结构库（专利实施例）、优化基准案例、停机参数校准证据 | 显微物镜配方 |
+| [microscope/](microscope/README.md) | 显微物镜的初始结构库（专利实施例）、优化基准案例、停机参数校准证据 | 建模（经 `library.find` 只读查阅） |

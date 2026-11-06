@@ -20,7 +20,6 @@ ROOT = Path(__file__).resolve().parents[1]
 
 ROOT_FILES = {"README.md", "DESIGN.md", "TODO.md", "AGENTS.md", "pyproject.toml", "uv.lock", ".gitignore"}
 ROOT_DIRS = {"src", "docs", "library", "tests", ".agents", ".claude"}
-RECIPES = ROOT / ".agents" / "skills" / "saos" / "references" / "recipes"
 JUNK = re.compile(r"\.(log|tmp|bak|orig|zda|pyc)$|(^|/)(~\$|\.~)|\.zmx$", re.I)
 
 INSTANCE_ENTRIES = {"daemon", "jobs"}
@@ -29,7 +28,7 @@ JOB_ENTRIES = {
     "job.json", "log.jsonl", "ledger.jsonl", "seals.jsonl", "confirmations.jsonl", "stops.jsonl", "ruled_out.jsonl", "progress.json", "view.json", "metrics.json", "cancel.request", "sources", "lenses", "models", "scripts", "analyses", "screens", "evaluations", "rounds", "report", "probes", "parallel", "scans", "runs",
     # agent 写入
     "notes", "checks", "explore",
-    # 显微物镜配方（规格与验收评估）
+    # 已删除的显微物镜配方留在旧任务里的目录（2026-11-06 前）
     "spec", "eval",
 }
 
@@ -38,10 +37,6 @@ def repo_files() -> list[PurePosixPath]:
     out = subprocess.run(["git", "ls-files", "-co", "--exclude-standard"], cwd=ROOT, capture_output=True, text=True, check=True)
     # 已删除但还没提交的文件仍在索引里
     return [PurePosixPath(p) for p in out.stdout.splitlines() if p and (ROOT / p).exists()]
-
-
-def recipes() -> set[str]:
-    return {p.stem for p in RECIPES.glob("*.md") if p.name != "README.md"}
 
 
 def test_root_holds_only_the_listed_entries():
@@ -55,19 +50,17 @@ def test_no_lens_files_logs_or_temp_files_outside_their_places():
     assert bad == [], f"lens/log/temp files belong in work/ or the system temp directory: {bad}"
 
 
-def test_docs_are_cross_job_or_per_recipe():
-    known = recipes()
+def test_docs_are_cross_job():
     bad = []
     for p in repo_files():
         if p.parts[0] != "docs":
             continue
         rel = p.parts[1:]
         ok = rel in (("workflow.drawio",),) or (rel[0] == "adr" and len(rel) == 2 and re.match(r"\d{4}-[a-z0-9-]+\.md$", rel[1])) \
-            or (rel[0] == "plans" and len(rel) >= 2 and rel[-1].endswith(".md")) \
-            or (rel[0] == "recipes" and len(rel) >= 3 and rel[1] in known)
+            or (rel[0] == "plans" and len(rel) >= 2 and rel[-1].endswith(".md"))
         if not ok:
             bad.append(str(p))
-    assert bad == [], f"docs/ holds workflow.drawio, adr/NNNN-*.md, plans/**/*.md and recipes/<recipe>/ only: {bad}"
+    assert bad == [], f"docs/ holds workflow.drawio, adr/NNNN-*.md and plans/**/*.md only: {bad}"
 
 
 @pytest.mark.parametrize("top", ["library"])
@@ -77,28 +70,6 @@ def test_every_library_has_a_readme(top):
     assert loose == [], f"{top}/ has loose files; put them in a subdirectory: {loose}"
     missing = sorted({p.parts[1] for p in files if len(p.parts) > 2} - {p.parts[1] for p in files if len(p.parts) == 3 and p.name == "README.md"})
     assert missing == [], f"{top}/<name>/ needs a README.md: {missing}"
-
-
-def _imports_recipe(path: Path) -> bool:
-    return bool(re.search(r"^\s*(from|import)\s+saos\.recipes\b", path.read_text(encoding="utf-8"), re.M))
-
-
-def test_core_does_not_depend_on_recipes():
-    core = [p for p in repo_files() if p.suffix == ".py" and p.parts[:2] == ("src", "saos") and p.parts[2] != "recipes" and p.name != "cli.py"]
-    tests = [p for p in repo_files() if p.suffix == ".py" and p.parts[0] == "tests" and p.parts[1] != "recipes"]
-    bad = [str(p) for p in core + tests if _imports_recipe(ROOT / p)]
-    assert bad == [], f"core code and core tests must not import saos.recipes (recipe tests go to tests/recipes/<recipe>/): {bad}"
-
-
-def test_recipe_parts_match_a_recipe_skill():
-    known = recipes()
-    bad = [str(p) for p in repo_files()
-           if (p.parts[:3] == ("src", "saos", "recipes") and len(p.parts) > 4 and p.parts[3] not in known)
-           or (p.parts[:2] == ("tests", "recipes") and len(p.parts) > 3 and p.parts[2] not in known)]
-    assert bad == [], f"recipe code and tests need .agents/skills/saos/references/recipes/<recipe>.md: {bad}"
-    entry = (ROOT / ".agents" / "skills" / "saos" / "SKILL.md").read_text(encoding="utf-8")
-    unlisted = sorted(r for r in known if f"references/recipes/{r}.md" not in entry)
-    assert unlisted == [], f"the skill entry must route to every recipe: {unlisted}"
 
 
 def test_local_work_tree_follows_the_job_layout():

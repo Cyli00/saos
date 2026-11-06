@@ -1,6 +1,6 @@
 """镜头处方：从零搭建一个序列系统（或 "mode": "non_sequential" 的非序列系统）所需的数据（lens build 的输入格式，结构探索的候选也可以写成处方）。
 
-处方只管怎么在 OpticStudio 里搭出镜头，不管怎么评价；评价在需求单的判定和配方里。
+处方只管怎么在 OpticStudio 里搭出镜头，不管怎么评价；评价在需求单的判定里。
 saos 自己校验骨架（系统设置、每个面的通用项、多重结构），并拒绝不成立的组合（如物在无穷远时用物方 NA）。
 面型和面型参数不逐个写代码：面型写 OpticStudio 的面型名（ZOS-API 的 SurfaceType，如 EvenAspheric、
 CoordinateBreak、Toroidal、XYPolynomial、Binary2），参数按 Par 列号（par4）或列标题（"4th Order Term"）填写，
@@ -1065,7 +1065,7 @@ def normalize(p: dict[str, Any]) -> dict[str, Any]:
 
 HELP_EPILOG = """Input: sequential Prescription JSON
   Unknown keys are rejected. Switches accept JSON true/false only; enum values
-  must be listed names. A prescription builds a system; checks and recipes
+  must be listed names. A prescription builds a system; the demand's checks
   define how to judge it. The title is written into OpticStudio.
 
   {

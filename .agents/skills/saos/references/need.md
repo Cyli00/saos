@@ -4,7 +4,7 @@ The outcome of this stage is a confirmed `sources/demand.yaml`: conditions and a
 
 ## Interview in rounds
 
-Prepare a whole round before you ask anything: every question you can ask now, numbered, each with your recommended answer. Put first, and mark, the questions whose answer can change the structure or a pass line, so the user can answer those even if they skip the rest. Explain optics terms in plain words. Look facts up yourself (repository files, `ref/docs`, the OpticStudio manual, the web) instead of asking. Once the answers show the system belongs to a recipe's family (SKILL.md lists them), read the recipe before the next round: its stage 1 sections carry the questions, defaults and checks.
+Prepare a whole round before you ask anything: every question you can ask now, numbered, each with your recommended answer. Put first, and mark, the questions whose answer can change the structure or a pass line, so the user can answer those even if they skip the rest. Explain optics terms in plain words. Look facts up yourself (repository files, `ref/docs`, the OpticStudio manual, the web) instead of asking.
 
 - With an ask-user tool, ask through it. Your recommendation is the first option and says so; the other options are the realistic alternatives; a value the user must type goes into the free-text answer. When a round exceeds one call's limits, ask in consecutive calls with the marked questions first and do no other work between them.
 - Without one, write a numbered list in which each item is a `Question:` line followed by an `Advice:` line (your recommended answer and its reason in one sentence), worded so "yes" accepts the advice.
@@ -50,7 +50,7 @@ Read the user's requirements as written:
 
 When the catalog has the quantity, check it there instead of writing a script: `check: {metric: {id: spot, params: {fields: [[0, 0]], wave: 1, grid: 21}, pick: rms_radius}}` ([scripting.md](scripting.md#the-metric-catalog) has the ids, parameters and scalars). Validity conditions the catalog lacks stay checks of their own; a curve shown in the window is not a check.
 
-Checks live in `checks/` with every helper module or data file they use; recipe libraries and `saos.kit` they import count too. Any change to them starts a new comparison window (see [rounds.md](rounds.md)).
+Checks live in `checks/` with every helper module or data file they use; the `saos.kit` code they import counts too. Any change to them starts a new comparison window (see [rounds.md](rounds.md)).
 
 - Measure the real quantity. Never special-case a surface type or setting to skip a measurement.
 - Read and change the lens through `ctx` (`get`, with `<surface>.par<N>` for a surface type's parameters, `op` such as `SSAG` and `INDX`, `configuration`, `spot`, `trace`, `analysis`, and `huygens` with `kit.psf_widths` / `kit.psf_axial` for diffraction PSF widths, [scripting.md](scripting.md#scripts)), so the check runs on rtc and OpticStudio alike; rtc has no `ctx.system`, and an item that reaches for it is listed under `backend_unsupported`. On the fibre job six checks read `ctx.system.LDE` and none could run on rtc.

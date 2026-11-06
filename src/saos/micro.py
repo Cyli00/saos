@@ -1,8 +1,7 @@
-"""微光学系统的测量原语（光纤探头、内窥镜、光纤端面打印透镜、微型物镜）：从光纤侧视配方与三个前向变焦探头任务的判定里
-上收、与具体布局无关的部分（2026-11-02 用户决定）。配方只保留自己的布局约定（面注释、折转、视场与波长），其余用这里的函数。
+"""微光学系统的测量原语（光纤探头、内窥镜、光纤端面打印透镜、微型物镜）：与具体布局无关，判定脚本只写自己的布局约定
+（面注释、折转、视场与波长），其余用这里的函数（2026-11-02 用户决定）。
 Measurement primitives for micro-optical systems (fibre probes, endoscopes, lenses printed on fibre tips, miniature
-objectives): the layout-independent parts lifted from the side-viewing fibre recipe and the checks of three
-forward-viewing zoom-probe jobs. A recipe keeps only its layout conventions (comments, folds, fields, waves).
+objectives), independent of any layout; a check keeps only its layout conventions (comments, folds, fields, waves).
 
 约定 / conventions:
 - 只经 saos.kit 与 ctx 读写，不导入后端；同一次判定内反复用到的量经 once() 只算一次。
@@ -262,13 +261,12 @@ def require_defined(ctx, rows: Iterable[dict[str, Any]]) -> None:
             raise DesignFailure(f"surface {i} ({s['comment']}) semi-diameter {sd * 1000:.1f} um exceeds its radius {abs(r) * 1000:.1f} um")
 
 
-def part_radius(ctx, row: dict[str, Any]) -> float:
-    """零件实际的半径：面上定义了圆形孔径时取孔径半径，否则取半口径。row 是 surfaces() 的一行。
-    The part's real radius: a circular aperture's maximum radius when set, else the semi-diameter."""
-    ap = kit.aperture(ctx, row["index"])
-    if ap.get("type") == "CircularAperture" and ap.get("MaximumRadius") is not None:
-        return float(ap["MaximumRadius"])
-    return float(row["semi_diameter"])
+def part_radius(ctx, row: dict[str, Any], radii: dict[int, float] | None = None) -> float:
+    """零件外缘半径，与交叠检查同一定义（kit.part_radii / saos.geometry.part_radii）；交叠检查不含这个面时取半口径。
+    多个面一起量时先取一次 kit.part_radii(ctx) 传进来，免得每个面都跑一遍交叠检查。
+    The part's edge radius as the interference check defines it; the semi-diameter for a surface it leaves out."""
+    radii = kit.part_radii(ctx) if radii is None else radii
+    return radii.get(int(row["index"]), float(row["semi_diameter"]))
 
 
 def transform(ctx, i: int) -> list[float]:
@@ -310,10 +308,11 @@ def radial_extent(ctx, rows: Iterable[dict[str, Any]], axis: Axis, rings: int = 
     transformed to global coordinates. 0 without surfaces; an undefined sag inside the aperture is DesignFailure."""
     rings, spokes = _count("rings", rings, 2), _count("spokes", spokes, 1)
     far = 0.0
+    radii = kit.part_radii(ctx)
     for s in rows:
         i = s["index"]
         tr = transform(ctx, i)
-        sd = part_radius(ctx, s)
+        sd = part_radius(ctx, s, radii)
         symmetric = geometry.rotational(s["type"])
         for ring in range(rings):
             r = sd * ring / (rings - 1)
@@ -343,7 +342,8 @@ def min_gap(ctx, front: int | str, radius: float | None = None, rings: int = 17,
     a, b = rows[i], rows[i + 1]
     if is_coordinate_break(a) or is_coordinate_break(b):
         raise SaosError(ErrorCode.BAD_ARGS, f"min_gap needs two optical surfaces; {i} or {i + 1} is a coordinate break")
-    edge = min(part_radius(ctx, a), part_radius(ctx, b)) if radius is None else float(radius)
+    radii = kit.part_radii(ctx) if radius is None else {}
+    edge = min(part_radius(ctx, a, radii), part_radius(ctx, b, radii)) if radius is None else float(radius)
     thickness = float(kit.get(ctx, f"{i}.thickness"))
     smallest = math.inf
     for ring in range(rings):

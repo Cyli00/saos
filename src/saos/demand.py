@@ -75,9 +75,8 @@ PATH_RE = re.compile(r"\['[^']*'\]|\[\d+\]|[A-Za-z_][A-Za-z0-9_ ]*")
 BOUND_TOLERANCE = 1e-9
 CHECKS_DIR = "checks"
 SUPPORT_KEY = "_checks_tree"
-# 判定用到的 saos 代码（配方库、kit）：改了它，数值可能变，判定版本也要变 / saos code the checks use (recipe libraries, kit)
+# 判定用到的 saos 代码（kit、指标目录）：改了它，数值可能变，判定版本也要变 / saos code the checks use (kit, metrics)
 CODE_KEY = "_saos_code"
-_RECIPE_RE = re.compile(r"saos\.recipes\.([A-Za-z_][A-Za-z0-9_]*)|from\s+saos\.recipes\s+import\s+([A-Za-z_][A-Za-z0-9_, ]*)")
 _KIT_RE = re.compile(r"saos\.kit|from\s+saos\s+import\s+[^\n]*\bkit\b|\bctx\.(spot|trace|op|get|values|memo|lib|analysis|kept|restored|quick_focus|surface)\(")
 
 
@@ -309,22 +308,15 @@ def prepare_scripts(root: Path, demand: dict[str, Any]) -> dict[str, dict[str, A
 
 
 def code_files(root: Path) -> dict[str, str]:
-    """判定脚本用到的 saos 配方包和 kit 的源文件哈希（相对仓库根）。/ Hashes of the saos recipe packages and kit the checks use."""
+    """判定脚本用到的 saos 测量代码（kit、指标目录）的源文件哈希（相对仓库根）。/ Hashes of the saos measuring code the checks use."""
     from saos import config
 
     base = root / CHECKS_DIR
     if not base.is_dir():
         return {}
     text = "\n".join(f.read_text(encoding="utf-8", errors="ignore") for f in sorted(base.rglob("*.py")) if "__pycache__" not in f.parts)
-    names = set()
-    for a, b in _RECIPE_RE.findall(text):
-        names.update(n.strip() for n in (a or b).split(",") if n.strip())
     package = config.REPO_ROOT / "src" / "saos"
     paths = []
-    for name in sorted(names):
-        folder = package / "recipes" / name
-        if folder.is_dir():
-            paths.extend(f for f in sorted(folder.rglob("*.py")) if "__pycache__" not in f.parts)
     if re.search(r"\bctx\.metrics?\s*\(|\bsaos\.metrics\b|from\s+saos\s+import\s+[^\n]*\bmetrics\b", text):
         paths.extend(package / name for name in ("metrics.py", "micro.py", "kit.py"))
     if paths or _KIT_RE.search(text):

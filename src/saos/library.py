@@ -1,5 +1,5 @@
 """共享参考库（<repo>/library）的统一只读入口：先 catalog() 看有哪些库、各多少条、按什么查，再 find() 按文本或字段取条目，
-条目带上它引用的来源。按规格的检索（专利、起点、显微物镜）仍用各自的函数，catalog() 写明是哪个。权威数据是各库的文件，这里不缓存、不改写。
+条目带上它引用的来源。按规格的检索（专利、起点）仍用各自的函数，catalog() 写明是哪个。权威数据是各库的文件，这里不缓存、不改写。
 One read-only entry to the shared reference libraries: catalog() lists them with their entry counts and how to query
 them; find() returns entries by text or field, each with the sources it cites. Specification searches stay in their own
 functions, which catalog() names. The library files are the authority; nothing here caches or writes them."""
@@ -79,7 +79,7 @@ LIBRARIES: dict[str, tuple[Callable[[], tuple[list[dict[str, Any]], dict[str, An
     "starts": (lambda: _entries_dir("starts"), "classic starting forms with sources and applicability",
                "saos.starts.generate / saos.starts.generate.query"),
     "microscope": (lambda: _entries_dir("microscope"), "microscope objective patent examples, benchmarks and calibration evidence",
-                   "saos microscope library query (saos microscope library --help)"),
+                   None),
 }
 
 

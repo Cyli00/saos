@@ -111,7 +111,6 @@ uv run saos daemon stop --all    # 逐个停止它们，并清掉已退出进程
 - **长任务在后台跑**：命令超时不代表计算失败，不要让 agent 重新提交同一项计算。要中断用 `uv run saos job cancel <任务>`，已完成的部分会保留。
 - **不要手改工具写入的文件**：任务目录里工具写入的文件记录了哈希，改动或删除后 `saos report` 会拒绝生成报告（`uv run saos job verify <任务>` 列出问题）。你可以自由看，也可以往 `sources/` 里放资料。
 - **电脑资源**：长时间计算默认留出 2 个逻辑核并以低于正常的优先级运行。
-- **专用配方**：显微物镜和光纤侧视探头的既有 ZOS-API 测量库可从任务开始使用；具体模型的未验证范围仍见配方说明。
 
 ### 常用环境变量
 
@@ -129,7 +128,7 @@ uv run saos daemon stop --all    # 逐个停止它们，并清掉已退出进程
 
 | 文件 | 内容 |
 |---|---|
-| [.agents/skills/saos/SKILL.md](.agents/skills/saos/SKILL.md) | agent 执行设计任务的工作流、各阶段细节与配方（英文） |
+| [.agents/skills/saos/SKILL.md](.agents/skills/saos/SKILL.md) | agent 执行设计任务的工作流与各阶段细节（英文） |
 | [docs/workflow.drawio](docs/workflow.drawio) | 工作流全貌图 |
 | [DESIGN.md](DESIGN.md) | 架构原则、用户决定、目录规范与中英术语 |
 | [docs/adr/](docs/adr/) | 历史决策记录（已冻结，不再更新；与代码冲突时以代码为准） |
@@ -147,7 +146,7 @@ uv run saos daemon stop --all    # 逐个停止它们，并清掉已退出进程
 | `ref/repo/ai-zemax-optical-design` | 只借鉴经验，不复用代码 |
 | `ref/repo/patent-lens-to-excel` | 只借鉴做法（JSON 中间格式、按 nd/νd 匹配玻璃），不调用其代码 |
 
-两本教材出版较早，部分内容可能已经过时；拿不准时查最新的 OpticStudio 手册和几何光学资料。OCR 中的公式和表格质量不可靠，不能直接作为决策依据。光学胶与微透镜材料见 [library/materials/README.md](library/materials/README.md)，光纤探头的选材规则在 [光纤配方](.agents/skills/saos/references/recipes/fiber.md) 里。
+两本教材出版较早，部分内容可能已经过时；拿不准时查最新的 OpticStudio 手册和几何光学资料。OCR 中的公式和表格质量不可靠，不能直接作为决策依据。光学胶与微透镜材料见 [library/materials/README.md](library/materials/README.md)。
 
 ## 参与开发
 

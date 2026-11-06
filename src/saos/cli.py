@@ -3,7 +3,7 @@
     成功：{"ok": true, "result": ...}，退出码 0
     失败：{"ok": false, "error": {"code", "message", "details"}}，退出码 1
 
-daemon 和 job 命令在本进程内执行；lens、opt、exec 命令转发给后台进程。配方的命令由各配方注册（saos microscope …）。
+daemon 和 job 命令在本进程内执行；lens、opt、exec 命令转发给后台进程。
 """
 
 from __future__ import annotations
@@ -589,9 +589,6 @@ def build_parser() -> argparse.ArgumentParser:
     usub.add_parser("serve")
     p.set_defaults(func=cmd_ui)
 
-    from saos.recipes.microscope import cli as microscope_cli
-
-    microscope_cli.register(sub, _Parser, client.DEFAULT_REQUEST_TIMEOUT_S)
     from saos import cli_help
 
     cli_help.configure(parser)

@@ -1,8 +1,8 @@
 """模块分层（DESIGN.md「模块分层」）：下层不导入上层，函数内的延迟导入也算。
 Module layers: a lower layer never imports a higher one, imports inside functions included.
 
-L0 基础约定（协议、参数键、几何、处方、文件）→ L1 计算后端 → L2 测量库（kit、指标目录、micro、rtc 副本、搜索、专家类、fiber 配方库）→ 其余
-（任务、需求、轮次、扫描、worker 池、后台进程、窗口、配方命令）。只约束 L0–L2：下层不导入上层，L0–L2 之间也不成环（只豁免完全在同一包内的环），相对导入也算；
+L0 基础约定（协议、参数键、几何、处方、文件）→ L1 计算后端 → L2 测量库（kit、指标目录、micro、rtc 副本、搜索、专家类）→ 其余
+（任务、需求、轮次、扫描、worker 池、后台进程、窗口）。只约束 L0–L2：下层不导入上层，L0–L2 之间也不成环（只豁免完全在同一包内的环），相对导入也算；
 其余模块相当于 ripgrep 的 core，彼此的方向不在这里检查。
 """
 
@@ -16,8 +16,6 @@ ROOT = Path(__file__).resolve().parents[1] / "src" / "saos"
 # saos.ctx.rows 是评价函数行的构造与校验，没有依赖，后端编译评价函数行时要用 / no dependencies; backends compile merit rows with it
 BASE = {"protocol", "config", "budget", "lensdata", "geometry", "prescription", "lens_files", "glasscat", "library", "ctx", "ctx.rows"}
 MEASURE = {"kit", "fast", "search", "micro", "metrics"}
-# 只含测量函数的配方库与测量库同层：判定脚本导入它们，它们不得伸进执行层 / measurement-only recipe libraries sit with kit
-MEASURE_RECIPES = ("recipes.fiber",)
 TOP = 9
 
 
@@ -26,7 +24,7 @@ def layer(module: str) -> int:
         return 0
     if module == "backend" or module.startswith("backend."):
         return 1
-    if module in MEASURE or module.startswith("ctx.") or module.startswith(MEASURE_RECIPES) or module == "recipes":
+    if module in MEASURE or module.startswith("ctx."):
         return 2
     return TOP
 
