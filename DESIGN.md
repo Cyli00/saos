@@ -55,6 +55,9 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
   - OpticStudio 上的局部优化使用 Zemax DLS 或正交下降；`auto` 在序列系统选 DLS，非序列系统选正交下降。Hammer 与 Global 使用原生工具；rtc 上是 rtc 自己的约束 DLS、Hammer 与全局搜索。外层 Brent、Nelder–Mead、Powell 搜索仍可调用 ZOS 测量。预算与取消共用 `saos.budget`，原生调用返回前不承诺硬实时中断。
   - 玻璃替换默认使用按厂家分开的在产目录 `SAOS_CDGM_INPROD`（另有 `SAOS_NHG_INPROD`，见 `library/glasscat/README.md`），防止全局搜索或 Hammer 换成停产牌号，并避免两家同名牌号参数不同带来的混淆。
   - `ctx.AsphereExpert` / `ctx.GlassExpert` 是当前 ZOS 或 rtc 实例镜头的非球面选面与材料搜索类（`saos.ctx.experts`）。只对纯序列、单结构镜头工作；分析恢复入口，接受态标未保存，保存仍经 ctx。项目物理过滤、Q 型列映射和持久斜率约束必须明确提供，不能用缺失数据猜测。非球面位置属于结构，在建模阶段初筛后用 `AsphereExpert.rank()` 决定、随模型确认，设计轮次里只作后备；`GlassExpert` 不改结构，留在设计轮次的 materials 层级（2026-11-03 用户决定）。接口、算法与待验收项见 `docs/plans/optical-experts.md`。
+- **零件干涉一处定义、处处可见**：零件边缘与间隔只由 `saos.geometry` 定义，经 kit 暴露给 demand 检查复用，不再由各任务自写；`opt`、`scan`、`check` 发现 `parts_clash` 时写进结果顶层并计入 hard_failing，不只留在 review 与 ledger（2026-11-06 用户决定，须为通用形式，不针对单个任务）。
+- **优化器的通用改进**：rtc DLS 能从违反约束的起点出发（已违约束做带阻尼的恢复步，不整步强制）；WorkerContext 与 ScriptContext 一样提供 `solve`、`merit_add`、`merit_clear`；Hammer/Global 按检查点写进度并可在增益低于 `rel` 时停；专家类逐候选上报进度；加速一律做成通用的物理层面算法，不针对单次建模（2026-11-06 用户决定）。加速先测基线再动手：Hammer/Global 的候选在 rtc 进程池并行，切向导数分行接入，差分时冻结自动半口径只在评价函数不依赖半口径时做（2026-11-06 用户认可，基线与进度见 `docs/plans/rtc-design-stage.md`）。
+- **rtc 支持像方 F 数孔径**：rtc 实现 `image_f_number`（EPD = EFL/F#），“焦距可变、F 数固定”不再借 Float By Stop 加内存变量实现（2026-11-06 用户决定）。
 - **统一处方骨架与非序列支持**：序列与纯非序列系统（`"mode": "non_sequential"`）共用同一套处方入口、建模确认、结构指纹、判定和轮次；saos 只校验系统设置、通用面属性和多重结构骨架，具体面型和参数按 OpticStudio 原名透传。非序列能力随真实任务逐步扩展。
 - **窗口、资源与未保存修改保护**：
   - 用户通过流程图窗口（`saos ui`）查看进度、当前镜头视图（`view.json`）与当前镜头指标（`metrics.json`）及每轮导出的点列图/MTF（`viz.json`）。后台进程在镜头改动后自动刷新；rtc 的目录指标另由专用进程读取完整镜头快照，在优化进度回调与空闲刷新时计算，只保留最新待算快照，正式判定仍走 check/round。追加展示选择存在 `metric_selection.json`，不参与判定；窗口尊重用户关闭选择，仅在需要查看的节点通知置顶且不抢键盘焦点；前端随包分发，不引入 Node 构建链。
