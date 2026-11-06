@@ -155,11 +155,40 @@ def test_hammer_keeps_the_start_or_finds_a_feasible_better_lens(tmp_path):
     backend.optimize("auto", max_seconds=30)
     start = backend.merit_value()
     backend.vary(1, "material", True, "substitute", "")
-    result = backend.optimize_search("hammer", max_seconds=3)
+    progress_events = []
+    result = backend.optimize_search("hammer", max_seconds=3, on_progress=progress_events.append)
     assert result["final_merit"] <= start * (1 + 1e-12)
     assert result["stopped_by"] == "timeout" and result["systems"] >= 1
+    assert result["checkpoints"][0]["systems"] == 1 and result["best_at_s"] is not None
+    assert "best_at_s" in progress_events[-1]
     # 找到可行解时最好的系统写在镜头文件旁，等后台进程归档 / the best feasible system is written next to the lens
     assert (tmp_path / "work_0000_HAMMER.zmx").is_file() == result["solver_succeeded"]
+
+
+@needs_glass
+def test_hammer_tries_candidates_in_a_process_pool_and_leaves_no_worker_behind():
+    import multiprocessing
+
+    from saos.backend import rtc_optim
+
+    backend = _designed()
+    problem = backend._problem()
+    out = rtc_optim.search(problem, "hammer", max_seconds=8, substitutes={}, seed=1, local_iterations=5, workers=2)
+    assert out["workers"] == 2 and out["systems"] > 2 and out["stopped_by"] == "timeout"
+    assert out["best"].merit <= out["initial_merit"] and backend.merit_value() == pytest.approx(out["best"].merit)
+    assert multiprocessing.active_children() == []
+
+
+@needs_glass
+def test_search_stops_early_when_checkpoint_gain_is_below_rel():
+    from saos.backend import rtc_optim
+
+    backend = _designed()
+    backend.optimize("auto", max_seconds=30)
+    problem = backend._problem()
+    # 起点已是局部最优：第二个系统试完就到检查点，增益远不到 50%，提前停
+    out = rtc_optim.search(problem, "hammer", max_seconds=30, substitutes={}, rel=0.5, checkpoint_s=0.0, local_iterations=3)
+    assert out["stopped_by"] == "stalled" and out["systems"] == 2 and len(out["checkpoints"]) == 2
 
 
 @needs_glass

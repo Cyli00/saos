@@ -215,6 +215,8 @@ def cmd_opt(args: argparse.Namespace) -> Any:
     if args.action in ("hammer", "global"):
         # 运行时长已知：客户端至少等到它结束后再留 2 分钟收尾 / the run length is known: wait for it plus 2 minutes to wrap up
         payload = {"job": args.job, "cores": args.cores, "max_seconds": args.max_seconds, "measure": args.measure}
+        if getattr(args, "rel", None) is not None:
+            payload["rel"] = args.rel
         return _send(f"opt.{args.action}", args, payload, max(args.timeout, args.max_seconds + 120))
     raise AssertionError(args.action)
 
@@ -499,13 +501,14 @@ def build_parser() -> argparse.ArgumentParser:
     q = opt_cmd("local")
     q.add_argument("--cycles", default="auto", choices=("auto", "1", "5", "10", "50"))
     q.add_argument("--algorithm", choices=("auto", "dls", "od"), help="auto selects DLS for sequential systems and orthogonal descent for non-sequential systems")
-    q.add_argument("--cores", type=int, help="CPU cores for OpticStudio (default: all logical cores but 2)")
+    q.add_argument("--cores", type=int, help="CPU cores: OpticStudio threads, or rtc worker processes for hammer and global (default: all logical cores but 2)")
     q.add_argument("--max-seconds", type=float, help="finite positive optimisation budget in seconds; "
                         "includes measurements and review; an incomplete review returns completed=false and valid=false. Native calls may overrun")
     for name in ("hammer", "global"):
         q = opt_cmd(name)
         q.add_argument("--max-seconds", type=float, required=True, help="required: it never ends on its own; cancel after this many seconds")
-        q.add_argument("--cores", type=int, help="CPU cores for OpticStudio (default: all logical cores but 2)")
+        q.add_argument("--cores", type=int, help="CPU cores: OpticStudio threads, or rtc worker processes for hammer and global (default: all logical cores but 2)")
+        q.add_argument("--rel", type=float, default=None, help="stop early at a checkpoint when the relative merit gain since the previous checkpoint is below rel")
     for name in ("local", "hammer", "global"):
         q = osub.choices[name]
         q.add_argument("--measure", help="measure these demand checks before and after the run and list what got better or worse: "

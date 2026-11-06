@@ -1433,7 +1433,7 @@ class RtcBackend(Backend):
         return {**rtc_optim.summary(run, problem), "backend": "rtc"}
 
     def optimize_search(self, kind: str, cores: int | None = None, *, max_seconds: float,
-                        on_progress=None, should_cancel=None) -> dict[str, Any]:
+                        on_progress=None, should_cancel=None, rel: float | None = None) -> dict[str, Any]:
         """Hammer 或全局搜索（rtc_optim.search），到 max_seconds 或取消为止；结束后镜头是找到的最好解。找到的系统写在镜头文件旁
         （全局搜索 GLOPT_NNNN.zmx 按评价函数从小到大，Hammer 为 <镜头>_0000_HAMMER.zmx），由后台进程归档，同 OpticStudio。
         Hammer or global search until max_seconds or a cancel; the lens ends on the best solution. The systems found are
@@ -1445,7 +1445,7 @@ class RtcBackend(Backend):
         problem = self._problem()
         before = [self._material_text(s) for s in lens.surfaces]
         result = rtc_optim.search(problem, kind, max_seconds=max_seconds, substitutes=self._substitutes(),
-                                  should_cancel=should_cancel, on_progress=on_progress)
+                                  should_cancel=should_cancel, on_progress=on_progress, rel=rel, workers=max(1, int(cores or 1)))
         self._write_search(kind, result, problem)
         final = self.merit_value()
         initial = result["initial_merit"]
@@ -1455,6 +1455,7 @@ class RtcBackend(Backend):
                "targets": sum(1 for r in self.merit if r.weight > 0 and r.type not in ("BLNK", "DMFS")),
                "succeeded": improved and found and result["stopped_by"] is None, "solver_succeeded": found, "improved": improved,
                "converged": None, "stopped_by": result["stopped_by"], "elapsed_s": result["elapsed_s"], "seed": result["seed"],
+               "best_at_s": result["best_at_s"], "checkpoints": result["checkpoints"], "workers": result["workers"],
                "substitutes": {str(s): len(names) for s, names in self._substitutes().items()}, "backend": "rtc"}
         if not found:
             out["note"] = "no solution met every constraint; the lens is back at its start"

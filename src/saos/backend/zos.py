@@ -2052,7 +2052,7 @@ class ZosBackend(Backend):
         return int(self.system.MFE.NumberOfOperands)
 
     def optimize_search(self, kind: str, cores: int | None = None, *, max_seconds: float,
-                        on_progress=None, should_cancel=None) -> dict[str, Any]:
+                        on_progress=None, should_cancel=None, rel: float | None = None) -> dict[str, Any]:
         """Hammer（kind="hammer"）或全局搜索（kind="global"），按 max_seconds 调用 Cancel；结束后编辑器里是找到的最好系统。
         两者都不会自己结束，TargetRunTimeM 也不能让它们停下。Hammer 的自动模式会自己结束，但在 Cooke 上 2 s、704 个
         系统就停，玻璃替换一个也没换，与局部优化同值，所以不用（2026-10-18 实测）。
@@ -2084,8 +2084,23 @@ class ZosBackend(Backend):
             else:
                 tool.NumberToSave = opt.OptimizationSaveCount.Save_10
                 best = lambda: float(tool.CurrentMeritFunction(1))  # noqa: E731
+            # rel：每个检查点比较最好的 merit，增益不足时借取消停下 / rel: compare the best merit per checkpoint, stop via Cancel
+            from saos.budget import checkpoint_interval, stalled
+            checkpoint = {"at": time.monotonic(), "merit": None, "stalled": False}
+
+            def cancel() -> bool:
+                if should_cancel is not None and should_cancel():
+                    return True
+                if rel is None or time.monotonic() - checkpoint["at"] < checkpoint_interval(max_seconds):
+                    return False
+                merit = best()
+                checkpoint.update(at=time.monotonic(), merit=merit, stalled=stalled(checkpoint["merit"], merit, rel))
+                return checkpoint["stalled"]
+
             stopped_by, elapsed = self._run_optimizer(tool, lambda: {"merit": best(), "systems": int(tool.Systems)},
-                                                      max_seconds, on_progress, should_cancel)
+                                                      max_seconds, on_progress, cancel)
+            if checkpoint["stalled"]:
+                stopped_by = "stalled"
             from saos.budget import outcome
             initial, final = float(tool.InitialMeritFunction), best()
             improved = outcome(initial, final, converged=False, stopped_by=stopped_by)["improved"]

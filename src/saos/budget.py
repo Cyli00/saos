@@ -73,3 +73,13 @@ def outcome(initial, final, *, converged, stopped_by, admissible=True):
     improved = bool(finite and final < initial - 1e-12 * max(1.0, abs(initial)))
     return {"improved": improved, "converged": bool(converged),
             "succeeded": bool(admissible and improved and converged and stopped_by is None)}
+
+
+def checkpoint_interval(max_seconds: float) -> float:
+    """Hammer / 全局搜索两个检查点之间的秒数：预算的 1/10，限在 1–60 s。/ Seconds between search checkpoints."""
+    return min(max(float(max_seconds) / 10.0, 1.0), 60.0)
+
+
+def stalled(previous: float | None, current: float | None, rel: float | None) -> bool:
+    """从上一个检查点到这一个，最好的 merit 相对下降不到 rel。/ The best merit fell by less than rel since the last checkpoint."""
+    return rel is not None and previous is not None and current is not None and previous - current < rel * abs(previous)

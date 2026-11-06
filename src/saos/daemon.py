@@ -1213,11 +1213,15 @@ class Daemon:
         if kind == "global" and before:
             raise SaosError(ErrorCode.BAD_ARGS, f"{len(before)} GLOPT_*.zmx files already lie next to {job.relative_lens(loaded.path)}; "
                             "global search would overwrite them. Save the lens elsewhere first (saos lens save --as NAME)")
+        rel = _arg(args, "rel", (int, float), default=None)
+        if rel is not None and (not math.isfinite(rel) or rel < 0):
+            raise SaosError(ErrorCode.BAD_ARGS, f"rel must be a finite non-negative number, got {rel!r}")
         def run(seconds):
             try:
+                extra = {"rel": float(rel)} if rel is not None else {}
                 result = self.backend.optimize_search(kind, args.get("cores") or config.compute_cores(), max_seconds=seconds,
                                                       on_progress=self._optimizer_hooks(job, f"opt.{kind}"),
-                                                      should_cancel=job.cancel_requested)
+                                                      should_cancel=job.cancel_requested, **extra)
             finally:
                 after = self._search_stamps(lens_dir, pattern)
                 written = [lens_dir / name for name in sorted(after) if before.get(name) != after[name]]

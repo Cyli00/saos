@@ -26,7 +26,7 @@ from typing import Any, Callable
 import numpy as np
 
 from saos.backend import rtc_merit
-from saos.budget import Budget, Stop
+from saos.budget import Budget, Stop, checkpoint_interval, stalled
 from saos.protocol import ErrorCode, SaosError
 
 # 约束违背在这个相对量以内算满足 / a constraint violated by less than this (relative) counts as met
@@ -325,18 +325,65 @@ class Candidate:
     glasses: dict[int, str]
 
 
+def _local_task(problem: Problem, x0: np.ndarray, glasses: dict[int, str], iterations: int, seconds: float,
+                should_cancel: Callable[[], bool] | None = None) -> dict[str, Any] | None:
+    """从 x0、换好的玻璃出发跑一次局部优化；起点算不出（BAD_ARGS）或换料不受支持时返回 None。主进程与 worker 共用。
+    One local run from x0 with the given glasses; None when the start cannot be computed or the substitution is refused."""
+    try:
+        for s, name in glasses.items():
+            problem.backend.set_param(f"{s}.material", name)
+        run = local(problem, iterations=iterations, deadline=time.monotonic() + seconds, should_cancel=should_cancel, start=x0)
+    except SaosError as exc:
+        if exc.code not in (ErrorCode.BAD_ARGS, ErrorCode.BACKEND_UNSUPPORTED):
+            raise
+        return None
+    final = run["final"]
+    return {"x": final.x, "merit": final.merit, "feasible": final.feasible, "stopped_by": run["stopped_by"]}
+
+
+_WORKER: Problem | None = None
+
+
+def _worker_init(blob: bytes) -> None:
+    """worker 进程：内核单线程（并行已在进程这一层），载入主进程 pickle 过来的整份 Problem（含只在内存里的变量与换料）。"""
+    import pickle
+
+    from numba import set_num_threads
+
+    global _WORKER
+    set_num_threads(1)
+    _WORKER = pickle.loads(blob)
+
+
+def _worker_task(x0: np.ndarray, glasses: dict[int, str], iterations: int, seconds: float) -> dict[str, Any] | None:
+    # SaosError 的构造参数跨进程 pickle 不回来，换成文字由主进程再抛 / SaosError travels back as text
+    try:
+        return _local_task(_WORKER, x0, glasses, iterations, seconds)
+    except SaosError as exc:
+        return {"error": f"{exc.code}: {exc}"}
+
+
 def search(problem: Problem, kind: str, *, max_seconds: float, substitutes: dict[int, list[str]],
            should_cancel: Callable[[], bool] | None = None, on_progress: Callable[[dict[str, Any]], None] | None = None,
-           seed: int | None = None, local_iterations: int = 40) -> dict[str, Any]:
+           seed: int | None = None, local_iterations: int = 40, rel: float | None = None,
+           checkpoint_s: float | None = None, workers: int = 1) -> dict[str, Any]:
     """Hammer（kind="hammer"）或全局搜索（kind="global"），到 max_seconds 或取消为止。substitutes 为 {面: 可换的牌号}。
-    返回 best（后端已是这个解）、kept（全局搜索最好的若干个）与统计。
-    Hammer or global search until max_seconds or a cancel; substitutes maps surfaces to replaceable glasses."""
+    每隔 checkpoint_s（默认 budget.checkpoint_interval）记一个检查点（最好的 merit 与它出现的时刻 best_at_s）；给了 rel 时，
+    两个检查点之间有新系统试完、而最好的 merit 相对下降不到 rel，就提前停（stopped_by="stalled"）。
+    workers > 1 时，第一次局部优化之后的候选在 spawn 进程池里并行试（每个 worker 一份 pickle 的 Problem，内核单线程），
+    每个候选从提交时的最好解扰动出发；结果到达的顺序不定，同一个 seed 不再能复现。
+    返回 best（后端已是这个解）、kept（全局搜索最好的若干个）、checkpoints 与统计。
+    Hammer or global search until max_seconds or a cancel; substitutes maps surfaces to replaceable glasses. A checkpoint
+    every checkpoint_s records the best merit and when it was found; with rel, the run stops early when systems finished
+    since the last checkpoint gained less than rel relative to it. With workers > 1 the candidates after the first local
+    run are tried in a spawned process pool; results arrive in any order, so a seed no longer reproduces the run."""
     if kind not in ("hammer", "global"):
         raise SaosError(ErrorCode.BAD_ARGS, "kind must be hammer or global")
     seed = int(time.time_ns() % (2**32)) if seed is None else int(seed)
     rng = np.random.default_rng(seed)
     started = time.monotonic()
     deadline = started + float(max_seconds)
+    interval = checkpoint_interval(max_seconds) if checkpoint_s is None else float(checkpoint_s)
     backend = problem.backend
     start_x = problem.values()
     start_glass = {s: str(backend.get_param(f"{s}.material")) for s in substitutes}
@@ -345,60 +392,95 @@ def search(problem: Problem, kind: str, *, max_seconds: float, substitutes: dict
     best = Candidate(first["final"].merit if first["final"].feasible else math.inf, first["final"].x.copy(), dict(start_glass))
     kept: list[Candidate] = [best] if math.isfinite(best.merit) else []
     systems = 1
+    best_at_s = round(time.monotonic() - started, 3) if math.isfinite(best.merit) else None
+    checkpoints = [{"elapsed_s": best_at_s or 0.0, "systems": 1, "merit": best.merit if math.isfinite(best.merit) else None,
+                    "best_at_s": best_at_s}]
     stopped_by = first["stopped_by"]
-    try:
-        while stopped_by is None:
-            if should_cancel is not None and should_cancel():
-                stopped_by = "cancel"
-                break
-            if time.monotonic() > deadline:
-                stopped_by = "timeout"
-                break
-            base = best if kind == "hammer" or not kept else Candidate(math.inf, start_x, dict(start_glass))
-            sigma = 0.5 if kind == "hammer" else 2.0
-            x0 = base.x + sigma * problem.spans * rng.standard_normal(len(problem.keys))
-            x0 = _keep_signs(problem, base.x, x0)
-            glasses = dict(base.glasses)
-            if substitutes and (kind == "global" or rng.random() < 0.5):
-                chosen = list(substitutes) if kind == "global" else [int(rng.choice(list(substitutes)))]
-                for s in chosen:
-                    options = substitutes[s]
-                    if options:
-                        glasses[s] = str(options[int(rng.integers(len(options)))])
-            try:
-                for s, name in glasses.items():
+
+    def propose() -> tuple[np.ndarray, dict[int, str]]:
+        base = best if kind == "hammer" or not kept else Candidate(math.inf, start_x, dict(start_glass))
+        sigma = 0.5 if kind == "hammer" else 2.0
+        x0 = _keep_signs(problem, base.x, base.x + sigma * problem.spans * rng.standard_normal(len(problem.keys)))
+        glasses = dict(base.glasses)
+        if substitutes and (kind == "global" or rng.random() < 0.5):
+            for s in (list(substitutes) if kind == "global" else [int(rng.choice(list(substitutes)))]):
+                if substitutes[s]:
+                    glasses[s] = str(substitutes[s][int(rng.integers(len(substitutes[s])))])
+        return x0, glasses
+
+    def take(run: dict[str, Any] | None, glasses: dict[int, str]) -> str | None:
+        """记一个试完的系统：更新最好解、检查点与进度，返回停止原因。/ Record one finished system; returns why to stop."""
+        nonlocal best, best_at_s, kept, systems
+        if run is not None and "error" in run:
+            raise SaosError(ErrorCode.INTERNAL_ERROR, f"a search worker failed: {run['error']}")
+        systems += 1
+        elapsed = round(time.monotonic() - started, 3)
+        if run is not None and run["feasible"]:
+            found = Candidate(run["merit"], np.asarray(run["x"]).copy(), dict(glasses))
+            if found.merit < best.merit * (1 - 1e-12):
+                best, best_at_s = found, elapsed
+            if kind == "global":
+                kept = sorted(kept + [found], key=lambda c: c.merit)[:SEARCH_KEEP]
+        reason = run["stopped_by"] if run is not None else None
+        merit = best.merit if math.isfinite(best.merit) else None
+        last = checkpoints[-1]
+        if elapsed - last["elapsed_s"] >= interval:
+            checkpoints.append({"elapsed_s": elapsed, "systems": systems, "merit": merit, "best_at_s": best_at_s})
+            if reason is None and stalled(last["merit"], merit, rel):
+                reason = "stalled"
+        if on_progress is not None:
+            # 回调导出的完整镜头必须与所报告的最好评价函数值对应，包含换料结果。
+            if math.isfinite(best.merit):
+                for s, name in best.glasses.items():
                     backend.set_param(f"{s}.material", name)
-                run = local(problem, iterations=local_iterations, deadline=deadline, should_cancel=should_cancel,
-                            on_progress=on_progress, start=x0)
-            except SaosError as exc:
-                if exc.code not in (ErrorCode.BAD_ARGS, ErrorCode.BACKEND_UNSUPPORTED):
-                    raise
-                run = None
-            systems += 1
-            if run is not None and run["final"].feasible:
-                found = Candidate(run["final"].merit, run["final"].x.copy(), dict(glasses))
-                if found.merit < best.merit * (1 - 1e-12):
-                    best = found
-                if kind == "global":
-                    kept = sorted(kept + [found], key=lambda c: c.merit)[:SEARCH_KEEP]
-            if run is not None and run["stopped_by"]:
-                stopped_by = run["stopped_by"]
-            if on_progress is not None:
-                # 回调导出的完整镜头必须与所报告的最好评价函数值对应，包含换料结果。
-                if math.isfinite(best.merit):
-                    for s, name in best.glasses.items():
-                        backend.set_param(f"{s}.material", name)
-                    problem.apply(best.x)
-                on_progress({"merit": best.merit if math.isfinite(best.merit) else None, "systems": systems,
-                             "elapsed_s": round(time.monotonic() - started, 1)})
+                problem.apply(best.x)
+            on_progress({"merit": merit, "systems": systems, "elapsed_s": round(elapsed, 1), "best_at_s": best_at_s})
+        return reason
+
+    def halted() -> str | None:
+        if should_cancel is not None and should_cancel():
+            return "cancel"
+        return "timeout" if time.monotonic() > deadline else None
+
+    pool = None
+    try:
+        if workers > 1 and stopped_by is None:
+            import multiprocessing
+            import pickle
+
+            pool = multiprocessing.get_context("spawn").Pool(workers, _worker_init, (pickle.dumps(problem),))
+            pending: list[tuple[Any, dict[int, str]]] = []
+            while stopped_by is None:
+                stopped_by = halted()
+                while stopped_by is None and len(pending) < workers:
+                    x0, glasses = propose()
+                    job = pool.apply_async(_worker_task, (x0, glasses, local_iterations, deadline - time.monotonic()))
+                    pending.append((job, glasses))
+                done = [item for item in pending if item[0].ready()]
+                if not done:
+                    time.sleep(0.02)
+                for item in done:
+                    pending.remove(item)
+                    stopped_by = take(item[0].get(), item[1]) or stopped_by
+        while stopped_by is None:
+            stopped_by = halted()
+            if stopped_by is None:
+                x0, glasses = propose()
+                run = _local_task(problem, x0, glasses, local_iterations, deadline - time.monotonic(), should_cancel)
+                stopped_by = take(run, glasses)
     finally:
+        if pool is not None:
+            # worker 只在内存里计算、不写文件：直接终止，取消后不再占核 / workers only compute in memory: terminate them
+            pool.terminate()
+            pool.join()
         # 后端停在最好解；一个可行解都没有时回到起点 / the backend ends on the best solution, or on the start without any
         final = best if math.isfinite(best.merit) else Candidate(math.inf, start_x, dict(start_glass))
         for s, name in final.glasses.items():
             backend.set_param(f"{s}.material", name)
         problem.apply(final.x)
     return {"best": final, "kept": kept, "systems": systems, "initial_merit": initial_merit, "stopped_by": stopped_by,
-            "elapsed_s": round(time.monotonic() - started, 3), "seed": seed, "start_glass": start_glass}
+            "elapsed_s": round(time.monotonic() - started, 3), "seed": seed, "start_glass": start_glass,
+            "best_at_s": best_at_s, "checkpoints": checkpoints, "workers": workers if pool is not None else 1}
 
 
 def _keep_signs(problem: Problem, base: np.ndarray, x: np.ndarray) -> np.ndarray:
