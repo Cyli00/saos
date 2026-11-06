@@ -665,6 +665,8 @@ def _prepare(w, plan: dict[str, Any], values: dict[str, Any], change: dict[str, 
 def _measure(w, plan: dict[str, Any]) -> dict[str, Any]:
     m = w.measure(plan["measure"])
     row = {k: m[k] for k in ("values", "shortfall", "hard_failing", "invalid", "errors")}
+    if m.get("parts_clash"):
+        row["parts_clash"] = m["parts_clash"]
     if plan.get("operands"):
         row["operands"] = {}
         for name, spec in plan["operands"].items():
@@ -909,6 +911,10 @@ def _execute(job: jobs.Job, folder, plan: dict[str, Any], items: list[dict[str, 
         result["budget_limited"] = [r["id"] for r in ranked if r.get("still_improving")]
         result["counted"] = [r["id"] for r in candidates.counted(ranked)]
         result["page"] = candidates.page(job, folder, plan, ranked, plan.get("lang")).relative_to(job.root).as_posix()
+    # 最好的那一点零件交叠时写在顶层（hard_failing 已由 demand.quick 计入）；其余各点的交叠留在各自的行里
+    # the best point's parts clash goes to the top level; other points keep theirs in their rows
+    if (result["best"] or {}).get("parts_clash"):
+        result.update(parts_clash=result["best"]["parts_clash"], hard_failing=result["best"]["hard_failing"])
     write_json(folder / "result.json", result)
     (folder / jobs.CANCEL_FILE).unlink(missing_ok=True)
     if on_done is not None:
@@ -928,7 +934,8 @@ def summarize(result: dict[str, Any]) -> dict[str, Any]:
                 "numeric_warnings")
     else:
         keys = ("i", "set", "shortfall", "hard_failing", "invalid", "values", "solve", "lens", "operands", "error")
-    summary["top"] = [{k: r.get(k) for k in keys} for r in result["rows"][:10]]
+    summary["top"] = [{**{k: r.get(k) for k in keys}, **({"parts_clash": r["parts_clash"]} if r.get("parts_clash") else {})}
+                      for r in result["rows"][:10]]
     if summary["best"] is not None:
         # 寻优历史和逐段记录只在 result.json 里 / search history and per-stage records stay in result.json
         summary["best"] = {k: v for k, v in summary["best"].items() if k not in ("history", "stages", "start")}

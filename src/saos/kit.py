@@ -253,6 +253,26 @@ def aperture(ctx, ref: int | str) -> dict[str, Any]:
     return ctx.backend.surface_aperture(surface(ctx, ref))
 
 
+def clearances(ctx, *, glass: bool | None = None) -> list[dict[str, Any]]:
+    """相邻分界面采样到零件外缘的最小间隔（saos.geometry 定义，同 parts_clash）；glass=True 只取玻璃，False 只取空气。
+    Smallest gaps between consecutive boundaries out to the part edges (saos.geometry); glass=True glass only, False air only."""
+    rows = ctx.backend.interference().get("clearances") or []
+    return rows if glass is None else [r for r in rows if r["glass"] == glass]
+
+
+def part_radii(ctx) -> dict[int, float]:
+    """各面零件外缘半径 {面序号: 半径}（saos.geometry.part_radii：机械半口径、崩边区，一片镜片一个外径）。
+    Part edge radius per surface (saos.geometry.part_radii)."""
+    return {int(k): float(v) for k, v in (ctx.backend.interference().get("part_radii") or {}).items()}
+
+
+def parts_clash(ctx) -> dict[str, Any] | None:
+    """当前镜头的零件交叠，见 saos.geometry.parts_clash；没有时为 None。/ The lens's part clashes, or None."""
+    from saos import geometry
+
+    return geometry.parts_clash(ctx.backend)
+
+
 # ---------- 衍射 PSF 与波前 / diffraction PSF and wavefront ----------
 
 @dataclass
@@ -793,6 +813,15 @@ class KitMethods:
 
     def aperture(self, ref):
         return aperture(self, ref)
+
+    def clearances(self, *, glass=None):
+        return clearances(self, glass=glass)
+
+    def part_radii(self):
+        return part_radii(self)
+
+    def parts_clash(self):
+        return parts_clash(self)
 
     def field_profile(self, fn, direction=(0.0, 1.0), n=17, **kw):
         return field_profile(self, fn, direction, n, **kw)

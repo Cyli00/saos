@@ -152,3 +152,53 @@ def test_a_surface_whose_sag_is_undefined_inside_its_edge_is_found_from_radius_a
     assert [u["surface"] for u in found] == [2, 3]
     assert found[0]["defined_to"] == pytest.approx(0.05 / math.sqrt(0.5)) and found[0]["edge"] == 0.125
     assert found[1]["defined_to"] == pytest.approx(0.1) and found[1]["edge"] == 0.12
+
+
+def test_a_parts_clash_fails_check_opt_and_scan_at_the_top_level(saos_home, tmp_path):
+    import json
+    import yaml
+    from saos import demand, jobs
+    from saos.backend.fake import FakeBackend, fake_surface
+    from saos.daemon import Daemon
+
+    rows = [fake_surface(0, thickness=float("inf")),
+            fake_surface(1, radius=50.0, thickness=5.0, material="N-BK7", semi_diameter=8.0, is_stop=True),
+            fake_surface(2, radius=-50.0, thickness=2.0, semi_diameter=8.0),
+            fake_surface(3, radius=80.0, thickness=4.0, material="N-BK7", semi_diameter=6.0),
+            fake_surface(4, radius=-80.0, thickness=80.0, semi_diameter=6.0),
+            fake_surface(5, semi_diameter=1.0)]
+    src = tmp_path / "two.zmx"
+    src.write_text(json.dumps({"title": "two", "surfaces": rows}), encoding="utf-8")
+    backend = FakeBackend()
+    daemon = Daemon(backend, backend.start())
+    job = jobs.create_job("clash")
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump({
+        "schema": 2, "structure": {"mode": "prescribed", "reason": "two lenses"}, "summary": "two lenses",
+        "variables": [{"id": "gap", "description": "air gap"}],
+        "objectives": [{"id": "length", "description": "total track", "check": {"operand": {"type": "TOTR"}},
+                        "origin": "user", "must": {"max": 120.0}, "scale": 5.0, "source": "user"}]}), encoding="utf-8")
+    demand._PREPARED.clear()
+    demand.confirm(job.root, "ok")
+    call = lambda op, **args: daemon.handle({"op": op, "args": {"job": job.id, **args}})  # noqa: E731
+    assert call("lens.import", src=str(src), name="a.zmx")["ok"] and call("lens.load", file="a.zmx")["ok"]
+    notes = {"surfaces": {str(k): f"s{k}" for k in range(6)}, "assumptions": ["test"], "first_order": ["f=50"],
+             "exploration": {"fixed_by_user": {"parts": "two lenses", "quote": "use two lenses"}}}
+    model = call("lens.describe", notes=notes)["result"]["folder"]
+    assert call("lens.approve", model=model, quote="approve")["ok"]
+    try:
+        assert call("demand.check")["result"]["hard_failing"] == []
+
+        # 只有第二点让第二片插进第一片：顶层跟着最好的那一点，交叠留在它自己的行里
+        scan = call("scan.run", plan={"points": [{"2.thickness": 2.0}, {"2.thickness": -3.0}]})["result"]
+        assert "parts_clash" not in scan and scan["best"]["set"] == {"2.thickness": 2.0}
+        clashing = next(r for r in scan["top"] if r["set"] == {"2.thickness": -3.0})
+        assert clashing["parts_clash"]["overlaps"] and "parts_clash" in clashing["hard_failing"]
+
+        assert call("lens.set", surface=2, param="thickness", value=-3.0)["ok"]
+        check = call("demand.check")["result"]
+        assert check["parts_clash"]["overlaps"] and check["hard_failing"] == ["parts_clash"] and not check["achieved"]
+        backend.optimize = lambda cycles, cores, **kw: {"merit": 1.0}
+        opt = call("opt.local")["result"]
+        assert opt["parts_clash"]["overlaps"] and opt["hard_failing"] == ["parts_clash"] and not opt["review"]["valid"]
+    finally:
+        daemon.pool.close()

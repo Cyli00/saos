@@ -1078,7 +1078,9 @@ class Daemon:
         try:
             clash = self.backend.interference()
             out["interference"] = geometry.summary(clash)
-            if clash.get("crossings") or clash.get("overlaps"):
+            parts = geometry.parts_clash(self.backend, clash)
+            if parts:
+                out["parts_clash"] = parts
                 valid = False
                 warnings.append("parts cross or interpenetrate: the editor holds a physically invalid system")
         except Exception as exc:  # noqa: BLE001 - 复核出错不能吞掉已经完成的优化结果 / a failing review must not lose a finished run
@@ -1153,7 +1155,13 @@ class Daemon:
         result["optimizer_elapsed_s"] = result.get("elapsed_s")
         result["elapsed_s"] = round(time.monotonic() - budget.started, 3)
         result["budget_s"] = seconds
-        return {**loaded.describe(), **result, "review": review}
+        # 零件交叠写在结果顶层并计入 hard_failing（有 --measure 时 demand.quick 已计入）
+        # a parts clash goes to the top level and into hard_failing (demand.quick has counted it when measuring)
+        top: dict[str, Any] = {}
+        if review.get("parts_clash"):
+            top = {"parts_clash": review["parts_clash"],
+                   "hard_failing": (review.get("measured") or {}).get("hard_failing") or ["parts_clash"]}
+        return {**loaded.describe(), **result, **top, "review": review}
 
     def op_optimize(self, args: dict[str, Any]) -> dict[str, Any]:
         if args.get("device") is not None:

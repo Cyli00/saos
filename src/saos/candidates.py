@@ -182,6 +182,8 @@ def _state(w, plan: dict[str, Any]) -> dict[str, Any]:
     w.cache.clear()
     m = w.measure(plan["measure"])
     out = {k: m[k] for k in ("values", "shortfall", "gaps", "hard_failing", "invalid", "errors")}
+    if m.get("parts_clash"):
+        out["parts_clash"] = m["parts_clash"]
     # 出错的类别（material 或 computation），判定时据此归类 / each failure's kind, used to file the verdict
     out["error_kinds"] = dict(m.get("error_kinds") or {})
     try:
@@ -203,10 +205,12 @@ def _problems(state: dict[str, Any]) -> list[str]:
     clash = state.get("interference") or {}
     if clash.get("error"):
         out.append(f"interference check failed: {clash['error']}")
-    if clash.get("crossings") or clash.get("overlaps"):
+    if clash.get("crossings") or clash.get("overlaps") or state.get("parts_clash"):
         out.append("parts cross or interpenetrate")
-    if state.get("hard_failing"):
-        out.append(f"hard limits fail: {', '.join(state['hard_failing'])}")
+    # 交叠已在上一条报过，不在硬限里再报一次 / the clash is reported above, not again as a hard limit
+    hard = [h for h in state.get("hard_failing") or [] if h != "parts_clash"]
+    if hard:
+        out.append(f"hard limits fail: {', '.join(hard)}")
     if state.get("invalid"):
         out.append(f"no valid value: {', '.join(state['invalid'])}")
     if state.get("errors"):
@@ -347,6 +351,8 @@ def _evaluate(w, item: dict[str, Any], row: dict[str, Any], temp: Path) -> None:
         row["setup"]["variables"] = stages[0]["variables"]
     final = stages[-1] if stages else start
     row.update({k: final[k] for k in ("values", "shortfall", "hard_failing", "invalid", "errors", "merit", "interference")})
+    if final.get("parts_clash"):
+        row["parts_clash"] = final["parts_clash"]
     row["start_shortfall"] = start["shortfall"]
     row["problems"] = _problems(final)
     row["valid"] = not row["problems"]

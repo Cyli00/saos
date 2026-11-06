@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from saos import demand, geometry, jobs, ledger, lens_files, model_gate
+from saos import demand, jobs, ledger, lens_files, model_gate
 from saos.demand import TIERS
 from saos.protocol import ErrorCode, SaosError, jsonable, write_json
 
@@ -126,29 +126,6 @@ def brief(d: dict[str, Any], evaluation: dict[str, Any], decision: dict[str, Any
         # 只在有证据时提醒质疑需求；给 agent 的文字一律英文 / only with evidence; text for the agent is always English
         out["reminder"] = demand.QUESTION_LINE["en"]
     return out
-
-
-def parts_clash(ctx) -> dict[str, Any] | None:
-    """当前镜头的零件交叠（saos.geometry：面在口径内相交、镜片互相穿插，按零件外缘算）。有就返回涉及的面，没有返回 None；
-    后端没有交叠检查（SaosError）时也返回 None；检查本身出其他错时异常照常抛出、本轮不记录，没查过的镜头不放行。物理上不可能的镜头不能算达成、也不能交付（2026-10-19 验证中，一个
-    Hammer 后穿插 5.35 mm 的镜头仍被判达成并交付）。
-    The current lens's part clashes (saos.geometry: surfaces crossing inside their apertures, lenses interpenetrating,
-    out to the parts' outer edges): the surfaces involved, or None when there are none or the backend has no interference
-    check (SaosError). Any other failure of the check propagates and the round is not recorded: an unchecked lens is not let through.
-    A physically impossible lens is neither achieved nor deliverable (in the 2026-10-19 verification a lens with a
-    5.35 mm interpenetration after Hammer was judged achieved and delivered)."""
-    try:
-        clash = ctx.backend.interference()
-    except SaosError:
-        return None
-    crossings = [{"surfaces": c["surfaces"], "depth": c["depth"]} for c in clash.get("crossings") or []]
-    # 序列镜头记镜片和点数，非序列系统记物体和穿插深度 / lenses and points for a sequential lens, objects and depth for a non-sequential one
-    overlaps = [{k: o[k] for k in ("lenses", "points", "objects", "depth") if k in o} for o in clash.get("overlaps") or []]
-    # 矢高在零件外缘内没有定义的面同样做不出来（当前结构的曲率与圆锥）/ a surface undefined inside its edge cannot be made either
-    undefined = geometry.undefined_surfaces(ctx.backend.surfaces(), lambda i, n: ctx.backend.get_param(f"{i}.par{n}"))
-    if not (crossings or overlaps or undefined):
-        return None
-    return {"crossings": crossings, "overlaps": overlaps, **({"undefined": undefined} if undefined else {})}
 
 
 def lens_state(ctx) -> tuple[dict[str, Any], str]:
@@ -285,7 +262,7 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
     if changed:
         raise SaosError(ErrorCode.LENS_MODIFIED_BY_CHECK, "a check changed the lens while measuring; make the checks read-only (work on a copy or restore the lens), then record again",
                         {"changed": changed[:30], "evaluation": evaluation["evidence_dir"]})
-    clash = parts_clash(ctx)
+    clash = evaluation.get("parts_clash")
     # 存一份本轮的归档镜头，然后回到原来的工作文件，避免之后的 lens save 改写归档
     # archive this round's lens, then switch back to the working file so a later lens save cannot rewrite the archive
     working = ctx.lens
@@ -321,11 +298,9 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
         # the full judgement is stored once: evaluations/NNN/result.json is the authoritative record
         "evaluation": evaluation["evidence_file"],
         "shortfall": evaluation["shortfall"],
-        # 零件交叠的镜头物理上不成立：不算达成，也不能交付。evaluations/NNN/result.json 只记判定的测量结果，
-        # 那里的 achieved 只看判定；本轮是否达成以这条记录为准
-        # parts that clash make the lens impossible: not achieved, not deliverable. evaluations/NNN/result.json holds what
-        # the checks measured and its achieved covers the checks only; whether the round is achieved is this record's call
-        "achieved": evaluation["achieved"] and clash is None,
+        # 零件交叠的镜头物理上不成立：demand.evaluate 已判为未达成并计入 hard_failing，不能交付
+        # parts that clash make the lens impossible: demand.evaluate already counts it as not achieved and hard failing
+        "achieved": evaluation["achieved"],
         **({"parts_clash": clash} if clash else {}),
         **({"pursuing": True} if evaluation.get("pursuing") else {}),
         "measurement_errors": evaluation["measurement_errors"],
@@ -362,7 +337,8 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
     decision = ledger.decide(history + added, stop_policy, ledger.stop_for(ctx.job.root, sha, h), ruled)
     ctx.job.update_state(round=number, round_status=decision["status"])
     out = {"record": record, "decision": decision, "brief": brief(h, evaluation, decision, ledger.current_window(history + added)),
-           "evaluation": evaluation, "evidence_notes": model_gate.evidence_notes(ctx.job, desc, method_sha)}
+           "evaluation": evaluation, "evidence_notes": model_gate.evidence_notes(ctx.job, desc, method_sha),
+           **({"parts_clash": clash, "hard_failing": record["hard_failing"]} if clash else {})}
     if rebase is not None:
         out["rebase"] = {k: rebase[k] for k in ("round", "rebase_of", "equivalent", "diffs", "shortfall", "evaluation")}
     if viz:
@@ -408,7 +384,7 @@ def confirm_round(ctx, of: int | None = None, viz: bool = True) -> dict[str, Any
     approved = model_gate.require_approved(ctx.job, desc)
     ev = demand.evaluate(ctx, h, scripts, lens={"file": target["file"], "round": target["round"], "purpose": CONFIRM_PURPOSE})
     desc_after, _ = lens_state(ctx)
-    clash = parts_clash(ctx)
+    clash = ev.get("parts_clash")
     try:
         merit = float(ctx.backend.merit_value())
     except Exception:  # noqa: BLE001 - 没有评价函数时只是不记录 / no merit function: just not recorded
@@ -418,7 +394,7 @@ def confirm_round(ctx, of: int | None = None, viz: bool = True) -> dict[str, Any
         raise SaosError(ErrorCode.LENS_MODIFIED_BY_CHECK, f"a check changed the lens of round {target['round']} while re-measuring it; "
                         "make the checks read-only", {"evaluation": ev["evidence_dir"]})
     values = {i["id"]: i["value"] for i in ev["items"]}
-    achieved = ev["achieved"] and clash is None
+    achieved = ev["achieved"]
     model_glass = [i for i in model_gate.model_glass_surfaces(desc) if i not in approved["environment"]]
     measured = {"achieved": achieved, "hard_failing": ev["hard_failing"], "measurement_errors": ev["measurement_errors"],
                 "model_glass": model_glass, **({"parts_clash": clash} if clash else {})}
@@ -475,7 +451,7 @@ def _rebase(ctx, h: dict[str, Any], scripts: dict[str, Any], best: dict[str, Any
         desc_before, before = lens_state(ctx)
         ev = demand.evaluate(ctx, h, scripts, lens={"file": best["file"], "round": best["round"], "purpose": REBASE_PURPOSE})
         desc_after, _ = lens_state(ctx)
-        clash = parts_clash(ctx)
+        clash = ev.get("parts_clash")
     finally:
         ctx.backend.load(current)
     if lens_changes(desc_before, desc_after):
@@ -489,7 +465,7 @@ def _rebase(ctx, h: dict[str, Any], scripts: dict[str, Any], best: dict[str, Any
         "file": best["file"], "lens_sha": before, "rebase_of": best["round"],
         # 数值不变说明只是换了写法，比较窗口延续；否则从这条开始新窗口 / same numbers: the window goes on; otherwise a new one starts here
         "equivalent": not diffs and not ev["measurement_errors"], "diffs": diffs,
-        "evaluation": ev["evidence_file"], "shortfall": ev["shortfall"], "achieved": ev["achieved"] and clash is None,
+        "evaluation": ev["evidence_file"], "shortfall": ev["shortfall"], "achieved": ev["achieved"],
         **({"parts_clash": clash} if clash else {}),
         **({"pursuing": True} if ev.get("pursuing") else {}),
         "measurement_errors": ev["measurement_errors"], "hard_failing": ev["hard_failing"], "values": values,

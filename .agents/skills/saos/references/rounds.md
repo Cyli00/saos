@@ -34,7 +34,7 @@ Read the result, not just the merit:
 
 - `algorithm` records the native local algorithm. `solver_succeeded`, `improved` and `stopped_by` have distinct meanings; `converged` is unknown when the native API does not establish it.
 - Measurements and review share the command budget. Cancellation waits for native calls to return. An unfinished review is `completed: false, valid: false`; finish the checks before recording a round.
-- `review` includes interference and, with `--measure <ids>|hard|all`, before/after demand checks. A lower merit with worse checks is not evidence of progress.
+- Pass `--measure <ids>|hard|all` on every optimisation call so `review` reports before/after demand checks alongside interference. When the merit falls while the checks get worse, inspect and fix the merit function first (missing rim rays, missing fields, unweighted constraints) before spending another optimisation run. `opt`, `scan` and `check` surface any `parts_clash` at the top level of their result and list `"parts_clash"` in `hard_failing`.
 - A failed run leaves the lens marked unsaved: save under a new name to retain it, or load a saved lens with `--discard`.
 
 When you optimise outside the lens's merit function (your own `exec` loop), record the value you optimised with `saos round --merit <value>`.

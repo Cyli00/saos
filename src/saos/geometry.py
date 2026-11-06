@@ -402,6 +402,7 @@ def merge_configurations(results: list[dict[str, Any]]) -> dict[str, Any]:
     out: dict[str, Any] = {"crossings": [], "overlaps": [], "configurations": len(results), "tolerance": TOL}
     gaps: dict[tuple[int, ...], dict[str, Any]] = {}
     lenses: dict[tuple[int, ...], dict[str, Any]] = {}
+    radii: dict[int, float] = {}
     for c, r in enumerate(results, start=1):
         out["crossings"] += [{**x, "configuration": c} for x in r.get("crossings") or []]
         out["overlaps"] += [{**x, "configuration": c} for x in r.get("overlaps") or []]
@@ -413,8 +414,12 @@ def merge_configurations(results: list[dict[str, Any]]) -> dict[str, Any]:
             key = tuple(e["surfaces"])
             old = lenses.get(key)
             lenses[key] = e if old is None else {**e, "clear": max(e["clear"], old["clear"]), "outer": max(e["outer"], old["outer"])}
+        for idx, rad in (r.get("part_radii") or {}).items():
+            k = int(idx)
+            radii[k] = max(radii.get(k, 0.0), float(rad))
     out["clearances"] = list(gaps.values())
     out["lenses"] = list(lenses.values())
+    out["part_radii"] = radii
     out["edges_from_clear"] = bool(out["lenses"]) and all(e["outer"] <= e["clear"] + TOL for e in out["lenses"])
     return out
 
@@ -652,19 +657,21 @@ def rotational(type_name: Any) -> bool:
     return _kind(type_name) in _ROTATIONAL
 
 
-def undefined_surfaces(rows: list[dict[str, Any]], param: Any) -> list[dict[str, Any]]:
+def undefined_surfaces(rows: list[dict[str, Any]], param: Any, radii: dict[int, float] | None = None) -> list[dict[str, Any]]:
     """矢高公式的平方根在零件外缘内没有实数解的面：1 − (1+k)c²r² < 0。OpticStudio 和 rtc 都不报错，超出部分返回边界上的值，
     采样矢高看不出来，只能按面型参数解析地查（fiber-var-zoom 第 16 轮的 S4 实数定义域只有 4.4/6.7 µm，半口径却是 125 µm）。
-    rows 是后端 surfaces() 的行；param(index, n) 读参数 n。外缘取机械半口径，未设时取通光半口径。
+    rows 是后端 surfaces() 的行；param(index, n) 读参数 n。外缘取 interference() 给出的零件外缘（radii），没有时取机械半口径，再没有取通光半口径。
     Surfaces whose sag square root has no real value inside the part's edge: 1 − (1+k)c²r² < 0. Neither OpticStudio nor
     rtc reports it (beyond it they return the boundary value), so sampled sags cannot show it; it is checked analytically.
-    rows are a backend's surfaces(); param(index, n) reads parameter n. The edge is the mechanical semi-diameter, else the clear one."""
+    rows are a backend's surfaces(); param(index, n) reads parameter n. The edge is the part radius from interference()
+    (radii), else the mechanical semi-diameter, else the clear one."""
+    radii = {int(k): float(v) for k, v in (radii or {}).items()}
     out = []
     for s in rows[1:-1]:
         kind = _kind(s.get("type"))
         if kind not in _ROTATIONAL | _BICONIC | _TOROIDAL:
             continue
-        edge = s.get("mech_semi_diameter") or s.get("semi_diameter") or 0.0
+        edge = radii.get(int(s["index"])) or s.get("mech_semi_diameter") or s.get("semi_diameter") or 0.0
         if not edge or not math.isfinite(edge):
             continue
         radius = float(s.get("radius") or math.inf)
@@ -693,6 +700,30 @@ def interference(surfaces: list[dict[str, Any]]) -> dict[str, Any]:
     lenses = [{"surfaces": [f["index"], b["index"]], "clear": max(f.get("clear", f["sd"]), b.get("clear", b["sd"])), "outer": max(f["sd"], b["sd"])}
               for f, b in elements(usable)]
     return {"crossings": crossings(usable), "overlaps": overlaps(usable), "clearances": clearances(usable), "lenses": lenses,
+            "part_radii": {int(s["index"]): float(s["sd"]) for s in usable},
             # 没有一片镜片的外缘大于净口径：检查只覆盖净口径，装配余量和机械外径都没算进去
             # no lens edge beyond its clear aperture: the check covers clear apertures only, no allowance or mechanical diameter
             "edges_from_clear": bool(lenses) and all(e["outer"] <= e["clear"] + TOL for e in lenses), "tolerance": TOL}
+
+
+def parts_clash(backend: Any, clash: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """后端当前镜头的零件交叠：面在口径内相交（crossings）、镜片或物体互相穿插（overlaps）、零件外缘内矢高无实数解的面（undefined）。
+    clash 是已算好的 backend.interference()。都没有时返回 None；后端没有交叠检查（SaosError）时也返回 None；检查本身出其他错时
+    照常抛出，没查过的镜头不放行。物理上不可能的镜头不能算达成、也不能交付（2026-10-19 验证中，一个 Hammer 后穿插 5.35 mm 的
+    镜头仍被判达成并交付）。
+    The current lens's part clashes, or None when there are none or the backend has no interference check (SaosError).
+    Any other failure propagates: an unchecked lens is not let through."""
+    from saos.protocol import SaosError
+
+    if clash is None:
+        try:
+            clash = backend.interference()
+        except SaosError:
+            return None
+    crossings_ = [{k: c[k] for k in ("surfaces", "depth", "configuration") if k in c} for c in clash.get("crossings") or []]
+    # 序列镜头记镜片和点数，非序列系统记物体和穿插深度 / lenses and points for a sequential lens, objects and depth for a non-sequential one
+    overlaps_ = [{k: o[k] for k in ("lenses", "points", "objects", "depth", "configuration") if k in o} for o in clash.get("overlaps") or []]
+    undefined = undefined_surfaces(backend.surfaces(), lambda i, n: backend.get_param(f"{i}.par{n}"), clash.get("part_radii"))
+    if not (crossings_ or overlaps_ or undefined):
+        return None
+    return {"crossings": crossings_, "overlaps": overlaps_, **({"undefined": undefined} if undefined else {})}

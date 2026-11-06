@@ -604,14 +604,15 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
     if data.get("blocked"):
         if deliver.get("measurement_errors"):
             text = t("blocked.errors", ids=e(", ".join(deliver["measurement_errors"])))
-        elif deliver.get("hard_failing"):
-            text = t("blocked.hard", ids=e(", ".join(deliver["hard_failing"])))
+        # 交叠也计入 hard_failing，先给出交叠的具体位置 / a clash is in hard_failing too; name where it is first
         elif deliver.get("parts_clash"):
             clash = deliver["parts_clash"]
             what = [f"{a}–{b}" for a, b in (c["surfaces"] for c in clash.get("crossings") or [])]
             what += [" / ".join("–".join(map(str, lens)) for lens in o["lenses"]) for o in clash.get("overlaps") or []]
             what += [f"S{u['surface']} r≤{u['defined_to']:.4g}<{u['edge']:.4g} mm" for u in clash.get("undefined") or []]
             text = t("blocked.clash", what=e("; ".join(what)))
+        elif deliver.get("hard_failing"):
+            text = t("blocked.hard", ids=e(", ".join(deliver["hard_failing"])))
         else:
             text = t("blocked", surfaces=e(", ".join(map(str, deliver.get("model_glass") or []))))
         blocked = f'<div class="card">{text}</div>'

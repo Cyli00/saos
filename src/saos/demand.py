@@ -754,13 +754,18 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
     # rtc 实例上的判定：记下用到的、未与 OpticStudio 对账的计算路径和操作数（ADR-0017）
     # checks on the rtc instance record the calculation paths and operands not reconciled with OpticStudio
     provenance = ctx.backend.provenance() if backend_name == "rtc" and hasattr(ctx.backend, "provenance") else None
+    from saos import geometry
+
+    clash = geometry.parts_clash(ctx.backend)
+    hard_failing = [i["id"] for i in judged if i["kind"] in HARD_KINDS and not i["passed"]] + (["parts_clash"] if clash else [])
     result = {"shortfall": total,
               # 没有任何带界限的条目时不能宣布达成 / nothing with a pass line means nothing can be declared achieved
-              "achieved": only is None and bool(judged) and all(i["passed"] for i in judged), "items": items,
+              "achieved": only is None and bool(judged) and all(i["passed"] for i in judged) and clash is None, "items": items,
               "partial": only is not None,
               # 有越小/越大越好的目标：达标后还要继续改进 / objectives to minimise or maximise: keep improving after the pass lines
               "pursuing": any("direction" in i for i in items),
-              "hard_failing": [i["id"] for i in judged if i["kind"] in HARD_KINDS and not i["passed"]],
+              "hard_failing": hard_failing,
+              **({"parts_clash": clash} if clash else {}),
               # 执行出错的判定（脚本异常、读不到文件）：这一轮的结论不可信，不能当作设计不达标
               # checks that failed to run: the round says nothing about the design and must not count as a shortfall result
               "measurement_errors": [i["id"] for i in items if i.get("error")],
@@ -854,8 +859,14 @@ def quick(ctx, ids: list[str] | None = None, *, deadline: float | None = None) -
                 total += spec["weight"] * pursued[item_id]
     finally:
         shutil.rmtree(folder, ignore_errors=True)
+    from saos import geometry
+
+    # 零件交叠只在 evaluate 与 quick 两处计入 hard_failing，下游一律透传 / counted here and in evaluate only; callers pass it on
+    clash = geometry.parts_clash(ctx.backend)
+    hard_failing = [i for i, g in gaps.items() if specs[i]["kind"] in HARD_KINDS and g > 0]
     return {"values": values, "shortfall": total, "gaps": gaps, "pursuit": pursued,
-            "hard_failing": [i for i, g in gaps.items() if specs[i]["kind"] in HARD_KINDS and g > 0],
+            "hard_failing": hard_failing + (["parts_clash"] if clash else []),
+            **({"parts_clash": clash} if clash else {}),
             "invalid": [i for i, v in values.items() if v is None and i not in errors], "errors": errors, "error_kinds": error_kinds,
             "durations": durations, "skipped": skipped,
             **({"metric_results": metric_results} if metric_results else {})}
