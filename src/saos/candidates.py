@@ -220,6 +220,22 @@ def _problems(state: dict[str, Any]) -> list[str]:
     return out
 
 
+def add_reach(row: dict[str, Any], d: dict[str, Any]) -> None:
+    """候选离需求多远、最后一段是不是超时停下的：valid 只说明能追迹、不交叠，不说明能做到；超时的结果也不能互相比较。
+    How far a candidate is from the demand and whether its last stage timed out: valid only says it traces and fits; timed-out results do not compare."""
+    reach = demand.reach(d, row.get("values"))
+    row["reach_blocking"] = [{"id": i["id"], "multiple": i["multiple"]} for i in reach["items"] if i["blocking"]]
+    row["stopped_by"] = (row.get("stages") or [{}])[-1].get("stopped_by")
+
+
+def add_reach(row: dict[str, Any], d: dict[str, Any]) -> None:
+    """候选离需求多远、最后一段是不是超时停下的：valid 只说明能追迹、不交叠，不说明能做到；超时的结果也不能互相比较。
+    How far a candidate is from the demand and whether its last stage timed out: valid only says it traces and fits; timed-out results do not compare."""
+    reach = demand.reach(d, row.get("values"))
+    row["reach_blocking"] = [{"id": i["id"], "multiple": i["multiple"]} for i in reach["items"] if i["blocking"]]
+    row["stopped_by"] = (row.get("stages") or [{}])[-1].get("stopped_by")
+
+
 def _verdict(row: dict[str, Any], state: dict[str, Any]) -> str:
     """材料和计算错误先单列，其余分为有效或预算内无效。"""
     if "material" in (state.get("error_kinds") or {}).values():
@@ -468,6 +484,16 @@ def page(job: jobs.Job, folder: Path, plan: dict[str, Any], rows: list[dict[str,
         if r.get("numeric_warnings"):
             nw = r["numeric_warnings"]
             verdict += f"<br><span class=\"muted\">{e(t('数值警告', 'numeric warnings'))} {nw['count']}: {e(nw['first'])}</span>"
+        if r.get("stopped_by") == "timeout":
+            verdict += f"<br><span class=\"muted\">{e(t('超时未收敛，不能据此比较', 'timed out before converging: not comparable'))}</span>"
+        if r.get("reach_blocking"):
+            far = ", ".join(f"{b['id']} ×{_num(b['multiple'])}" for b in r["reach_blocking"])
+            verdict += f"<br><span class=\"muted\">{e(t('差距过大', 'too far from the demand'))}: {e(far)}</span>"
+        if r.get("stopped_by") == "timeout":
+            verdict += f"<br><span class=\"muted\">{e(t('超时未收敛，不能据此比较', 'timed out before converging: not comparable'))}</span>"
+        if r.get("reach_blocking"):
+            far = ", ".join(f"{b['id']} ×{_num(b['multiple'])}" for b in r["reach_blocking"])
+            verdict += f"<br><span class=\"muted\">{e(t('差距过大', 'too far from the demand'))}: {e(far)}</span>"
         problems = "; ".join(r.get("problems") or ([] if r.get("valid") else [r.get("error") or t("未运行完", "did not finish")]))
         merits = " → ".join(_num(s.get("merit")) for s in [r.get("start") or {}, *(r.get("stages") or [])])
         clash = r.get("interference") or {}

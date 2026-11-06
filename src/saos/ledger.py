@@ -53,11 +53,12 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from pathlib import Path
 from typing import Any
 
 from saos import jobs
-from saos.demand import TIERS, as_current
+from saos.demand import TIERS, as_current, confirmation_for, digest
 from saos.protocol import ErrorCode, SaosError, jsonable, read_jsonl
 
 LEDGER_FILE = "ledger.jsonl"
@@ -142,6 +143,21 @@ def append(path: Path, record: dict[str, Any]) -> None:
         fh.write(json.dumps(jsonable(record), ensure_ascii=False) + "\n")
 
 
+# 证据要落到任务里的文件上：只写一句推理，就能把没试过的手段排除掉（2026-11-06 用户决定）
+# evidence has to be a file in the job: a sentence of reasoning alone could rule out a tier nobody tried
+_EVIDENCE = re.compile(r"\b(?:scans|evaluations|scripts|analyses|parallel|explore|notes|sources|lenses|models|checks)/[\w./-]*\w", re.ASCII)
+# 确实跑不了材料搜索时（多重结构、需求固定玻璃）用这个前缀写明原因 / the prefix for a materials search that truly cannot run
+NOT_RUNNABLE = "not runnable:"
+# 停在第一轮之前：之后再记轮次，这条停止就不再适用 / a stop before any round: a later round no longer falls under it
+BEFORE_ROUNDS = -1
+
+
+def _require_evidence(root: Path, reason: str) -> None:
+    cited = _EVIDENCE.findall(reason)
+    if not any((root / path).exists() for path in cited):
+        raise SaosError(ErrorCode.BAD_ARGS, f"--reason must cite an existing file of this job as evidence (scans/NNN, scripts/NNN-..., explore/...); found {cited or 'none'}")
+
+
 def stops(root: Path) -> list[dict[str, Any]]:
     return read_jsonl(root / STOPS_FILE)
 
@@ -163,11 +179,25 @@ def record_stop(root: Path, demand_sha: str, reason: str, quote: str, demand: di
     if not reason or (via != "auto" and not quote):
         raise SaosError(ErrorCode.BAD_ARGS, "a stop needs --reason (why, with the evidence) and --quote (the user's own words deciding to stop)")
     rounds = load(root / LEDGER_FILE, demand)
-    if not rounds or version(rounds[-1])[0] != demand_sha:
-        raise SaosError(ErrorCode.BAD_ARGS, "record a round under the current demand before stopping; the stop refers to the last round")
-    record = {"round": int(rounds[-1]["round"]), "demand_sha": demand_sha, "reason": reason, "quote": quote, "via": via, "time": jobs.now_iso()}
+    if rounds and version(rounds[-1])[0] == demand_sha:
+        number = int(rounds[-1]["round"])
+    else:
+        # 没有结构过得了差距门禁时没有轮次可引用，这也是一种结论 / no structure passed the reach gate: no round to refer to, and still a conclusion
+        if demand is None or confirmation_for(root, digest(demand), demand) is None:
+            raise SaosError(ErrorCode.BAD_ARGS, "confirm the demand before stopping; a stop before any round needs a confirmed demand to judge against")
+        _require_evidence(root, reason)
+        number = BEFORE_ROUNDS
+    record = {"round": number, "demand_sha": demand_sha, "reason": reason, "quote": quote, "via": via, "time": jobs.now_iso()}
     append(root / STOPS_FILE, record)
     return record
+
+
+def stopped_before_rounds(root: Path, demand_sha: str, demand: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """这一版需求下停在第一轮之前、之后也没有轮次的停止决定。/ A stop before any round under this demand version, with no round since."""
+    stop = stop_for(root, demand_sha, demand)
+    if stop is None or int(stop["round"]) != BEFORE_ROUNDS:
+        return None
+    return None if any(version(r)[0] == demand_sha for r in load(root / LEDGER_FILE, demand)) else stop
 
 
 def tiers_of(record: dict[str, Any]) -> list[str]:
@@ -191,9 +221,20 @@ def record_rule_out(root: Path, demand_sha: str, tiers: list[str], reason: str, 
     rounds = load(root / LEDGER_FILE, demand)
     if not rounds or version(rounds[-1])[0] != demand_sha:
         raise SaosError(ErrorCode.BAD_ARGS, "record a round under the current demand first; a tier is ruled out after a given round")
+    _require_evidence(root, reason)
+    if "materials" in tiers and not reason.lower().startswith(NOT_RUNNABLE) and not _materials_tried(root, rounds):
+        raise SaosError(ErrorCode.BAD_ARGS, "the materials tier was never tried in this job: run ctx.GlassExpert or record a materials round, "
+                        f"or start --reason with '{NOT_RUNNABLE}' and say why the search cannot run here")
     record = {"round": int(rounds[-1]["round"]), "demand_sha": demand_sha, "tiers": list(dict.fromkeys(tiers)), "reason": reason, "time": jobs.now_iso()}
     append(root / RULED_OUT_FILE, record)
     return record
+
+
+def _materials_tried(root: Path, rounds: list[dict[str, Any]]) -> bool:
+    if any("materials" in tiers_of(r) for r in rounds):
+        return True
+    folder = root / "scripts"
+    return folder.is_dir() and any("GlassExpert" in p.read_text(encoding="utf-8", errors="replace") for p in folder.glob("*.py"))
 
 
 def significant(best: float, g: float, rel: float) -> bool:
@@ -273,6 +314,8 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str
     Returns the status, the reason and the suggested next tier."""
     if not rounds:
         raise ValueError("ledger has no rounds")
+    if stopped is not None and int(stopped["round"]) == BEFORE_ROUNDS:
+        stopped = None  # 已经记了轮次，这条停止不再适用 / rounds were recorded since, so this stop no longer applies
     rel, cap, tiers = float(stop["rel"]), int(stop["max_rounds"]), [t for t in TIERS if t in stop["tiers"]]
     # 需求最后一次改动之后的轮次才可比 / only rounds since the last demand change are comparable
     window = current_window(rounds)

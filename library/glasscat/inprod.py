@@ -2,6 +2,7 @@
 
 用法（仓库根目录）：uv run python library/glasscat/inprod.py [--glasscat DIR]
 厂家文件按 manifest.json 的 file 名放在 Glasscat 文件夹里，sha256 不符时拒绝生成。
+manifest 的 merged 把多家厂家合成一个目录（树脂每家牌号很少，替换求解每个面又只能用一个目录）。
 """
 
 from __future__ import annotations
@@ -24,19 +25,48 @@ def main() -> int:
     args = parser.parse_args()
     manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
     for entry in manifest["catalogs"]:
-        source = args.glasscat / entry["file"]
-        raw = source.read_bytes()
-        if hashlib.sha256(raw).hexdigest() != entry["sha256"]:
-            print(f"{source} 与 manifest.json 记录的 sha256 不符，未生成 {entry['catalog']}", file=sys.stderr)
+        raw = _maker_file(args.glasscat, entry, entry["catalog"])
+        if raw is None:
             return 1
         note = f"{entry['catalog']}: Standard and Preferred glasses of {entry['file']} ({entry['edition']}), made by library/glasscat/inprod.py"
         text, counts = glasscat.in_production(glasscat._decode(raw), note)
-        target = args.glasscat / f"{entry['catalog']}.AGF"
-        # 与厂家文件一样用带 BOM 的 UTF-16 / UTF-16 with a BOM, like the makers' files
-        target.write_bytes(text.encode("utf-16"))
-        kept = sum(counts.get(s, 0) for s in glasscat.IN_PRODUCTION)
-        print(f"{target.name}: {kept} / {sum(counts.values())} 种，各状态 {counts}")
+        _write(args.glasscat, entry["catalog"], text, counts)
+    for entry in manifest.get("merged", []):
+        body, total, seen = [f"CC {entry['catalog']}: {entry['note']}, made by library/glasscat/inprod.py"], {}, set()
+        for part in entry["sources"]:
+            raw = _maker_file(args.glasscat, part, entry["catalog"])
+            if raw is None:
+                return 1
+            names = set(part["names"]) if part.get("names") else None
+            text, counts = glasscat.in_production(glasscat._decode(raw), "", names)
+            for status, n in counts.items():
+                total[status] = total.get(status, 0) + n
+            lines = text.splitlines()[1:]
+            kept = {line.split()[1] for line in lines if line.startswith("NM ")}
+            if kept & seen:
+                print(f"{part['file']} 与前面的厂家有同名牌号 {sorted(kept & seen)}，未生成 {entry['catalog']}", file=sys.stderr)
+                return 1
+            seen |= kept
+            body += lines
+        _write(args.glasscat, entry["catalog"], glasscat.CRLF.join(body) + glasscat.CRLF, total)
     return 0
+
+
+def _maker_file(folder: Path, entry: dict, catalog: str) -> bytes | None:
+    source = folder / entry["file"]
+    raw = source.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != entry["sha256"]:
+        print(f"{source} 与 manifest.json 记录的 sha256 不符，未生成 {catalog}", file=sys.stderr)
+        return None
+    return raw
+
+
+def _write(folder: Path, catalog: str, text: str, counts: dict[str, int]) -> None:
+    target = folder / f"{catalog}.AGF"
+    # 与厂家文件一样用带 BOM 的 UTF-16 / UTF-16 with a BOM, like the makers' files
+    target.write_bytes(text.encode("utf-16"))
+    kept = sum(counts.get(s, 0) for s in glasscat.IN_PRODUCTION)
+    print(f"{target.name}: {kept} / {sum(counts.values())} 种，各状态 {counts}")
 
 
 if __name__ == "__main__":

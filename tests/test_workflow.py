@@ -941,13 +941,19 @@ def test_rule_out_needs_a_reason_and_feeds_the_round_decision(setup):
     write_demand(job, DEMAND)
     sha = demand.compute_digest(demand.load_job(job.root))
     with pytest.raises(SaosError):
-        ledger.record_rule_out(job.root, sha, ["structure"], "probes/001")  # 还没有轮次 / no round yet
+        ledger.record_rule_out(job.root, sha, ["structure"], "notes/probe.json")  # 还没有轮次 / no round yet
     assert call(daemon, "round.record", job=job.id)["ok"]
     with pytest.raises(SaosError):
         ledger.record_rule_out(job.root, sha, ["structure"], " ")
     with pytest.raises(SaosError):
         ledger.record_rule_out(job.root, sha, ["fancy"], "x")
-    ledger.record_rule_out(job.root, sha, ["materials", "global", "structure"], "probes/001: no variable moves the target")
+    (job.root / "notes").mkdir(exist_ok=True)
+    (job.root / "notes" / "probe.json").write_text("{}", encoding="utf-8")
+    with pytest.raises(SaosError, match="existing file"):
+        ledger.record_rule_out(job.root, sha, ["structure"], "no variable moves the target, by reasoning alone")
+    with pytest.raises(SaosError, match="materials tier was never tried"):
+        ledger.record_rule_out(job.root, sha, ["materials"], "notes/probe.json: no variable moves the target")
+    ledger.record_rule_out(job.root, sha, ["materials", "global", "structure"], "not runnable: glasses fixed by the demand, notes/probe.json")
     call(daemon, "lens.set", job=job.id, surface=1, param="radius", value=60.0)
     out = call(daemon, "round.record", job=job.id, tier="local,variables")["result"]
     assert out["record"]["tiers"] == ["local", "variables"] and out["record"]["tier"] == "local"

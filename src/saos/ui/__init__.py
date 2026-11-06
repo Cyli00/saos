@@ -37,7 +37,7 @@ OPENING_S = 20.0
 # after a restart open windows reconnect at the same address; wait this long before opening another one
 RECONNECT_WAIT_S = 4.0
 OPENED_FILE = "ui-opened.json"
-WINDOW_SIZE = (1080, 720)
+WINDOW_SIZE = (1600, 900)
 CHROME_SUBPATH = Path("Google") / "Chrome" / "Application" / "chrome.exe"
 
 

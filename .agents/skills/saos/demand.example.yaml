@@ -16,6 +16,9 @@
 # {metric: {id, params?, pick?}} (see saos metrics list) or {script: checks/<file>.py} defining run(ctx),
 # which returns inf when a precondition fails. "As small as possible" is minimize, never must: {max: 0}
 # (refused). An unknown real-world fact is an open_question, never a variable.
+# class goes with must: first_order (focal length, F-number, field, length, back focus: follows from powers and
+# constraints) or quality (spot, MTF, distortion and the like: what optimisation brings down). An autonomous job
+# cannot approve a model until every must has one. Changing a class needs a new confirmation; rounds stay comparable.
 
 schema: 2
 
@@ -47,6 +50,7 @@ objectives:                         # measured goals, one quantity per entry
     description: 532 nm RMS spot diameter (um), worst required field
     check: {script: checks/spot.py}
     origin: user
+    class: quality
     must: {max: 3.7}
     minimize: true
     wish: {max: 1.5}
@@ -56,6 +60,7 @@ objectives:                         # measured goals, one quantity per entry
     description: worst-field share of rays reaching the sample (%)
     check: {script: checks/pass_rate.py}
     origin: agent
+    class: quality
     must: {min: 90.0}
     scale: 10.0
     source: "agent assumption: below 90 % the signal drops noticeably"

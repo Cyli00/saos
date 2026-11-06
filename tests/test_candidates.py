@@ -148,6 +148,20 @@ def test_screening_without_stages_makes_no_optimiser_call(explore, monkeypatch):
     assert {r["verdict"] for r in rows} == {"invalid"} and all(r["structure"]["as_built"]["fingerprint"] for r in rows)
 
 
+def test_rows_say_how_far_off_a_valid_candidate_is_and_whether_it_converged(explore):
+    """valid 只说明能追迹、不交叠：离需求多远、是否超时要另外写明。/ valid only says it traces and fits."""
+    daemon, job = explore
+    tight = {**LOOSE, "must": {"max": 1.0}, "class": "quality", "scale": 1.0}
+    write_demand(job, {**DEMAND, "objectives": [tight]})
+    out = call(daemon, "scan.run", job=job.id, plan=plan([]))
+    assert out["ok"], out
+    top = out["result"]["top"][0]
+    assert top["reach_blocking"][0]["id"] == tight["id"] and top["reach_blocking"][0]["multiple"] > 5
+    assert top["stopped_by"] is None
+    page = (job.root / out["result"]["page"]).read_text(encoding="utf-8")
+    assert "too far" in page.lower() or "差距过大" in page
+
+
 def test_verdicts_follow_what_failed(explore):
     """硬条件失败属于预算内无效，通过者有效。"""
     daemon, job = explore

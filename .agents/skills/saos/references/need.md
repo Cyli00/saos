@@ -19,11 +19,14 @@ A structure the user prescribes, or asks you to change, is a hypothesis: the use
 
 - what each element is there to do, and whether the rest can still do it after a requested change;
 - the bounds no optimiser can move: conserved or invariant quantities (étendue, the Lagrange invariant, the Petzval sum), the diffraction limit, one-way conditions such as critical angles, the space and apertures available, and the independent degrees of freedom against the objectives they must hold at once;
-- how each part is made and what that process cannot do (coatings, surface forms, sizes, materials); find out before you make a part's shape a variable.
+- how each part is made and what that process cannot do (coatings, surface forms, sizes, materials); find out before you make a part's shape a variable;
+- which manufacturing and assembly tolerances apply and who sets them (a maker's table, a standard, the user). A tolerance scan needs a source for each one, and a design that only works at nominal is found out late otherwise.
 
 Write each estimate out so the user can follow it: the formula, its inputs with their source, the result and what it decides. Then check the one or two deciding numbers on the backend with a deterministic calculation on a minimal model (a ray trace, or an operand such as `RAID`, `RANG`, `REAY`, `SSAG`, `ETVA`, `EFFL`), and say which constraints the minimal model leaves out. During the interview the daemon runs these checks on rtc ([session.md](session.md#two-backends-in-one-daemon)) without a licence, and a verdict may rest on its numbers; what it computes and how it labels unreconciled ones is in [scripting.md](scripting.md#the-rtc-instance). A quantity it refuses, or one resting on an item `computed_by` lists, is checked on OpticStudio before it decides a verdict. Do not search with an optimiser here: it exploits every constraint a sketch leaves out (edge thickness, apertures, lost rays), and finding nothing proves little. Before a check you expect to take more than a few minutes, tell the user how long and why.
 
 Give each `must` a verdict, reachable, marginal or not reachable, with the deciding argument. For marginal or not reachable, offer alternatives that change the deciding bound, not a list of variables to try.
+
+First-order numbers alone never make an image-quality `must` reachable. Search the patent library at the demand's field and F-number ([model.md](model.md#choose-a-starting-form)) and write down the nearest examples and their element counts. No example, or examples with far more elements than you plan, makes the verdict marginal at best. The night-vision job called everything reachable from a paraxial model: nothing in 2456 examples matched ω30°, F/1.2, the nearest at F/1.4 had 8 to 13 elements, and its 6-element start stayed 27 times over the spot limit.
 
 Treat every `minimize` / `maximize` objective the same way: find which `must`s cap it and estimate how far it can go under them. An objective the user ranks first usually trades against several pass lines at once, and that trade is the design's central decision. Without a written estimate, the AR-glasses job's "focal length as long as possible" slid from 16 mm to 8 mm over three starting forms, and nobody decided it.
 
@@ -31,7 +34,7 @@ Write the verdicts, the estimates and the backend checks behind them, each with 
 
 ## Write the demand
 
-Copy [demand.example.yaml](../demand.example.yaml) to `sources/demand.yaml`. Its header states the accepted fields, bounds, weights and what needs reconfirmation.
+Copy [demand.example.yaml](../demand.example.yaml) to `sources/demand.yaml`. Its header states the accepted fields, bounds, weights and what needs reconfirmation. Give every `must` objective its `class`: the [reach gate](model.md#the-reach-gate) reads it.
 
 - `constants` are fixed conditions, `variables` the freedoms with their ranges, `objectives` the measured goals with pass lines (`must`), `minimize` / `maximize` for "as small / large as possible", and hoped-for values (`wish`).
 - Every limit names its `source`: the user, a datasheet, a paper, a textbook table, or `agent assumption: <why>`.

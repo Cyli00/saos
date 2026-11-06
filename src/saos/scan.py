@@ -114,7 +114,7 @@ HELP_EPILOG = """Input: --plan FILE, a JSON file (choose exactly one of the six 
     Structures are deduplicated by fingerprint. Only RuntimeWarning is counted;
     Python warning filters can suppress warnings, so zero does not establish validity.
     Valid candidates rank first, then by shortfall. Still-improving candidates are kept.
-    Missing comparisons do not block approval or deep optimisation; demand and model approval do.
+    Missing comparisons do not block approval or optimisation; a confirmed demand, and a matching model once one is approved, do.
 
   Multi-start minimization (one search per start):
     {"minimize": {"vars": {"3.radius": {"step": 0.1, "min": 15, "max": 40},
@@ -199,7 +199,9 @@ Results and files
   scans/NNN/ seals plan.json, base.zmx (or candidates/<id>/ copies), result.json
   and all rows. The response summarizes the top 10 rows ranked by shortfall.
   Kept point lenses: lenses/scans/NNN/pPPP.zmx, ready for uv run saos lens load.
-  Candidate lenses use <id>.zmx; results add kept, budget_limited, best and page
+  Candidate lenses use <id>.zmx; results add kept, budget_limited, best and page,
+  and each row stopped_by (timeout = not converged, not comparable) and reach_blocking
+  (the musts too far off for lens approve in an autonomous job, with their multiples)
   (scans/NNN/index.html: hypotheses, validity, measurements, interference,
   glass status and variable/merit source, prepare or candidate).
   --detach uses a background worker-pool thread, not runs/; the daemon remains
@@ -910,6 +912,9 @@ def _execute(job: jobs.Job, folder, plan: dict[str, Any], items: list[dict[str, 
         result["kept"] = [r["id"] for r in ranked if r.get("kept")]
         result["budget_limited"] = [r["id"] for r in ranked if r.get("still_improving")]
         result["counted"] = [r["id"] for r in candidates.counted(ranked)]
+        d = demand.load_job(job.root)
+        for row in ranked:
+            candidates.add_reach(row, d)
         result["page"] = candidates.page(job, folder, plan, ranked, plan.get("lang")).relative_to(job.root).as_posix()
     # 最好的那一点零件交叠时写在顶层（hard_failing 已由 demand.quick 计入）；其余各点的交叠留在各自的行里
     # the best point's parts clash goes to the top level; other points keep theirs in their rows
@@ -930,7 +935,7 @@ def summarize(result: dict[str, Any]) -> dict[str, Any]:
     """返回给 agent 的摘要：前 10 行，不含寻优历史。/ The summary for the agent: the top 10 rows, no search history."""
     summary = {k: v for k, v in result.items() if k != "rows"}
     if result.get("mode") == "candidates":
-        keys = ("id", "verdict", "valid", "kept", "still_improving", "start_shortfall", "shortfall", "problems", "hard_failing", "values", "lens", "error",
+        keys = ("id", "verdict", "valid", "kept", "still_improving", "stopped_by", "reach_blocking", "start_shortfall", "shortfall", "problems", "hard_failing", "values", "lens", "error",
                 "numeric_warnings")
     else:
         keys = ("i", "set", "shortfall", "hard_failing", "invalid", "values", "solve", "lens", "operands", "error")

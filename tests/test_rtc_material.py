@@ -251,3 +251,15 @@ def test_load_keeps_the_explicit_catalog_directory(fast):
     folder = fast.backend.glasses.folder
     fast.backend.load(fast.backend.path)
     assert fast.backend.glasses.folder == folder
+
+
+def test_a_catalog_may_write_integer_fields_in_scientific_notation():
+    """APEL.AGF 的 NM 行整行都是科学计数法；只作废牌号的话，这家的树脂全都用不了。
+    APEL.AGF writes its whole NM line in scientific notation; failing on it would lose every one of its resins."""
+    from rtc.material.agf import parse_agf
+
+    text = "NM APL5014CL 1.00000000E+00 0.00000000E+00 1.54450000E+00 5.60000000E+01 0.00000000E+00 2.00000000E+00 1.00000000E+00\nED 6.50000000E+01 0.00000000E+00 1.04890000E+00 0.00000000E+00 1.00000000E+00 0.00000000E+00\nCD 1 0 0 0 0 0\nLD .4 1.1\n"
+    document = parse_agf(text, catalog="APEL")
+    assert not document.problems
+    glass = document.glasses["APL5014CL"]
+    assert glass.formula == 1 and glass.status == 2 and glass.melt_frequency == 1 and glass.data_error is None and glass.ed[0] == 65.0 and glass.ignore_expansion is True

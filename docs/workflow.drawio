@@ -1,6 +1,6 @@
 <mxfile host="saos" modified="2026-11-03T00:00:00+00:00" agent="saos" version="21.3.7" type="device">
   <diagram id="saos-workflow" name="saos workflow">
-    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1050" pageHeight="628" math="0" shadow="0">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1050" pageHeight="876" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -23,7 +23,7 @@
           <mxGeometry x="30" y="264" width="220" height="50" as="geometry" />
         </mxCell>
         <mxCell id="gate1" value="&lt;b&gt;关卡：确认需求&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;窗口按钮 · saos demand confirm&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#FFFFFF;strokeColor=#D97706;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="30" y="464" width="220" height="50" as="geometry" />
+          <mxGeometry x="30" y="712" width="220" height="50" as="geometry" />
         </mxCell>
         <mxCell id="head2" value="&lt;b&gt;2 建模 · rtc&lt;/b&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry x="280" y="84" width="220" height="36" as="geometry" />
@@ -37,14 +37,26 @@
         <mxCell id="s2_3" value="&lt;b&gt;预判与等预算初筛&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;starts.prediction · saos scan&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry x="280" y="264" width="220" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s2_4" value="&lt;b&gt;非球面位置&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;ctx.AsphereExpert.rank()&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
+        <mxCell id="s2_4" value="&lt;b&gt;球面版收敛并存档&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;saos opt local · 按残差选手段&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry x="280" y="326" width="220" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s2_5" value="&lt;b&gt;模型页&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;saos lens describe&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="280" y="388" width="220" height="50" as="geometry" />
+        <mxCell id="s2_glass" value="&lt;b&gt;色差卡门禁：换玻璃专家&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;ctx.GlassExpert · 限时&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="296" y="388" width="204" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_petzval" value="&lt;b&gt;Petzval：改光焦度分配&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;saos lens set · 手选折射率&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="296" y="450" width="204" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_asphere" value="&lt;b&gt;单色像差：出非球版对比&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;ctx.AsphereExpert · 球面版留档&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="296" y="512" width="204" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_blocked" value="&lt;b&gt;还被门禁拦：换结构或加片&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;回到生成起点&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="296" y="574" width="204" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="s2_5" value="&lt;b&gt;模型页（两版对比）&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;saos lens describe&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="280" y="636" width="220" height="50" as="geometry" />
         </mxCell>
         <mxCell id="gate2" value="&lt;b&gt;关卡：确认模型&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;窗口按钮 · saos lens approve&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#FFFFFF;strokeColor=#D97706;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="280" y="464" width="220" height="50" as="geometry" />
+          <mxGeometry x="280" y="712" width="220" height="50" as="geometry" />
         </mxCell>
         <mxCell id="head3" value="&lt;b&gt;3 设计轮次 · rtc&lt;/b&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry x="530" y="84" width="220" height="36" as="geometry" />
@@ -55,17 +67,17 @@
         <mxCell id="s3_2" value="&lt;b&gt;局部与全局优化&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;saos opt local · hammer · global&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry x="530" y="202" width="220" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s3_3" value="&lt;b&gt;换玻璃专家&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;ctx.GlassExpert&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
+        <mxCell id="s3_4" value="&lt;b&gt;诊断与扫描&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;saos scan · saos rule-out&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry x="530" y="264" width="220" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s3_4" value="&lt;b&gt;诊断与扫描&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;saos scan · saos rule-out&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
+        <mxCell id="s3_5" value="&lt;b&gt;记轮次&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;saos round&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry x="530" y="326" width="220" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s3_5" value="&lt;b&gt;记轮次&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;saos round&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
+        <mxCell id="s3_glass" value="&lt;b&gt;收尾定玻璃（按需）&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;ctx.GlassExpert · 记 materials 轮&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
           <mxGeometry x="530" y="388" width="220" height="50" as="geometry" />
         </mxCell>
         <mxCell id="gate3" value="&lt;b&gt;出口：轮次决定&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;achieved · exhausted · limit · saos stop&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#FFFFFF;strokeColor=#D97706;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="530" y="464" width="220" height="50" as="geometry" />
+          <mxGeometry x="530" y="712" width="220" height="50" as="geometry" />
         </mxCell>
         <mxCell id="head4" value="&lt;b&gt;4 交付 · OpticStudio&lt;/b&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=center;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#FFFFFF;strokeColor=#6B7280;strokeWidth=1.25;" vertex="1" parent="1">
           <mxGeometry x="780" y="84" width="220" height="36" as="geometry" />
@@ -83,7 +95,7 @@
           <mxGeometry x="780" y="344" width="220" height="50" as="geometry" />
         </mxCell>
         <mxCell id="gate4" value="&lt;b&gt;交给用户&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;报告 · 镜头文件 · 未决项&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#FFFFFF;strokeColor=#D97706;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="780" y="464" width="220" height="50" as="geometry" />
+          <mxGeometry x="780" y="712" width="220" height="50" as="geometry" />
         </mxCell>
         <mxCell id="flow1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#6B7280;" edge="1" parent="1" source="head1" target="head2">
           <mxGeometry relative="1" as="geometry"></mxGeometry>
@@ -96,38 +108,71 @@
         </mxCell>
         <mxCell id="back" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#6B7280;dashed=1;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="s4_1" target="s3_5">
           <mxGeometry relative="1" as="geometry">
-            <Array as="points"><mxPoint x="765" y="165" /><mxPoint x="765" y="413" /></Array>
+            <Array as="points"><mxPoint x="765" y="165" /><mxPoint x="765" y="351" /></Array>
           </mxGeometry>
         </mxCell>
         <mxCell id="backLabel" value="结论不同则回到设计" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;strokeColor=none;fillColor=none;fontSize=10.5;fontColor=#6B7280;" vertex="1" parent="1">
           <mxGeometry x="780" y="194" width="220" height="18" as="geometry" />
         </mxCell>
+        <mxCell id="noDesign" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#6B7280;dashed=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="s2_5" target="s4_3">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="772" y="661" /><mxPoint x="772" y="307" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="noDesignLabel" value="没有结构过门禁：saos stop，直接出报告" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;strokeColor=none;fillColor=none;fontSize=10.5;fontColor=#6B7280;" vertex="1" parent="1">
+          <mxGeometry x="510" y="639" width="250" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="tree_s2_glass" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#6B7280;exitX=0.03;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="s2_4" target="s2_glass">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="287" y="413" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="tree_s2_petzval" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#6B7280;exitX=0.03;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="s2_4" target="s2_petzval">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="287" y="475" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="tree_s2_asphere" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#6B7280;exitX=0.03;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="s2_4" target="s2_asphere">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="287" y="537" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="tree_s2_blocked" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#6B7280;exitX=0.03;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="s2_4" target="s2_blocked">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="287" y="599" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="reform" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeColor=#6B7280;dashed=1;exitX=1;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="s2_blocked" target="s2_2">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="515" y="599" /><mxPoint x="515" y="227" /></Array>
+          </mxGeometry>
+        </mxCell>
         <mxCell id="lg1" value="" style="rounded=1;arcSize=25;html=1;fillColor=#FFFFFF;strokeColor=#6B7280;strokeWidth=1.25;" vertex="1" parent="1">
-          <mxGeometry x="30" y="548" width="22" height="14" as="geometry" />
+          <mxGeometry x="30" y="796" width="22" height="14" as="geometry" />
         </mxCell>
         <mxCell id="lgt1" value="OpticStudio" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;strokeColor=none;fillColor=none;fontSize=11.5;fontColor=#111827;" vertex="1" parent="1">
-          <mxGeometry x="60" y="544" width="130" height="22" as="geometry" />
+          <mxGeometry x="60" y="792" width="130" height="22" as="geometry" />
         </mxCell>
         <mxCell id="lg2" value="" style="rounded=1;arcSize=25;html=1;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="200" y="548" width="22" height="14" as="geometry" />
+          <mxGeometry x="200" y="796" width="22" height="14" as="geometry" />
         </mxCell>
         <mxCell id="lgt2" value="rtc" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;strokeColor=none;fillColor=none;fontSize=11.5;fontColor=#111827;" vertex="1" parent="1">
-          <mxGeometry x="230" y="544" width="130" height="22" as="geometry" />
+          <mxGeometry x="230" y="792" width="130" height="22" as="geometry" />
         </mxCell>
         <mxCell id="lg3" value="" style="rounded=1;arcSize=25;html=1;fillColor=#F3F4F6;strokeColor=#D1D5DB;strokeWidth=1.25;" vertex="1" parent="1">
-          <mxGeometry x="370" y="548" width="22" height="14" as="geometry" />
+          <mxGeometry x="370" y="796" width="22" height="14" as="geometry" />
         </mxCell>
         <mxCell id="lgt3" value="不调光学后端" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;strokeColor=none;fillColor=none;fontSize=11.5;fontColor=#111827;" vertex="1" parent="1">
-          <mxGeometry x="400" y="544" width="130" height="22" as="geometry" />
+          <mxGeometry x="400" y="792" width="130" height="22" as="geometry" />
         </mxCell>
         <mxCell id="lg4" value="" style="rounded=1;arcSize=25;html=1;fillColor=#FFFFFF;strokeColor=#D97706;strokeWidth=2;" vertex="1" parent="1">
-          <mxGeometry x="540" y="548" width="22" height="14" as="geometry" />
+          <mxGeometry x="540" y="796" width="22" height="14" as="geometry" />
         </mxCell>
         <mxCell id="lgt4" value="关卡与出口" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;strokeColor=none;fillColor=none;fontSize=11.5;fontColor=#111827;" vertex="1" parent="1">
-          <mxGeometry x="570" y="544" width="130" height="22" as="geometry" />
+          <mxGeometry x="570" y="792" width="130" height="22" as="geometry" />
         </mxCell>
         <mxCell id="note" value="自主任务：agent 用 --reason 通过关卡，报告注明未经用户确认。阶段与完成判据见 .agents/skills/saos/SKILL.md。" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;strokeColor=none;fillColor=none;fontSize=11.5;fontColor=#6B7280;" vertex="1" parent="1">
-          <mxGeometry x="30" y="574" width="900" height="22" as="geometry" />
+          <mxGeometry x="30" y="822" width="900" height="22" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

@@ -193,7 +193,10 @@ COMMANDS = {
         "  this command is the fallback when the window cannot be used and is refused\n"
         "  while it is open. --model is the job-relative description folder; --quote is\n"
         "  one user message verbatim (via: cli); an autonomous job passes the gate with\n"
-        "  --reason instead (via: auto). Seals approval.json with fingerprint, outstanding warnings,\n"
+        "  --reason instead (via: auto), which is refused while shown.reach blocks: a must\n"
+        "  without a class, a first_order must not met, or another must 5 times off or more\n"
+        "  (a structure the demand prescribes is only recorded). The user may overrule it by\n"
+        "  approving. Seals approval.json with fingerprint, outstanding warnings,\n"
         "  shown_sha (digest of the four sections the page showed) and the unknowns\n"
         "  still open then (unknowns_acknowledged). Descriptions made before these\n"
         "  fields existed lack the last two.\n"
@@ -327,15 +330,20 @@ COMMANDS.update({
     "rule-out": (
         "Exclude strategy tiers using evidence for the current demand version locally.",
         "Requires an existing round in this demand version. --tier repeats or uses\n"
-        "  commas; --reason cites scans/NNN or measured evidence. Appends ruled_out.jsonl.\n"
+        "  commas; --reason must cite an existing file of the job (scans/NNN, scripts/NNN-...,\n"
+        "  explore/...). materials also needs a materials round or a GlassExpert script, or a\n"
+        "  reason starting 'not runnable:'. Appends ruled_out.jsonl.\n"
         "  Stop logic no longer waits for these tiers until the next clear gain.", "BAD_ARGS, FILE_NOT_FOUND, JOB_NOT_FOUND"),
     "stop": (
         "Record the decision to stop this demand version locally.",
-        "Requires an existing round in the version. --reason cites evidence; --quote\n"
+        "Refers to the last round of the version. --reason cites evidence; --quote\n"
         "  is the user's words including the selected option. An autonomous job may\n"
         "  stop without --quote (via: auto, marked in the report). Appends stops.jsonl;\n"
-        "  future rounds in this version are refused and reports show reason/quote.", "BAD_ARGS, FILE_NOT_FOUND, JOB_NOT_FOUND"),
-    "report": ('Generate the delivery report from the demand and ledger without OpticStudio.', "Writes report/index.html and a sealed report/NNN-rMMM-<status>.html. Language:\n  --lang > demand.lang > SAOS_LANG > system UI language > English. Returns\n  headline (deliver/best_so_far/best_blocked/no_valid), deliverable, deliver,\n  diagnostic and achieved. deliver is null for an undeliverable lens; diagnostic\n  identifies its file/round and hard_failing, measurement_errors, model_glass.\n  An achieved deliverable round with minimum shortfall is preferred; otherwise\n  the best deliverable round is used. Terminal exhausted/limit/stopped can\n  headline deliver with achieved:false. No valid lens means no delivery.\n  Changed demand/checks require a new measured round before reporting; sealed\n  evidence must be intact (uv run saos job verify J lists problems). An rtc\n  round must be confirmed (saos round --confirm); after a disagreeing\n  confirmation a new round is required unless the user stopped.\n  The tolerance section uses the latest finished, uncancelled tolerance scan\n  (yield, per-check distributions, top 10 sensitivities) and states, by lens\n  file content hash, whether it ran on the delivered round's lens; without one\n  it says none was run.", 'BAD_ARGS, SPEC_CHANGED, EVIDENCE_TAMPERED, FILE_NOT_FOUND, JOB_NOT_FOUND'),
+        "  future rounds in this version are refused and reports show reason/quote.\n"
+        "  With no round in the version (no structure passed the reach gate) the demand must\n"
+        "  be confirmed and --reason must cite a file of the job; saos report then writes a\n"
+        "  no-lens report with the screening, and a later round voids this stop.", "BAD_ARGS, FILE_NOT_FOUND, JOB_NOT_FOUND"),
+    "report": ('Generate the delivery report from the demand and ledger without OpticStudio.', "Writes report/index.html and a sealed report/NNN-rMMM-<status>.html; after a stop\n  before any round, NNN-no-rounds-stopped.html with deliver: null. Language:\n  --lang > demand.lang > SAOS_LANG > system UI language > English. Returns\n  headline (deliver/best_so_far/best_blocked/no_valid), deliverable, deliver,\n  diagnostic and achieved. deliver is null for an undeliverable lens; diagnostic\n  identifies its file/round and hard_failing, measurement_errors, model_glass.\n  An achieved deliverable round with minimum shortfall is preferred; otherwise\n  the best deliverable round is used. Terminal exhausted/limit/stopped can\n  headline deliver with achieved:false. No valid lens means no delivery.\n  Changed demand/checks require a new measured round before reporting; sealed\n  evidence must be intact (uv run saos job verify J lists problems). An rtc\n  round must be confirmed (saos round --confirm); after a disagreeing\n  confirmation a new round is required unless the user stopped.\n  The tolerance section uses the latest finished, uncancelled tolerance scan\n  (yield, per-check distributions, top 10 sensitivities) and states, by lens\n  file content hash, whether it ran on the delivered round's lens; without one\n  it says none was run.", 'BAD_ARGS, SPEC_CHANGED, EVIDENCE_TAMPERED, FILE_NOT_FOUND, JOB_NOT_FOUND'),
     "ui open": (
         "Start the local workflow service if needed and open the user's job window.",
         "--tabs a,b,... picks and orders the analysis tabs (spot, fan, field, mtf,\n"
@@ -390,11 +398,11 @@ Common errors
 """
 
 for _name, _purpose, _details in (
-    ("local", "Run OpticStudio local optimisation after demand and model approval.",
+    ("local", "Run local optimisation once the demand is confirmed (a model, once approved, must match).",
      "Algorithms: auto/dls/od. Auto selects DLS for sequential systems, OD for NSC. Cycles: auto/1/5/10/50."),
-    ("hammer", "Run OpticStudio Hammer after demand and model approval.",
+    ("hammer", "Run Hammer once the demand is confirmed (a model, once approved, must match).",
      "Requires --max-seconds. Material substitution uses opt vary --param material --mode substitute."),
-    ("global", "Run OpticStudio global search after demand and model approval.",
+    ("global", "Run global search once the demand is confirmed (a model, once approved, must match).",
      "Requires --max-seconds. The ten best systems are archived under lenses/global/NNN/."),
 ):
     if _name != "local":

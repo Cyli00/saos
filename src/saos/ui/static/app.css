@@ -57,7 +57,7 @@ button, select, input, textarea { font: inherit; color: inherit; }
 ::-webkit-scrollbar-thumb:hover { background-color: var(--scroll-hover); }
 ::-webkit-scrollbar-corner { background: transparent; }
 
-.app { height: 100%; display: grid; grid-template-rows: 92px auto minmax(0, 1fr) 76px; gap: 12px; padding: 0 18px 14px; }
+.app { height: 100%; display: grid; grid-template-rows: 92px minmax(0, 1fr) 76px; gap: 12px; padding: 0 18px 14px; }
 
 /* ---------- 顶部：品牌、流程弧线、状态 ---------- */
 .top { position: relative; min-width: 0; }
@@ -105,12 +105,12 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .odo .strip { display: flex; flex-direction: column; transition: transform .95s var(--spring); }
 .odo .strip span { height: 1.2em; }
 
-.notice { display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-radius: 12px; background: var(--clay-soft); border: 1px solid #ff8f4055; color: var(--text); white-space: pre-wrap; }
+.notice { flex: 0 0 auto; max-height: 20vh; overflow: auto; display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-radius: 12px; background: var(--clay-soft); border: 1px solid #ff8f4055; color: var(--text); white-space: pre-wrap; }
 .notice span { flex: 1; }
 .notice button { border: 1px solid var(--edge-2); background: transparent; border-radius: 8px; padding: 2px 10px; cursor: pointer; }
 
 /* ---------- 主网格 ---------- */
-.main { display: grid; grid-template-columns: minmax(0, 1.42fr) minmax(0, 1fr); gap: 12px; min-height: 0; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; min-height: 0; }
 .col { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; }
 .card { position: relative; border-radius: 16px; background: var(--card); border: 1px solid var(--edge); overflow: hidden; min-height: 0; transition: border-color .3s; }
 .card:hover { border-color: var(--edge-2); }
@@ -124,8 +124,8 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .seg button.on { background: #ffffff12; color: var(--text); }
 .seg button:disabled { opacity: .4; cursor: not-allowed; }
 
-/* 镜头卡收窄，把空间让给多标签分析卡；Lens Data 默认折叠、可展开 */
-.lens { flex: 0 1 32%; display: flex; flex-direction: column; min-height: 170px; max-height: 34vh; width: 82%; align-self: flex-start; }
+/* 左列：镜头卡占满余下高度，Lens Data 固定约四分之一高、可折叠 */
+.lens { flex: 1 1 0; display: flex; flex-direction: column; min-height: 170px; }
 .lens-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 4px 10px 8px; }
 .lens-body .layout-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .lens-body .figure { flex: 1; min-height: 0; display: flex; flex-direction: column; border: 0; padding: 0; background: none; }
@@ -133,13 +133,11 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .lens-body .stage { flex: 1; min-height: 120px; }
 .lens-body .foot { margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.lrow { flex: 1 1 0; display: flex; flex-direction: column; gap: 10px; min-height: 280px; }
 .ld, .ana { display: flex; flex-direction: column; }
-.ld { flex: 0 0 180px; transition: flex-basis .25s var(--ease); }
+.ld { flex: 0 0 25%; transition: flex-basis .25s var(--ease); }
 .ld.collapsed { flex: 0 0 36px; }
 .ld.collapsed .ld-body { display: none; }
 .ld .hd { cursor: pointer; padding-bottom: 8px; user-select: none; }
-.ana { flex: 1 1 0; min-height: 220px; }
 .ld-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 6px 8px; }
 .ld-body table { font: 11.5px var(--mono); }
 .ld-body th { font: 500 11px var(--font); }
@@ -158,13 +156,20 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .pane.enter { animation: refocus .45s var(--ease); }
 @keyframes refocus { from { opacity: 0; transform: translateY(5px); } }
 
-/* 右列：说明、关卡、判定、需求趋势 */
+/* 右列自上而下：通知与确认单按内容高；判定罗列与所选条目的图表；左右两栏分析卡。窗口太矮时整列滚动 */
+.side { overflow-y: auto; }
+.row { display: flex; gap: 12px; min-width: 0; }
+.row > .card { flex: 1 1 0; min-width: 0; }
+.judge-row { flex: 2 1 0; min-height: 150px; }
+.ana-row { flex: 3 1 0; min-height: 190px; }
+/* 窗口太窄放不下两栏分析卡：只留左栏 */
+@media (max-width: 1360px) { #c-ana-1 { display: none; } }
 .notes { flex: 0 0 auto; padding: 10px 14px 10px 18px; font-size: 12px; color: var(--text-2); }
 .notes::after { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 2px; background: var(--red); border-radius: 0 2px 2px 0; }
 .notes .q + .q { margin-top: 6px; }
 .notes b { color: var(--text); }
 
-.gate { flex: 0 0 auto; }
+.gate { flex: 0 0 auto; max-height: 45%; overflow-y: auto; }
 .gate::after { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 2px; border-radius: 0 2px 2px 0; background: var(--clay); transition: background .6s; }
 .gate.auto::after { background: var(--edge-2); }
 .gh { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 11px; padding: 12px 14px 8px 18px; }
@@ -206,8 +211,8 @@ button, select, input, textarea { font: inherit; color: inherit; }
 @keyframes fadein { from { opacity: 0; transform: translateY(6px); } }
 .gate .auto-text { margin: 0 14px 0 18px; color: var(--text-2); font-size: 12px; }
 
-.judge { flex: 0 0 auto; }
-.gauges { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 4px 2px; padding: 6px 8px 10px; max-height: 34vh; overflow: auto; }
+.judge { display: flex; flex-direction: column; }
+.gauges { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); align-content: start; gap: 4px 2px; padding: 6px 8px 10px; overflow: auto; }
 .gauge { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1px; cursor: pointer; border-radius: 10px; padding: 4px 2px; transition: background .25s; }
 .gauge:hover { background: #ffffff06; }
 .gauge.sel { background: var(--gold-soft); }
@@ -223,7 +228,7 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .gauge.stale { opacity: .5; }
 .gauges .empty { grid-column: 1 / -1; height: auto; padding: 14px; }
 
-.need { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 150px; }
+.need { display: flex; flex-direction: column; }
 .need .hd { align-items: baseline; }
 .need .rule { color: var(--text-3); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .need-body { position: relative; flex: 1; min-height: 0; margin: 4px 12px 10px; }
@@ -296,6 +301,7 @@ canvas { display: block; width: 100%; }
 .stage canvas.measuring { cursor: crosshair; }
 .info { font-family: var(--mono); color: var(--text-2); font-size: 11.5px; }
 .zoom-chip { position: absolute; right: 10px; top: 36px; pointer-events: none; font: 11px var(--mono); color: var(--text-3); }
+.table-wrap { overflow-x: auto; }
 .pane.wide .table-wrap { min-width: 640px; }
 th, .tag { white-space: nowrap; }
 .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -2px; border: 1px solid; }
@@ -346,16 +352,7 @@ ul.plain { margin: 0; padding-left: 18px; font-size: 12px; color: var(--text-2);
 .clash summary::-webkit-details-marker { display: none; }
 .clash summary b { display: inline; }
 .clash[open] { max-height: 30%; overflow: auto; }
-/* 通知条隐藏时不占格，各区固定行号，免得主区与时间轴错位 / fixed rows so a hidden notice never shifts the main area */
-.app > .top { grid-row: 1; }
-.app > .notice { grid-row: 2; }
-.app > .main { grid-row: 3; }
-.app > .timeline { grid-row: 4; }
-/* 右列放不下时：关卡按内容高、判定卡收缩并在内部滚动、需求趋势至少留 120 px / when the right column is short */
 .gate .facts { max-height: 24vh; }
-.judge { flex: 0 1 auto; display: flex; flex-direction: column; min-height: 112px; }
-.judge .gauges { flex: 1 1 auto; min-height: 0; max-height: none; }
-.need { flex: 1 1 0; min-height: 120px; }
 
 /* 只看的指标、出错的指标 / view-only and failed gauges */
 .gauge.display .b { color: var(--mint); }

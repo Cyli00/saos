@@ -19,36 +19,41 @@
         <span class="pill" id="mode-chip"></span>
       </div>
     </header>
-    <div class="notice" id="notice" hidden><span id="notice-text"></span><button id="notice-close"></button></div>
-
     <main class="main">
       <div class="col">
         <section class="card lens" id="c-lens">
           <div class="hd"><b id="lens-title"></b><span class="seg" id="dim-seg"><button data-dim="2d">2D</button><button data-dim="3d" class="on">3D</button></span><span class="src" id="lens-src"></span></div>
           <div class="lens-body" id="lens"></div>
         </section>
-        <div class="lrow">
-          <section class="card ld collapsed" id="c-ld">
-            <div class="hd" id="ld-hd"><b id="ld-title"></b><span class="src" id="ld-note"></span><button class="icon" id="ld-toggle" aria-expanded="false" aria-label="toggle Lens Data">▸</button></div>
-            <div class="ld-body" id="ld"></div>
-          </section>
-          <section class="card ana" id="c-ana">
-            <div class="hd"><div class="tabs" id="tabs" role="tablist"></div><button class="icon" id="expand" aria-label="expand">⤢</button></div>
-            <div class="pane" id="view"></div>
-          </section>
-        </div>
+        <section class="card ld" id="c-ld">
+          <div class="hd" id="ld-hd"><b id="ld-title"></b><span class="src" id="ld-note"></span><button class="icon" id="ld-toggle" aria-expanded="true" aria-label="toggle Lens Data">▾</button></div>
+          <div class="ld-body" id="ld"></div>
+        </section>
       </div>
-      <div class="col">
+      <div class="col side">
+        <div class="notice" id="notice" hidden><span id="notice-text"></span><button id="notice-close"></button></div>
         <section class="card notes" id="notes" hidden></section>
         <section class="card gate" id="gate" hidden></section>
-        <section class="card judge" id="c-judge">
-          <div class="hd"><b id="judge-title"></b><span class="src" id="judge-src"></span><button class="icon" id="pick-open" aria-label="add">＋</button></div>
-          <div class="gauges" id="gauges"></div>
-        </section>
-        <section class="card need" id="c-need">
-          <div class="hd"><b id="need-name"></b><span class="rule" id="need-rule"></span><span class="seg" id="need-mode" hidden></span></div>
-          <div class="need-body" id="need"></div>
-        </section>
+        <div class="row judge-row">
+          <section class="card judge" id="c-judge">
+            <div class="hd"><b id="judge-title"></b><span class="src" id="judge-src"></span><button class="icon" id="pick-open" aria-label="add">＋</button></div>
+            <div class="gauges" id="gauges"></div>
+          </section>
+          <section class="card need" id="c-need">
+            <div class="hd"><b id="need-name"></b><span class="rule" id="need-rule"></span><span class="seg" id="need-mode" hidden></span></div>
+            <div class="need-body" id="need"></div>
+          </section>
+        </div>
+        <div class="row ana-row">
+          <section class="card ana" id="c-ana-0">
+            <div class="hd"><div class="tabs" id="tabs-0" role="tablist"></div><button class="icon" id="expand-0" aria-label="expand">⤢</button></div>
+            <div class="pane" id="view-0"></div>
+          </section>
+          <section class="card ana" id="c-ana-1" hidden>
+            <div class="hd"><div class="tabs" id="tabs-1" role="tablist"></div><button class="icon" id="expand-1" aria-label="expand">⤢</button></div>
+            <div class="pane" id="view-1"></div>
+          </section>
+        </div>
       </div>
     </main>
 

@@ -60,11 +60,23 @@ STRUCTURE_MODES = ("free", "prescribed")
 ITEM_KEYS = {
     "constants": {"id", "description", "value", "unit", "source", "check", "goal", "scale"},
     "variables": {"id", "description", "range", "options", "unit", "check", "scale", "source"},
-    "objectives": {"id", "description", "unit", "check", "origin", "must", "minimize", "maximize", "ideal", "wish", "weight", "scale", "source"},
+    "objectives": {"id", "description", "unit", "check", "origin", "must", "minimize", "maximize", "ideal", "wish", "weight", "scale", "source", "class"},
 }
 # 目标的来源和默认权重：user = 用户给出或明确认可的，agent = agent 补充、用户没有表态的
 # origin of an objective and its default weight: user = stated or explicitly accepted by the user, agent = filled in by the agent
 DEFAULT_WEIGHT = {"user": 1.0, "agent": 0.3}
+# must 的类别：first_order 由光焦度分配和约束直接决定，不达标就是模型没搭对；quality 是优化要压的像差类指标（2026-11-06 用户决定）
+# the class of a must: first_order follows from powers and constraints, so a miss means a wrong model; quality is what optimisation has to bring down
+CHECK_CLASSES = ("first_order", "quality")
+# quality 类差到这个倍数就不进入设计轮次：公开资料没有现成数字，历史账本里首轮差 10 倍以上的 6 个样本都没达标（2026-11-06 用户决定）
+# a quality must this many times off does not enter the rounds: no published number exists; 6 of 6 samples over 10x in the ledgers never passed
+REACH_MULTIPLE = 5.0
+# must 的类别：first_order 由光焦度分配和约束直接决定，不达标就是模型没搭对；quality 是优化要压的像差类指标（2026-11-06 用户决定）
+# the class of a must: first_order follows from powers and constraints, so a miss means a wrong model; quality is what optimisation has to bring down
+CHECK_CLASSES = ("first_order", "quality")
+# quality 类差到这个倍数就不进入设计轮次：公开资料没有现成数字，历史账本里首轮差 10 倍以上的 6 个样本都没达标（2026-11-06 用户决定）
+# a quality must this many times off does not enter the rounds: no published number exists; 6 of 6 samples over 10x in the ledgers never passed
+REACH_MULTIPLE = 5.0
 # 手段层级，从低到高；含义见 ledger.py / strategy tiers, low to high; see ledger.py
 TIERS = ("local", "variables", "materials", "global", "structure")
 DEFAULT_STOP = {"rel": 0.01, "max_rounds": 30, "tiers": list(TIERS)}
@@ -140,7 +152,8 @@ def digest(demand: dict[str, Any]) -> str:
 def compute_digest(demand: dict[str, Any]) -> str:
     """计算层：确认层去掉 source。只改依据不改计算时，数值证据仍有效。
     Compute layer: the confirmation layer without source. Changing only the basis leaves the numbers' evidence valid."""
-    body = _body(demand, frozenset({"description", "source"}))
+    # class 只决定门禁，不改任何数值 / class only decides the gate, it changes no number
+    body = _body(demand, frozenset({"description", "source", "class"}))
     if "structure" in body:
         body["structure"] = {k: v for k, v in body["structure"].items() if k != "reason"}
     return _hash(body)
@@ -409,6 +422,8 @@ def validate(data: Any) -> dict[str, Any]:
                     raise _bad(f"{where}: maximize needs ideal, the best value physically possible (e.g. 100 for a percentage); "
                                "G counts the distance to it")
                 must = e.get("must")
+                if "class" in e and (e["class"] not in CHECK_CLASSES or must is None):
+                    raise _bad(f"{where}: class goes with must and is one of {CHECK_CLASSES}")
                 if must is not None and set(must) == {"max"} and float(must["max"]) == 0.0:
                     # “越小越好”写成 must ≤ 0 永远达不到，需求永远判不了达成 / "as small as possible" as must ≤ 0 can never pass
                     raise _bad(f"{where}: must {{max: 0}} is a pass line no design can meet, so the demand could never be achieved. "
@@ -473,6 +488,98 @@ def excess(goal: dict[str, Any], value: float) -> float:
     if "max" in goal:
         return value - float(goal["max"])
     return float(goal["min"]) - value
+
+
+def miss_multiple(goal: dict[str, Any], value: float, scale: float | None = None) -> float:
+    """差几倍：1 为达标；单边正界限是实测与界限之比，其余（equals、界限不为正）是 1 + 超出量 / 尺度；非有限值为 inf。
+    How many times off: 1 when met; the ratio to a positive one-sided bound, otherwise 1 + excess / scale; inf for a non-finite value."""
+    value = float(value)
+    if not math.isfinite(value):
+        return math.inf
+    scale = float(scale if scale is not None else _default_scale(goal) or 1.0)
+    over = excess(goal, value)
+    if over <= BOUND_TOLERANCE * scale:
+        return 1.0
+    if "equals" not in goal:
+        if "max" in goal and float(goal["max"]) > 0 and value > float(goal["max"]):
+            return value / float(goal["max"])
+        if "min" in goal and float(goal["min"]) > 0 and value < float(goal["min"]):
+            return float(goal["min"]) / value if value > 0 else math.inf
+    return 1.0 + over / scale
+
+
+def reach(demand: dict[str, Any], values: dict[str, Any] | None) -> dict[str, Any]:
+    """各 must 目标离界限多远，以及哪些已经不该进入设计轮次：first_order 不达标、其余差到 REACH_MULTIPLE 倍。没测到的不算。
+    How far each must objective is from its bound and which should not enter the rounds: a first_order miss, or any other
+    REACH_MULTIPLE times off. Items without a measurement do not count."""
+    items, blocking, unclassified = [], [], []
+    for entry in demand.get("objectives") or []:
+        goal = entry.get("must")
+        if goal is None:
+            continue
+        check_class = entry.get("class")
+        if check_class is None:
+            unclassified.append(entry["id"])
+        value = (values or {}).get(entry["id"])
+        # 判定失败写成 "inf"（jsonable）/ an invalid value arrives as "inf"
+        if value in ("inf", "-inf"):
+            value = math.inf
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            items.append({"id": entry["id"], "class": check_class, "multiple": None, "blocking": False})
+            continue
+        multiple = miss_multiple(goal, value, entry.get("scale"))
+        blocks = multiple > 1.0 if check_class == "first_order" else multiple >= REACH_MULTIPLE
+        items.append({"id": entry["id"], "class": check_class, "multiple": multiple, "blocking": blocks})
+        if blocks:
+            blocking.append(entry["id"])
+    return {"threshold": REACH_MULTIPLE, "items": items, "blocking": blocking, "unclassified": unclassified,
+            "measured": sum(i["multiple"] is not None for i in items), "prescribed": (demand.get("structure") or {}).get("mode") == "prescribed"}
+
+
+def miss_multiple(goal: dict[str, Any], value: float, scale: float | None = None) -> float:
+    """差几倍：1 为达标；单边正界限是实测与界限之比，其余（equals、界限不为正）是 1 + 超出量 / 尺度；非有限值为 inf。
+    How many times off: 1 when met; the ratio to a positive one-sided bound, otherwise 1 + excess / scale; inf for a non-finite value."""
+    value = float(value)
+    if not math.isfinite(value):
+        return math.inf
+    scale = float(scale if scale is not None else _default_scale(goal) or 1.0)
+    over = excess(goal, value)
+    if over <= BOUND_TOLERANCE * scale:
+        return 1.0
+    if "equals" not in goal:
+        if "max" in goal and float(goal["max"]) > 0 and value > float(goal["max"]):
+            return value / float(goal["max"])
+        if "min" in goal and float(goal["min"]) > 0 and value < float(goal["min"]):
+            return float(goal["min"]) / value if value > 0 else math.inf
+    return 1.0 + over / scale
+
+
+def reach(demand: dict[str, Any], values: dict[str, Any] | None) -> dict[str, Any]:
+    """各 must 目标离界限多远，以及哪些已经不该进入设计轮次：first_order 不达标、其余差到 REACH_MULTIPLE 倍。没测到的不算。
+    How far each must objective is from its bound and which should not enter the rounds: a first_order miss, or any other
+    REACH_MULTIPLE times off. Items without a measurement do not count."""
+    items, blocking, unclassified = [], [], []
+    for entry in demand.get("objectives") or []:
+        goal = entry.get("must")
+        if goal is None:
+            continue
+        check_class = entry.get("class")
+        if check_class is None:
+            unclassified.append(entry["id"])
+        value = (values or {}).get(entry["id"])
+        # 判定失败写成 "inf"（jsonable）/ an invalid value arrives as "inf"
+        if value in ("inf", "-inf"):
+            value = math.inf
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            items.append({"id": entry["id"], "class": check_class, "multiple": None, "blocking": False})
+            continue
+        multiple = miss_multiple(goal, value, entry.get("scale"))
+        blocks = multiple > 1.0 if check_class == "first_order" else multiple >= REACH_MULTIPLE
+        items.append({"id": entry["id"], "class": check_class, "multiple": multiple, "blocking": blocks})
+        if blocks:
+            blocking.append(entry["id"])
+    return {"threshold": REACH_MULTIPLE, "items": items, "blocking": blocking, "unclassified": unclassified,
+            "measured": sum(i["multiple"] is not None for i in items), "prescribed": (demand.get("structure") or {}).get("mode") == "prescribed"}
 
 
 def pursuit(item: dict[str, Any], value: float | None) -> float:

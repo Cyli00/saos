@@ -129,9 +129,10 @@ def parse_agf(text: str, *, catalog: str = "") -> CatalogDocument:
                 continue
             try:
                 current = Glass(tokens[1].upper()[:32], int(float(tokens[2])), float(tokens[4]), float(tokens[5]), catalog=catalog,
-                                mil=_optional_number(tokens[3], 0.0), exclude=int(tokens[6]) if len(tokens) > 6 else 0,
-                                status=int(tokens[7]) if len(tokens) > 7 else 0,
-                                melt_frequency=int(tokens[8]) if len(tokens) > 8 else 0)
+                                # 有的厂家（APEL）整行都写成 0.00000000E+00 / some makers write every field in scientific notation
+                                mil=_optional_number(tokens[3], 0.0), exclude=int(float(tokens[6])) if len(tokens) > 6 else 0,
+                                status=int(float(tokens[7])) if len(tokens) > 7 else 0,
+                                melt_frequency=int(float(tokens[8])) if len(tokens) > 8 else 0)
             except ValueError:
                 document.problems.append(f"{catalog}:{line_number}: NM 数值格式无效")
                 continue
@@ -182,8 +183,8 @@ def parse_agf(text: str, *, catalog: str = "") -> CatalogDocument:
                     current.wavelength_range = tuple(numbers(2))
                 else:
                     current.ed = tuple(numbers(4))
-                    current.ignore_expansion = bool(int(tokens[5])) if len(tokens) > 5 else False
-                    current.negative_index = bool(int(tokens[6])) if len(tokens) > 6 else False
+                    current.ignore_expansion = bool(int(float(tokens[5]))) if len(tokens) > 5 else False
+                    current.negative_index = bool(int(float(tokens[6]))) if len(tokens) > 6 else False
                     current.od = (-1.0,) * 6
             except (ValueError, OverflowError):
                 current.data_error = current.data_error or f"{catalog}:{line_number}: {key} 数值格式无效"

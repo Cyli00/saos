@@ -25,5 +25,20 @@
       "sha256": "04062f360f00eee6c40f625c8a3202c43b0bd499d58b0228f9c02f843e652bcf",
       "url_note": "官网“各类下载”里的上传文件路径；厂家换版本时会换路径，以 page 为入口、以 sha256 认版本"
     }
+  ],
+  "merged": [
+    {
+      "catalog": "SAOS_RESIN_INPROD",
+      "note": "Standard and Preferred optical resins of the catalogs installed with OpticStudio",
+      "sources": [
+        {"file": "ZEON.AGF", "sha256": "ecfca0d4d15d2cb7b46e629839f5fe2d5afb60e560ad0c368979a2293ad320cd"},
+        {"file": "APEL.AGF", "sha256": "82288791ff5814494ec2d6477f9821ec48150aa60d8215fde4bf1d38480872bb"},
+        {"file": "OSAKAGASCHEMICAL.AGF", "sha256": "4316710198e7aa3aff30d48136c51721bd49f3658cf52393eaa20bb8a87bf888"},
+        {"file": "TEIJIN.AGF", "sha256": "df5b934425629115e1ebaa94bfdd16c1896bf85ce8b4fc1e4f2adb1552753b18"},
+        {"file": "ARTON.AGF", "sha256": "a11994ea074b8e9472cddfc651812a9d88bac838fbc4b834ff2a3045769dc417"},
+        {"file": "SABIC_Thermo_Optical_Polymers.agf", "sha256": "0e48acb0b83fb05d88fab98fd37855b88872c9a31947be2767e401e1b40c9b26"},
+        {"file": "MISC.AGF", "sha256": "391b9ef601b92c6e314f293f6ace2f70c7df77dbe5a1cf6f10bb94677f7ecd88", "names": ["ACRYLIC", "COC", "POLYCARB", "POLYSTYR", "SAN"]}
+      ]
+    }
   ]
 }

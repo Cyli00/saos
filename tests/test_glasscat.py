@@ -103,3 +103,36 @@ def test_inprod_refuses_a_maker_file_that_does_not_match_the_manifest(tmp_path, 
     (tmp_path / "MAKER.AGF").write_bytes(raw + b"\x00\x00")  # 文件换了 / the file changed
     (tmp_path / "TEST_INPROD.AGF").unlink()
     assert inprod.main() == 1 and not (tmp_path / "TEST_INPROD.AGF").exists()
+
+
+def test_inprod_merges_makers_and_filters_a_mixed_catalog(tmp_path, monkeypatch):
+    import hashlib
+    import importlib.util
+    import json
+
+    from saos import config
+
+    spec = importlib.util.spec_from_file_location("inprod", config.REPO_ROOT / "library" / "glasscat" / "inprod.py")
+    inprod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(inprod)
+    one, two = AGF.encode("utf-16"), AGF.replace("H-K9L", "H-OTHER").replace("H-ZF52", "H-ANOTHER").encode("utf-16")
+    (tmp_path / "ONE.AGF").write_bytes(one)
+    (tmp_path / "TWO.AGF").write_bytes(two)
+
+    def part(name, raw, **extra):
+        return {"file": name, "sha256": hashlib.sha256(raw).hexdigest(), **extra}
+
+    def write(parts):
+        manifest = {"catalogs": [], "merged": [{"catalog": "TEST_MIX", "note": "test", "sources": parts}]}
+        (tmp_path / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    write([part("ONE.AGF", one), part("TWO.AGF", two, names=["H-OTHER", "H-OLD"])])
+    monkeypatch.setattr(inprod, "ROOT", tmp_path)
+    monkeypatch.setattr("sys.argv", ["inprod.py", "--glasscat", str(tmp_path)])
+    assert inprod.main() == 0
+    # 第二家只取点名的在产牌号，停产的 H-OLD 仍被去掉 / only the named glasses in production
+    assert [g.name for g in glasscat.load_catalog(tmp_path / "TEST_MIX.AGF")] == ["H-K9L", "H-ZF52", "H-OTHER"]
+    (tmp_path / "TEST_MIX.AGF").unlink()
+    # 同名牌号可能光学参数不同，不能静默合并 / same-named glasses may differ, never merged silently
+    write([part("ONE.AGF", one), part("ONE.AGF", one)])
+    assert inprod.main() == 1 and not (tmp_path / "TEST_MIX.AGF").exists()

@@ -37,9 +37,9 @@ const TEXT = {
     unverified: (items) => `未与 OpticStudio 对账：${items.join("；")}。`,
     model_evidence: "模型确认记录提示：",
     redescribe: "结构已变：重新描述并确认",
-    modeling_sub: "rtc 上起型 · 初筛 · 非球面位置 · 建模说明", approval_sub: "方向 · 取舍 · 未知项", design_sub: "rtc 上优化 · 到期复核 · round",
+    modeling_sub: "rtc 上起型 · 球面版 · 按残差选手段 · 差距门禁 · 建模说明", approval_sub: "方向 · 取舍 · 未知项", design_sub: "rtc 上优化 · 到期复核 · round · 收尾定玻璃",
     layout_hint_3d: "拖动旋转 · Shift 或右键拖动平移 · 滚轮以光标为中心缩放 · 双击复位 · 指向某面看参数", layout_hint_2d: "拖动平移 · Shift 或右键拖动测距（吸附面上的点）· 滚轮以光标为中心缩放 · 双击复位 · Esc 清除测距 · 指向某面看参数",
-    image_z: "像面 z", round: "轮", tiers: "层级", gap: "目标差距", state: "状态", note: "说明", achieved: "达成", deliverable: "可交付",
+    image_z: "像面 z", round: "轮", tiers: "层级", shortfall: "目标差距", state: "状态", note: "说明", achieved: "达成", deliverable: "可交付",
     pick_round: "点一行在其他视图中查看该轮", sag_flat: "部分面读不到面形，按平面画。", select_round: (n) => `r${String(n).padStart(3, "0")}`,
     live: "当前镜头", live_unsaved: "未保存", no_live: "后台进程加载或改动镜头后，这里显示当前镜头的布局。", live_failed: "当前视图导出失败：",
     only_3d: "各面不在同一个对称平面里，只有 3D 视图", disconnected: "与 saos ui 服务断开，正在重连…", notice_close: "知道了", lens_data: "Lens Data", ld_type: "面型", ld_comment: "注释", ld_radius: "半径", ld_thickness: "厚度",
@@ -79,7 +79,7 @@ const TEXT = {
     k_live: "当前镜头", k_review: "回看", k_hint: "点刻度或拖动，回看某一轮", k_follow: "跟随最新",
     need_none: "需求单里还没有带判定方法的条目。", need_empty: "这一条还没有测量值。", need_live: "当前",
     expand: "放大", close: "关闭", gate_wait: "等你确认", gate_signed: "已确认", gate_signed_at: (h) => `已于 ${h} 确认`, gate_auto: "自主运行",
-    fk_demand: "需求", fk_weak: "依据薄弱", fk_missing: "缺来源", fk_model: "模型", fk_rebuild: "重建", fk_todo: "待补",
+    fk_demand: "需求", fk_weak: "依据薄弱", fk_missing: "缺来源", fk_model: "模型", fk_rebuild: "重建", fk_reach: "差距", fk_todo: "待补", gate_reach: (s) => `离需求太远：${s}。确认即表示破例，让它进入设计轮次`,
     need_curve: "曲线", need_table: "表格", need_trend: "各轮", display_only: "只看", iteration: (n) => `第 ${n} 步`,
     pick_title: "指标目录", pick_save: "保存", pick_catalog: "目录", pick_chosen: "追加显示（不参与判定）", pick_none: "还没有追加的指标。",
     pick_hint: "点左侧条目加入；key 是显示名，参数按 JSON 填写（悬停看可用参数）。需求单里绑定的指标自动显示，不用在这里加。",
@@ -118,9 +118,9 @@ const TEXT = {
     unverified: (items) => `Not reconciled with OpticStudio: ${items.join("; ")}.`,
     model_evidence: "Model approval evidence: ",
     redescribe: "Structure changed: describe and approve",
-    modeling_sub: "Start on rtc · screen · place aspheres · describe", approval_sub: "Direction · tradeoffs", design_sub: "Optimise on rtc · review on expiry · round",
+    modeling_sub: "Start on rtc · spherical version · fix by residual · reach gate · describe", approval_sub: "Direction · tradeoffs", design_sub: "Optimise on rtc · review on expiry · round · final glass",
     layout_hint_3d: "drag to rotate · Shift or right-drag to pan · wheel zooms at the cursor · double-click to reset · hover a surface for its data", layout_hint_2d: "drag to pan · Shift or right-drag to measure (snaps to surface points) · wheel zooms at the cursor · double-click to reset · Esc clears the ruler · hover a surface for its data",
-    image_z: "image z", round: "Round", tiers: "Tiers", gap: "Shortfall", state: "State", note: "Note", achieved: "achieved", deliverable: "deliverable",
+    image_z: "image z", round: "Round", tiers: "Tiers", shortfall: "Shortfall", state: "State", note: "Note", achieved: "achieved", deliverable: "deliverable",
     pick_round: "Click a row to view that round in the other tabs", sag_flat: "Some surface shapes could not be read; drawn flat.", select_round: (n) => `r${String(n).padStart(3, "0")}`,
     live: "Current lens", live_unsaved: "unsaved", no_live: "Once the daemon loads or changes the lens, its layout appears here.", live_failed: "The live view export failed: ",
     only_3d: "The surfaces share no plane of symmetry: 3D view only", disconnected: "Lost the saos ui service; reconnecting…", notice_close: "Dismiss", lens_data: "Lens Data", ld_type: "Type", ld_comment: "Comment", ld_radius: "Radius", ld_thickness: "Thickness",
@@ -160,7 +160,7 @@ const TEXT = {
     k_live: "Current lens", k_review: "reviewing", k_hint: "click a tick or drag to review a round", k_follow: "following the latest",
     need_none: "The demand has no checked items yet.", need_empty: "No measured value for this item yet.", need_live: "now",
     expand: "Expand", close: "Close", gate_wait: "your turn", gate_signed: "confirmed", gate_signed_at: (h) => `confirmed at ${h}`, gate_auto: "autonomous",
-    fk_demand: "Demand", fk_weak: "Weak basis", fk_missing: "No source", fk_model: "Model", fk_rebuild: "Rebuild", fk_todo: "To add",
+    fk_demand: "Demand", fk_weak: "Weak basis", fk_missing: "No source", fk_model: "Model", fk_rebuild: "Rebuild", fk_reach: "Gap", fk_todo: "To add", gate_reach: (s) => `Far from the demand: ${s}. Approving overrules this and lets it enter the rounds`,
     need_curve: "Curve", need_table: "Table", need_trend: "Rounds", display_only: "view only", iteration: (n) => `step ${n}`,
     pick_title: "Metric catalog", pick_save: "Save", pick_catalog: "Catalog", pick_chosen: "Shown in addition (not judged)", pick_none: "No added metrics yet.",
     pick_hint: "Click an entry on the left to add it; key is the display name, params are JSON (hover to see the allowed ones). Metrics bound in the demand show up by themselves.",
@@ -189,7 +189,6 @@ const MATERIAL_COLORS = ["#d5dae1", "#95e6cb", "#e6b450", "#f29668", "#aad94c", 
 let lang = "zh";
 let state = null;
 let stateText = "";
-let tab = Q.get("tab");
 // 时间轴选中的对象："live"（当前镜头）、轮次号，null 为跟随最新 / the timeline selection: "live", a round number, or null to follow the latest
 let pinnedRound = Q.get("round") === "live" ? "live" : Q.get("round") ? Number(Q.get("round")) : null;
 // 渲染器读的全局：画哪一份导出、它属于哪一轮；镜头卡与分析卡各有一份，画之前换进来
@@ -199,7 +198,6 @@ let viz = null;
 let lensViz = null;
 let anaViz = null;
 let lensSig = null;
-let anaSig = null;
 let metricsSeen = null;
 let dim = Q.get("dim") === "2d" ? "2d" : "3d";
 let needId = Q.get("need");
@@ -208,6 +206,9 @@ const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const t = (k, ...a) => { const v = (TEXT[lang] || TEXT.zh)[k]; return typeof v === "function" ? v(...a) : (v ?? k); };
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const $ = (id) => document.getElementById(id);
+// 分析卡分左右两栏，各选各的标签 / the analysis area is two side-by-side panes, each with its own tab
+const panes = [0, 1].map((i) => ({ tab: i ? null : Q.get("tab"), sig: null, card: $(`c-ana-${i}`), tabs: $(`tabs-${i}`), view: $(`view-${i}`), expand: $(`expand-${i}`) }));
+let zoomedPane = null;
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 async function api(path, params = {}, body = null) {
@@ -378,7 +379,7 @@ function renderNotes() {
   if (state.blocking.length) parts.push(`<div class="q"><b>${esc(t("blocking"))}</b><br>${state.blocking.map((b) => esc(b.question || b)).join("<br>")}</div>`);
   if (state.model_evidence?.length) parts.push(`<div class="q"><b>${esc(t("model_evidence"))}</b><br>${state.model_evidence.map((p) => esc(`${p.path}: ${p.code}`)).join("<br>")}</div>`);
   // 只有 rtc 的后台进程（--backend rtc）：交付要换成带 OpticStudio 的；两个后端都有时它自己切换
-  if (state.daemon.running && state.daemon.backend === "rtc" && !state.daemon.dual && state.current === "deliver") {
+  if (state.daemon.running && state.daemon.backend === "rtc" && !state.daemon.dual && state.current === "deliver" && !state.no_design) {
     parts.push(`<div class="q">${esc(t("rtc_switch"))}</div>`);
   }
   const el = $("notes"), html = parts.join("");
@@ -465,45 +466,57 @@ function tabList() {
 }
 
 function renderTabs() {
-  const list = tabList();
-  if (!tab || !list.includes(tab)) tab = list[0];
-  const html = list.map((k) => `<button class="tab ${k === tab ? "on" : ""}" data-tab="${k}" role="tab">${esc(t("tab_" + k))}</button>`).join("");
-  if ($("tabs").dataset.html !== html) { $("tabs").innerHTML = html; $("tabs").dataset.html = html; }
-  $("expand").title = t("expand");
+  const list = tabList(), [left, right] = panes;
+  if (!list.includes(left.tab)) left.tab = list.find((k) => k !== right.tab) ?? list[0];
+  // 默认左点列右 MTF；只有一个标签可看时右栏不占位 / spot on the left, MTF on the right by default; no right pane with a single tab
+  if (!list.includes(right.tab) || right.tab === left.tab) right.tab = (left.tab !== "mtf" && list.includes("mtf") ? "mtf" : list.find((k) => k !== left.tab)) ?? null;
+  right.card.hidden = !right.tab;
+  panes.forEach((p) => {
+    const html = list.map((k) => `<button class="tab ${k === p.tab ? "on" : ""}" data-tab="${k}" role="tab">${esc(t("tab_" + k))}</button>`).join("");
+    if (p.tabs.dataset.html !== html) { p.tabs.innerHTML = html; p.tabs.dataset.html = html; }
+    p.expand.title = t("expand");
+  });
 }
 
-function anaSignature() {
+function anaSignature(tab) {
   const r = anaRound();
   const modeling = JSON.stringify(state?.steps?.find((x) => x.id === "modeling")?.detail ?? null);
   return JSON.stringify([tab, lang, r, roundOf(r)?.time ?? null, selected(), tab === "metrics" ? [state.metrics, state.metric_items, !!state.progress] : null,
     tab === "rounds" ? state.rounds : null, tab === "starts" ? modeling : null]);
 }
 
-async function renderAna(force = false) {
-  const sig = anaSignature();
-  if (!force && sig === anaSig) return;
-  anaSig = sig;
-  // 渲染器按 id 找子元素（mtf-plot、g-plot…），同一时刻只画在一处：放大层开着就只画放大层
-  // renderers look children up by id, so draw in one place at a time: the enlarged layer while it is open
-  const zoomed = !$("zoom").hidden;
-  if (zoomed) $("zoom-title").textContent = t("tab_" + tab);
-  await renderTabInto(zoomed ? $("zoom-view") : $("view"));
+function renderAna(force = false) {
+  return Promise.all(panes.map(async (p) => {
+    // 右栏可能隐藏（只有一个标签，或窄窗口，见 app.css）：量不出尺寸，不画也不留旧图，变宽时 resize 会重画
+    // the right pane may be hidden: it has no size, so draw nothing and keep nothing; widening redraws through resize
+    if (!p.card.offsetWidth) { p.view.innerHTML = ""; p.sig = null; return; }
+    const sig = anaSignature(p.tab);
+    if (!force && sig === p.sig) return;
+    p.sig = sig;
+    // 渲染器按 id 找子元素（mtf-plot、g-plot…），同一标签同一时刻只画在一处：两栏标签互斥，放大的那栏只画放大层
+    // renderers look children up by id, so a tab draws in one place at a time: the panes never share a tab, a zoomed pane draws only in the enlarged layer
+    const zoomed = zoomedPane === p;
+    if (zoomed) $("zoom-title").textContent = t("tab_" + p.tab);
+    await renderTabInto(p, zoomed ? $("zoom-view") : p.view);
+  }));
 }
 
-function setZoom(open) {
-  $("zoom").hidden = !open;
-  if (open) $("view").innerHTML = ""; else $("zoom-view").innerHTML = "";
+function setZoom(pane) {
+  zoomedPane = pane;
+  $("zoom").hidden = !pane;
+  if (pane) pane.view.innerHTML = ""; else $("zoom-view").innerHTML = "";
   renderAna(true);
 }
 
-async function renderTabInto(view) {
+async function renderTabInto(pane, view) {
+  const tab = pane.tab;
   if (tab === "rounds") return renderRounds(view);
-  if (tab === "starts") return renderStarts(view);
+  if (tab === "starts") return renderStarts(view, pane);
   if (tab === "metrics") return renderMetrics(view);
   const key = anaRound();
   if (key == null) { view.innerHTML = `<div class="empty">${esc(t("no_viz"))}</div>`; return; }
   const v = await loadViz(key);
-  if (anaRound() !== key) return;
+  if (anaRound() !== key || pane.tab !== tab) return;
   anaViz = v;
   if (!v.ok) { view.innerHTML = `<div class="empty">${esc(vizProblem(v, key))}</div>`; return; }
   const plot = plotsFor().find((p) => p.id === tab);
@@ -556,8 +569,9 @@ function renderSpot(view) {
   const colors = waveColors(sys.wavelengths);
   const cols = spot.fields.length <= 1 ? 1 : spot.fields.length <= 4 ? 2 : 3;
   // 每格至少 CELL 宽，视图放不下就横向滚动，而不是把点列图压扁
-  const GAP = 10, CELL = view.classList.contains("wide") ? 220 : Math.max(110, Math.min(220, (view.clientWidth - 30 - (cols - 1) * GAP) / cols));
-  view.innerHTML = `<div class="figure" style="min-width:${cols * CELL + (cols - 1) * GAP + 30}px">
+  // 60 = 分析页内边距 24 + 图框 26 + 纵向滚动条 9，向上取整 / 60: pane padding 24 + figure 26 + vertical scrollbar 9, rounded up
+  const GAP = 10, CELL = view.classList.contains("wide") ? 220 : Math.max(110, Math.min(220, (view.clientWidth - 60 - (cols - 1) * GAP) / cols));
+  view.innerHTML = `<div class="figure" style="min-width:${cols * CELL + (cols - 1) * GAP + 26}px">
     <div class="fig-head"><div class="legend">${sys.wavelengths.map((w, i) => `<span><i style="background:${colors[i]}"></i>${Math.round(w.um * 1000)} nm</span>`).join("")}</div></div>
     <div class="spot-grid" style="grid-template-columns:repeat(${cols},minmax(${CELL}px,1fr))"></div></div>
     <div class="foot">${esc(foot(viz.backend === "rtc" ? "spot_foot_rtc" : "spot_foot", spot.analysis_settings?.ReferTo || "—"))}</div>`;
@@ -619,7 +633,8 @@ function renderMtf(view) {
     <div class="foot">${esc(foot(viz.backend === "rtc" ? "mtf_foot_rtc" : "mtf_foot"))} ${esc(settings)}${mtf.per_field ? `<br>${esc(t("mtf_partial") + (viz.errors?.FftMtf || ""))}` : ""}</div>`;
   const host = $("mtf-plot");
   const head = view.querySelector(".fig-head").offsetHeight;
-  const W = host.clientWidth, H = Math.max(150, Math.min(520, view.clientHeight - head - 70));
+  // 54 = 分析页与图框的内外边距；图注在窄栏里会折行，要量 / 54: pane and figure padding; the caption wraps in a narrow pane, so measure it
+  const W = host.clientWidth, H = Math.max(150, Math.min(520, view.clientHeight - head - view.querySelector(".foot").offsetHeight - 54));
   const [, g] = canvasIn(host, W, H);
   const pad = { l: 46, r: 14, t: 10, b: 38 };
   const xmax = Math.max(...curves.flatMap((c) => c.x));
@@ -742,7 +757,7 @@ function renderField(view) {
     <span><i class="line"></i>${esc(t("tangential"))}</span><span><i class="line dash"></i>${esc(t("sagittal"))}</span></div></div>
     <div class="field-pair"><div id="curv-plot"></div><div id="dist-plot"></div></div></div>
     <div class="foot">${esc(foot("field_foot"))}</div>`;
-  const W = Math.max(260, ($("curv-plot").clientWidth || 300));
+  const W = Math.max(200, ($("curv-plot").clientWidth || 300));
   const H = Math.max(150, Math.min(460, view.clientHeight - 100));
   const yLabel = `${t("field_axis")} (${fieldUnit.trim()})`;
   if (fp.curvature) {
@@ -800,10 +815,10 @@ function renderMetrics(view) {
 
 // ---------------- 起点与初筛 ----------------
 
-async function renderStarts(view) {
+async function renderStarts(view, pane) {
   let data;
   try { data = await api("starts"); } catch (e) { view.innerHTML = `<div class="empty">${esc(e.message)}</div>`; return; }
-  if (tab !== "starts") return;
+  if (pane.tab !== "starts") return;
   const gen = data.generated;
   if (!gen) { view.innerHTML = `<div class="empty">${esc(t("starts_none"))}</div>`; return; }
   const num = (v, n = 4) => (v == null || !isFinite(v) ? "–" : sig(v, n));
@@ -870,7 +885,7 @@ function clashOf(v) {
 
 // Lens Data 卡：与镜头卡共用一个悬停状态（ldHover 由布局设置）；数值相同不重画，换轮次时数字逐位滚动
 // the Lens Data card shares one hover state with the layout (ldHover is set by it); numbers roll when the round changes
-let ldOpen = false;
+let ldOpen = true;
 function syncLensDataFold() {
   const card = $("c-ld"), btn = $("ld-toggle");
   if (!card || !btn) return;
@@ -1518,7 +1533,7 @@ function renderRounds(view) {
   const rounds = state.rounds;
   if (!rounds.length) { view.innerHTML = `<div class="empty">${esc(t("no_rounds"))}</div>`; return; }
   view.innerHTML = `<div class="table-wrap"><div class="figure"><div id="g-plot"></div></div><div class="foot">${esc(t("pick_round"))}</div>
-    <table><tr><th>${esc(t("round"))}</th><th>${esc(t("tiers"))}</th><th class="num">${esc(t("gap"))}</th><th>${esc(t("state"))}</th><th>${esc(t("note"))}</th></tr>
+    <table><tr><th>${esc(t("round"))}</th><th>${esc(t("tiers"))}</th><th class="num">${esc(t("shortfall"))}</th><th>${esc(t("state"))}</th><th>${esc(t("note"))}</th></tr>
     ${rounds.slice().reverse().map((r) => `<tr class="${r.viz ? "pick" : ""} ${r.round === selected() ? "sel" : ""}" data-round="${r.round}">
       <td class="num" style="text-align:left">${t("select_round", r.round)}</td><td>${r.tiers.map((x) => `<span class="tag">${esc(x)}</span>`).join("")}${roundSource(r)}</td>
       <td class="num">${fmtG(r.shortfall)}</td><td>${r.achieved ? `<span class="tag ok">${esc(t("achieved"))}</span>` : ""}${r.deliverable ? `<span class="tag">${esc(t("deliverable"))}</span>` : ""}</td>
@@ -1607,6 +1622,8 @@ function renderGate() {
     fact("fk_model", `<code>${esc(m.model)}</code>`);
     if (m.page) sub = `<button class="lnk" id="gate-open">${esc(t("gate_open"))} ↗</button>`;
     if (m.rebuild_reason) fact("fk_rebuild", esc(m.rebuild_reason));
+    if (m.reach_blocking?.length) fact("fk_reach", esc(t("gate_reach", m.reach_blocking.map((b) => `${b.id} ×${b.multiple === "inf" ? "∞" : sig(b.multiple, 3)}`).join(", "))), "bad");
+    if (m.reach_blocking?.length) fact("fk_reach", esc(t("gate_reach", m.reach_blocking.map((b) => `${b.id} ×${b.multiple === "inf" ? "∞" : sig(b.multiple, 3)}`).join(", "))), "bad");
     const todo = [];
     if (!m.rebuild_reason && m.rebuild_required) { ready = false; todo.push(t("gate_no_rebuild")); }
     if (m.exploration_missing) { ready = false; todo.push(t("gate_no_search")); }
@@ -2133,26 +2150,30 @@ window.addEventListener("pagehide", (e) => {
   } catch { /* 服务不在时什么也做不了 */ }
 });
 
-$("tabs").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-tab]");
-  if (!b || b.dataset.tab === tab) return;
-  tab = b.dataset.tab;
-  renderTabs(); renderAna(true);
-  if (!reduceMotion) { const p = $("view"); p.classList.remove("enter"); void p.offsetWidth; p.classList.add("enter"); }
+panes.forEach((pane, i) => {
+  pane.tabs.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-tab]");
+    if (!b || b.dataset.tab === pane.tab) return;
+    // 选了另一栏正在看的标签：两栏互换 / picking the tab the other pane shows swaps them
+    const other = panes[1 - i];
+    if (other.tab === b.dataset.tab) other.tab = pane.tab;
+    pane.tab = b.dataset.tab;
+    renderTabs(); renderAna(true);
+    if (!reduceMotion) { const p = pane.view; p.classList.remove("enter"); void p.offsetWidth; p.classList.add("enter"); }
+  });
+  pane.expand.addEventListener("click", () => setZoom(pane));
 });
-$("expand").addEventListener("click", () => setZoom(true));
 $("ld-hd")?.addEventListener("click", () => {
   ldOpen = !ldOpen;
   syncLensDataFold();
-  if (state) renderAna(true);
 });
-$("zoom-close").addEventListener("click", () => setZoom(false));
-$("zoom").addEventListener("click", (e) => { if (e.target === $("zoom")) setZoom(false); });
+$("zoom-close").addEventListener("click", () => setZoom(null));
+$("zoom").addEventListener("click", (e) => { if (e.target === $("zoom")) setZoom(null); });
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if (ruler) { ruler = null; if (renderLayout.redraw) renderLayout.redraw(); return; }
   if (!$("picker").hidden) { $("picker").hidden = true; return; }
-  if (!$("zoom").hidden) setZoom(false);
+  if (zoomedPane) setZoom(null);
 });
 $("notice-close").addEventListener("click", async () => {
   $("notice").hidden = true;
@@ -2166,27 +2187,21 @@ $("dim-seg").addEventListener("click", (e) => {
   // 2D 与 3D 用的坐标可能不同（折转系统的 2D 换到剖面平面），整体重画 / 2D may use the section frame: redraw from scratch
   renderLens(true);
 });
-let resizeTimer = null;
-window.addEventListener("resize", () => {
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => {
-    if (!state) return;
-    renderArc(); renderTimeline(); renderNeed();
-    if (renderLayout.redraw) renderLayout.redraw();
-    renderAna(true);
-  }, 150);
-});
-
-// 卡片尺寸变了就重画画布（首次绘制时布局可能还没定）/ redraw canvases when their cards resize (the first draw may precede layout)
+// 卡片尺寸变了就重画画布：窗口缩放、Lens Data 折叠、确认单出现都会改尺寸，首次绘制时布局也可能还没定
+// redraw canvases when their cards resize: window resize, folding Lens Data, a gate appearing; the first draw may precede layout
+let anaResize = null;
 const sized = new ResizeObserver((entries) => {
   if (!state) return;
   entries.forEach((e) => {
     if (e.target.id === "need") renderNeed();
     else if (e.target.id === "arc") renderArc();
     else if (e.target.id === "track") renderTimeline();
+    else if (e.target.id === "lens") renderLayout.redraw?.();
+    // 看的是卡而不是内层 pane：滚动条的出现不改变卡的尺寸，不会反复重画 / the card, not the pane: a scrollbar appearing does not resize it
+    else { clearTimeout(anaResize); anaResize = setTimeout(() => renderAna(true), 150); }
   });
 });
-["need", "arc", "track"].forEach((id) => sized.observe($(id)));
+["need", "arc", "track", "lens", "c-ana-0", "c-ana-1"].forEach((id) => sized.observe($(id)));
 
 $("dim-seg").querySelectorAll("button").forEach((x) => x.classList.toggle("on", x.dataset.dim === dim));
 if (!JOB) document.body.innerHTML = `<div class="empty">?job= missing</div>`;

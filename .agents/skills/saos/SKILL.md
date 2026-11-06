@@ -36,6 +36,7 @@ Run commands from the repository root as `uv run saos ...`. Every command prints
 Read these when their condition first holds:
 
 - [scripting.md](references/scripting.md) before you write an `exec` script or any loop of many evaluations: the worker pool, the `ctx` API, the metric catalog and the expert classes;
+- [merit.md](references/merit.md) before you write a merit function, including the one in a `prepare` script;
 - [rtc-copy.md](references/rtc-copy.md) before you call `ctx.fast()`;
 - [micro.md](references/micro.md) when checks measure a fibre probe, endoscope, fibre-tip lens or miniature objective;
 - [diagnosis.md](references/diagnosis.md) when a round `brief` sets `review`, progress stalls, or a `must` misses by a multiple of its pass line;
@@ -58,7 +59,7 @@ Ask the user, with the evidence, its impact and your recommended options, as soo
 
 - the demand contradicts itself, or a constant, range or pass line rests on a weak basis;
 - a measurement can be read in more than one way and the choice changes the result;
-- feasibility or first-order analysis says the structure cannot reach the objectives, or a `must` misses by a multiple of its pass line;
+- feasibility or first-order analysis says the structure cannot reach the objectives, or a `must` misses by a multiple of its pass line (an autonomous job also has the [reach gate](references/model.md#the-reach-gate), which it cannot decide past);
 - the results give no reason to keep the current strategy (the round `brief` sets `review` when rounds stall or before escalating to `global` or `structure`);
 - the structure must change in a way the user has not seen.
 
@@ -70,7 +71,7 @@ Run `uv run saos ui notify --job J --message "..."` before you stop to ask. A qu
 
 Before handing over, check that:
 
-- the report is current and names a deliverable lens, or states that none exists and why;
+- the report is current and names a deliverable lens, or states that none exists and why; when no structure passed the reach gate, `saos stop` and `saos report` still work without rounds ([model.md](references/model.md#the-reach-gate));
 - every `must` is met or reported with its gap, and every number names its backend;
 - the delivered round was measured on OpticStudio (recorded there, or `saos round --confirm` agreed);
 - the delivered lens uses sourced materials and passes the interference check;

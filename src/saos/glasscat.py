@@ -73,11 +73,12 @@ IN_PRODUCTION = ("Standard", "Preferred")
 CRLF = chr(13) + chr(10)
 
 
-def in_production(text: str, note: str) -> tuple[str, dict[str, int]]:
+def in_production(text: str, note: str, names: set[str] | None = None) -> tuple[str, dict[str, int]]:
     """从 AGF 文本里只留在产牌号：每个牌号是 NM 行加到下一个 NM 行之前的数据行，原样保留；开头的说明行换成 note。
-    返回新文本和各状态的牌号数（含去掉的）。
+    names 给出时只看这些牌号（混合目录用）。返回新文本和各状态的牌号数（含去掉的）。
     Keep only the glasses in production from an AGF text: each glass is its NM line and the data lines up to the next
-    NM line, kept verbatim; the leading comment lines are replaced by note. Returns the text and the count per status."""
+    NM line, kept verbatim; the leading comment lines are replaced by note. names limits it to those glasses (for a mixed
+    catalog). Returns the text and the count per status."""
     blocks: list[list[str]] = []
     for line in text.splitlines():
         if line.startswith("NM "):
@@ -88,6 +89,8 @@ def in_production(text: str, note: str) -> tuple[str, dict[str, int]]:
     kept = []
     for block in blocks:
         parts = block[0].split()
+        if names is not None and parts[1] not in names:
+            continue
         try:
             status = STATUS_NAMES.get(int(float(parts[7])), parts[7]) if len(parts) > 7 else "Standard"
         except ValueError:

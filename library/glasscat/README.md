@@ -7,7 +7,9 @@
 | `SAOS_CDGM_INPROD` | 成都光明 `CDGM_202609.AGF`（CC Updated Sep. 2026） | 315 / 352：Preferred 170、Standard 145，去掉 Obsolete 37 |
 | `SAOS_NHG_INPROD` | 湖北新华光 `NHG_202608.AGF`（CC 20260827） | 260 / 263，去掉 Obsolete 3 |
 
-两家有 88 个同名牌号，其中 8 个光学参数不同（H-ZLAF71 的 nd：CDGM 1.850、NHG 1.901），所以按厂家分开，不合并。替换求解每个面只能指定一个目录，不同的面可以用不同厂家。
+| `SAOS_RESIN_INPROD` | OpticStudio 自带的 ZEON、APEL、OSAKAGASCHEMICAL、TEIJIN、ARTON、SABIC 与 MISC 里的 5 种通用塑料（`--catalog` 显式指定） | 33 种，全部带 dn/dT |
+
+玻璃两家有 88 个同名牌号，其中 8 个光学参数不同（H-ZLAF71 的 nd：CDGM 1.850、NHG 1.901），所以按厂家分开，不合并。替换求解每个面只能指定一个目录，不同的面可以用不同厂家。
 
 厂家文件不进仓库，装在 OpticStudio 的 Glasscat 文件夹（`Documents\Zemax\Glasscat`）里，下载地址、版本和 SHA-256 记在 [manifest.json](manifest.json)。下载地址是厂家下载页当时给的文件链接（CDGM 的 `uid` 是文件 ID，2026-10-19 不带 cookie 重取得到同一文件），厂家换版本后可能指向别的内容：以 `page` 为入口找新版，以 SHA-256 认定是哪一版。换新版时：把新文件装进 Glasscat，更新 manifest 里的 `file`、`edition`、`sha256`，再运行
 
@@ -15,7 +17,18 @@
 uv run python library/glasscat/inprod.py
 ```
 
-已知的缺口（2026-10-19）：
+## 树脂目录
+
+树脂每家只有几个牌号，替换求解每个面又只能指定一个目录，所以合成一个 `SAOS_RESIN_INPROD`；来源和 SHA-256 在 manifest 的 `merged`，生成命令同上。CODE V 自带的 ZEON、OSAKA、MITSUI 目录（`C:\CodeV\glass`，XML）牌号基本重合，没有导入；refractiveindex.info（CC0）主要补 PMMA、PC、PS，这些目录已有，也没有导入（2026-11-06 核对）。
+
+厂家文件的再分发许可没有核实，所以和玻璃一样不进仓库。OKP 的最新牌号（如 OKP-Z5）不在自带目录里，要向 [Osaka Gas Chemicals](https://www.ogc.co.jp/e/products/fluorene/okp.html) 填表索取。
+
+TOPAS 的 3 个牌号和 MISC 的 PMMA 没有收入：AGF 里没有 dn/dT，rtc 按零处理且不报错，同一单片从 20 °C 到 65 °C 焦距只变 -0.005 mm，其余牌号变 +0.20 至 +0.61 mm（2026-11-06 实测），温度判定会好得不真实。要 PMMA 或 COC 用 MISC 的 `ACRYLIC`、`COC`，它们带 dn/dT。
+
+选用前要核对：吸水率、双折射和成型收缩这些目录都没有，要查厂家资料；树脂的 dn/dT 和膨胀系数都比玻璃大得多，温度范围宽的系统要按实测判定。
+
+## 已知的缺口（2026-10-19）
+
 
 - 新华光 2026-08 目录比 2024-08 版少了 347 个牌号（S- 系列、L- 低熔点模压系列、含铅的 F/ZF/QF、IRG 红外），是删除而不是标为停产；其中 L- 系列官网另有低熔点玻璃资料，是否仍在产没有核实。
 - 湖北戈碧迦（OpticStudio 自带的 GBJ 目录，2022-08，111 种，全部标为 Standard）没有找到官网或公开的 Zemax 数据，看不出哪些在产，未收入。

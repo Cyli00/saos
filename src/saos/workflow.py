@@ -65,9 +65,14 @@ def preflight(root: Path) -> tuple[dict[str, Any], str, str]:
 
 
 def require_optimise(job, backend) -> tuple[dict[str, Any], str]:
-    """深度优化只要求当前需求与模型已确认。"""
+    """优化要求需求已确认。第一次模型确认之前可以优化：差距门禁要看收敛后的结果才判定（2026-11-06 用户决定）；
+    确认过之后，结构变了仍要重新确认。
+    Optimising needs a confirmed demand. Before the first model approval it is allowed, since the reach gate judges converged
+    results; once a model is approved, a changed structure still needs a new approval."""
     h, sha, _ = preflight(job.root)
-    model_gate.require_approved(job, backend.describe_model(None))
+    problems: list[dict[str, Any]] = []
+    if model_gate.approvals(job, problems=problems) or problems:
+        model_gate.require_approved(job, backend.describe_model(None))
     return h, sha
 
 
@@ -119,9 +124,19 @@ def brief(d: dict[str, Any], evaluation: dict[str, Any], decision: dict[str, Any
                else f"next tier is {decision['next_tier']}")
         review = (f"{why}. Before spending more compute, reread the demand summary and your first-order analysis. If the demand, "
                   "the structure or a measurement looks wrong or unreachable, stop and ask the user, with the evidence, its impact and options.")
+    far = demand.reach(d, {i["id"]: i.get("value") for i in evaluation["items"]})["blocking"]
+    # 只在新出现时提醒：用户破例后每轮都提醒，提醒就没人看了 / only when newly far: after the user overrules it, a reminder every round would go unread
+    before = demand.reach(d, window[-2].get("values") or {})["blocking"] if window and len(window) > 1 else []
+    newly_far = sorted(set(far) - set(before))
+    if newly_far:
+        warning = (f"{newly_far} are too far from their bounds (a first-order miss, or 5 times off or more). Read the reach gate in model.md "
+                   "before spending more compute. If the structure cannot reach them, stop and ask the user, with the evidence, its impact and options.")
+        review = f"{review} {warning}" if review else warning
     found = doubts(d, window or [])
     out = {"objectives": objectives, "hard_failing": evaluation.get("hard_failing", []),
            "open_questions": [q["question"] for q in d.get("open_questions") or []], "review": review, "doubts": found}
+    if far:
+        out["reach_blocking"] = far
     if found:
         # 只在有证据时提醒质疑需求；给 agent 的文字一律英文 / only with evidence; text for the agent is always English
         out["reminder"] = demand.QUESTION_LINE["en"]

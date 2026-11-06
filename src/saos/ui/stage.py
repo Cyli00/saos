@@ -327,6 +327,14 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
             else:
                 status["design"] = "active"
                 current = "design"
+        if ledger.stopped_before_rounds(root, csha, d) is not None:
+            # 没有结构过门禁就停了：不再等确认，直接到收尾 / stopped with no structure through the gate: nothing to approve, on to the end
+            status["modeling"] = "done"
+            status["model_approve"] = status["design"] = "pending"
+            status["deliver"] = "done" if _report_current(root) else "active"
+            current = "deliver"
+            detail["deliver"] = "stopped"
+            out["no_design"] = True
         blocking = demand.blocking_questions(d)
         if blocking and status[current] in ("active", "waiting"):
             status[current] = "blocked"

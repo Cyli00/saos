@@ -240,6 +240,10 @@ TEXT: dict[str, tuple[str, str]] = {
     "verdict.not_screened": ("已生成，未初筛", "Generated, not screened"),
     "verdict.invalid": ("预算内无效", "invalid within budget"),
     "w.prescribed_changed": ("当前结构与最初认可的指定结构存在差异：{changed}", "The current structure differs from the first approved prescribed model: {changed}"),
+    "w.reach_blocked": ("差距过大，自主任务不能批准这个结构：{ids}（一阶量须达标，其余须在界限 {threshold:g} 倍以内）。用户可以破例确认。",
+                        "Too far from the demand for an autonomous job to approve: {ids} (first-order items must pass, others must be within {threshold:g} times the bound). The user may overrule this."),
+    "w.reach_blocked": ("差距过大，自主任务不能批准这个结构：{ids}（一阶量须达标，其余须在界限 {threshold:g} 倍以内）。用户可以破例确认。",
+                        "Too far from the demand for an autonomous job to approve: {ids} (first-order items must pass, others must be within {threshold:g} times the bound). The user may overrule this."),
     "w.no_screening": ("没有初筛记录；可确认模型，但选型依据尚缺。", "No screening record; approval is allowed, but comparison evidence is missing."),
     "w.approval_evidence": ("历史模型确认不可用或未封存：{paths}", "Historical model approvals unavailable or unsealed: {paths}"),
     "w.checks_changed": ("判定方法已变，已有结果使用旧判定。", "Check methods changed; recorded results use earlier checks."),
@@ -1406,6 +1410,10 @@ def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, An
     if budget is None:
         found.append(("no_next_budget", {}))
     requirements = _requirements(d, measured, demand_error)
+    reach = demand.reach(d, {r["id"]: r["value"] for r in requirements["rows"]}) if d is not None else None
+    if reach and reach["blocking"]:
+        found.append(("reach_blocked", {"threshold": reach["threshold"], "ids": ", ".join(
+            f"{i['id']} ×{i['multiple']:.3g}" for i in reach["items"] if i["blocking"])}))
     materials = material_rows(job, desc, (measured or {}).get("backend") or desc.get("backend"))
     chosen_row = selection.get("chosen") if selection.get("mode") == "free" else None
     validity = {"numeric": {"applicable": chosen_row is not None, "warnings": (chosen_row or {}).get("numeric_warnings")},
@@ -1413,7 +1421,7 @@ def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, An
                             if r["status"] == "unknown" and r["reason"] in MEASURE_FAILURES],
                 "materials": materials}
     # 四节的数据：摘要 shown_sha 由它算出，确认时记入 approval.json / the four sections' data; shown_sha digests it and approval records it
-    shown = jsonable({"selection": selection, "requirements": requirements, "validity": validity, "budget": budget})
+    shown = jsonable({"selection": selection, "requirements": requirements, "validity": validity, "budget": budget, "reach": reach})
     shown_sha = model_gate.digest(shown)
     unknowns = [{"section": "requirements", "id": r["id"], "reason": r["reason"]} for r in requirements["rows"] if r["status"] == "unknown"]
     if d is None:
@@ -1426,8 +1434,9 @@ def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, An
                 "scan": (selection.get("chosen") or {}).get("scan")} if d is not None else None)
     write_json(folder / "model.json", {**meta, "notes": notes, "warnings": warnings, "fingerprint": fp,
                                         "fingerprint_sha": model_gate.digest(fp), "model": desc,
-                                        # 3：起型检索记录（exploration_recorded）成为确认的前提 / 3: a search record is required for approval
-                                        "approval_schema": 3, "exploration_recorded": searched, "evidence_context": context,
+                                        # 3：起型检索记录（exploration_recorded）成为确认的前提；4：自主确认要过差距门禁（shown.reach）
+                                        # 3: a search record is required for approval; 4: autonomous approval passes the reach gate (shown.reach)
+                                        "approval_schema": 4, "exploration_recorded": searched, "evidence_context": context,
                                         "shown": shown, "shown_sha": shown_sha, "unknowns": unknowns})
     out = folder / "index.html"
     out.write_text(render(desc, notes, meta, chosen, found, shown), encoding="utf-8")

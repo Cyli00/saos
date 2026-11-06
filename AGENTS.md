@@ -11,7 +11,7 @@
 
 # 技能文档（`.agents/skills/saos/`）
 - 改动 agent 可见的接口或行为（CLI、ctx、starts、search、报告/流程判定）时同步技能，写进内容所属的那一份：
-  - 某阶段的做法 → 该阶段文件（`need.md`、`model.md`、`rounds.md`、`delivery.md`）；停滞与诊断 → `diagnosis.md`
+  - 某阶段的做法 → 该阶段文件（`need.md`、`model.md`、`rounds.md`、`delivery.md`）；停滞与诊断 → `diagnosis.md`；评价函数（初筛和轮次共用）→ `merit.md`
   - `ctx` / `search` 接口、专家类 → `scripting.md`；`starts` → `model.md`；rtc 副本 → `rtc-copy.md`；微光学测量 → `micro.md`
   - daemon、许可证、长运行与 detach → `session.md`
   - 任务目录的文件及其类别 → `files.md`

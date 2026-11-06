@@ -102,6 +102,16 @@ TEXT: dict[str, tuple[str, str]] = {
     "backend.fake": ("<b>测试数据</b>：假后端结果，不是光学实测。", "<b>Test data</b>: fake backend output, not optical measurements."),
     "backend.zos": ("<b>计算后端</b>：OpticStudio {version}", "<b>Backend</b>: OpticStudio {version}"),
     "h.demand": ("需求", "Demand"),
+    "nd.status": ("未进入设计轮次", "Stopped before any round"),
+    "nd.summary": ("没有结构达到进入设计轮次的条件，所以没有可交付的镜头。下面是停止的理由和初筛结果。",
+                   "No structure qualified for the design rounds, so there is no lens to deliver. The reason for stopping and the screening follow."),
+    "nd.who_auto": ("这个决定由 agent 在自主任务中作出，未经用户确认。", "The agent took this decision in an autonomous job; the user has not confirmed it."),
+    "nd.who_user": ("用户原话：{quote}", "The user's words: {quote}"),
+    "nd.reason": ("停止理由", "Reason for stopping"),
+    "nd.screening": ("初筛结果（{scan}）", "Screening ({scan})"),
+    "nd.none": ("没有初筛记录。", "No screening was recorded."),
+    "nd.backend": ("这些数值来自初筛，未在 OpticStudio 上复测。", "These numbers come from the screening and were not re-measured on OpticStudio."),
+    "nd.th": ("候选|结论|优化停止原因|差距过大的项|目标差距 G", "Candidate|Verdict|Optimiser stopped by|Too far from the demand|Shortfall G"),
     "h.summary": ("需求访谈总结", "Interview summary"),
     "h.constants": ("已知常量", "Constants"),
     "th.constants": ("项|内容|来源", "Item|Value|Source"),
@@ -680,7 +690,68 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
 </main><script>{FIT_JS}</script></body></html>"""
 
 
+def _latest_screening(job: jobs.Job) -> tuple[str, list[dict[str, Any]]] | None:
+    root = job.root / "scans"
+    for folder in sorted((p for p in root.iterdir() if p.is_dir()), key=lambda p: p.name, reverse=True) if root.is_dir() else ():
+        try:
+            result = json.loads((folder / "result.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if result.get("mode") == "candidates" and result.get("rows"):
+            return folder.relative_to(job.root).as_posix(), result["rows"]
+    return None
+
+
+def _write_no_design(job: jobs.Job, stop: dict[str, Any], lang: str | None) -> dict[str, Any]:
+    """停在第一轮之前的报告：没有镜头可交付，只写需求、理由和初筛。/ The report of a stop before any round: no lens, only the demand, the reason and the screening."""
+    d = demand.load_job(job.root)
+    problems = job.verify_seals()
+    if problems:
+        raise SaosError(ErrorCode.EVIDENCE_TAMPERED, f"{len(problems)} sealed evidence file(s) were changed or deleted; see details", {"problems": problems[:50]})
+    chosen = i18n.resolve(lang, d.get("lang"))
+    t = Tr(chosen)
+    who = t("nd.who_auto") if stop.get("via") == "auto" else t("nd.who_user", quote=e(stop.get("quote", "")))
+    screening = _latest_screening(job)
+    if screening is None:
+        table = f"<p>{t('nd.none')}</p>"
+    else:
+        rows = []
+        for r in screening[1]:
+            far = ", ".join(f"{e(b['id'])} ×{fmt(b['multiple'])}" for b in r.get("reach_blocking") or []) or "—"
+            rows.append(f"<tr><td>{e(r.get('id'))}</td><td>{e(r.get('verdict'))}</td><td>{e(r.get('stopped_by') or '—')}</td><td>{far}</td><td class=\"num\">{fmt(r.get('shortfall'))}</td></tr>")
+        table = (f"<h2>{t('nd.screening', scan=e(screening[0]))}</h2><div class=\"wrap\"><table><thead><tr>{header_row(t('nd.th'))}</tr></thead>"
+                 f"<tbody>{''.join(rows)}</tbody></table></div><p class=\"muted\">{t('nd.backend')}</p>")
+    html = f"""<!doctype html><html lang="{'zh-CN' if chosen == 'zh' else 'en'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{t('title')} · {e(job.id)}</title><style>{CSS}</style></head><body><main>
+<p class="muted">{t('byline', job=e(job.id), time=e(jobs.now_iso()))}</p>
+<h1>{e(job.read_state().get('name', job.id))} <span class="status stopped">{t('nd.status')}</span></h1>
+<p>{t('nd.summary')}</p>
+<div class="card"><b>{t('nd.reason')}</b><br>{e(stop['reason'])}<br>{who}</div>
+{table}
+<h2>{t('h.demand')}</h2>{demand_section(d, t)}
+</main></body></html>"""
+    folder = job.root / "report"
+    folder.mkdir(exist_ok=True)
+    archived = folder / f"{jobs.next_archive_number(folder):03d}-no-rounds-stopped.html"
+    archived.write_text(html, encoding="utf-8")
+    job.seal(archived)
+    out = folder / "index.html"
+    out.write_text(html, encoding="utf-8")
+    result = {"archived": archived.relative_to(job.root).as_posix(), "report": str(out), "lang": chosen, "status": "stopped", "headline": "no_design",
+              "deliverable": False, "achieved": False, "deliver": None, "diagnostic": None, "round": None, "shortfall": None,
+              "backend": None, "opticstudio_verified": False}
+    metadata = {**result, "demand_sha": stop["demand_sha"], "last_round": None, "time": jobs.now_iso()}
+    write_json(archived.with_suffix(".json"), metadata)
+    job.seal(archived.with_suffix(".json"))
+    write_json(folder / "latest.json", metadata)
+    return result
+
+
 def write(job: jobs.Job, lang: str | None = None) -> dict[str, Any]:
+    stored = demand.load_job(job.root)
+    stop = ledger.stopped_before_rounds(job.root, demand.compute_digest(stored), stored)
+    if stop is not None:
+        return _write_no_design(job, stop, lang)
     data = build(job)
     chosen = i18n.resolve(lang, data["demand"].get("lang"))
     folder = job.root / "report"

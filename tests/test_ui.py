@@ -20,7 +20,7 @@ DEMAND = {
     "schema": 2,
     "constants": [{"id": "lens", "description": "the sample singlet", "value": "a.zmx", "source": "user"}],
     "variables": [{"id": "radii", "description": "both radii are free"}],
-    "objectives": [{"id": "length", "description": "total track", "check": {"operand": {"type": "TOTR"}}, "origin": "user",
+    "objectives": [{"id": "length", "description": "total track", "check": {"operand": {"type": "TOTR"}}, "origin": "user", "class": "quality",
                     "must": {"max": 95.0}, "scale": 5.0, "source": "user"}],
     "summary": "总长不超过 95 mm。",
 }

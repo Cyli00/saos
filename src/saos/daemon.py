@@ -562,9 +562,11 @@ class Daemon:
         from saos.ui import stage
 
         try:
-            return stage.snapshot(jobs.get_job(job_id))["current"]
+            snapshot = stage.snapshot(jobs.get_job(job_id))
         except SaosError:
             return None
+        # 停在第一轮之前没有镜头要交付，不为它启动 OpticStudio / a stop before any round has no lens to deliver: no OpticStudio for it
+        return "modeling" if snapshot.get("no_design") else snapshot["current"]
 
     def _route(self, op: str, args: dict[str, Any]) -> None:
         want = self._wanted(op, args)
