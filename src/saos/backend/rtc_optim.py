@@ -59,6 +59,13 @@ class Point:
         return float(np.max(np.maximum(0.0, -self.g) / self.scale))
 
     @property
+    def violation_norm(self) -> float:
+        """所有违反约束的相对违背二范数；无约束时为 0。"""
+        if not self.g.size:
+            return 0.0
+        return float(np.linalg.norm(np.maximum(0.0, -self.g) / self.scale))
+
+    @property
     def feasible(self) -> bool:
         return self.violation <= FEASIBLE_TOL
 
@@ -190,8 +197,11 @@ def semi(backend, surface: int) -> float:
 
 
 def _kkt_step(H: np.ndarray, grad: np.ndarray, G: np.ndarray, g: np.ndarray, scale: np.ndarray,
-              active: set[int]) -> tuple[np.ndarray, set[int], np.ndarray]:
-    """有效集法求一步：返回 (d, 最终有效集, 乘子)。最多 3p+5 次增删。/ The active-set step: (d, active set, multipliers)."""
+              active: set[int], restore: float = 1.0) -> tuple[np.ndarray, set[int], np.ndarray]:
+    """有效集法求一步：返回 (d, 最终有效集, 乘子)。最多 3p+5 次增删。已违反的有效约束只要求线性化后恢复 restore 这一比例
+    （g + G·d = (1 − restore)·g），其余有效约束要求 g + G·d = 0。
+    The active-set step: (d, active set, multipliers). A violated active constraint is asked to recover the fraction
+    restore of its violation; the other active constraints are met to first order."""
     p, n = G.shape
     active = set(active)
     tol = FEASIBLE_TOL
@@ -201,7 +211,8 @@ def _kkt_step(H: np.ndarray, grad: np.ndarray, G: np.ndarray, g: np.ndarray, sca
         idx = sorted(active)
         A = G[idx] if idx else np.zeros((0, n))
         K = np.block([[H, -A.T], [A, np.zeros((len(idx), len(idx)))]])
-        rhs = np.concatenate([-grad, -g[idx]])
+        target = -g[idx] * np.where(g[idx] < -tol * scale[idx], restore, 1.0)
+        rhs = np.concatenate([-grad, target])
         sol, *_ = np.linalg.lstsq(K, rhs, rcond=None)
         d, lam = sol[:n], sol[n:]
         # 满足且乘子为负的约束不该再顶着：去掉最负的一个 / a met constraint with a negative multiplier is released
@@ -254,7 +265,10 @@ def local(problem: Problem, *, iterations: int | None = None, deadline: float | 
             D = np.diag(np.maximum(diag, floor))
             accepted = None
             for _ in range(DAMPING_TRIES):
-                d, active_try, _ = _kkt_step(H + mu * D, grad, G, point.g, point.scale, active)
+                # 违反约束的起点：恢复量随阻尼收缩，否则恢复部分不受阻尼影响、整步越过非线性区后被拒（ar-glasses 复盘）
+                # from a violated start the restoration shrinks with the damping; a forced full jump was rejected every time
+                restore = 1.0 if point.feasible else 1.0 / (1.0 + mu)
+                d, active_try, _ = _kkt_step(H + mu * D, grad, G, point.g, point.scale, active, restore)
                 trial = problem.measure(point.x + d)
                 if trial is not None and _better(trial, point):
                     accepted, active = trial, active_try
@@ -284,11 +298,15 @@ def local(problem: Problem, *, iterations: int | None = None, deadline: float | 
 
 
 def _better(trial: Point, point: Point) -> bool:
-    """接受准则：违背不增加且残差下降，或者当前违背时违背明显减小。/ Acceptance: less residual without more violation, or a clear restoration."""
+    """接受准则：违背不增加且残差下降；或者当前违背时，最大违背或违背的二范数减小。
+    Acceptance: less residual without more violation, or, while violated, a smaller worst or total violation."""
     tol = FEASIBLE_TOL
     if trial.violation <= max(point.violation, tol) * (1 + 1e-12) and trial.phi < point.phi * (1 - 1e-15):
         return True
-    return point.violation > tol and trial.violation < point.violation * (1 - 1e-3)
+    if point.violation <= tol:
+        return False
+    return trial.violation < point.violation * (1 - 1e-7) or (
+        trial.violation <= point.violation * (1 + 1e-12) and trial.violation_norm < point.violation_norm * (1 - 1e-7))
 
 
 def _failed_rows(problem: Problem) -> dict[str, str]:

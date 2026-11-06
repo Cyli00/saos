@@ -75,6 +75,50 @@ def test_local_optimisation_lowers_the_merit_and_meets_every_boundary_exactly():
 
 
 @needs_glass
+def test_dls_restores_violated_constraints_in_damped_steps_when_the_full_step_fails(monkeypatch):
+    from saos.backend import rtc_optim
+
+    backend = _designed()
+    backend.vary(1, "thickness", True)
+    # 起点第 1 面厚度 4 mm，要求 ≥ 6 mm（违背 2 mm）；单步移动厚度超过 0.8 mm 时模拟追迹失败，整步恢复必被拒，只能靠随阻尼收缩的恢复步
+    backend.merit_add([{"type": "CTGT", "int1": 1, "target": 6.0, "weight": 1.0}])
+    problem = backend._problem()
+    t_idx = problem.keys.index("1.thickness")
+    raw_measure = problem.measure
+    accepted_t = [float(problem.values()[t_idx])]
+
+    def bounded_measure(x):
+        # 差分步长极小（~1e-7）直接放行；试探步若一次跨度 > 0.8 mm 则返回 None（模拟大步长导致全反射/追迹失败）
+        if abs(float(x[t_idx]) - accepted_t[0]) > 0.8:
+            return None
+        return raw_measure(x)
+
+    monkeypatch.setattr(problem, "measure", bounded_measure)
+    run = rtc_optim.local(problem, iterations=30, on_progress=lambda _d: accepted_t.__setitem__(0, float(problem.values()[t_idx])))
+    assert run["initial"].violation > 0.3
+    assert run["final"].feasible and run["final"].violation <= 1e-9
+    assert float(problem.values()[t_idx]) >= 6.0 * (1 - 1e-9)
+
+
+@needs_glass
+def test_dls_still_lowers_the_merit_when_a_violated_constraint_cannot_move():
+    from saos.backend import rtc_optim
+
+    backend = _loaded()
+    for surface in (1, 2, 3):
+        backend.vary(surface, "radius", True)
+    backend.merit_wizard({**WIZARD, "air": [0.5, 500.0, 0.5]})
+    # 第 2 面厚度不是变量，CTGT 是唯一违背且永远违背：违背不变而残差下降的步仍要接受，不能一步不走就停
+    backend.merit_add([{"type": "CTGT", "int1": 2, "target": 1e3, "weight": 1.0}])
+    problem = backend._problem()
+    start = problem.measure(problem.values())
+    assert [label for label, g in zip(start.labels, start.g) if g < 0] == ["row 1 CTGT surface 2"]
+    run = rtc_optim.local(problem, iterations=10)
+    assert run["iterations"] > 1 and run["final"].phi < 0.5 * run["initial"].phi
+    assert run["final"].violation == pytest.approx(run["initial"].violation)
+
+
+@needs_glass
 def test_stop_semi_optimisation_reaches_recorded_epdi_and_wfno():
     from case_variants import truth
 
