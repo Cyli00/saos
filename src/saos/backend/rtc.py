@@ -31,7 +31,7 @@ from saos.protocol import ErrorCode, SaosError
 PLAIN_SOLVES = ("Fixed", "Variable")
 SURFACE_APERTURES = {"None": 0, "CircularAperture": 1, "CircularObscuration": 2, "RectangularAperture": 4, "FloatingAperture": 10}
 # 系统孔径类型：OpticStudio 的名字 ↔ .zmx 的写法。float_by_stop 的孔径值由光阑半口径定，文件里没有数值。
-APERTURE_TYPES = {"EntrancePupilDiameter": "EPD", "ObjectSpaceNA": "OBNA", "FloatByStopSize": "FLOA"}
+APERTURE_TYPES = {"EntrancePupilDiameter": "EPD", "ImageSpaceFNum": "FNO", "ObjectSpaceNA": "OBNA", "FloatByStopSize": "FLOA"}
 APERTURE_NAMES = {v: k for k, v in APERTURE_TYPES.items()}
 # 与 OpticStudio 逐条追迹对过账的面型（.zmx 类型码）；rtc 另有的 BINARY_2、FRESNELS 只在几个小样本上对过，没有真值回归，一律拒绝
 # surface types reconciled ray by ray with OpticStudio; rtc's BINARY_2 and FRESNELS were only spot-checked and have no truth regression, so they are refused
@@ -244,23 +244,25 @@ class RtcBackend(Backend):
             # the rtc instance writes .zmx back: unknown surface lines (pickups and other solves, coatings) would make the
             # saved lens differ from the one computed, whether ignored or dropped
             out += [f"{line} (a .zmx line rtc neither models nor carries over)" for line in rtc_lens.unknown_surface_lines(lens)]
-            if lens.aperture_type not in ("EPD", "OBNA", "FLOA"):
-                out.append(f"system aperture {lens.aperture_type} (rtc has entrance pupil diameter, object space NA and "
+            if lens.aperture_type not in ("EPD", "FNO", "OBNA", "FLOA"):
+                out.append(f"system aperture {lens.aperture_type} (rtc has entrance pupil diameter, image space F/#, object space NA and "
                            "float by stop size)")
             if lens.field_type not in ("ANGLE", "OP1") or (lens.field_type == "OP1" and not finite):
                 out.append(f"field type {lens.field_type} (rtc has angles, and object heights with a finite object)")
             if lens.aperture_type == "OBNA" and not finite:
                 out.append("object space NA with the object at infinity")
+            if lens.aperture_type == "FNO" and finite:
+                out.append("image space F/# with a finite object distance")
         else:
-            if lens.aperture_type not in ("EPD", "FLOA"):
+            if lens.aperture_type not in ("EPD", "FNO", "FLOA"):
                 # 2026-10-26 实测：piB（物方 NA + 实际瞄准）10 条光线 9 条瞄准不收敛，位置差 0.096 mm
-                out.append("system aperture other than entrance pupil diameter or float by stop size (rtc's object space NA launch and aiming do not "
+                out.append("system aperture other than entrance pupil diameter, image space F/# or float by stop size (rtc's object space NA launch and aiming do not "
                            "match OpticStudio)")
             if lens.field_type != "ANGLE":
                 out.append(f"field type {lens.field_type} (rtc traces angle fields only)")
             if lens.ray_aiming == 1:
                 out.append("paraxial ray aiming (rtc has off and real)")
-            if lens.aperture_type in ("EPD", "FLOA") and finite:
+            if lens.aperture_type in ("EPD", "FNO", "FLOA") and finite:
                 out.append("finite object distance with an entrance pupil aperture")
         if "ENVD" not in lens.raw:
             out.append("missing ENVD (the environment cannot be checked)")
@@ -306,7 +308,7 @@ class RtcBackend(Backend):
         if model.get("mode") == "non_sequential":
             return ["non-sequential system"]
         ap = model.get("aperture", {})
-        if ap.get("type") not in ("EntrancePupilDiameter", "FloatByStopSize"):
+        if ap.get("type") not in ("EntrancePupilDiameter", "ImageSpaceFNum", "FloatByStopSize"):
             out.append(f"system aperture {ap.get('type')}")
         if ap.get("telecentric_object"):
             out.append("telecentric object space")
@@ -1824,7 +1826,7 @@ class RtcBackend(Backend):
             if any(r.op == "THIC" and r.surface == index and r.config == self.config for r in lens.mce):
                 raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"surface {index} thickness comes from a multi-configuration row in configuration {self.config}")
             number = parse_numeric(param, value)
-            if index == 0 and math.isfinite(number) and lens.aperture_type in ("EPD", "FLOA") and not self.standalone:
+            if index == 0 and math.isfinite(number) and lens.aperture_type in ("EPD", "FNO", "FLOA") and not self.standalone:
                 raise _unsupported("rtc traces an entrance pupil aperture with the object at infinity only")
             s.thickness = number
         elif param == "conic" and s.type.upper() == "PARAXIAL":

@@ -118,6 +118,8 @@ class Mode:
 MODES = [
     Mode("refractive_epd", lambda: _lens(_refractive()), clips=(1, 2, 3, 4, 5, 6, 7, 8)),
     Mode("refractive_epd_real", lambda: _lens(_refractive(), aiming=2), clips=(1, 2, 3, 4, 5, 6, 7, 8)),
+    Mode("refractive_fno", lambda: _lens(_refractive(), aperture=("FNO", 4.0)), clips=(2, 4, 6, 8)),
+    Mode("refractive_fno_real", lambda: _lens(_refractive(), aperture=("FNO", 4.0), aiming=2), clips=(2, 4, 6, 8)),
     Mode("refractive_float", lambda: _lens(_refractive(), aperture=("FLOA", 0.0)), clips=(2, 4, 6, 8)),
     Mode("refractive_float_real", lambda: _lens(_refractive(), aperture=("FLOA", 0.0), aiming=2), clips=(2, 4, 6, 8)),
     Mode("refractive_obna_finite", lambda: _lens(_refractive(), aperture=("OBNA", 0.025), aiming=2, object_distance=200.0,

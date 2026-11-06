@@ -86,6 +86,19 @@ def na_pupil_radius(z_ep, object_distance: float, na: float):
     return abs(z_ep + object_distance) * (na / np.sqrt(max(1e-300, 1.0 - na * na)))
 
 
+def fno_pupil_radius(items, f_number: float, axis: str = "y"):
+    """Image Space F/# 的近轴入瞳半径 = |EFL| / (2·F#)；近轴 EFL = −1/(u_像·n_像)，不依赖入瞳直径本身。"""
+    if not (np.isfinite(f_number) and f_number > 0):
+        raise ValueError(f"像方 F 数必须为有限正数，当前为 {f_number}")
+    rows = paraxial_rays(items, 1.0, 0.0, axis=axis)
+    u = rows[-2][2] if len(rows) >= 2 else rows[-1][2]
+    u_v = float(np.ravel(getattr(u, "v", u))[0])
+    if not np.isfinite(u_v) or abs(u_v) < 1e-14:
+        raise ValueError("近轴边缘光线像方斜率为 0，无焦系统的像方 F 数入瞳半径无定义")
+    n_img = abs(float(items[-2].n_after)) if len(items) >= 2 else 1.0
+    return 1.0 / (2.0 * float(f_number) * n_img * abs(u))
+
+
 class OpticalSystem:
     """一个结构、一个波长下的可追迹系统。
 
@@ -183,7 +196,7 @@ class OpticalSystem:
 
     def invalidate(self) -> None:
         """改过 items 之后调用：丢掉由面数据导出的缓存（内核数据、入瞳、光阑半径、Float By Stop Size 的入瞳半径）。"""
-        for name in ("_packed", "_entrance_pupil", "_stop_radius", "_stop_hits", "_float_pupil_radius"):
+        for name in ("_packed", "_entrance_pupil", "_stop_radius", "_stop_hits", "_float_pupil_radius", "_fno_pupil_radius"):
             self.__dict__.pop(name, None)
         self.primary = None
 
@@ -287,7 +300,7 @@ class OpticalSystem:
         if self.finite_object and self.lens.ray_aiming != 1:
             rx, ry = self._marginal_stop_hits()
             return px * rx, py * ry
-        if self.lens.aperture_type == "EPD" or self.allow_unverified:
+        if self.lens.aperture_type in ("EPD", "FNO") or self.allow_unverified:
             semi = self.stop_radius()
             return px * semi, py * semi
         na = self.lens.aperture_value
@@ -296,7 +309,7 @@ class OpticalSystem:
         return -px * bx * na, -py * by * na
 
     def stop_radius(self) -> float:
-        """EPD 系统的光阑半径：主波长的轴上实际边缘光线在光阑面的高度（见 :meth:`aim_target`），算一次后缓存。"""
+        """EPD / FNO 系统的光阑半径：主波长的轴上实际边缘光线在光阑面的高度（见 :meth:`aim_target`），算一次后缓存。"""
         if getattr(self, "_stop_radius", None) is None:
             from .trace import stop_hits
 
@@ -310,7 +323,7 @@ class OpticalSystem:
                 self._stop_radius = self._marginal_stop_height()
                 return self._stop_radius
             ref = self
-            h = self.lens.aperture_value / 2.0
+            h = self.pupil_radius() if self.lens.aperture_type == "FNO" else self.lens.aperture_value / 2.0
             _, y = stop_hits(ref, np.array([0.0]), np.array([h]), np.array([0.0]), np.array([[0.0, 0.0, 1.0]]))
             self._stop_radius = abs(float(y[0]))
         return self._stop_radius
@@ -500,6 +513,14 @@ class OpticalSystem:
             return self.lens.aperture_value / 2.0
         if self.lens.aperture_type == "FLOA":
             return self.float_stop_pupil_radius()
+        if self.lens.aperture_type == "FNO":
+            # 焦距按主波长算（同 pupil_reference 冻在主波长上），否则各波长的入瞳半径随色散不同
+            # the focal length is the primary wavelength's, as in pupil_reference
+            if self.lens.active_wavelengths[self.lens.primary_wave - 1][0] != self.wavelength:
+                return self.primary_system().pupil_radius()
+            if getattr(self, "_fno_pupil_radius", None) is None:
+                self._fno_pupil_radius = float(fno_pupil_radius(self.items, self.lens.aperture_value))
+            return self._fno_pupil_radius
         z_ep, _ = self.entrance_pupil()
         if not np.isfinite(z_ep):
             return float(self.lens.aperture_value)

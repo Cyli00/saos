@@ -14,6 +14,7 @@ Models are built, saved, described and approved on rtc, like every stage before 
 
 These are part of the approved structure, so settle them with the form. Formats: `uv run saos lens build --help`.
 
+- **Variable focal length, fixed F-number:** use `image_f_number` (`EPD = EFL / F#` on an infinite-conjugate lens), so the entrance pupil scales with the focal length as radii and thicknesses vary during optimisation; do not emulate this with `float_by_stop` and a stop semi-diameter variable.
 - **A physical iris or mount sets the beam:** use `float_by_stop`, where the stop's semi-diameter defines the system aperture. Give the stop an explicit circular aperture if it must also clip rays. Its semi-diameter may be a variable (`opt vary --param semi_diameter`); put the F-number requirement in the merit function, or the optimiser buys image quality by closing the iris.
 - **A coaxial reflective or catadioptric form:** Standard mirrors, negative thicknesses after a reflection, and decentred circular obscurations or rectangular apertures for holes and supports.
 - **A beam that clips off axis by design:** `fields.vignetting` describes it at launch.

@@ -114,12 +114,12 @@ def _normalize(v):
 def launch(system: OpticalSystem, px, py, hx=0.0, hy=0.0):
     """把归一化光瞳/视场坐标变成物理光线（起点 + 方向）。
 
-    EPD / Float By Stop Size：在入瞳平面按半径 R·(px,py) 发射，方向取视场角。
+    EPD / Float By Stop Size / Image Space F/#：在入瞳平面按半径 R·(px,py) 发射，方向取视场角。
     OBNA：从物面射向近轴入瞳（piB 物在第 1 面，所有光线在面 1 的交点是 (0,0)，方向随 px、py 变化）。
     """
     z_ep, r = system.pupil_reference()
     px, py, hx, hy = np.broadcast_arrays(*(np.asarray(v, dtype=float) for v in (px, py, hx, hy)))
-    pupil_aperture = system.lens.aperture_type in ("EPD", "FLOA")
+    pupil_aperture = system.lens.aperture_type in ("EPD", "FLOA", "FNO")
     if system.finite_object:
         # 手册 §2.1.1.7：瞄准关时从物面射向主波长轴上的近轴入瞳；实际瞄准从这里起步迭代。
         # 物在第 1 面、角度视场的 OBNA（piB）已与 OpticStudio 对账（2026-11-05），其余有限物距路径未对账
@@ -156,8 +156,8 @@ def launch(system: OpticalSystem, px, py, hx=0.0, hy=0.0):
 
 
 def aim_by_position(system: OpticalSystem) -> bool:
-    """物在无穷远的 EPD / Float By Stop Size 调发射位置，其余（OBNA、有限物距）调发射斜率。依据 oracle 实测。"""
-    return system.lens.aperture_type in ("EPD", "FLOA") and not system.finite_object
+    """物在无穷远的 EPD / Float By Stop Size / Image Space F/# 调发射位置，其余（OBNA、有限物距）调发射斜率。依据 oracle 实测。"""
+    return system.lens.aperture_type in ("EPD", "FLOA", "FNO") and not system.finite_object
 
 
 def aim(system: OpticalSystem, x0, y0, z0, d, px, py):
@@ -169,7 +169,7 @@ def aim(system: OpticalSystem, x0, y0, z0, d, px, py):
     packed = system.packed()
     tx, ty = system.aim_target(px, py)
     if aim_by_position(system):
-        scale = system.lens.aperture_value or 2.0 * system.pupil_radius()
+        scale = 2.0 * system.pupil_radius() if system.lens.aperture_type in ("FLOA", "FNO") else (system.lens.aperture_value or 2.0 * system.pupil_radius())
         x0, y0 = kernel.aim_positions(packed, x0, y0, z0, d, tx, ty, scale)
         return x0, y0, z0, d
     # 延拓起点：轴上物点用轴向光线（斜率 0），不能用近轴估计：估计一旦偏到另一支，延拓就跟踪错的分支

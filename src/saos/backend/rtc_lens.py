@@ -20,7 +20,7 @@ from saos.protocol import ErrorCode, SaosError
 # 处方面型（小写去分隔符）→ .zmx 的 TYPE / prescription surface type → .zmx TYPE
 TYPES = {"standard": "STANDARD", "paraxial": "PARAXIAL", "evenaspheric": "EVENASPH", "evenasphere": "EVENASPH",
          "biconic": "BICONICX", "toroidal": "TOROIDAL"}
-APERTURES = {"entrance_pupil_diameter": "EPD", "object_na": "OBNA", "float_by_stop": "FLOA"}
+APERTURES = {"entrance_pupil_diameter": "EPD", "image_f_number": "FNO", "object_na": "OBNA", "float_by_stop": "FLOA"}
 FIELD_TYPES = {"angle": ("ANGLE", 0), "object_height": ("OP1", 1)}
 AIMING = {"off": 0, "paraxial": 1, "real": 2}
 # 处方面孔径 → (.zmx 行名, 类型码)：只收有 OpticStudio 24.1 存盘样本的类型，列序与 rtc.zmx 的解析一致
@@ -70,7 +70,9 @@ def from_prescription(p: dict[str, Any], *, experimental: bool = False):
         problems.append(f"units {p['units']} (rtc works in mm)")
     aperture = APERTURES.get(p["aperture"]["type"])
     if aperture is None:
-        problems.append(f"aperture {p['aperture']['type']} (rtc has entrance_pupil_diameter and object_na)")
+        problems.append(f"aperture {p['aperture']['type']} (rtc has entrance_pupil_diameter, image_f_number, object_na and float_by_stop)")
+    elif aperture == "FNO" and math.isfinite(float(p["object"]["thickness"])):
+        problems.append("aperture image_f_number with a finite object distance (rtc models image_f_number with the object at infinity)")
     field = FIELD_TYPES.get(p["fields"]["type"])
     if field is None:
         problems.append(f"fields.type {p['fields']['type']} (rtc has angle and object_height)")
@@ -325,7 +327,7 @@ def _adaptive_semi_diameters(system, lens, waves: int, trace) -> dict[int, float
 # dump 自己生成的文件头行；其余文件头行（偏振 POLS、膜层文件 COFN、玻璃替换模板 GSTD…）rtc 不建模，从读入的文件原样带过去
 # header lines dump writes itself; the others (POLS polarization, COFN coating files, GSTD, …) are not modelled by rtc and
 # are carried over verbatim from the file that was read
-GENERATED_HEADER = frozenset({"VERS", "MODE", "NAME", "UNIT", "ENPD", "OBNA", "FLOA", "ENVD", "GCAT", "RAIM", "FTYP",
+GENERATED_HEADER = frozenset({"VERS", "MODE", "NAME", "UNIT", "ENPD", "OBNA", "FLOA", "FNUM", "ENVD", "GCAT", "RAIM", "FTYP",
                               "XFLN", "YFLN", "FWGN", "VDXN", "VDYN", "VCXN", "VCYN", "VANN", "WAVM", "PWAV", "XFLD",
                               "YFLD"})
 # 面块里 rtc 不建模、但 OpticStudio 存盘总会写的显示类行：原样带过去 / display lines OpticStudio always saves: carried over
@@ -375,6 +377,8 @@ def dump(lens, title: str | None = None, carried: dict[str, list[str]] | None = 
     lines = ["VERS 231205 0 20120530 20120530", "MODE SEQ", f"NAME {title if title is not None else lens.name}", "UNIT MM X W X CM MR CPMM"]
     if lens.aperture_type == "OBNA":
         lines.append(f"OBNA {_num(lens.aperture_value)} 0")
+    elif lens.aperture_type == "FNO":
+        lines.append(f"FNUM {_num(lens.aperture_value)} 0")
     elif lens.aperture_type == "FLOA":
         lines.append("FLOA")
     else:

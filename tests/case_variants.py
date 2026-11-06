@@ -95,6 +95,10 @@ def _real(raw):
     raw["ray_aiming"] = "real"
 
 
+def _image_f_number(raw):
+    raw["aperture"] = {"type": "image_f_number", "value": 4.0}
+
+
 def _iris_stop_front(raw):
     _real(raw)
     # 光阑前移后，矩形孔离光阑太远，离轴光束全被它挡住，这个变体只看瞄准，去掉它
@@ -233,6 +237,9 @@ ALL: list[Variant] = [
     Variant("reflective_one_mirror", "reflective", "奇数次反射、R8", _reflective_one_mirror, opd=True),
     Variant("reflective_no_obscuration", "reflective", "R8", _reflective_no_obscuration, opd=True),
     Variant("sequential_opd", "sequential", "R8：第 1 面弯曲的折射系统", opd=True),
+    # ---- 像方 F/#：入瞳直径 = EFL / F#，随结构变
+    Variant("sequential_fno", "sequential", "像方 F/#", _image_f_number, waves="all"),
+    Variant("sequential_fno_real", "sequential", "像方 F/#、实际瞄准", lambda raw: (_image_f_number(raw), _real(raw)), waves="all"),
     # ---- R3：每种孔径有无偏心各一版
     *[Variant(f"iris_{key}", "iris", "R3", _iris_added_aperture(ap), fields=_AXIAL_AND_EDGE, ring=0.7 if key == "spider" else None)
       for key, ap in _APERTURES.items()],

@@ -314,3 +314,29 @@ def test_obscuration_view_keeps_the_mirror_outer_edge():
     mask = mirror["obscuration"]["profile_y"]
     assert max(abs(p[1]) for line in mask for p in line) == pytest.approx(15.0)
     assert "stroke-dasharray" in lens_svg(view)
+
+
+@needs_glass
+def test_image_f_number_keeps_the_f_number_and_rescales_the_pupil_when_the_focal_length_changes(tmp_path):
+    from rtc import zmx
+    from saos import model_gate
+
+    # 与 OpticStudio 的逐条对账在 tests/rtc/test_case_truth.py 的 sequential_fno 变体；这里只看改结构后的行为与存盘
+    backend = _built({**_case("sequential"), "aperture": {"type": "image_f_number", "value": 4.0}})
+    before = model_gate.fingerprint(backend.describe_model(None))
+    efl0 = backend.operand("EFFL", 0, 0, [])
+    backend.set_param("1.radius", 60.0)
+    efl1, epd1 = backend.operand("EFFL", 0, 0, []), backend.operand("EPDI", 0, 0, [])
+    assert efl1 != pytest.approx(efl0, rel=1e-3)
+    assert epd1 == pytest.approx(efl1 / 4.0, rel=1e-8) and backend.operand("ISFN", 0, 0, []) == pytest.approx(4.0, rel=1e-8)
+    assert model_gate.fingerprint(backend.describe_model(None)) == before
+
+    saved = tmp_path / "fno.zmx"
+    backend.save_as(saved)
+    assert ["FNUM", 4.0, 0.0] in [[l.split()[0], *map(float, l.split()[1:])] for l in saved.read_text(encoding="utf-16").splitlines() if l.startswith("FNUM")]
+    assert zmx.parse(saved).aperture_type == "FNO"
+    assert RtcBackend(saved, standalone=True).operand("EPDI", 0, 0, []) == pytest.approx(epd1, rel=1e-12)
+
+    with pytest.raises(SaosError) as exc:
+        _built(_singlet(aperture={"type": "image_f_number", "value": 4.0}))
+    assert exc.value.code == ErrorCode.BACKEND_UNSUPPORTED

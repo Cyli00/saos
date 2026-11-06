@@ -138,7 +138,7 @@ class Lens:
     path: str = ""
     name: str = ""
     units: str = "MM"
-    aperture_type: str = ""      # "EPD" | "OBNA" | "FLOA"（由光阑半口径定孔径，文件里只有一行 FLOA）
+    aperture_type: str = ""      # "EPD" | "OBNA" | "FLOA" | "FNO"（像方 F/#，文件里是 FNUM <值> 0）
     aperture_value: float = 0.0
     fields: list[tuple[float, float, float]] = field(default_factory=list)  # (x, y, weight)，只含有效视场
     #: 各视场的渐晕因子 (VDX, VDY, VCX, VCY, VAN)，与 ``fields`` 一一对应；VDX… 是入瞳的偏心与压缩比，VAN 是切向角。
@@ -219,7 +219,7 @@ _HEADER_KEYS = {
     "VERS", "MODE", "NAME", "AUTH", "IWDP", "PFIL", "LANG", "UNIT", "ENPD", "ENVD",
     "GFAC", "GCAT", "RAIM", "PUSH", "SDMA", "OMMA", "FTYP", "ROPD", "HYPR", "PICB",
     "XFLN", "YFLN", "FWGN", "VDXN", "VDYN", "VCXN", "VCYN", "VANN", "WAVM", "PWAV",
-    "POLS", "GLRS", "GSTD", "NSCD", "COFN", "LUID", "OBNA", "XFLD", "YFLD", "MNUM",
+    "POLS", "GLRS", "GSTD", "NSCD", "COFN", "LUID", "OBNA", "FNUM", "XFLD", "YFLD", "MNUM",
     "MOFF", "MCFG", "TOL", "BLNK", "MKV", "PROT", "JUPN", "USTN", "MCON",
 }
 
@@ -385,6 +385,9 @@ def parse_text(text: str, path: str = "") -> Lens:
             lens.aperture_type, lens.aperture_value = "FLOA", 0.0
         elif key == "OBNA":
             lens.aperture_type, lens.aperture_value = "OBNA", float(parts[1])
+        elif key == "FNUM":
+            # FNUM <值> <0 像方 F/# | 1 近轴工作 F/#>（OpticStudio 24.1 存盘实测，2026-11-06）
+            lens.aperture_type, lens.aperture_value = ("WFNO" if len(parts) > 2 and int(float(parts[2])) != 0 else "FNO"), float(parts[1])
         elif key == "FTYP":
             lens.field_type = "ANGLE" if parts[1] == "0" else f"OP{parts[1]}"
             nums = _nums(parts[1:])

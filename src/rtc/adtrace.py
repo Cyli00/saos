@@ -17,7 +17,7 @@ import numpy as np
 
 from . import dual as D
 from . import geometry, kernel
-from .system import OpticalSystem, na_pupil_radius, stop_transfer
+from .system import OpticalSystem, fno_pupil_radius, na_pupil_radius, stop_transfer
 from .trace import aim_by_position, launched, paraxial_lens_phase
 
 
@@ -178,6 +178,8 @@ def _pupil(system: OpticalSystem, reference, primary: OpticalSystem, P: int):
         if not np.isfinite(a.v) or abs(float(a.v)) < 1e-14:
             raise ValueError("光阑传递系数为零，半口径导数没有定义")
         r = reference[system.stop].semi / abs(a)
+    elif system.lens.aperture_type == "FNO":
+        r = fno_pupil_radius(reference, system.lens.aperture_value)
     elif system.lens.aperture_type == "OBNA" and z_ep is not None:
         r = na_pupil_radius(z_ep, system.object_thickness if system.finite_object else 0.0, system.lens.aperture_value)
     return _vector(r, P), _vector(z_ep, P)
@@ -187,7 +189,7 @@ def _launch_seed(system, n_ray, P, extra, qx, qy, hx, hy, dr, dz_ep, position_ai
     """发射光线对变量的切向种子，形状 (光线, P + extra, 7)。瞄准解的那一部分由隐函数项补上。"""
     seed = np.zeros((n_ray, P + extra, kernel.TANGENT))
     if not system.finite_object:
-        if system.lens.aperture_type in ("EPD", "FLOA"):
+        if system.lens.aperture_type in ("EPD", "FLOA", "FNO"):
             seed[:, :P, 2] = dz_ep
             if not position_aim:
                 seed[:, :P, 0] = qx[:, None] * dr
@@ -235,12 +237,15 @@ def _target_tangent(system, primary, reference, variables, theta, links, dvz):
     if system.lens.aperture_type == "FLOA":
         dR = _vector(reference[system.stop].semi, P)
         return np.stack([dR, dR], axis=1)
-    if system.lens.aperture_type == "EPD" and not system.finite_object and system.lens.ray_aiming != 1:
-        # 主波长的实际边缘光线（轴上、平行入射、高度 EPD/2）在光阑面的高度
+    if system.lens.aperture_type in ("EPD", "FNO") and not system.finite_object and system.lens.ray_aiming != 1:
+        # 主波长的实际边缘光线（轴上、平行入射、高度 r）在光阑面的高度；FNO 下发射高度 r 也随设计变量变化
         seed = np.zeros((1, P, kernel.TANGENT))
+        if system.lens.aperture_type == "FNO":
+            seed[0, :, 1] = _vector(fno_pupil_radius(reference, primary.lens.aperture_value), P)
         slot = np.full(len(primary.items), -1, np.int64)
         slot[primary.stop] = 0
-        out, _, _, out_t = kernel.trace(primary.packed(), [0.0], [primary.lens.aperture_value / 2.0], [0.0], [[0.0, 0.0, 1.0]],
+        h0 = primary.pupil_radius() if system.lens.aperture_type == "FNO" else primary.lens.aperture_value / 2.0
+        out, _, _, out_t = kernel.trace(primary.packed(), [0.0], [h0], [0.0], [[0.0, 0.0, 1.0]],
                                         kernel.Tangents(seed, dvz, *links, slot))
         dR = np.sign(out[0, primary.stop, 1]) * out_t[0, 0, :, 1]
         return np.stack([dR, dR], axis=1)
