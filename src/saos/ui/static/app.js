@@ -49,6 +49,7 @@ const TEXT = {
     gate_revise: "要求修改", gate_revise_need: "先在备注里写要改什么", gate_revised: (n) => `已要求修改，等 agent 出新版：${n}`, gate_revise_done: "修改意见已记下",
     mode_auto: "自主运行：agent 自行通过关卡并记录理由，报告标明未经你确认", mode_to_interactive: "改为由我确认", mode_switched: "已改为参与模式：之后的关卡由你确认",
     ld_material: "材料", ld_sd: "半口径", ld_conic: "圆锥", ld_solve: "V 为变量，其他字母为求解或 pickup",
+    ld_expand: "展开 Lens Data", ld_collapse: "折叠 Lens Data",
     clash_title: "结构交叠", crossing: (a, b, d) => `第 ${a} 面与第 ${b} 面在口径内相交（最深约 ${d}）`,
     overlap: (a, b, n) => `镜片 ${a} 与镜片 ${b} 相互穿插（${n} 个采样点落在另一片玻璃里）`,
     live_optimising: "优化中，光线在结束后更新", opt_grid: "网格", opt_labels: "面号", png_title: "把当前画面存成 PNG", tip_air: "空气",
@@ -129,6 +130,7 @@ const TEXT = {
     gate_revise: "Ask for changes", gate_revise_need: "Write what to change in the note first", gate_revised: (n) => `Changes requested, waiting for a new version: ${n}`, gate_revise_done: "Your change request is recorded",
     mode_auto: "Autonomous run: the agent passes the gates with its reasons on record, and the report says you did not confirm them", mode_to_interactive: "Let me confirm instead", mode_switched: "Now interactive: you confirm the next gates",
     ld_material: "Material", ld_sd: "Semi-dia.", ld_conic: "Conic", ld_solve: "V marks a variable, other letters a solve or pickup",
+    ld_expand: "Expand Lens Data", ld_collapse: "Collapse Lens Data",
     clash_title: "Interference", crossing: (a, b, d) => `surfaces ${a} and ${b} cross inside their apertures (up to about ${d})`,
     overlap: (a, b, n) => `lenses ${a} and ${b} interpenetrate (${n} sample points inside the other's glass)`,
     live_optimising: "optimising, rays update when it ends", opt_grid: "Grid", opt_labels: "Surface #", png_title: "Save the current view as PNG", tip_air: "air",
@@ -868,11 +870,22 @@ function clashOf(v) {
 
 // Lens Data 卡：与镜头卡共用一个悬停状态（ldHover 由布局设置）；数值相同不重画，换轮次时数字逐位滚动
 // the Lens Data card shares one hover state with the layout (ldHover is set by it); numbers roll when the round changes
+let ldOpen = false;
+function syncLensDataFold() {
+  const card = $("c-ld"), btn = $("ld-toggle");
+  if (!card || !btn) return;
+  card.classList.toggle("collapsed", !ldOpen);
+  btn.setAttribute("aria-expanded", String(ldOpen));
+  btn.textContent = ldOpen ? "▾" : "▸";
+  btn.title = t(ldOpen ? "ld_collapse" : "ld_expand");
+}
+
 function renderLensData(rows) {
   const host = $("ld");
   $("ld-title").textContent = t("lens_data");
-  $("ld-note").textContent = t("ld_solve");
+  $("ld-note").textContent = rows?.length ? `${rows.length} · ${t("ld_solve")}` : t("ld_solve");
   $("ld-note").title = t("hover_row");
+  syncLensDataFold();
   if (!rows?.length) { host.innerHTML = `<div class="empty">${esc(t("no_ld"))}</div>`; host.dataset.shape = ""; return; }
   const num = (v) => (v == null ? "" : !isFinite(v) ? "∞" : sig(v, 6));
   const mark = (s, k) => { const v = (s.solves || {})[k]; return !v || ["Fixed", "Automatic", "None"].includes(v) ? "" : v === "Variable" ? "V" : v[0]; };
@@ -2128,6 +2141,11 @@ $("tabs").addEventListener("click", (e) => {
   if (!reduceMotion) { const p = $("view"); p.classList.remove("enter"); void p.offsetWidth; p.classList.add("enter"); }
 });
 $("expand").addEventListener("click", () => setZoom(true));
+$("ld-hd")?.addEventListener("click", () => {
+  ldOpen = !ldOpen;
+  syncLensDataFold();
+  if (state) renderAna(true);
+});
 $("zoom-close").addEventListener("click", () => setZoom(false));
 $("zoom").addEventListener("click", (e) => { if (e.target === $("zoom")) setZoom(false); });
 document.addEventListener("keydown", (e) => {

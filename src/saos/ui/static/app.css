@@ -124,17 +124,22 @@ button, select, input, textarea { font: inherit; color: inherit; }
 .seg button.on { background: #ffffff12; color: var(--text); }
 .seg button:disabled { opacity: .4; cursor: not-allowed; }
 
-/* 镜头卡：布局常驻，跟随时间轴选中的轮次或当前镜头 */
-.lens { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 260px; }
-.lens-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 6px 12px 10px; }
+/* 镜头卡收窄，把空间让给多标签分析卡；Lens Data 默认折叠、可展开 */
+.lens { flex: 0 1 32%; display: flex; flex-direction: column; min-height: 170px; max-height: 34vh; width: 82%; align-self: flex-start; }
+.lens-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 4px 10px 8px; }
 .lens-body .layout-view { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .lens-body .figure { flex: 1; min-height: 0; display: flex; flex-direction: column; border: 0; padding: 0; background: none; }
 .lens-body .fig-head { margin-bottom: 4px; }
-.lens-body .stage { flex: 1; min-height: 160px; }
+.lens-body .stage { flex: 1; min-height: 120px; }
 .lens-body .foot { margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.lrow { flex: 0 0 236px; display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 12px; min-height: 0; }
+.lrow { flex: 1 1 0; display: flex; flex-direction: column; gap: 10px; min-height: 280px; }
 .ld, .ana { display: flex; flex-direction: column; }
+.ld { flex: 0 0 180px; transition: flex-basis .25s var(--ease); }
+.ld.collapsed { flex: 0 0 36px; }
+.ld.collapsed .ld-body { display: none; }
+.ld .hd { cursor: pointer; padding-bottom: 8px; user-select: none; }
+.ana { flex: 1 1 0; min-height: 220px; }
 .ld-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 6px 8px; }
 .ld-body table { font: 11.5px var(--mono); }
 .ld-body th { font: 500 11px var(--font); }
