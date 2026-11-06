@@ -90,6 +90,12 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
         self.mark_dirty()
         return added
 
+    def merit_clear(self) -> None:
+        """清空评价函数的所有行。/ Delete all merit function rows."""
+        self._editing("merit_clear")
+        self.backend.merit_clear()
+        self.mark_dirty()
+
     def solve(self, key: str, kind: str, **parameters: Any) -> dict[str, Any]:
         """设一个面参数单元格的求解：fixed、variable、pickup(surface, scale=1, offset=0)、
         marginal_ray_height(height=0, zone=0)（厚度）、f_number(value)（半径）。返回回读的求解。

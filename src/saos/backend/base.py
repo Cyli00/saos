@@ -254,6 +254,10 @@ class Backend(ABC):
         Insert merit rows, in order, before the first DMFS (at the end without one); returns their row numbers."""
         raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} has no merit function")
 
+    def merit_clear(self) -> None:
+        """清空评价函数的所有行。/ Delete all merit function rows."""
+        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} has no merit function")
+
     def insert_surface(self, index: int, surface_type: str = "Standard") -> str:
         """在 index 处插入一个面（像面之前），返回面型。/ Insert a surface at index (before the image); returns its type."""
         raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} cannot insert surfaces")

@@ -9,6 +9,7 @@ from saos.backend.fake import FakeBackend
 from saos.ctx import rows
 from saos.ctx.hints import direct_api_hints
 from saos.daemon import Daemon
+from saos.protocol import SaosError
 
 
 @pytest.fixture
@@ -146,3 +147,18 @@ def test_unknown_ctx_names_point_to_the_native_entries(daemon, loaded):
 def test_ctx_info_is_the_system_part_of_lens_info(daemon, loaded):
     reply = run(daemon, loaded, "def run(ctx):\n    return ctx.info()\n")
     assert reply["result"]["result"] == daemon.handle({"op": "lens.info", "args": {"job": loaded.id}})["result"]["system"]
+
+
+def test_worker_context_edits_like_ctx_and_its_check_child_is_read_only(daemon, loaded):
+    from saos.parallel import WorkerContext
+
+    w = WorkerContext(daemon.backend, loaded.root, None, 0)
+    assert w.solve("1.radius", "variable") == {"type": "Variable"}
+    assert w.merit_add([{"id": "efl", "type": "EFFL", "params": [0, 1], "target": 50, "weight": 1},
+                        {"type": "OPGT", "params": [{"ref": "efl"}], "target": 40, "weight": 2}]) == [1, 2]
+    w.merit_clear()
+    assert daemon.backend.lens["merit"] == []
+    child = w.child({})
+    for call in (lambda: child.solve("1.radius", "fixed"), lambda: child.merit_add([{"type": "EFFL"}]), child.merit_clear):
+        with pytest.raises(SaosError, match="read-only"):
+            call()

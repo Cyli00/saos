@@ -152,6 +152,9 @@ class FakeBackend(Backend):
         merit[position:position] = specs
         return list(range(position + 1, position + 1 + len(specs)))
 
+    def merit_clear(self) -> None:
+        self._require()["merit"] = []
+
     def insert_surface(self, index: int, surface_type: str = "Standard") -> str:
         surfaces = self._require()["surfaces"]
         if isinstance(index, bool) or not isinstance(index, int) or not 1 <= index < len(surfaces):

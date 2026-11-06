@@ -132,6 +132,28 @@ class WorkerContext(KitMethods, MetricMethods, ExpertMethods):
     def mark_dirty(self) -> None:
         pass
 
+    def _editing(self, what: str) -> None:
+        if self.in_check:
+            raise SaosError(ErrorCode.BAD_ARGS, f"check scripts are read-only: {what} is not available in a check")
+
+    def merit_add(self, rows: list[dict[str, Any]]) -> list[int]:
+        """同 ScriptContext.merit_add：按输入顺序把评价函数行插在第一个 DMFS 之前（没有时接在末尾），返回新行号。"""
+        from saos.scripting import ScriptContext
+
+        return ScriptContext.merit_add(self, rows)  # type: ignore[arg-type]
+
+    def merit_clear(self) -> None:
+        """同 ScriptContext.merit_clear：清空评价函数的所有行。"""
+        from saos.scripting import ScriptContext
+
+        ScriptContext.merit_clear(self)  # type: ignore[arg-type]
+
+    def solve(self, key: str, kind: str, **parameters: Any) -> dict[str, Any]:
+        """同 ScriptContext.solve：设一个面参数单元格的求解，返回回读的求解。"""
+        from saos.scripting import ScriptContext
+
+        return ScriptContext.solve(self, key, kind, **parameters)  # type: ignore[arg-type]
+
 
 def _emit(message: dict[str, Any]) -> None:
     sys.stdout.write(PREFIX + json.dumps(jsonable(message), ensure_ascii=False) + "\n")
