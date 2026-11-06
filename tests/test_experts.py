@@ -66,3 +66,33 @@ def test_glass_distance_is_n_versus_v_over_100_and_special_comes_first():
     rows = candidate_window(gs,1.5,50.,1,feasibility_phase=True)
     assert [g.name for _,g in rows] == ["A","B"]
     assert rows[1][0] == pytest.approx(.01)
+
+
+def test_glass_expert_writes_progress_after_every_candidate(saos_home, tmp_path):
+    import json
+    from saos import jobs
+    from saos.backend.fake import FakeBackend, fake_surface
+    from saos.ctx.experts import GlassCandidate, GlassExpert
+    from saos.daemon import Daemon
+    from saos.scripting import ScriptContext
+
+    rows = [fake_surface(0, thickness=float("inf")),
+            fake_surface(1, radius=40.0, thickness=5.0, material="N-BK7", semi_diameter=8.0, is_stop=True),
+            fake_surface(2, radius=-40.0, thickness=40.0, semi_diameter=8.0),
+            fake_surface(3, semi_diameter=2.0)]
+    src = tmp_path / "exp.zmx"
+    src.write_text(json.dumps({"title": "exp", "surfaces": rows}), encoding="utf-8")
+    backend = FakeBackend()
+    backend.merit_value = lambda: 1.0 if backend.surfaces()[1]["material"] == "N-BK7" else 0.5
+    daemon = Daemon(backend, backend.start())
+    job = jobs.create_job("expert-progress")
+    assert daemon.handle({"op": "lens.import", "args": {"job": job.id, "src": str(src), "name": "a.zmx"}})["ok"]
+    assert daemon.handle({"op": "lens.load", "args": {"job": job.id, "file": "a.zmx"}})["ok"]
+    glasses = [GlassCandidate("FAKE", "N-BK7", 1.5168, 64.17, 0.535), GlassCandidate("FAKE", "SF2", 1.6477, 33.85, 0.580)]
+    GlassExpert(ScriptContext(daemon, job, {}), [1], materials=glasses, neighbors=2, max_passes=1,
+                coordinates=lambda _ctx, _s: (1.5168, 64.17, 0.535), element_power=lambda _ctx, _s: 0.02,
+                optimizer=lambda c: c.backend.merit_value()).run()
+    progress = job.read_progress()
+    # 最后写的是第二遍（也是最后一个）候选：SF2 把 merit 降到 0.5
+    assert progress["stage"] == "glass_expert"
+    assert progress["data"] == {"surface": 1, "glass": "SF2", "candidate": 2, "of": 2, "accepted": True, "merit": 0.5, "best_merit": 0.5}

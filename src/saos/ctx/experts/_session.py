@@ -141,6 +141,12 @@ class Session:
         self.rollback = False
         self.changed = True
 
+    def report_progress(self, stage: str, **data) -> None:
+        """每试完一个候选写进度并（节流地）刷新流程图窗口；worker 上下文没有 progress，什么也不做。
+        Report progress after each candidate and refresh the workflow window now and then; a no-op without ctx.progress."""
+        if hasattr(self.ctx, "progress"):
+            self.ctx.progress(stage, **data)
+
     def __exit__(self, kind, value, trace):
         try:
             if kind is not None or self.rollback:

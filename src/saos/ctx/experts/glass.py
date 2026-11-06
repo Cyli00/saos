@@ -402,7 +402,7 @@ class GlassExpert:
                     for surface in self._order(surfaces):
                         session.budget.check()
                         options = self._options(database, special, surface)
-                        for distance, g in options:
+                        for idx, (distance, g) in enumerate(options, 1):
                             session.budget.check()
                             session.restore(best)
                             current = self.ctx.get(f"{surface}.material")
@@ -414,6 +414,8 @@ class GlassExpert:
                             except Rejected as exc:
                                 events.append({"phase": "optimization", "surface": surface, "glass": g.name,
                                                "accepted": False, "reason": str(exc)})
+                                session.report_progress("glass_expert", surface=surface, glass=g.name, candidate=idx,
+                                                        of=len(options), accepted=False, best_merit=best_merit)
                                 continue
                             improved = value < best_merit-self.tolerance*max(1., abs(best_merit))
                             record = {"phase": "optimization", "pass": sweep, "surface": surface,
@@ -426,6 +428,8 @@ class GlassExpert:
                                 best_merit, best = value, session.save()
                                 accepted.append(dict(record, material_changed=material_changed))
                                 # 立即以新 best 为后续候选的起点，不能恢复成元件入口快照。
+                            session.report_progress("glass_expert", surface=surface, glass=g.name, candidate=idx,
+                                                    of=len(options), accepted=improved, merit=value, best_merit=best_merit)
                         session.restore(best)
                     if not changed:
                         status = "no_glass_changed"

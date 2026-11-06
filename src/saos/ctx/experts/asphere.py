@@ -289,7 +289,7 @@ class AsphereExpert:
         base = session.save()
         nominal = self._residual()
         models = []
-        for surface in candidates:
+        for idx, surface in enumerate(candidates, 1):
             session.budget.check()
             session.restore(base)
             try:
@@ -324,6 +324,7 @@ class AsphereExpert:
                 excluded.append({"surface": surface, "reason": str(exc)})
             finally:
                 session.restore(base)
+                session.report_progress("asphere_expert", phase="rank", surface=surface, candidate=idx, of=len(candidates))
         result = rank_projection(nominal, models)
         result["excluded"] = excluded
         result["surface_type"] = self.profile.surface_type
@@ -355,7 +356,7 @@ class AsphereExpert:
             best = session.entry
             status = "requested_count_reached"
             try:
-                for _ in range(nas):
+                for step_idx in range(1, nas + 1):
                     session.budget.check()
                     ranking = self._rank(session)
                     history.append(ranking)
@@ -382,10 +383,14 @@ class AsphereExpert:
                     if after >= before - 1e-12*max(1., abs(before)):
                         status = "no_actual_gain"
                         session.restore(best)
+                        session.report_progress("asphere_expert", phase="run", step=step_idx, of=nas, surface=surface,
+                                                merit=after, best_merit=before, accepted=False)
                         break
                     installed.append({"surface": surface, "original_merit": original_merit,
                                       "before": before, "after": after})
                     best = session.save()
+                    session.report_progress("asphere_expert", phase="run", step=step_idx, of=nas, surface=surface,
+                                            merit=after, best_merit=after, accepted=True)
             except Stop:
                 status = session.budget.stopped_by
             except Rejected as exc:
