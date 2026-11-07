@@ -4,6 +4,7 @@ saos api: signatures and docstrings straight from the code, so the Python interf
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import inspect
 import pkgutil
 from typing import Any
@@ -73,6 +74,17 @@ def _entry(name: str, obj: Any, *, full: bool) -> dict[str, Any]:
     return entry
 
 
+def _is_module(name: str) -> bool:
+    """name 是不是列出的模块。只导入它的父包，不扫描目录。"""
+    if not any(name == p or name.startswith(f"{p}.") for p in PACKAGES) or any(part.startswith("_") for part in name.split(".")):
+        return False
+    try:
+        return importlib.util.find_spec(name) is not None
+    except ModuleNotFoundError:
+        # 父级是模块而不是包；父包自己导入失败时，错误路径的完整扫描会再报出来
+        return False
+
+
 def _ctx_members() -> dict[str, Any]:
     from saos.scripting import ScriptContext
 
@@ -87,10 +99,9 @@ def _ctx_members() -> dict[str, Any]:
 def describe(target: str | None = None) -> dict[str, Any]:
     """无参数：模块表；模块或 ctx：其公开接口；完整路径或 ctx.名字：该接口的全文。
     No target lists modules; a module or ctx lists its interface; a full path or ctx.name gives one in full."""
-    known = modules()
     if target is None:
         rows = [{"module": m, "names": len(_public(m)), "doc": (inspect.getdoc(importlib.import_module(m)) or "").split("\n", 1)[0]}
-                for m in known]
+                for m in modules()]
         return {"modules": [row for row in rows if row["names"]], "also": "ctx"}
     if target == "ctx":
         members = _ctx_members()
@@ -99,11 +110,12 @@ def describe(target: str | None = None) -> dict[str, Any]:
         members = _ctx_members()
         if target[4:] in members:
             return _entry(target, members[target[4:]], full=True)
-    elif target in known:
+    elif _is_module(target):
         return {"target": target, "doc": inspect.getdoc(importlib.import_module(target)) or "",
                 "names": [_entry(k, v, full=False) for k, v in _public(target).items()]}
     else:
-        found = public_names().get(target)
+        module, _, name = target.rpartition(".")
+        found = _public(module).get(name) if _is_module(module) else None
         if found is not None:
             return _entry(target, found, full=True)
-    raise SaosError(ErrorCode.BAD_ARGS, f"no such interface: {target}", {"modules": known, "also": "ctx"})
+    raise SaosError(ErrorCode.BAD_ARGS, f"no such interface: {target}", {"modules": modules(), "also": "ctx"})

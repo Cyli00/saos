@@ -18,11 +18,13 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from saos import api_help, cli, cli_help, config
+from saos.protocol import SaosError
 
 ROOT = config.REPO_ROOT
 DOCS = ("DESIGN.md", *sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / ".agents" / "skills" / "saos").rglob("*.md")))
@@ -195,6 +197,24 @@ def test_saos_api_reads_the_code(capsys):
     assert "temperatures" in json.loads(capsys.readouterr().out)["result"]["signature"]
     assert cli.main(["api", "saos.nothing"]) == 1
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "BAD_ARGS"
+
+
+def test_saos_api_answers_every_listed_interface_as_the_full_scan_does():
+    known = api_help.modules()
+    assert {m: api_help.describe(m)["target"] for m in known} == {m: m for m in known}
+    for name, obj in api_help.public_names().items():
+        assert api_help.describe(name)["signature"] == api_help._signature(obj)
+    for missing in ("saos.nothing", "saos.kit.nothing", "saos.kit.op.nothing", "os.path", "saos.ctx.experts._session", "saos.kit._nothing"):
+        with pytest.raises(SaosError) as err:
+            api_help.describe(missing)
+        assert err.value.details["modules"] == known
+
+
+def test_saos_api_imports_only_the_package_it_is_asked_about():
+    script = ("import sys, saos.api_help as a; a.describe('saos.materials_record'); "
+              "print([p for p in a.PACKAGES if p in sys.modules])")
+    out = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True).stdout
+    assert json.loads(out.replace("'", '"')) == ["saos.materials_record"]
 
 
 def test_skill_links_and_help_pointers_resolve():
