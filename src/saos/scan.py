@@ -74,7 +74,9 @@ MODES = ("vars", "points", "minimize", "probes", "candidates", "tolerance")
 MAX_TOLERANCES = 200
 TOL_DISTS = ("uniform", "normal")
 MAX_POINTS = 5000
-HELP_EPILOG = """Input: --plan FILE, a JSON file (choose exactly one of the six modes)
+HELP_EPILOG = """Input: --plan FILE, a JSON file (choose exactly one of the six modes: grid, points, candidates, minimize, probes, tolerance)
+
+Parameter keys
   Parameter keys use a surface index (negative counts from image; -1 is image)
   or a unique Lens Data comment: "3.radius", "lens dome.curvature", "12.par1".
   Surface parameters: radius, curvature (1/R, 0 for flat), thickness, conic,
@@ -86,113 +88,114 @@ HELP_EPILOG = """Input: --plan FILE, a JSON file (choose exactly one of the six 
   header, mean_path, vp.<DLL parameter>, nd, vd, face<N>.is|coating|fraction|
   sigma|rays. Mixed mode: object.<object>@<NonSequential surface>.<parameter>.
   File-based objects are referenced by number or file name, never by comment.
-  Details: uv run saos exec --help.
+  Details: uv run saos exec --help params.
 
-  Grid (vars): lists or inclusive ranges; at most 5000 points.
-    {"vars": {"3.radius": [20, 25, 30],
-              "5.conic": {"from": -1, "to": 0, "steps": 5}},
-     "measure": ["spot"], "workers": 4, "keep": 3}
+Grid (vars): lists or inclusive ranges; at most 5000 points.
+  {"vars": {"3.radius": [20, 25, 30],
+            "5.conic": {"from": -1, "to": 0, "steps": 5}},
+   "measure": ["spot"], "workers": 4, "keep": 3}
 
-  Explicit points (1 to 5000 nonempty parameter dictionaries):
-    {"points": [{"3.radius": 20}, {"3.radius": 25}], "measure": ["spot"]}
+Explicit points (1 to 5000 nonempty parameter dictionaries):
+  {"points": [{"3.radius": 20}, {"3.radius": 25}], "measure": ["spot"]}
 
-  Structure candidates (1 to 12; no workflow quota):
-    {"candidates": [{"id": "triplet", "prescription": "explore/start/triplet.json",
-                     "hypothesis": "Optional explanation", "form": "Cooke triplet", "provenance": {"source": "..."}}],
-     "prepare": "explore/start/prepare.py", "stages": [], "workers": 1, "keep": 3}
-    Each candidate has a unique id and exactly one job-relative lens or prescription.
-    First screen every candidate with stages: []; then run all on the same short stage budget,
-    e.g. [{"local": {"max_seconds": 60}}]. Each stage needs positive max_seconds.
-    Local stages accept algorithm auto/dls/od; auto selects the OpticStudio default.
-    prepare defines run(w) and sets variables/merit consistently. It is required for
-    prescriptions with optimisation stages. It is optional for stages: [] and saved
-    lenses that already have a merit function. Empty merit before a required stage
-    is a configuration error (BAD_ARGS), not a failed optical candidate.
-    Plan, candidate inputs and the prepare copy are sealed before running. Every completed
-    structure.json is sealed immediately. Original prepare edits do not invalidate the copy.
-    Verdicts: valid, invalid (within budget), material or computation (not evaluated).
-    Structures are deduplicated by fingerprint. Only RuntimeWarning is counted;
-    Python warning filters can suppress warnings, so zero does not establish validity.
-    Valid candidates rank first, then by shortfall. Still-improving candidates are kept.
-    Missing comparisons do not block approval or optimisation; a confirmed demand, and a matching model once one is approved, do.
+Structure candidates (1 to 12; no workflow quota):
+  {"candidates": [{"id": "triplet", "prescription": "explore/start/triplet.json",
+                   "hypothesis": "Optional explanation", "form": "Cooke triplet", "provenance": {"source": "..."}}],
+   "prepare": "explore/start/prepare.py", "stages": [], "workers": 1, "keep": 3}
+  Each candidate has a unique id and exactly one job-relative lens or prescription.
+  First screen every candidate with stages: []; then run all on the same short stage budget,
+  e.g. [{"local": {"max_seconds": 60}}]. Each stage needs positive max_seconds.
+  Local stages accept algorithm auto/dls/od as opt local does; rtc has dls only.
+  prepare defines run(w) and sets variables/merit consistently. It is required for
+  prescriptions with optimisation stages. It is optional for stages: [] and saved
+  lenses that already have a merit function. Empty merit before a required stage
+  is a configuration error (BAD_ARGS), not a failed optical candidate.
+  Plan, candidate inputs and the prepare copy are sealed before running. Every completed
+  structure.json is sealed immediately. Original prepare edits do not invalidate the copy.
+  Verdicts: valid, invalid (within budget), material or computation (not evaluated).
+  Structures are deduplicated by fingerprint. Only RuntimeWarning is counted;
+  Python warning filters can suppress warnings, so zero does not establish validity.
+  Valid candidates rank first, then by shortfall. Still-improving candidates are kept.
+  Missing comparisons do not block approval or optimisation; a confirmed demand, and a matching model once one is approved, do.
 
-  Multi-start minimization (one search per start):
-    {"minimize": {"vars": {"3.radius": {"step": 0.1, "min": 15, "max": 40},
-                           "5.conic": {"step": 0.02}},
-                  "starts": [{"3.radius": 20}, {"3.radius": 30}],
-                  "method": "nelder-mead", "max_evals": 200, "max_seconds": 900},
-     "measure": ["spot"], "workers": 2}
-    starts defaults to "current"; method is nelder-mead or powell. Each variable
-    needs a nonzero step; bounds min/max are optional. The objective is the same
-    shortfall definition as the demand, over measured items, not a new merit.
-    minimize and candidates require a confirmed demand without blocking questions.
+Multi-start minimization (one search per start):
+  {"minimize": {"vars": {"3.radius": {"step": 0.1, "min": 15, "max": 40},
+                         "5.conic": {"step": 0.02}},
+                "starts": [{"3.radius": 20}, {"3.radius": 30}],
+                "method": "nelder-mead", "max_evals": 200, "max_seconds": 900},
+   "measure": ["spot"], "workers": 2}
+  starts defaults to "current"; method is nelder-mead or powell. Each variable
+  needs a nonzero step; bounds min/max are optional. The objective is the same
+  shortfall definition as the demand, over measured items, not a new merit.
+  minimize and candidates require a confirmed demand without blocking questions.
 
-  Perturbation probes (1 to 6; base plus +/-delta = 2N+1 points):
-    {"target": "spot", "mechanism": "Petzval field curvature limits the edge",
-     "compensate": "quick_focus",
-     "probes": [
-       {"id": "rear_r", "key": "3.radius", "delta": 0.02,
-        "prediction": "Less power should lower edge spot by a few micrometres",
-        "expect": {"spot": "down"}},
-       {"id": "control", "script": "explore/control.py", "delta": 0.001,
-        "control": true, "prediction": "This changes only astigmatism",
-        "expect": {"spot": "none"}}]}
-    target is a demand check id; write mechanism and each prediction beforehand.
-    Each probe needs unique id, nonzero finite delta and exactly one numeric key
-    or job-relative script defining run(w, delta). Probe flat faces by curvature.
-    expect maps measured ids to up/down/none/valley/peak. No confirmation needed.
-    ranking reports normalized effects and one_sided when only one side is valid;
-    valley/peak means the baseline is already at an extremum in that variable.
-    review flags a missing/moving control, failed prediction, no variable moving
-    the target, or ineffective focus compensation. An invalid baseline target
-    must be fixed before interpreting the probes.
+Perturbation probes (1 to 6; base plus +/-delta = 2N+1 points):
+  {"target": "spot", "mechanism": "Petzval field curvature limits the edge",
+   "compensate": "quick_focus",
+   "probes": [
+     {"id": "rear_r", "key": "3.radius", "delta": 0.02,
+      "prediction": "Less power should lower edge spot by a few micrometres",
+      "expect": {"spot": "down"}},
+     {"id": "control", "script": "explore/control.py", "delta": 0.001,
+      "control": true, "prediction": "This changes only astigmatism",
+      "expect": {"spot": "none"}}]}
+  target is a demand check id; write mechanism and each prediction beforehand.
+  Each probe needs unique id, nonzero finite delta and exactly one numeric key
+  or job-relative script defining run(w, delta). Probe flat faces by curvature.
+  expect maps measured ids to up/down/none/valley/peak. No confirmation needed.
+  ranking reports normalized effects and one_sided when only one side is valid;
+  valley/peak means the baseline is already at an extremum in that variable.
+  review flags a missing/moving control, failed prediction, no variable moving
+  the target, or ineffective focus compensation. An invalid baseline target
+  must be fixed before interpreting the probes.
 
-  Tolerance (sensitivity and Monte Carlo on the current lens):
-    {"tolerance": {"items": [
-       {"key": "3.thickness", "min": -0.05, "max": 0.05, "source": "maker's table"},
-       {"key": "4.nd", "min": -0.001, "max": 0.001, "dist": "normal", "source": "..."},
-       {"key": "object.lens.tilt_x", "min": -0.1, "max": 0.1, "source": "..."},
-       {"key": "2.radius", "min": -0.002, "max": 0.002, "relative": true,
-        "source": "..."}],
-     "samples": 200, "seed": 1, "sensitivity": true},
-     "compensate": "quick_focus", "workers": 6}
-    1 to 200 items, each a unique numeric parameter key (thickness, radius or
-    curvature, par<N>, <surface>.nd/.vd, object.<object>.x|tilt_x|...; not
-    material or comment) with deviations min < max from nominal (fractions
-    when relative) and a required source; optional id. dist is uniform
-    (default) or normal (sigma = (max - min)/4, truncated to [min, max]).
-    samples is 0 to 5000; sensitivity defaults to true; at least one of them.
-    Points: nominal, sensitivity (each item alone at min and at max) and
-    samples Monte Carlo draws (all items at once; fixed seed repeats). With
-    nd/vd items an extra model-glass nominal is added: writing nd/vd swaps the
-    catalog glass for a model glass whose dispersion differs slightly even at
-    zero deviation (Cooke sample: EFL +0.0005 mm), so those sensitivities use it
-    as baseline and the swap itself is model_glass_offset (included in samples).
-    Every point is compensated, then measured with the demand's checks. Result
-    adds nominal (values, failing items), sensitivity (both sides, change and
-    effect normalized by the demand scale, sorted by largest; worst names the
-    most affected check) and monte_carlo (per check n, mean, std, min, max,
-    5/50/95% percentiles, pass rate; yield_hard: all hard bounds met; yield_all:
-    every measured item met). Requires a confirmed demand without blocking
-    questions. uv run saos report includes the latest tolerance scan.
+Tolerance (sensitivity and Monte Carlo on the current lens):
+  {"tolerance": {"items": [
+     {"key": "3.thickness", "min": -0.05, "max": 0.05, "source": "maker's table"},
+     {"key": "4.nd", "min": -0.001, "max": 0.001, "dist": "normal", "source": "..."},
+     {"key": "object.lens.tilt_x", "min": -0.1, "max": 0.1, "source": "..."},
+     {"key": "2.radius", "min": -0.002, "max": 0.002, "relative": true,
+      "source": "..."}],
+   "samples": 200, "seed": 1, "sensitivity": true},
+   "compensate": "quick_focus", "workers": 6}
+  1 to 200 items, each a unique numeric parameter key (thickness, radius or
+  curvature, par<N>, <surface>.nd/.vd, object.<object>.x|tilt_x|...; not
+  material or comment) with deviations min < max from nominal (fractions
+  when relative) and a required source; optional id. dist is uniform
+  (default) or normal (sigma = (max - min)/4, truncated to [min, max]).
+  samples is 0 to 5000; sensitivity defaults to true; at least one of them.
+  Points: nominal, sensitivity (each item alone at min and at max) and
+  samples Monte Carlo draws (all items at once; fixed seed repeats). With
+  nd/vd items an extra model-glass nominal is added: writing nd/vd swaps the
+  catalog glass for a model glass whose dispersion differs slightly even at
+  zero deviation (Cooke sample: EFL +0.0005 mm), so those sensitivities use it
+  as baseline and the swap itself is model_glass_offset (included in samples).
+  Every point is compensated, then measured with the demand's checks. Result
+  adds nominal (values, failing items), sensitivity (both sides, change and
+  effect normalized by the demand scale, sorted by largest; worst names the
+  most affected check) and monte_carlo (per check n, mean, std, min, max,
+  5/50/95% percentiles, pass rate; yield_hard: all hard bounds met; yield_all:
+  every measured item met). Requires a confirmed demand without blocking
+  questions. uv run saos report includes the latest tolerance scan.
 
-  Common optional fields (except candidates' restrictions above):
-    {"fixed": {"5.thickness": 2},
-     "solve": {"var": "3.curvature", "lo": 0, "hi": 0.1,
-               "target": {"item": "working_distance"}, "value": 15, "scan": 9},
-     "compensate": {"script": "explore/refocus.py"},
-     "measure": ["spot"], "operands": {"efl": ["EFFL", 0, 1]},
-     "workers": 4, "keep": 3, "note": "Purpose of this scan"}
-    Order: fixed, point values/probe script, solve, compensate, demand checks.
-    solve.target can instead be {"operand": ["EFFL", 0, 1]}; value defaults to 0,
-    scan to 9; optional xtol. Scan for a sign change then Brent root finding.
-    compensate is null, "quick_focus" or {"script": "job-relative.py"} (run(w)).
-    measure defaults to bounded/directional demand items; probes add target.
-    keep defaults to 3 (probes and tolerance: 0). --workers overrides plan
-    workers, default 4 OpticStudio instances, limited by point count and
-    available cores and licences; count the
-    8-instance licence, including user windows and daemon. Cold worker startup
-    is about 6-8 s each.
+Common optional fields (except candidates' restrictions above):
+  {"fixed": {"5.thickness": 2},
+   "solve": {"var": "3.curvature", "lo": 0, "hi": 0.1,
+             "target": {"item": "working_distance"}, "value": 15, "scan": 9},
+   "compensate": {"script": "explore/refocus.py"},
+   "measure": ["spot"], "operands": {"efl": ["EFFL", 0, 1]},
+   "workers": 4, "keep": 3, "note": "Purpose of this scan"}
+  Order: fixed, point values/probe script, solve, compensate, demand checks.
+  solve.target can instead be {"operand": ["EFFL", 0, 1]}; value defaults to 0,
+  scan to 9; optional xtol. Scan for a sign change then Brent root finding.
+  compensate is null, "quick_focus" or {"script": "job-relative.py"} (run(w)).
+  measure defaults to bounded/directional demand items; probes add target.
+  keep defaults to 3 (probes and tolerance: 0). --workers overrides plan
+  workers, default 4 on the backend computing now, limited by point count and
+  available cores. OpticStudio workers also count against the 8-instance licence,
+  including user windows and daemon, and start in about 6-8 s each.
+
+
 
 Results and files
   Non-candidate modes require a loaded, saved lens of this job; it stays unchanged.

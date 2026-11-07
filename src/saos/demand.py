@@ -1,5 +1,5 @@
 """需求（demand）：读取、校验 sources/demand.yaml，确认记录，以及在 OpticStudio 中逐项取值并判定。
-Demand: read and validate sources/demand.yaml, record the user's confirmation, measure and judge every check in OpticStudio.
+Demand: read and validate sources/demand.yaml, record the user's confirmation, measure and judge every check on the current backend.
 
 文件放在任务的 sources/demand.yaml，字段用英文（给 agent 读写），格式见 .agents/skills/saos/demand.example.yaml：
 The file is the job's sources/demand.yaml; keys are English (the agent writes it); format in .agents/skills/saos/demand.example.yaml:
@@ -740,7 +740,7 @@ def _error_kind(exc: Exception) -> str:
 
 def measure(ctx: ScriptContext, item: dict[str, Any], folder: Path, scripts: dict[str, dict[str, Any]]) -> dict[str, Any]:
     """在 OpticStudio 中取一项的值；返回值和取值依据。
-    Measure one item in OpticStudio; return the value and its evidence."""
+    Measure one item on the current backend; return the value and its evidence."""
     kind, spec = next(iter(item["check"].items()))
     evidence: dict[str, Any] = {}
     try:

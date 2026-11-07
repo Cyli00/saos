@@ -81,8 +81,8 @@ class Loaded:
     job: jobs.Job
     path: Path
     dirty: bool = False
-    # fast.push 写回过 rtc 的结果、之后还没在 OpticStudio 上优化过（技能 references/rtc-copy.md 里的收尾优化）
-    # rtc results were pushed and no OpticStudio optimisation has run since (the closing optimisation in references/rtc-copy.md)
+    # fast.push 写回过 rtc 的结果、之后还没在 OpticStudio 上优化过（saos exec --help fast 的收尾优化）
+    # rtc results were pushed and no OpticStudio optimisation has run since (the closing optimisation in saos exec --help fast)
     rtc_unclosed: bool = False
 
     def __post_init__(self) -> None:
@@ -102,7 +102,7 @@ class Loaded:
 
 
 UNCLOSED_RTC = ("this lens holds rtc results pushed with fast.push and no OpticStudio optimisation has run since; "
-                "close with saos opt local on the merit function before judging it (skill references/rtc-copy.md)")
+                "close with saos opt local on the merit function before judging it (saos exec --help fast)")
 
 
 def _warn_unclosed(loaded: Loaded | None, out: dict[str, Any]) -> dict[str, Any]:

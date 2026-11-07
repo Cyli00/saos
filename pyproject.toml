@@ -1,7 +1,7 @@
 [project]
 name = "saos"
 version = "0.1.0"
-description = "由 agent 驱动 Zemax OpticStudio 的光学设计工作流"
+description = "由 agent 完成光学设计的工作流：设计阶段在 rtc 上算，交付在 OpticStudio 上复测"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "numba>=0.62",

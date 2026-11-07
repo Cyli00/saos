@@ -1084,9 +1084,10 @@ def normalize(p: dict[str, Any]) -> dict[str, Any]:
 
 
 HELP_EPILOG = """Input: sequential Prescription JSON
-  Unknown keys are rejected. Switches accept JSON true/false only; enum values
+  rtc builds what uv run saos exec --help rtc lists; a lens with anything else
+  computes on OpticStudio (backend_switch.stayed). Unknown keys are rejected. Switches accept JSON true/false only; enum values
   must be listed names. A prescription builds a system; the demand's checks
-  define how to judge it. The title is written into OpticStudio.
+  define how to judge it. The title is written into the lens.
 
   {
     "title": "Sequential example", "units": "mm",

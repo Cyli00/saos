@@ -59,9 +59,9 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
             # 属性（property）内部抛出的 AttributeError 也会落到这里；重新求值，让原错误照常抛出
             # an AttributeError raised inside a property also lands here; evaluate it again so the original error surfaces
             return object.__getattribute__(self, name)
-        raise AttributeError(f"ctx has no attribute {name!r}. The ctx methods are listed in .agents/skills/saos/references/scripting.md; "
-                             "native OpticStudio objects are ctx.system (the IOpticalSystem: LDE, MFE, SystemData) and ctx.zosapi (the ZOSAPI "
-                             "namespace), for what the ctx methods do not cover")
+        raise AttributeError(f"ctx has no attribute {name!r}. List the ctx methods with uv run saos api ctx and uv run saos exec --help; "
+                             "on OpticStudio only, ctx.system (the IOpticalSystem: LDE, MFE, SystemData) and ctx.zosapi (the ZOSAPI "
+                             "namespace) cover the rest")
 
     def child(self, args: dict[str, Any], cache: dict[Any, Any] | None = None) -> ScriptContext:
         """给判定脚本用的上下文：同一个任务和后台进程，默认共享 cache。/ A context for a check script; shares the cache by default."""
