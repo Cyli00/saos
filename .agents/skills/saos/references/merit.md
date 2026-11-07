@@ -9,6 +9,8 @@ The outcome is a merit function whose minimum is what the demand judges. You fir
 - A merit value the backend cannot compute (for example 9e+09 when rays fail by total internal reflection) is a diagnosis signal: find the cause before going on.
 - When a search must use the demand's own measurement (`ctx.measure(ids)`, a scan's `measure`, a `minimize` plan), give it only the items its variables act on and that take well under a second. Leave slow items (a Huygens PSF series takes seconds) to `saos check --only` and the round. A Nelder–Mead on the full shortfall of the fibre probe (18 variables, one-hour budget) stopped unconverged after 48 evaluations.
 
+On several configurations the wizard writes one group per configuration, each after a `CONF` row, in OpticStudio's row order. Variables go on the cell: `opt vary --param` marks the cell of the current configuration, and a cell that follows another configuration refuses it until you select that one; `opt vary --config-rows R --configs C` names cells directly (zoom spacings, focus per temperature).
+
 Tools: `opt vary --param radius|curvature|thickness|conic|par<N>|material`, `opt merit wizard|add|show`. Bounds belong in boundary operands (CTGT/CTLT, MNEG/MNEA/MNET for edges); there are no per-variable --min/--max flags. From a script, add rows in one checked batch with `ctx.merit_add`, design-rule constraints from `saos.ctx.rows`, and solves with `ctx.solve` ([scripting.md](scripting.md#editing-the-lens-from-a-script)).
 
 ## On rtc

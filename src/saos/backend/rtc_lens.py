@@ -32,6 +32,8 @@ APERTURE_LINES_BY_CODE = {code: line for line, code in SURFACE_APERTURES.values(
 # 自动半口径：每个视场、每个波长沿光瞳边缘取这么多条光线 / rim rays per field and wavelength for automatic semi-diameters
 RIM_RAYS = 16
 NON_ROTATIONAL_TYPES = ("BICONIC", "BICONICX", "BICONICZ", "TOROIDAL")
+# 处方 configurations 里 rtc 接受的操作数；视场、波长等逐结构变化还没有接入内核
+PRESCRIPTION_ROWS = frozenset({"THIC", "CRVT", "CONN", "PRAM", "SDIA", "MCSD", "GLSS", "TEMP", "PRES"})
 # UTF-16LE 的字节序标记 / the UTF-16LE byte order mark
 BOM = bytes((0xFF, 0xFE))
 
@@ -86,8 +88,8 @@ def from_prescription(p: dict[str, Any], *, experimental: bool = False):
     if p["object"]["material"]:
         problems.append("object space material (rtc assumes air in object space)")
     for row in p.get("configurations") or []:
-        if row["operand"] != "THIC" or row.get("vary"):
-            problems.append(f"configuration operand {row['operand']}{' (vary)' if row.get('vary') else ''} (rtc has fixed THIC rows)")
+        if row["operand"] not in PRESCRIPTION_ROWS:
+            problems.append(f"configuration operand {row['operand']} (rtc has {sorted(PRESCRIPTION_ROWS)})")
 
     lens = zmx.Lens(path="", name=p.get("title", ""), units="MM")
     lens.raw["MODE"] = "MODE SEQ"
@@ -136,9 +138,14 @@ def from_prescription(p: dict[str, Any], *, experimental: bool = False):
     if configs:
         lens.num_configs = len(configs[0]["values"])
         for row in configs:
-            surface = int(row["params"][0]) if row["params"] else 0
+            params = [int(v) for v in row["params"]]
+            surface = params[0] if row["operand"] not in ("TEMP", "PRES") and params else 0
+            par = params[1] if row["operand"] == "PRAM" and len(params) > 1 else 0
+            code = 1 if row.get("vary") else 0
             for c, value in enumerate(row["values"], start=1):
-                lens.mce.append(zmx.MCEOperand(op="THIC", surface=surface, config=c, value=float(value)))
+                text = str(value).upper() if row["operand"] == "GLSS" else ""
+                lens.mce.append(zmx.MCEOperand(op=row["operand"], surface=surface, config=c, value=float("nan") if text else float(value), text=text,
+                                               edited=True, solve=[code, par, 0, 1, 1, 0.0 if text else 1.0, 0.0, 0, float("nan"), 0]))
     return lens
 
 
@@ -331,7 +338,7 @@ GENERATED_HEADER = frozenset({"VERS", "MODE", "NAME", "UNIT", "ENPD", "OBNA", "F
                               "XFLN", "YFLN", "FWGN", "VDXN", "VDYN", "VCXN", "VCYN", "VANN", "WAVM", "PWAV", "XFLD",
                               "YFLD"})
 # 面块里 rtc 不建模、但 OpticStudio 存盘总会写的显示类行：原样带过去 / display lines OpticStudio always saves: carried over
-SURFACE_PASSTHROUGH = ("HIDE", "MIRR", "SLAB", "POPS", "FIMP", "SSID")
+SURFACE_PASSTHROUGH = ("TCED", "HIDE", "MIRR", "SLAB", "POPS", "FIMP", "SSID")
 # 面块里 rtc 建模并自己写出的行 / surface lines rtc models and writes itself
 SURFACE_MODELLED = frozenset({"VDSZ", "VCON", "MAZH", "CLAP", "FLAP", "OBSC", "SQAP", "SQOB", "ELAP", "ELOB", "SPID", "OBDC"})
 
@@ -450,17 +457,31 @@ def dump(lens, title: str | None = None, carried: dict[str, list[str]] | None = 
     lines.extend((carried or {}).get("tail", []))
     if lens.mce:
         lines.append(f"MNUM {lens.num_configs} {lens.current_config}")
+        if not lens.plain_configurations:
+            from rtc import thermal
+
+            thermal.refresh(lens)
         for row in lens.mce:
-            if row.op not in ("THIC", "MOFF") or (row.op == "THIC" and row.pickup is not None):
-                raise unsupported(f"multi-configuration row {row.op} cannot be written by rtc")
-            if row.raw:
-                # rtc 不改多重结构的格，读入的行原样写回 / rtc never changes configuration cells: rows read are written back as they were
+            if row.raw and not row.edited:
+                # 没改过的行原样写回 / rows not changed are written back as they were
                 lines.append(row.raw)
-            elif row.op == "THIC":
-                lines.append(f"THIC {row.surface:3d} {row.config:3d} {row.value:.12E} 0 0 0 1 1 1.000000000000E+00 0.000000000000E+00 0 \"\" 0")
-            else:
+            elif row.op == "MOFF":
                 raise unsupported("a MOFF row without its file line cannot be written by rtc")
+            else:
+                lines.append(_config_line(row))
     return "\r\n".join(lines) + "\r\n"
+
+
+def _config_line(row) -> str:
+    """一个多重结构单元格的存盘行（OpticStudio 24.1 的列序）：操作数 面 结构 值 求解码 参数2 参数3 源结构 源行 比例 偏移 0 "" 0。
+    数值写 17 位有效数字：OpticStudio 存盘只留 13 位，但读得进更长的（真机往返测试），优化结果读回不损失精度。"""
+    solve = list(row.solve) + [0.0] * (7 - len(row.solve)) if row.solve else [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0]
+    code, param2, param3, config, source = (int(v) if math.isfinite(v) else 0 for v in solve[:5])
+    if row.op == "GLSS":
+        value, ratio = f'"{row.text}"', f"{int(solve[5])} {float(solve[6]):.1f}"
+    else:
+        value, ratio = f"{row.value:.16E}", f"{solve[5]:.12E} {solve[6]:.12E}"
+    return f'{row.op} {row.surface:3d} {row.config:3d} {value} {code} {param2} {param3} {config} {source} {ratio} 0 "" 0'
 
 
 def write(lens, path, title: str | None = None, carried: dict[str, list[str]] | None = None) -> None:

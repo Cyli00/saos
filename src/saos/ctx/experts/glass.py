@@ -15,7 +15,7 @@ import numpy as np
 from saos import glasscat
 from saos.budget import Stop
 from saos.protocol import ErrorCode, SaosError
-from ._session import (Session, Rejected, editable, feasible, integer, merit, number,
+from ._session import (Session, Rejected, covered, editable, feasible, integer, merit, number,
                        optimize, references, sequential)
 
 # 厂家目录的部分色散 P_g,F = (n_g - n_F)/(n_F - n_C) 用的谱线（µm）
@@ -341,12 +341,22 @@ class GlassExpert:
             return found
         return references(self.ctx, self.refs)
 
+    def _one_glass_per_surface(self, surfaces, info):
+        """结构之间玻璃不同的面没有"一个当前材料"可换，不猜。/ A surface whose glass differs between configurations has no one glass to swap."""
+        if self.ctx.backend.configuration_count() == 1:
+            return
+        for row in self.ctx.backend.describe_model(None)["configurations"]["operands"]:
+            if row["type"] == "GLSS" and row["params"][0] in surfaces and len({str(v).upper() for v in row["values"]}) > 1:
+                raise SaosError(ErrorCode.BAD_ARGS, f"surface {row['params'][0]} changes glass between configurations; experts need one glass per surface")
+
     def run(self):
         editable(self.ctx)
         info = sequential(self.ctx)
         self._spectral(info)
+        covered(self.ctx)
         surfaces = self._surfaces()
         table = self.ctx.backend.surfaces()
+        self._one_glass_per_surface(surfaces, info)
         for i in surfaces:
             material = self.ctx.get(f"{i}.material")
             if i+1 >= len(table)-1 or material in ("", "AIR", "MIRROR", "ABSORB"):

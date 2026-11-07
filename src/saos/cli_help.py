@@ -437,7 +437,8 @@ Context and file operations
   Editing: ctx.merit_add(rows) (ordered, before DMFS, id/ref rows; saos.ctx.rows
     builds thickness, sag-gap and NA-proxy rows), ctx.solve(key, kind, ...),
     ctx.insert_surface(i, type, **values), ctx.change_surface_type(ref, type).
-  Experts (sequential, one configuration): ctx.GlassExpert(surfaces | "model",
+  Experts (sequential; several configurations on the rtc instance only, with a merit
+    function covering each): ctx.GlassExpert(surfaces | "model",
     catalogs=..., partial="working"|"gF").run() / .candidates(s);
     ctx.AsphereExpert(surfaces, terms=4, engine="opticstudio"|"rtc").rank() /
     .run(nas); engine="rtc" ranks by ray errors in an rtc copy, acceptance stays
@@ -484,6 +485,9 @@ Parameters (also available on worker w)
   ctx.configurations(): configuration count; with ctx.configuration(n): temporarily
     switches to configuration n and restores the original even on error. Include
     n in memo keys for per-configuration checks. Checks must leave the lens unchanged.
+  ctx.make_thermal(temperatures, housing_tce): configuration 1 is the lens as it is,
+    each temperature adds one that follows it (OpticStudio's Make Thermal; on rtc
+    without starting it). housing_tce in 1e-6/K. Scripts only, not checks.
 
 Sequential rays, analyses and focus
   ctx.trace(rays, to=None): rays are (wave,hx,hy,px,py) tuples. Returns numpy arrays

@@ -40,9 +40,39 @@ def sequential(ctx):
     if info.get("mode") == "non_sequential" or info.get("nsc_groups"):
         raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, "experts currently require a purely sequential lens")
     if ctx.backend.configuration_count() != 1:
-        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED,
-                        "experts currently require one configuration; multi-configuration pickups must not be guessed")
+        # OpticStudio 上要插 MCE 行才能让新系数跟随温度，这条路径还没有真机验证
+        # on OpticStudio new terms need MCE rows to follow the temperature, and that path has not been run on the real tool
+        if info.get("backend") != "rtc":
+            raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, "on OpticStudio experts require one configuration; run them on the rtc instance")
+        _nominal_configuration(ctx)
     return info
+
+
+def _nominal_configuration(ctx):
+    """跟随格只能在它跟随的结构上改，所以专家类要从那个结构开始。"""
+    current = ctx.backend.current_configuration()
+    rows = ctx.backend.lens.mce
+    code = ctx.backend.lens.thermal_code
+    sources = {r.source_config for r in rows if r.solve_code == code}
+    if sources and current not in sources:
+        raise SaosError(ErrorCode.BAD_ARGS, f"configuration {current} follows configuration {sorted(sources)[0]}; select that one before running an expert")
+
+
+def covered(ctx):
+    """多结构时评价函数必须覆盖每个结构，否则专家类只在其中一个结构上比较，其余结构的退化看不到。
+    On several configurations the merit must cover each, or an expert compares on one and cannot see the others degrade."""
+    count = ctx.backend.configuration_count()
+    if count == 1:
+        return
+    rows = ctx.backend.merit
+    first = next((k for k, r in enumerate(rows) if r.type == "CONF"), len(rows))
+    seen = {r.int1 for r in rows if r.type == "CONF"}
+    if any(r.weight > 0 and r.type != "CONF" for r in rows[:first]):
+        seen.add(ctx.backend.current_configuration())
+    missing = sorted(set(range(1, count + 1)) - seen)
+    if missing:
+        raise SaosError(ErrorCode.BAD_ARGS, f"the merit function does not cover configurations {missing}; build it with saos opt merit wizard "
+                                            "or add CONF rows before running an expert")
 
 
 def references(ctx, refs):

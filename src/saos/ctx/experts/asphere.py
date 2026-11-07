@@ -11,7 +11,7 @@ import numpy as np
 
 from saos.budget import Stop
 from saos.protocol import ErrorCode, SaosError
-from ._session import Session, Rejected, editable, feasible, integer, merit, number, optimize, references, sequential
+from ._session import Session, Rejected, covered, editable, feasible, integer, merit, number, optimize, references, sequential
 from .ranking import SurfaceSensitivity, rank as rank_projection
 
 
@@ -66,6 +66,18 @@ def topology(surfaces):
         if before and not after:
             start = None
     return groups, cemented
+
+
+def _focus_column(lens, surface, config):
+    """结构 config 的最后厚度属于第几个对焦量（从 0 起）。结构各有自己的值时一个结构一列；
+    没有这一行（各结构共用）或跟随同一个结构（热结构）时只有一个量能调，并成一列。
+    Which focus unknown the last thickness of a configuration belongs to: one each when the cells are independent, one
+    in all when the configurations share the value or follow one nominal."""
+    if lens.cell("THIC", surface, config) is None:
+        return 0
+    if any(r.op == "THIC" and r.surface == surface and r.solve_code == lens.thermal_code for r in lens.mce):
+        return 0
+    return config - 1
 
 
 class AsphereExpert:
@@ -225,32 +237,43 @@ class AsphereExpert:
                 copy = fastmod.from_context(self.ctx, freeze_solves=True)
                 engine, agreement = copy.backend, copy.agreement
             lens = engine.lens
-            primary = engine.optical_system(lens.primary_wave)
-            item = {it.index: k for k, it in enumerate(primary.items)}
-            image = primary.items[-1].index
             keys = [(s, int(key[3:])) for s in candidates for key in self.profile.coefficients]
-            variables = [Variable(item[s], "param", n) for s, n in keys] + [Variable(item[image - 1], "thickness")]
             fields = fastmod.field_points(lens)
             field_weights = [float(f[2]) for f in lens.fields]
             px, py = (np.asarray(c, dtype=float) for c in zip(*pupil(self.grid)))
-            values, rows, blocks = [], [], []
-            for wave, (_, wave_weight) in enumerate(lens.active_wavelengths, 1):
-                system = engine.optical_system(wave)
-                theta = np.asarray([v.value(system) for v in variables], dtype=float)
-                for (hx, hy), field_weight in zip(fields, field_weights):
-                    session.budget.check()
-                    chief = trace_ad(primary, [0.], [0.], variables, theta, hx, hy, surfaces=[image]).at(image)
-                    got = trace_ad(system, px, py, variables, theta, hx, hy, surfaces=[image]).at(image)
-                    scale = math.sqrt(max(field_weight, 0.)*max(float(wave_weight), 0.))
-                    for axis in ("x", "y"):
-                        r = got[axis] - chief[axis]
-                        values.append(scale*np.ravel(r.v))
-                        rows.append(scale*np.asarray(r.d).reshape(len(variables), -1).T)
-                        blocks.append((wave, hx, hy))
+            values, rows, focus, blocks = [], [], [], []
+            configurations = engine.configuration_count()
+            start = engine.current_configuration()
+            # 各结构的残差叠在一起，对焦列见 _focus_column / residuals of all configurations are stacked; focus columns as in _focus_column
+            for config in range(1, configurations + 1):
+                engine.select_configuration(config)
+                primary = engine.optical_system(lens.primary_wave)
+                item = {it.index: k for k, it in enumerate(primary.items)}
+                image = primary.items[-1].index
+                variables = [Variable(item[s], "param", n) for s, n in keys] + [Variable(item[image - 1], "thickness")]
+                column = _focus_column(lens, image - 1, config)
+                for wave, (_, wave_weight) in enumerate(lens.active_wavelengths, 1):
+                    system = engine.optical_system(wave)
+                    theta = np.asarray([v.value(system) for v in variables], dtype=float)
+                    for (hx, hy), field_weight in zip(fields, field_weights):
+                        session.budget.check()
+                        chief = trace_ad(primary, [0.], [0.], variables, theta, hx, hy, surfaces=[image]).at(image)
+                        got = trace_ad(system, px, py, variables, theta, hx, hy, surfaces=[image]).at(image)
+                        scale = math.sqrt(max(field_weight, 0.)*max(float(wave_weight), 0.))
+                        for axis in ("x", "y"):
+                            r = got[axis] - chief[axis]
+                            values.append(scale*np.ravel(r.v))
+                            d = scale*np.asarray(r.d).reshape(len(variables), -1).T
+                            rows.append(d[:, :-1])
+                            f = np.zeros((d.shape[0], configurations))
+                            f[:, column] = d[:, -1]
+                            focus.append(f)
+                            blocks.append((config, wave, hx, hy))
+            engine.select_configuration(start)
         finally:
             session.restore(base)
-        e, J = np.concatenate(values), np.vstack(rows)
-        usable = np.isfinite(e) & np.isfinite(J).all(axis=1)
+        e, J, F = np.concatenate(values), np.vstack(rows), np.vstack(focus)
+        usable = np.isfinite(e) & np.isfinite(J).all(axis=1) & np.isfinite(F).all(axis=1)
         # 丢失或瞄准不收敛的光线不进残差；数目随设计变，排名要带上这个信息才能比较
         dropped: dict[tuple, int] = {}
         start = 0
@@ -259,14 +282,14 @@ class AsphereExpert:
             start += part.size
             if count:
                 dropped[block] = dropped.get(block, 0)+count
-        e, J = e[usable], J[usable]
+        e, J, F = e[usable], J[usable], F[usable]
         if not e.size:
             raise SaosError(ErrorCode.BAD_ARGS, "no ray reached the image in the rtc copy")
-        # 对焦补偿：把残差和各系数列投影到对焦列的正交补上
-        focus, J = J[:, -1], J[:, :-1]
-        if np.linalg.norm(focus) > 0:
-            q = focus/np.linalg.norm(focus)
-            e, J = e - q*(q@e), J - np.outer(q, q@J)
+        # 对焦补偿：把残差和各系数列投影到对焦列张成空间的正交补上
+        u, sigma, _ = np.linalg.svd(F, full_matrices=False)
+        if sigma.size and sigma[0] > 0:
+            q = u[:, sigma > 1e-12*sigma[0]]
+            e, J = e - q@(q.T@e), J - q@(q.T@J)
         models, width = [], len(self.profile.coefficients)
         for k, surface in enumerate(candidates):
             slope = current = None
@@ -279,7 +302,8 @@ class AsphereExpert:
         result.update(excluded=excluded, surface_type=self.profile.surface_type, engine="rtc",
                       residual="transverse ray errors about the primary chief ray, focus compensated", residual_rows=int(usable.sum()),
                       dropped_rows=int((~usable).sum()),
-                      dropped=[{"wave": wave, "hx": float(hx), "hy": float(hy), "rows": count} for (wave, hx, hy), count in dropped.items()],
+                      dropped=[{"configuration": config, "wave": wave, "hx": float(hx), "hy": float(hy), "rows": count}
+                               for (config, wave, hx, hy), count in dropped.items()],
                       backend=self.ctx.backend.identity(), rtc=engine.identity(), agreement=agreement,
                       slope_metric="base_conic_radial_rms_waves_per_radius")
         return result
@@ -333,10 +357,20 @@ class AsphereExpert:
         result["engine"] = "opticstudio"
         return result
 
+    def _terms_follow(self):
+        """热结构的单元格只到 Par 8，再高的系数不会跟随温度。/ Thermal rows stop at Par 8; a higher term would not follow the temperature."""
+        if self.ctx.backend.configuration_count() > 1 and not self.ctx.backend.lens.plain_configurations:
+            high = [key for key in self.profile.coefficients if not key.startswith("par") or int(key[3:]) > 8]
+            if high or self.profile.surface_type != "EvenAspheric":
+                raise SaosError(ErrorCode.BAD_ARGS, f"on a thermal lens experts use EvenAspheric par2..par8; got {self.profile.surface_type} {high}")
+
     def rank(self):
         """分析模式：完整恢复镜头、求解、MFE 和原 dirty 标志；不运行局部优化。"""
         editable(self.ctx)
         sequential(self.ctx)
+        self._terms_follow()
+        if self.engine != "rtc" and self.residual is mfe_residual:
+            covered(self.ctx)
         with Session(self.ctx, self.seconds) as session:
             try:
                 return self._rank(session)
@@ -351,6 +385,8 @@ class AsphereExpert:
             return self.rank()
         editable(self.ctx)
         sequential(self.ctx)
+        self._terms_follow()
+        covered(self.ctx)
         history, installed = [], []
         with Session(self.ctx, self.seconds) as session:
             best = session.entry

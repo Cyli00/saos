@@ -269,6 +269,9 @@ class Backend(ABC):
         """设一个单元格的求解（fixed、variable、pickup、marginal_ray_height、f_number），返回回读的求解。"""
         raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} cannot set solves")
 
+    def make_thermal(self, temperatures: list[float], tce: float) -> dict[str, Any]:
+        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, "this backend has no Make Thermal")
+
     def vary_config(self, rows: list[int], configs: list[int] | None, on: bool) -> dict[str, str]:
         """把多重结构的格设为变量或固定；configs 为空时是全部结构。返回 {"<行>.<结构>": 求解类型}。
         Make multi-configuration cells variable or fixed; configs empty means every configuration."""

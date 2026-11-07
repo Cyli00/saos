@@ -145,11 +145,19 @@ class Problem:
         return J, G
 
 
+def variable_target(backend, key: str) -> tuple[int, str]:
+    """变量键对应的 (面号, 面参数)；多重结构的格（config.<c>.<r>）按它那一行的操作数。"""
+    if key.startswith("config."):
+        return backend.config_cell_target(key)
+    surface, param = key.split(".", 1)
+    return int(surface), param
+
+
 def variable_step(backend, key: str) -> float:
     """差分步长：让矢高或折射率的变化在 1e-7 量级。/ A difference step that moves sag or index by about 1e-7."""
-    surface, param = key.split(".", 1)
+    surface, param = variable_target(backend, key)
     value = float(backend.get_param(key))
-    h = semi(backend, int(surface))
+    h = semi(backend, surface)
     if param == "curvature":
         return max(1e-7 * abs(value), 2e-7 / (h * h))
     if param in ("thickness", "semi_diameter"):
@@ -158,7 +166,7 @@ def variable_step(backend, key: str) -> float:
         return max(1e-7 * abs(value), 1e-7)
     if param.startswith("par"):
         n = int(param[3:])
-        if backend.lens.surface(int(surface)).type.upper() == "EVENASPH":
+        if backend.lens.surface(surface).type.upper() == "EVENASPH":
             return 1e-7 / h ** (2 * n)
         return max(1e-7 * abs(value), 1e-9)
     if param == "nd":
@@ -170,9 +178,9 @@ def variable_step(backend, key: str) -> float:
 
 def variable_span(backend, key: str) -> float:
     """Hammer 扰动的典型幅度：矢高变化约 2% 口径、厚度约 10%。/ The typical Hammer perturbation of a variable."""
-    surface, param = key.split(".", 1)
+    surface, param = variable_target(backend, key)
     value = float(backend.get_param(key))
-    h = semi(backend, int(surface))
+    h = semi(backend, surface)
     if param == "curvature":
         return 0.04 / (h * h)
     if param == "thickness":
@@ -181,7 +189,7 @@ def variable_span(backend, key: str) -> float:
         return 0.2 * (abs(value) + 0.5)
     if param.startswith("par"):
         n = int(param[3:])
-        if backend.lens.surface(int(surface)).type.upper() == "EVENASPH":
+        if backend.lens.surface(surface).type.upper() == "EVENASPH":
             return 1e-3 * h / h ** (2 * n)
         return 0.1 * max(abs(value), 1e-6)
     return {"nd": 0.03, "vd": 4.0}.get(param, 0.1 * max(abs(value), 1e-3))

@@ -20,6 +20,8 @@ saos 自身测试里的光学场景只用这五个案例，覆盖序列、非序
 - 真机测试（`SAOS_RUN_ZEMAX=1`）经 daemon 的 `lens.build` 重建，再取 `ScriptContext`，例如 `tests/test_zemax_experts.py` 的 `build()`；`test_cases_rebuild_to_their_reference_values` 核对前三个案例的重建结果与 `reference.json` 一致，`iris`、`reflective` 由 `tests/test_zemax_rtc.py` 的 `test_case_copy_matches_opticstudio_ray_by_ray` 与 OpticStudio 对照。
 - 需要变体时在测试里改处方副本（例如把玻璃换成模型玻璃来模拟专利起点），不改这里的文件。
 
+热结构的真值在 `thermal.json`，变体定义在 `tests/thermal_variants.py`（都由这五个案例派生，加 Make Thermal），由 `tests/test_zemax_thermal.py` 录入（`SAOS_RUN_ZEMAX=1 SAOS_CASE_RECORD=1 uv run pytest tests/test_zemax_thermal.py -k record`），离线比对在 `tests/rtc/test_thermal_truth.py`。改了 `src/rtc/thermal.py` 的规则不用重录，改了处方或变体才要。
+
 所有变体都在 `tests/rtc/test_case_truth.py` 里回放比对：逐光线、逐面、光程、一阶量、R3 存盘往返、R5 自动半口径、R6 表外渐晕、R8 实验 OPDC。比对通过不等于生产放行，准入只看 `saos.backend.rtc` 的拒绝清单；R3、R5 的比对范围由 `case_variants.py` 的 serves 字段选取。
 
 实测用于检查实现一致性；主光线被挡的 OPD 检查报错语义，不将接口返回的占位数当作有效波前。孔径边界另有单元回归，覆盖平方半径容差和椭圆遮挡含边界。

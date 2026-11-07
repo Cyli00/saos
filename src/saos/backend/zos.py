@@ -945,6 +945,28 @@ class ZosBackend(Backend):
             })
         return {"count": count, "current": int(mce.CurrentConfiguration), "operands": operands}
 
+    def make_thermal(self, temperatures: list[float], tce: float) -> dict[str, Any]:
+        """结构 1 是现在的镜头，其余结构是给定温度下的热跟随（MCE.RunTool_MakeThermal）。tce 写进所有面的 TCE（1e-6/K）。
+        Configuration 1 is the lens as it is, the others follow it thermally at the given temperatures."""
+        system = self.system
+        mce = system.MCE
+        if int(mce.NumberOfOperands) > 1 or int(mce.NumberOfConfigurations) > 1:
+            raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, "the lens already has multi-configuration rows; Make Thermal needs a single configuration")
+        for i in range(1, int(system.LDE.NumberOfSurfaces) - 1):
+            system.LDE.GetSurfaceAt(i).TCE = float(tce)
+        system.SystemData.Environment.AdjustIndexToEnvironment = True
+        low, high = min(temperatures), max(temperatures)
+        mce.RunTool_MakeThermal(1, len(temperatures), float(low), float(high), True)
+        nominal = float(system.SystemData.Environment.Temperature)
+        for j in range(1, int(mce.NumberOfOperands) + 1):
+            row = mce.GetOperandAt(j)
+            if str(row.TypeName) == "TEMP":
+                for c, value in enumerate([nominal, *temperatures], 1):
+                    row.GetOperandCell(c).DoubleValue = float(value)
+        mce.SetCurrentConfiguration(1)
+        system.UpdateStatus()
+        return self._configurations()
+
     def vary_config(self, rows: list[int], configs: list[int] | None, on: bool) -> dict[str, str]:
         """把多重结构的格设为变量或固定；configs 为空时是该行的全部结构。返回 {"<行>.<结构>": 求解类型}。
         Make multi-configuration cells variable or fixed; configs empty means every configuration of the row."""
@@ -1365,6 +1387,9 @@ class ZosBackend(Backend):
         if p["configurations"]:
             with _named("configurations"):
                 self._build_configurations(zosapi, p["configurations"])
+        if p.get("thermal"):
+            with _named("thermal"):
+                self.make_thermal(p["thermal"]["temperatures"], p["thermal"]["housing_tce"])
         fields.ClearVignetting()
         # 渐晕因子在字段清空之后写入（ClearVignetting 会把它们清零），逐视场回读核对
         vig = f["vignetting"]

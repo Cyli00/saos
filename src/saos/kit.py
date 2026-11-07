@@ -119,6 +119,21 @@ def configurations(ctx) -> int:
     return ctx.backend.configuration_count()
 
 
+def make_thermal(ctx, temperatures, housing_tce: float) -> dict[str, Any]:
+    """工况：结构 1 是现在的镜头，其余结构是 temperatures 各温度下的热跟随；housing_tce 是镜筒膨胀系数（1e-6/K）。返回各行单元格。
+    Operating conditions: configuration 1 is the lens as it is, the others follow it thermally at temperatures."""
+    if getattr(ctx, "in_check", False):
+        raise SaosError(ErrorCode.BAD_ARGS, "checks must leave the lens unchanged; declare operating conditions in a script")
+    numbers = [t for t in temperatures if isinstance(t, (int, float)) and not isinstance(t, bool) and math.isfinite(t)]
+    if not numbers or len(numbers) != len(temperatures) or len({*numbers}) != len(numbers):
+        raise SaosError(ErrorCode.BAD_ARGS, f"make_thermal needs distinct finite temperatures, got {temperatures!r}")
+    if isinstance(housing_tce, bool) or not isinstance(housing_tce, (int, float)) or not math.isfinite(housing_tce):
+        raise SaosError(ErrorCode.BAD_ARGS, f"make_thermal housing_tce must be a finite number in 1e-6/K, got {housing_tce!r}")
+    out = ctx.backend.make_thermal([float(t) for t in numbers], float(housing_tce))
+    ctx.cache.clear()
+    return out
+
+
 @contextmanager
 def configuration(ctx, n: int) -> Iterator[None]:
     """with 块内切到第 n 个结构，结束时回到原来的结构（出错也回）。按结构分别测量的判定用它，判定结束时镜头不变；
@@ -783,6 +798,9 @@ class KitMethods:
 
     def configurations(self):
         return configurations(self)
+
+    def make_thermal(self, temperatures, housing_tce):
+        return make_thermal(self, temperatures, housing_tce)
 
     def configuration(self, n):
         return configuration(self, n)

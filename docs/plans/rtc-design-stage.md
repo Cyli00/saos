@@ -9,7 +9,7 @@
 | 评价函数 | `src/saos/backend/rtc_merit.py` | 行格式同 OpticStudio；.zmx 的 MFE 行读写；批量求值（同一结构、波长、视场的光线类行合并成一次追迹）；向导 |
 | 优化 | `src/saos/backend/rtc_optim.py` | 带精确约束的阻尼最小二乘；Hammer 与全局搜索 |
 | 后端接口 | `src/saos/backend/rtc.py` | `vary`、`merit_*`、`optimize`、`optimize_search`、`apply_values`、`describe_model(None)`、`analysis("FftMtf")`、`viz_data(full=True)`、`change_surface_type`、`set_solve`、玻璃目录 |
-| .zmx 往返 | `src/saos/backend/rtc_lens.py` | 变量标记、评价函数行、公差行、多重结构行原样写回；文件头里 rtc 不建模的行原样带过去；不认识的面块行拒绝 |
+| .zmx 往返 | `src/saos/backend/rtc_lens.py` | 变量标记、评价函数行、公差行原样写回，多重结构行没改过的原样写回、改过的和热跟随格按存盘列序重新生成；文件头里 rtc 不建模的行原样带过去；不认识的面块行拒绝 |
 | FFT MTF | `src/rtc/psf.py`（`opd_rays`、`otf_fft`、`mtf_fft`） | 多色复 OTF 按权重平均后取模 |
 | 复测 | `src/saos/workflow.py`（`confirm_round`）、`src/saos/ledger.py`（`effective`、`confirmed`、`deliver_round`） | `saos round --confirm [--of N]` |
 | 门禁 | `src/saos/daemon.py` | `OPTICSTUDIO_ONLY` = `round.confirm`，与公差扫描一起总在 OpticStudio 上算；只有 rtc 的后台进程拒绝它们。`lens.describe` 在 rtc 上出模型页，剖面图由 `model_report.section_layout` 画（2026-11-03） |

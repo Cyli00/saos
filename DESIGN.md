@@ -59,6 +59,7 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 - **优化器的通用改进**：rtc DLS 能从违反约束的起点出发（已违约束做带阻尼的恢复步，不整步强制）；WorkerContext 与 ScriptContext 一样提供 `solve`、`merit_add`、`merit_clear`；Hammer/Global 按检查点写进度并可在增益低于 `rel` 时停；专家类逐候选上报进度；加速一律做成通用的物理层面算法，不针对单次建模（2026-11-06 用户决定）。加速先测基线再动手：Hammer/Global 的候选在 rtc 进程池并行，切向导数分行接入，差分时冻结自动半口径只在评价函数不依赖半口径时做（2026-11-06 用户认可，基线与进度见 `docs/plans/rtc-design-stage.md`）。
 - **不设按系统类别的配方**：saos 是给 agent 用的通用光学仿真框架，显微物镜、光纤侧视探头等配方的代码、命令、技能文档与说明一并删除；某类系统的经验提炼成与类别无关的规则写进阶段文件，`library/microscope` 的专利实施例保留为只读数据（2026-11-06 用户决定）。
 - **rtc 支持像方 F 数孔径**：rtc 实现 `image_f_number`（EPD = EFL/F#），“焦距可变、F 数固定”不再借 Float By Stop 加内存变量实现（2026-11-06 用户决定）。
+- **rtc 的多重结构**（2026-11-07 用户决定）：在 rtc 自己实现，不接开源库；`Lens.configured(c)` 是结构 c 的唯一入口，追迹和一阶量都读它；热跟随规则由 OpticStudio 单元格反推，真值用 `tests/fixtures/cases/thermal.json`；工况由处方 `thermal` 或 `ctx.make_thermal` 声明，不需要启动 OpticStudio；GlassExpert、AsphereExpert 在 rtc 实例上支持多重结构，OpticStudio 上仍拒绝。
 - **统一处方骨架与非序列支持**：序列与纯非序列系统（`"mode": "non_sequential"`）共用同一套处方入口、建模确认、结构指纹、判定和轮次；saos 只校验系统设置、通用面属性和多重结构骨架，具体面型和参数按 OpticStudio 原名透传。非序列能力随真实任务逐步扩展。
 - **窗口、资源与未保存修改保护**：
   - 用户通过流程图窗口（`saos ui`）查看进度、当前镜头视图（`view.json`）与当前镜头指标（`metrics.json`）及每轮导出的点列图/MTF（`viz.json`）。后台进程在镜头改动后自动刷新；rtc 的目录指标另由专用进程读取完整镜头快照，在优化进度回调与空闲刷新时计算，只保留最新待算快照，正式判定仍走 check/round。追加展示选择存在 `metric_selection.json`，不参与判定；窗口尊重用户关闭选择，仅在需要查看的节点通知置顶且不抢键盘焦点；前端随包分发，不引入 Node 构建链。

@@ -14,6 +14,7 @@ import re
 from dataclasses import dataclass, field
 from math import isfinite
 from pathlib import Path
+from typing import Any, Callable
 
 from .textio import decode_text
 from .material.types import Catalog, Environment, MaterialSpec, MaterialUnsupported, Mirror, Model
@@ -76,6 +77,12 @@ class Surface:
     model_dpgf: float = 0.0
 
     @property
+    def tce(self) -> float:
+        """``TCED`` 行：这一面的膨胀系数（1e-6/K），文件里没有时为 0。"""
+        fields = self.raw.get("TCED", "").split()
+        return float(fields[1]) if len(fields) > 1 else 0.0
+
+    @property
     def radius(self) -> float:
         return float("inf") if self.curvature == 0.0 else 1.0 / self.curvature
 
@@ -124,6 +131,25 @@ class MCEOperand:
     #: ``solve[3]`` 在 r003 随结构变、在 r004 恒为 1，而两份文件实测的取值关系都是
     #: "源自同结构"，所以那一列不参与计算（只在 ``solve`` 里留原样）。
     pickup_source: tuple[int, int] | None = None
+    #: GLSS 行的玻璃名（去掉引号）；其余行为空
+    text: str = ""
+    #: 读入后改过：存盘时按 :attr:`value` 重新生成这一行，而不是原样写回 :attr:`raw`
+    edited: bool = False
+
+    @property
+    def solve_code(self) -> int:
+        """求解码：0 固定、1 变量、2 结构拾取；热跟随的码随结构数变（见 :attr:`Lens.thermal_code`）。"""
+        return int(self.solve[0]) if self.solve and isfinite(self.solve[0]) else 0
+
+    @property
+    def param(self) -> int:
+        """第二个整数参数（PRAM 的 Par 号）；其余行为 0。"""
+        return int(self.solve[1]) if self.op == "PRAM" and len(self.solve) > 1 else 0
+
+    @property
+    def source_config(self) -> int:
+        """拾取类求解的源结构。"""
+        return int(self.solve[3]) if len(self.solve) > 3 else 1
 
 
 @dataclass
@@ -162,6 +188,41 @@ class Lens:
     mfe: list[MFERow] = field(default_factory=list)
     raw: dict[str, str] = field(default_factory=dict)
     environment: Environment = field(default_factory=Environment)
+    #: 按 (牌号, 目录表) 查玻璃的函数，算热跟随用；None 时用 rtc.system.catalog()。
+    #: 存函数而不是目录对象：deepcopy(lens) 不会连带复制整个玻璃库
+    glass_lookup: Callable[[str, list[str]], Any] | None = None
+    _cells: dict = field(default_factory=dict, repr=False, compare=False)
+    _cells_size: int = field(default=-1, repr=False, compare=False)
+
+    @property
+    def thermal_code(self) -> int:
+        """热跟随格的求解码：结构数 + 2（OpticStudio 24.1 存盘实测）。"""
+        return self.num_configs + 2
+
+    @property
+    def plain_configurations(self) -> bool:
+        """多重结构只有厚度行、没有热跟随（旧路径）：其余量全部取 LDE。"""
+        return all(row.op in ("THIC", "MOFF") and row.solve_code != self.thermal_code for row in self.mce)
+
+    def row_keys(self) -> list[tuple[str, int, int]]:
+        """多重结构的行 (操作数, 面号, Par 号)，按行号顺序。"""
+        return list(dict.fromkeys((row.op, row.surface, row.param) for row in self.mce))
+
+    def cell(self, op: str, surface: int, config: int, param: int = 0) -> MCEOperand | None:
+        """结构 config 里这一行的单元格，没有这一行时为 None。"""
+        if self._cells_size != len(self.mce):
+            self._cells = {(r.op, r.surface, r.param, r.config): r for r in self.mce}
+            self._cells_size = len(self.mce)
+        return self._cells.get((op, surface, param, config))
+
+    def configured(self, config: int) -> "Lens":
+        """结构 config 的完整状态：一份没有多重结构行的镜头，面数据和环境都已解析（拾取、热跟随在这里算）。
+        追迹、一阶量都读它，所以逐结构的结果和"把同样的值写进单结构镜头"一致。只有厚度行的镜头原样返回，由 :meth:`thickness` 解析。"""
+        if self.plain_configurations:
+            return self
+        from . import thermal
+
+        return thermal.resolve(self, config)
 
     @property
     def catalogs(self) -> list[str]:
@@ -187,13 +248,18 @@ class Lens:
         return None
 
     def thickness(self, index: int, config: int = 1, _seen=None) -> float:
-        """多重结构只覆盖厚度（THIC），其余一律取 LDE。
+        """面 index 在结构 config 的厚度：热跟随格按 :mod:`rtc.thermal` 算，没有这一行时取 LDE。
 
         pickup（``scale/offset``）按 ``值 = scale·源厚度 + offset`` 求解。源面号取
         ``solve[4]``，源结构固定为当前结构（见 :attr:`MCEOperand.pickup_source`）。
         源可以再是 pickup，递归求解并检测环。
         """
         base = self.surface(index).thickness
+        cell = self.cell("THIC", index, config)
+        if cell is not None and cell.solve_code == self.thermal_code:
+            from . import thermal
+
+            return thermal.thickness_cell(self, cell)
         for row in self.mce:
             if row.op == "THIC" and row.surface == index and row.config == config:
                 if row.pickup is None:
@@ -351,9 +417,11 @@ def parse_text(text: str, path: str = "") -> Lens:
                 value=nums[0] if nums else float("nan"),
                 solve=solve,
                 raw=raw_line.strip(),
+                text=parts[3].strip('"') if key == "GLSS" and len(parts) > 3 else "",
             )
             # pickup 判据：``solve[5]``/``solve[6]`` 是 (scale, offset)，固定行是 (1, 0)。
-            if len(solve) >= 7:
+            # 只有厚度行按这个判据；GLSS 的这两列是另外的含义（存盘为 0 0.0）。
+            if key == "THIC" and len(solve) >= 7:
                 scale, offset = solve[5], solve[6]
                 if (scale, offset) != (1.0, 0.0) and isfinite(scale) and isfinite(offset):
                     row.pickup = (scale, offset)

@@ -13,6 +13,7 @@ BACKEND_UNSUPPORTED.
 
 from __future__ import annotations
 
+import copy
 import json
 import math
 import time
@@ -49,6 +50,8 @@ SYSTEM_OPERANDS = frozenset({"EFFL", "WFNO", "ISFN", "TOTR", "TTHI", "EPDI", "EN
 # those reconciled value by value with OpticStudio (see rtc.operands); the rest follow the manual's definitions
 RECONCILED_OPERANDS = frozenset({"REAX", "REAY", "REAC", "INDX", "SSAG", "EXPP", "EXPD", "CONF"})
 IDENTITY = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+# rtc 实例能解析的多重结构操作数（rtc.thermal.SUPPORTED_OPS）；CHZN 只有 0
+THERMAL_OPS = frozenset({"THIC", "CRVT", "CONN", "PRAM", "SDIA", "MCSD", "CHZN", "GLSS", "TEMP", "PRES", "MOFF"})
 # .zmx 面型 → OpticStudio 的 TypeName（结构指纹按它比较）；BICONICZ 的名字没有实测过
 # .zmx surface type → OpticStudio's TypeName, which the structural fingerprint compares; BICONICZ's name is not measured
 TYPE_NAMES = {"STANDARD": "Standard", "EVENASPH": "Even Asphere", "PARAXIAL": "Paraxial", "BICONIC": "Biconic",
@@ -169,6 +172,9 @@ class RtcBackend(Backend):
         # 读入文件里 rtc 不建模、存盘时原样带过去的行（rtc_lens.carried_lines）/ lines carried over from the file read
         self._carried: dict[str, list[str]] | None = None
         self._glass_tables: dict[str, list] = {}
+        # 当前结构解析后的镜头（Lens.configured），改参数或换结构时清空；只有厚度行的镜头用不到
+        # the current configuration resolved by Lens.configured, cleared on any change; unused by THIC-only lenses
+        self._view = None
         if path is None:
             if not self.standalone:
                 raise SaosError(ErrorCode.BAD_ARGS, "an rtc copy needs a lens file")
@@ -192,6 +198,8 @@ class RtcBackend(Backend):
         merit = rtc_merit.from_lens(lens)
         previous = (self.lens, self.config, dict(self.held), set(self.unverified_paths), set(self.confirmed), self.handover)
         self.lens, self.config, self.held = lens, lens.current_config, {}
+        lens.glass_lookup = self._glass_lookup
+        self._view = None
         # INDX 确认的键不含环境，只对确认时的那份镜头有效 / INDX confirmations carry no environment: valid for their lens only
         self.unverified_paths.clear()
         self.confirmed.clear()
@@ -204,6 +212,7 @@ class RtcBackend(Backend):
         except BaseException:
             self.lens, self.config, self.held, self.unverified_paths, self.confirmed, self.handover = previous
             self._systems.clear()
+            self._view = None
             raise
         self.merit, self.material_vars = merit, {}
 
@@ -270,9 +279,20 @@ class RtcBackend(Backend):
             out.append("no active wavelengths")
         if lens.surface(0).material is not None:
             out.append("rtc assumes air in object space")
-        others = sorted({row.op for row in lens.mce if row.op not in ("THIC", "MOFF")})
+        allowed = THERMAL_OPS if self.standalone else {"THIC", "MOFF"}
+        others = sorted({row.op for row in lens.mce if row.op not in allowed})
         if others:
-            out.append(f"multi-configuration operands {others} (rtc applies THIC only)")
+            out.append(f"multi-configuration operands {others} (rtc applies {sorted(allowed - {'MOFF'})})")
+        if not lens.plain_configurations:
+            if not self.standalone:
+                out.append("thermal pickups (rtc copies apply fixed THIC rows only; open the lens on the rtc instance)")
+            for s in lens.surfaces[1:]:
+                if s.type.upper() not in ("STANDARD", "EVENASPH") and any(r.surface == s.index for r in lens.mce):
+                    out.append(f"surface {s.index} type {s.type} in multi-configuration rows (only Standard and Even Asphere are reconciled)")
+            for row in lens.mce:
+                if row.solve_code not in (0, 1, 2, lens.thermal_code):
+                    out.append(f"multi-configuration row {row.op} {row.surface} solve code {row.solve_code} (rtc knows fixed, variable, pickup and thermal)")
+                    break
         # 下面几条路径没有 OpticStudio 真值，对账前拒绝（docs/plans/rtc-iris-mirror.md）
         # paths without OpticStudio truth yet are refused until reconciled
         mirrors = [s.index for s in lens.surfaces[1:] if s.mirror]
@@ -294,6 +314,12 @@ class RtcBackend(Backend):
 
     def _system_problems(self) -> list[str]:
         """逐波长建 rtc 系统：材料准入、折射率、面型参数等在这里暴露。"""
+        for config in range(1, self.configuration_count() + 1):
+            if not self.lens.plain_configurations:
+                try:
+                    self._configured(config)
+                except (ValueError, KeyError) as exc:
+                    return [f"configuration {config}: {exc}"]
         for wave in range(1, len(self.lens.active_wavelengths) + 1):
             try:
                 self._system(wave)
@@ -470,6 +496,44 @@ class RtcBackend(Backend):
 
         return self.glasses if self.glasses is not None else catalog()
 
+    def _glass_lookup(self, name: str, catalogs: list[str]):
+        return self._catalog().get(name, catalogs)
+
+    def _configured(self, config: int):
+        """Lens.configured，错误转成 saos 错误。/ Lens.configured with its errors turned into saos errors."""
+        from rtc.thermal import ThermalUnsupported
+
+        try:
+            return self.lens.configured(config)
+        except ThermalUnsupported as exc:
+            raise _unsupported(f"rtc: {exc}") from exc
+
+    def _sync(self) -> None:
+        """让 lens.surfaces 和环境等于当前结构的值，同 OpticStudio 的 LDE：读镜头的地方都不用区分结构。只有厚度行的镜头不用同步。
+        Make lens.surfaces and the environment hold the current configuration, as OpticStudio's LDE does."""
+        lens = self.lens
+        if lens.plain_configurations:
+            self._view = None
+            return
+        view = self._configured(self.config)
+        for s, v in zip(lens.surfaces, view.surfaces):
+            s.curvature, s.conic, s.thickness = v.curvature, v.conic, v.thickness
+            s.semi_diameter, s.mech_semi_diameter = v.semi_diameter, v.mech_semi_diameter
+            s.semi_fixed, s.mech_fixed = v.semi_fixed, v.mech_fixed
+            s.params.update(v.params)
+            if s.material != v.material:
+                s.material = v.material
+        lens.environment = view.environment
+        self._view = view
+
+    def _lens_view(self):
+        """建系统用的镜头：当前结构解析后的那份。/ The lens systems are built from: the current configuration, resolved."""
+        if self.lens.plain_configurations:
+            return self.lens
+        if self._view is None:
+            self._sync()
+        return self._view
+
     def _admit(self, medium, spec, wavelength: float) -> None:
         """材料路径已准入，或这一 (材料, 波长) 建立时经 OpticStudio INDX 确认过，才允许参与追迹。"""
         # 反射面没有自己的折射率，入射侧的材料由入射侧那一面准入
@@ -490,17 +554,19 @@ class RtcBackend(Backend):
         key = (wave, self.config)
         if key not in self._systems:
             um = self.lens.active_wavelengths[wave - 1][0]
+            self._lens_view()
             for s in self.lens.surfaces[1:]:
                 self._admit(_material_call(resolve, s.material, self._catalog(), self.lens.catalogs), s.material, um)
             # 非主波长系统借主波长系统取光阑半径，免得每次各自重建一份
             primary = self._system(self.lens.primary_wave) if wave != self.lens.primary_wave else None
-            self._systems[key] = _material_call(OpticalSystem, self.lens, wavelength_um=um, config=self.config,
+            self._systems[key] = _material_call(OpticalSystem, self._lens_view(), wavelength_um=um, config=self.config,
                                                 glasses=self.glasses, media=self._media, primary=primary,
                                                 allow_unverified=self.standalone)
         return self._systems[key]
 
     def _changed(self, edit: bool = True) -> None:
         self._systems.clear()
+        self._view = None
         if getattr(self, "_batch", False):
             # apply_values 里逐项改值时不重算，全部改完再算一次 / apply_values recomputes once after all values are set
             if edit:
@@ -528,6 +594,7 @@ class RtcBackend(Backend):
         from saos.backend import rtc_lens
 
         lens = self.lens
+        self._sync()
         for index, height in rtc_lens.marginal_height_solves(lens):
             if any(r.op == "THIC" and r.surface == index for r in lens.mce):
                 raise _unsupported(f"surface {index} has both a marginal ray height solve and a multi-configuration THIC row")
@@ -556,6 +623,7 @@ class RtcBackend(Backend):
             if not surface.mech_fixed:
                 surface.mech_semi_diameter = surface.semi_diameter
         self._systems.clear()
+        self._view = None
 
     def unverified(self) -> list[str]:
         """本镜头用到的、只按手册定义实现而未与 OpticStudio 对账的计算路径（standalone 才有）。
@@ -589,6 +657,8 @@ class RtcBackend(Backend):
         if any("MAZH" in s.raw for s in lens.surfaces):
             out.append("paraxial marginal ray height solves")
         out += [f"material path {path}" for path in sorted(self.unverified_paths)]
+        if not lens.plain_configurations:
+            out.append("thermal pickups: rule fitted to OpticStudio 24.1 cells on Standard and Even Asphere surfaces (tests/fixtures/cases/thermal.json)")
         if self.handover is not None and not self.handover["agrees"]:
             out += [f"differs from OpticStudio at handover: {m}" for m in self.handover["mismatches"]]
             if not self.handover["rays_agree"]:
@@ -656,6 +726,10 @@ class RtcBackend(Backend):
         from saos.backend import rtc_lens, rtc_merit
 
         lens = self._need_lens()
+        if not lens.plain_configurations:
+            # LDE 是当前结构的值（_sync），MNUM 要报同一个结构 / the LDE holds the current configuration, and MNUM must say so
+            self._lens_view()
+            lens.current_config = self.config
         lens.mfe = [MFERow(op=r.type, numbers=[] if r.type == "BLNK" else [*r.params[:6], r.target, r.weight, *r.params[6:8]], raw=line)
                     for r, line in zip(self.merit, rtc_merit.to_lines(self.merit))]
         rtc_lens.write(lens, path, carried=self._carried)
@@ -677,6 +751,8 @@ class RtcBackend(Backend):
         from saos.backend import rtc_lens
 
         self._adopt(rtc_lens.from_prescription(prescription))
+        if prescription.get("thermal"):
+            self.make_thermal(prescription["thermal"]["temperatures"], prescription["thermal"]["housing_tce"])
         self.path, self._dirty, self._carried = None, True, None
 
     def native_file(self) -> Path | None:
@@ -726,8 +802,11 @@ class RtcBackend(Backend):
 
         i = s.index
         material = {"model": "MaterialModel", "substitute": "MaterialSubstitute"}.get(self.material_vars.get(i, {}).get("mode"))
-        return {"radius": "Variable" if s.solve_radius == 1 else "Fixed",
-                "thickness": self.held.get(f"{i}.thickness") or ("Variable" if "VDSZ" in s.raw else "Fixed"),
+        cell_solve = {"radius": self._surface_cell(i, "radius"), "thickness": self._surface_cell(i, "thickness")}
+        names = {0: "Fixed", 1: "Variable", 2: "ConfigPickup", self.lens.thermal_code: "ThermalPickup"}
+        return {"radius": names.get(cell_solve["radius"].solve_code) if cell_solve["radius"] else "Variable" if s.solve_radius == 1 else "Fixed",
+                "thickness": (names.get(cell_solve["thickness"].solve_code) if cell_solve["thickness"] else
+                              self.held.get(f"{i}.thickness") or ("Variable" if "VDSZ" in s.raw else "Fixed")),
                 "material": material or ("MaterialModel" if isinstance(s.material, Model) else "Fixed"),
                 "semi_diameter": "Variable" if s.semi_variable else "Fixed" if s.semi_fixed else "Automatic",
                 "mech_semi_diameter": "Fixed" if s.mech_fixed else "Automatic",
@@ -770,13 +849,129 @@ class RtcBackend(Backend):
         return out
 
     def _configurations(self) -> dict[str, Any]:
-        """多重结构，形式同 ZosBackend._configurations：rtc 只有 THIC 行，参数为面号。"""
+        """多重结构，形式同 ZosBackend._configurations。/ Multi-configuration data, shaped as ZosBackend._configurations."""
         lens = self.lens
         count = self.configuration_count()
-        surfaces = list(dict.fromkeys(r.surface for r in lens.mce if r.op == "THIC"))
-        return {"count": count, "current": self.config,
-                "operands": [{"row": j, "type": "THIC", "params": [s], "values": [lens.thickness(s, c) for c in range(1, count + 1)],
-                              "solves": ["Fixed"] * count} for j, s in enumerate(surfaces, 1)]}
+        if not lens.plain_configurations:
+            from rtc import thermal
+
+            thermal.refresh(lens)
+        names = {0: "Fixed", 1: "Variable", 2: "ConfigPickup", lens.thermal_code: "ThermalPickup"}
+        operands = []
+        for j, (op, surface, par) in enumerate(lens.row_keys(), 1):
+            if op == "MOFF":
+                continue
+            cells = [lens.cell(op, surface, c, par) for c in range(1, count + 1)]
+            if op == "GLSS":
+                values: list[Any] = [cell.text for cell in cells]
+            elif op == "THIC":
+                values = [lens.thickness(surface, c) for c in range(1, count + 1)]
+            else:
+                values = [cell.value for cell in cells]
+            params = [] if op in ("TEMP", "PRES") else [surface, par] if op == "PRAM" else [surface]
+            operands.append({"row": j, "type": op, "params": params, "values": values,
+                             "solves": [names.get(cell.solve_code, str(cell.solve_code)) for cell in cells]})
+        return {"count": count, "current": self.config, "operands": operands}
+
+    def _config_row(self, row: int) -> tuple[str, int, int]:
+        keys = self.lens.row_keys()
+        if not 1 <= row <= len(keys):
+            raise SaosError(ErrorCode.BAD_ARGS, f"multi-configuration row {row} out of range 1–{len(keys)}")
+        return keys[row - 1]
+
+    def _config_cell(self, name: str):
+        """config.<c>.<r> 的单元格。/ The cell of config.<c>.<r>."""
+        config, row = (int(v) for v in name.split("."))
+        if not 1 <= config <= self.configuration_count():
+            raise SaosError(ErrorCode.BAD_ARGS, f"configuration {config} out of range 1–{self.configuration_count()}")
+        op, surface, par = self._config_row(row)
+        cell = self.lens.cell(op, surface, config, par)
+        if cell is None:
+            raise SaosError(ErrorCode.BAD_ARGS, f"multi-configuration row {row} has no cell in configuration {config}")
+        return cell
+
+    def config_cell_target(self, key: str) -> tuple[int, str]:
+        """变量键 config.<c>.<r> 对应的 (面号, 面参数)，优化器按它定差分步长。"""
+        _, config, row = key.split(".")
+        op, surface, par = self._config_row(int(row))
+        name = {"CRVT": "curvature", "THIC": "thickness", "CONN": "conic", "SDIA": "semi_diameter", "MCSD": "semi_diameter", "PRAM": f"par{par}"}.get(op)
+        if name is None:
+            raise SaosError(ErrorCode.BAD_ARGS, f"multi-configuration row {row} ({op}) cannot be a variable on rtc")
+        return surface, name
+
+    def _surface_cell(self, surface: int, param: str):
+        """这个面参数在当前结构的单元格；没有这一行或旧式只有厚度行的镜头为 None。"""
+        from saos.lensdata import PAR_RE
+
+        lens = self.lens
+        if lens.plain_configurations:
+            return None
+        match = PAR_RE.match(param)
+        if match:
+            return lens.cell("PRAM", surface, self.config, int(match.group(1)))
+        op = {"radius": "CRVT", "curvature": "CRVT", "thickness": "THIC", "conic": "CONN", "semi_diameter": "SDIA",
+              "mech_semi_diameter": "MCSD"}.get(param)
+        return lens.cell(op, surface, self.config) if op else None
+
+    def vary_config(self, rows: list[int], configs: list[int] | None, on: bool) -> dict[str, str]:
+        """把多重结构的格设为变量或固定，同 ZosBackend.vary_config。热跟随格设固定时留下现在的值。
+        Make cells variable or fixed, as ZosBackend.vary_config; a thermal cell made fixed keeps its current value."""
+        lens = self._designing("saos opt vary")
+        count = self.configuration_count()
+        configs = configs or list(range(1, count + 1))
+        bad = [c for c in configs if not 1 <= c <= count]
+        if count < 2 or bad:
+            raise SaosError(ErrorCode.BAD_ARGS, f"multi-configuration configurations 1–{count} (at least 2 configurations); got {bad}")
+        keys = [self._config_row(r) for r in rows]
+        if on and (fixed := sorted({k[0] for k in keys} & {"TEMP", "PRES", "GLSS", "CHZN", "MOFF"})):
+            raise SaosError(ErrorCode.BAD_ARGS, f"multi-configuration rows {fixed} cannot be variables on rtc")
+        out = {}
+        for r, (op, surface, par) in zip(rows, keys):
+            for c in configs:
+                cell = lens.cell(op, surface, c, par)
+                if cell is None:
+                    raise SaosError(ErrorCode.BAD_ARGS, f"multi-configuration row {r} has no cell in configuration {c}")
+                if op == "THIC" and cell.pickup is not None:
+                    raise _unsupported(f"multi-configuration row {r} configuration {c} is a thickness pickup; rtc varies plain cells only")
+                if not lens.plain_configurations:
+                    from rtc import thermal
+
+                    thermal.refresh(lens)
+                cell.solve = [1.0 if on else 0.0, *cell.solve[1:]] if cell.solve else [1.0 if on else 0.0, float(par), 0.0, 1.0, 1.0, 1.0, 0.0]
+                cell.edited = True
+                out[f"{r}.{c}"] = "Variable" if on else "Fixed"
+        self._dirty = True
+        self._changed()
+        return out
+
+    def make_thermal(self, temperatures: list[float], tce: float) -> dict[str, Any]:
+        """结构 1 是现在的镜头，其余结构是给定温度下的热跟随（同 OpticStudio 的 Make Thermal，不需要启动它）。tce 是镜筒的
+        膨胀系数（1e-6/K），写进所有面的 TCED。结果形式同 describe_model 的 configurations。
+        Configuration 1 is the lens as it is, the others follow it thermally at the given temperatures, as OpticStudio's
+        Make Thermal does, without starting it. tce is the barrel's expansion (1e-6/K), written to every surface's TCED."""
+        from rtc import thermal
+
+        lens = self._designing("Make Thermal")
+        # 单结构文件也可能带一行 MOFF（OpticStudio 的默认空行）/ a single-configuration file may hold OpticStudio's default MOFF row
+        if any(row.op != "MOFF" for row in lens.mce) or lens.num_configs > 1:
+            raise _unsupported("the lens already has multi-configuration rows; Make Thermal needs a single configuration")
+        before = copy.deepcopy(lens)
+        lens.mce = []
+        try:
+            thermal.make(lens, [float(t) for t in temperatures], float(tce))
+        except thermal.ThermalUnsupported as exc:
+            self.lens, self._view = before, None
+            self._systems.clear()
+            raise _unsupported(f"rtc: {exc}") from exc
+        self.config = 1
+        self.held = {k: v for k, v in self.held.items() if v != "MarginalRayHeight"}
+        problems = self._file_problems()
+        if problems:
+            self.lens, self._view = before, None
+            self._systems.clear()
+            raise _unsupported("rtc cannot make this lens thermal: " + "; ".join(problems), problems)
+        self._changed()
+        return self._configurations()
 
     def metric_support(self, *, operand: str | None = None, analysis: str | None = None) -> str:
         if operand is not None and operand not in RAY_OPERANDS | SYSTEM_OPERANDS:
@@ -890,7 +1085,7 @@ class RtcBackend(Backend):
         self._need_lens()
         return [{"index": s.index, "type": s.type, "comment": s.comment, "radius": self._radius(s),
                  "thickness": self.lens.thickness(s.index, self.config), "material": self._material_text(s), "semi_diameter": s.semi_diameter,
-                 "mech_semi_diameter": s.mech_semi_diameter, "conic": self._conic(s), "is_stop": s.is_stop} for s in self.lens.surfaces]
+                 "mech_semi_diameter": s.mech_semi_diameter, "conic": self._conic(s), "is_stop": s.is_stop, "solves": self._solves(s)} for s in self.lens.surfaces]
 
     @staticmethod
     def _radius(s) -> float:
@@ -1080,7 +1275,8 @@ class RtcBackend(Backend):
         index = len(lens.surfaces) - 2
         if f"{index}.thickness" in self.held:
             raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"surface {index} thickness is held by a {self.held[f'{index}.thickness']} solve")
-        if any(r.op == "THIC" and r.surface == index for r in lens.mce):
+        cell = self._surface_cell(index, "thickness")
+        if (cell is None or cell.solve_code not in (0, 1)) and any(r.op == "THIC" and r.surface == index for r in lens.mce):
             raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"surface {index} thickness comes from a multi-configuration row")
         before = lens.thickness(index, self.config)
         grid = np.asarray(pupil(21), dtype=float)
@@ -1109,6 +1305,8 @@ class RtcBackend(Backend):
             shift = -num / den
             surface = lens.surface(index)
             surface.thickness += shift
+            if cell is not None:
+                cell.value, cell.edited = surface.thickness, True
             self._changed()
             if abs(shift) <= 1e-9 * max(1.0, abs(surface.thickness)):
                 break
@@ -1139,6 +1337,9 @@ class RtcBackend(Backend):
             out += [f"{i}.par{n}" for n in sorted(s.variable_params)]
             if self.material_vars.get(i, {}).get("mode") == "model":
                 out += [f"{i}.nd", f"{i}.vd"]
+        for j, (op, surface, par) in enumerate(lens.row_keys(), 1):
+            out += [f"config.{c}.{j}" for c in range(1, self.configuration_count() + 1)
+                    if (cell := lens.cell(op, surface, c, par)) is not None and cell.solve_code == 1]
         return out
 
     def vary(self, surface: int, param: str, on: bool, mode: str | None = None, catalog: str | None = None) -> str:
@@ -1154,6 +1355,16 @@ class RtcBackend(Backend):
         name = "radius" if param == "curvature" else param
         if on and f"{surface}.{name}" in self.held:
             raise SaosError(ErrorCode.BAD_ARGS, f"surface {surface} {name} is held by a {self.held[f'{surface}.{name}']} solve")
+        cell = self._surface_cell(surface, param)
+        if cell is not None:
+            # 多重结构行盖住了 LDE 的格：变量要设在单元格上 / a configuration row overrides the LDE cell: the variable goes on the row
+            if cell.solve_code not in (0, 1):
+                raise SaosError(ErrorCode.BAD_ARGS, f"surface {surface} {name} follows configuration {cell.source_config} in configuration {self.config}; "
+                                f"select configuration {cell.source_config} to make it a variable")
+            cell.solve = [1.0 if on else 0.0, *cell.solve[1:]]
+            cell.edited = True
+            self._dirty = True
+            return "Variable" if on else "Fixed"
         if param == "material":
             out = self._vary_material(s, on, mode, catalog)
         elif param == "semi_diameter":
@@ -1194,6 +1405,8 @@ class RtcBackend(Backend):
         if not on:
             self.material_vars.pop(s.index, None)
             return "MaterialModel" if isinstance(s.material, Model) else "Fixed"
+        if mode == "model" and any(r.op == "GLSS" and r.surface == s.index for r in self.lens.mce):
+            raise _unsupported(f"surface {s.index} has GLSS rows; a model glass cannot follow them on rtc")
         if mode not in MATERIAL_MODES:
             raise SaosError(ErrorCode.BAD_ARGS, f"material needs --mode {' or '.join(MATERIAL_MODES)}")
         if s.material is None:
@@ -1231,10 +1444,29 @@ class RtcBackend(Backend):
             raise _unsupported(f"rtc switches surfaces between Standard and EvenAspheric only; surface {index} is {s.type}, "
                                f"asked for {surface_type}")
         if kind != s.type.upper():
+            if any(r.op == "CONN" and r.surface == index for r in lens.mce):
+                raise _unsupported(f"surface {index} has CONN rows; change its type before adding them")
+            if kind == "EVENASPH" and any(r.op == "PRAM" and r.surface == index for r in lens.mce):
+                raise _unsupported(f"surface {index} already has PRAM rows")
             s.type = kind
             s.params, s.extra, s.variable_params = {}, {}, set()
+            self._asphere_rows(index, kind)
             self._changed()
         return self.SURFACE_TYPES[kind]
+
+    def _asphere_rows(self, index: int, kind: str) -> None:
+        """热结构里换面型时同步 PRAM 行，系数才跟着温度走。/ Keep the PRAM rows in step, so the terms follow the temperature."""
+        from rtc import thermal
+
+        lens = self.lens
+        if lens.plain_configurations:
+            return
+        if kind == "EVENASPH":
+            if thermal.follows(lens, index):
+                lens.surface(index).params = {n: 0.0 for n in range(1, thermal.ASPHERE_ROWS + 1)}
+                thermal.add_asphere_rows(lens, index)
+        else:
+            thermal.drop_asphere_rows(lens, index)
 
     def set_solve(self, index: int, param: str, solve: dict[str, Any]) -> dict[str, Any]:
         """rtc 实例只有 fixed 与 variable 两种求解（同 saos opt vary）；材料只能 fixed。/ Fixed and variable solves only."""
@@ -1750,6 +1982,17 @@ class RtcBackend(Backend):
                 return lens.active_wavelengths[self._slot(param, len(lens.active_wavelengths), "wave")][0]
             if ref in ("field_x", "field_y"):
                 return lens.fields[self._slot(param, len(lens.fields), "field")][0 if ref == "field_x" else 1]
+            if ref == "config":
+                cell = self._config_cell(param)
+                if cell.op == "GLSS":
+                    return cell.text
+                if cell.op == "THIC":
+                    return lens.thickness(cell.surface, cell.config)
+                if not lens.plain_configurations and cell.solve_code not in (0, 1):
+                    from rtc import thermal
+
+                    thermal.refresh(lens)
+                return cell.value
             raise _unsupported(f"rtc cannot read {key}")
         if kind != "surface":
             raise _unsupported(f"rtc cannot read {key}")
@@ -1796,8 +2039,15 @@ class RtcBackend(Backend):
                 k = self._slot(param, len(lens.fields), "field")
                 x, y, w = lens.fields[k]
                 lens.fields[k] = (number, y, w) if ref == "field_x" else (x, number, w)
+            elif ref == "config":
+                cell = self._config_cell(param)
+                if cell.solve_code not in (0, 1):
+                    raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"{key} follows configuration {cell.source_config}; make it fixed first")
+                if cell.op == "GLSS":
+                    raise _unsupported(f"rtc cannot write {key}: set the material of the surface in its configuration")
+                cell.value, cell.edited = number, True
             else:
-                raise _unsupported(f"rtc cannot write {key} (multi-configuration cells are not supported yet)")
+                raise _unsupported(f"rtc cannot write {key}")
             self._changed()
             return
         if kind != "surface":
@@ -1811,6 +2061,12 @@ class RtcBackend(Backend):
             s.comment = "" if value is None else str(value)
             return
         self._guard(key)
+        cell = self._surface_cell(index, param)
+        if cell is not None and cell.solve_code not in (0, 1):
+            raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"surface {index} {param} follows configuration {cell.source_config} in configuration {self.config}; "
+                            "change it there")
+        if PAR_RE.match(param) and cell is None and not lens.plain_configurations and any(r.op == "PRAM" and r.surface == index for r in lens.mce):
+            raise _unsupported(f"surface {index} {param}: multi-configuration rows hold Par 1–8 only, so this term would not follow the temperature")
         if param == "material":
             self._set_material(s, value)
         elif param in ("nd", "vd", "dpgf"):
@@ -1824,7 +2080,7 @@ class RtcBackend(Backend):
             number = parse_numeric(param, value)
             s.curvature = (0.0 if math.isinf(number) or number == 0 else 1.0 / number) if param == "radius" else number
         elif param == "thickness":
-            if any(r.op == "THIC" and r.surface == index and r.config == self.config for r in lens.mce):
+            if any(r.op == "THIC" and r.surface == index and r.config == self.config for r in lens.mce) and self._surface_cell(index, param) is None:
                 raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"surface {index} thickness comes from a multi-configuration row in configuration {self.config}")
             number = parse_numeric(param, value)
             if index == 0 and math.isfinite(number) and lens.aperture_type in ("EPD", "FNO", "FLOA") and not self.standalone:
@@ -1851,7 +2107,25 @@ class RtcBackend(Backend):
                 s.extra[n - 12] = s.params[n]
         else:
             raise _unsupported(f"rtc cannot write {param}")
+        self._write_cell(index, param)
         self._changed()
+
+    def _write_cell(self, index: int, param: str) -> None:
+        """改了 LDE 的值：有这一行时同步写进当前结构的单元格（set_param 已挡住拾取和热跟随的格）。"""
+        s = self.lens.surface(index)
+        cell = self._surface_cell(index, param)
+        if cell is None:
+            if param == "material":
+                for row in self.lens.mce:
+                    # 当前结构和跟随它的格；别的结构固定写的玻璃不动 / this configuration and its pickups, not glasses fixed elsewhere
+                    if row.op == "GLSS" and row.surface == index and (row.config == self.config or row.solve_code == 2):
+                        row.text, row.edited = s.glass, True
+            return
+        from saos.lensdata import PAR_RE
+
+        match = PAR_RE.match(param)
+        value = s.params[int(match.group(1))] if match else s.curvature if param in ("radius", "curvature") else getattr(s, param)
+        cell.value, cell.edited = float(value), True
 
     def _guard(self, key: str) -> None:
         # standalone 自己重算求解（_recompute），不需要冻结 / a standalone instance recomputes its solves itself
@@ -1860,11 +2134,13 @@ class RtcBackend(Backend):
                                "pass freeze_solves=True to keep their saved values fixed in rtc, or make them fixed")
 
     def _set_material(self, s, value: Any) -> None:
-        from rtc.material import Mirror, material_spec, resolve
+        from rtc.material import Catalog, Mirror, material_spec, resolve
 
         spec = _material_call(material_spec, value)
         if s.index == 0 and spec is not None:
             raise _unsupported("rtc assumes air in object space")
+        if not isinstance(spec, Catalog) and any(r.op == "GLSS" and r.surface == s.index for r in self.lens.mce):
+            raise _unsupported(f"surface {s.index} has GLSS rows; they hold catalog glasses only")
         # 增删反射面会翻转后面所有面的符号和厚度，属于换结构，rtc 只接受建模时就有的反射面
         if isinstance(spec, Mirror) or s.mirror:
             raise _unsupported(f"surface {s.index}: rtc cannot add or remove a mirror on a built lens; rebuild the lens")

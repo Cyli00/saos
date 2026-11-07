@@ -63,7 +63,7 @@ IMAGE_HEIGHT_FIELDS = ("paraxial_image_height", "real_image_height")
 IMAGE_F_APERTURES = ("image_f_number", "working_f_number")
 
 TOP_KEYS = {"mode", "title", "units", "aperture", "telecentric_object", "fields", "wavelengths", "catalogs", "ray_aiming",
-            "environment", "object", "surfaces", "image", "configurations", "afocal", "apodization", "polarization",
+            "environment", "object", "surfaces", "image", "configurations", "thermal", "afocal", "apodization", "polarization",
             "coating_file", "ray_aiming_options", "nsc", "source_units", "analysis_units"}
 SURFACE_KEYS = {"type", "radius", "conic", "thickness", "material", "comment", "stop", "semi_diameter",
                 "mech_semi_diameter", "params", "decenter_tilt", "aperture", "solves", "focal_length", "opd_mode", "coating", "objects"}
@@ -581,6 +581,25 @@ def _conditions(rows: list[dict[str, Any]], environment: dict[str, Any], given: 
     return rows
 
 
+def _thermal(value: Any, configurations: list[dict[str, Any]], environment: dict[str, Any]) -> dict[str, Any] | None:
+    """工况声明：结构 1 是这份处方，其余结构是 temperatures 各温度下的热跟随；housing_tce 是镜筒膨胀系数（1e-6/K）。
+    Operating conditions: configuration 1 is this prescription, the others follow it thermally at temperatures."""
+    if value is None:
+        return None
+    spec = _dict(value, "thermal")
+    _known(spec, {"temperatures", "housing_tce"}, "thermal")
+    if configurations:
+        raise _bad("thermal and configurations both define multi-configuration rows; give one of them")
+    if not environment["adjust_index"]:
+        raise _bad("thermal needs environment.adjust_index true: the temperature would not change the indices otherwise")
+    temperatures = [_finite(t, "thermal.temperatures") for t in _list(spec.get("temperatures"), "thermal.temperatures")]
+    if not temperatures:
+        raise _bad("thermal.temperatures needs at least one temperature other than the nominal one")
+    if len(set(temperatures)) != len(temperatures) or environment["temperature"] in temperatures:
+        raise _bad(f"thermal.temperatures must differ from each other and from the nominal {environment['temperature']} C")
+    return {"temperatures": temperatures, "housing_tce": _finite(spec.get("housing_tce"), "thermal.housing_tce")}
+
+
 def _wavelengths(value: Any) -> dict[str, Any]:
     waves = _dict(value, "wavelengths")
     _known(waves, {"um", "weights", "primary"}, "wavelengths")
@@ -1050,6 +1069,7 @@ def normalize(p: dict[str, Any]) -> dict[str, Any]:
         "object": out_obj,
         "surfaces": surfaces,
         "configurations": _conditions(_configurations(p.get("configurations"), environment["adjust_index"]), environment, env),
+        "thermal": _thermal(p.get("thermal"), p.get("configurations") or [], environment),
         "afocal": afocal,
         "apodization": _apodization(p.get("apodization")),
         "polarization": _polarization(p.get("polarization")),
@@ -1160,6 +1180,14 @@ Surfaces and image
     and opd_mode. Use it for curved or tilted image surfaces.
 
 Configurations and optional system settings
+  thermal: {"temperatures": [-40, 65], "housing_tce": 23.6} declares operating
+    conditions without starting OpticStudio: configuration 1 is this prescription,
+    each temperature adds a configuration whose radii, thicknesses, semi-diameters
+    and aspheric terms follow it as OpticStudio's Make Thermal does. housing_tce is
+    the barrel's expansion in 1e-6/K, written to every surface. Needs
+    environment.adjust_index true; temperatures differ from the nominal one and from
+    each other; not together with configurations. The rtc instance accepts Standard
+    and EvenAspheric surfaces here.
   configurations: one row per ZOS-API MultiConfigOperandType (THIC, GLSS, TEMP,
     PRES, PRAM, COTN, etc.); params has up to 3 integer operand parameters;
     values has one value per configuration (at least 2, same count in every row).

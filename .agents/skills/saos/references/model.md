@@ -9,6 +9,7 @@ Models are built, saved, described and approved on rtc, like every stage before 
 - Build or import through `lens build`, `lens load` and `lens save`. Commands use native `.zmx` files (`lens build --as start.zmx`) in OpticStudio 24.1 line format, whichever backend saves them.
 - Keep sourced materials and mechanical semi-diameters (`lens set --param mech_semi_diameter`) in the model; the interference check uses the parts' outer edges.
 - Give surfaces what the model needs with `lens set`; hard limits belong in the demand.
+- When the demand has a temperature range, declare it on rtc with `"thermal": {"temperatures": [...], "housing_tce": <1e-6/K>}` in the prescription, or `ctx.make_thermal(temperatures, housing_tce)` on a lens already built. Configuration 1 stays the nominal lens; the others follow it as OpticStudio's Make Thermal does, in the same `.zmx` rows, so delivery needs no conversion. The temperatures are part of the approved structure, and the barrel's expansion is one number for every surface. rtc takes Standard and Even Asphere surfaces here; other types go through `lens build` on OpticStudio.
 - `opt local`, `opt hammer`, `opt global` and scans run before the first approval, so you can converge and ramp a candidate here. Rounds wait for the approval. Once a model is approved, a lens whose structure differs is refused until a new approval.
 
 ## Set the aperture and mirrors as the real system does
@@ -78,7 +79,7 @@ Then name the largest residual ([diagnosis.md](diagnosis.md#which-variables-move
 | Spherical, coma, astigmatism, with the demand allowing aspheres | An aspheric version, below |
 | Still blocked after these | A new form or more elements |
 
-A glass search is slow, since every trial re-optimises: on CODE V it took 210 s for a doublet whose merit fell 0.9 %, and 1020 s for a six-element patent lens. Glass choice is not part of the structure, so it needs no new approval. On a multi-configuration lens the experts refuse to run; choose the glass by hand and record why.
+A glass search is slow, since every trial re-optimises: on CODE V it took 210 s for a doublet whose merit fell 0.9 %, and 1020 s for a six-element patent lens. Glass choice is not part of the structure, so it needs no new approval. On several configurations the search runs on the rtc instance and compares over all of them, including how the new glass expands; on OpticStudio it refuses, and a surface whose glass changes between configurations refuses on either, so choose those by hand and record why.
 
 An aspheric version adds to the spherical one and never replaces it. Run `ctx.AsphereExpert(surfaces).rank()` on the converged spherical version, using the same merit function, since the ranking reads the merit rows and means little on an unoptimised start. Give it only the surfaces that can be made aspheric, with their slope limits. The ranking is a first-order estimate, so when surfaces rank close, try each and compare after optimising. Convert the fewest that help with `.run(nas)`, converge, and save it as its own lens. Options: [scripting.md](scripting.md#expert-search-classes). Field curvature from the Petzval sum and colour never go to an asphere.
 

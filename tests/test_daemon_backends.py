@@ -208,3 +208,55 @@ def test_a_prescription_rtc_cannot_build_is_built_on_opticstudio(saos_home):
     switch = (reply.get("result") or reply["error"]["details"])["backend_switch"]
     assert started == [1] and daemon.active == "zos"
     assert switch["to"] == "zos" and "decenter_tilt" in switch["reason"]
+
+
+def test_thermal_conditions_run_through_the_daemon_and_hand_over(saos_home):
+    """处方声明工况、向导按结构展开、逐结构变量和优化都走后台进程；存盘后交接给另一个后端两边一致。"""
+    daemon, stand_in, started = _daemon()
+    job = jobs.create_job("thermal")
+    raw = json.loads((CASES / "sequential.json").read_text(encoding="utf-8"))
+    raw.setdefault("environment", {})["adjust_index"] = True
+    raw["thermal"] = {"temperatures": [-40.0, 65.0], "housing_tce": 23.6}
+    reply = call(daemon, "lens.build", job=job.id, prescription=raw, file="t.zmx")
+    assert reply["ok"], reply
+    assert not started
+    rtc = daemon.backend
+    assert rtc.configuration_count() == 3 and rtc.lens.thermal_code == 5
+    reply = call(daemon, "opt.merit", job=job.id, action="wizard", settings={"data": "Spot Radius", "reference": "Centroid", "rings": 2, "arms": 6})
+    assert reply["ok"], reply
+    assert [r.int1 for r in rtc.merit if r.type == "CONF"] == [1, 1, 2, 3]
+    rows = {(o["type"], tuple(o["params"])): o["row"] for o in rtc._configurations()["operands"]}
+    reply = call(daemon, "opt.vary", job=job.id, config_rows=[rows[("THIC", (3,))]], configs=[1], on=True)
+    assert reply["ok"], reply
+    before = rtc.merit_value()
+    # opt.local 还要过需求门禁，这里要看的是优化器和存盘 / opt.local also needs a demand; the optimiser and the save are what counts here
+    rtc.optimize("10")
+    assert rtc.merit_value() < before
+    daemon.loaded.dirty = True
+    saved = call(daemon, "lens.save", job=job.id)
+    assert saved["ok"], saved
+    pinned = call(daemon, "daemon.use", backend="zos", job=job.id)
+    assert pinned["ok"], pinned
+    assert stand_in.configuration_count() == 3
+    assert rtc.handover["agrees"], rtc.handover
+    assert [o["values"] for o in stand_in._configurations()["operands"] if o["type"] == "TEMP"] == [[20.0, -40.0, 65.0]]
+
+
+def test_make_thermal_from_a_script_context(saos_home):
+    from types import SimpleNamespace
+
+    from saos import kit
+
+    backend = RtcBackend(None, standalone=True)
+    backend.build(prescription.normalize(json.loads((CASES / "sequential.json").read_text(encoding="utf-8"))))
+    ctx = SimpleNamespace(backend=backend, cache={"x": 1})
+    with pytest.raises(SaosError):
+        kit.make_thermal(ctx, [20.0, 20.0], 23.6)
+    with pytest.raises(SaosError):
+        kit.make_thermal(ctx, [-40.0], "23.6")
+    out = kit.make_thermal(ctx, [-40.0], 23.6)
+    assert out["count"] == 2 and ctx.cache == {}
+    assert backend.lens.environment.adjust is True
+    with pytest.raises(SaosError) as exc:
+        kit.make_thermal(ctx, [65.0], 23.6)
+    assert exc.value.code == ErrorCode.BACKEND_UNSUPPORTED

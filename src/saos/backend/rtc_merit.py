@@ -539,22 +539,30 @@ def wizard_rows(lens, settings: dict[str, Any]) -> list[Row]:
     rows = [Row("DMFS"), Row("BLNK", comment=f"Sequential merit function (rtc): RMS {settings.get('data', 'Wavefront')} "
                                               f"{settings.get('reference', 'Centroid')} GQ {rings} rings {arms} arms")]
     image = len(lens.surfaces) - 1
-    for key, (glass_ops, air_ops) in (("glass", (("MNCG", "MXCG", "MNEG"), None)), ("air", (None, ("MNCA", "MXCA", "MNEA")))):
-        v = bounds[key]
-        ops = glass_ops or air_ops
-        if v is None:
-            continue
-        rows.append(Row("BLNK", comment=f"Default {key} boundaries"))
-        for op, target in zip(ops, v):
-            rows.append(Row(op, _padded([1, image - 1]), float(target), 1.0))
-    for f, (x, y, fw) in enumerate(lens.fields, 1):
-        hx, hy = (x / sx if sx else 0.0), (y / sy if sy else 0.0)
-        rows.append(Row("BLNK", comment=f"Operands for field {f}."))
-        for w, (_, ww) in enumerate(lens.active_wavelengths, 1):
-            for op in operands:
-                # 先臂后环，同 OpticStudio 存盘的行序 / arm by arm, ring by ring within, as OpticStudio saves them
-                for th in angles:
-                    for rho, a in zip(radii, ring_w):
-                        weight = float(fw) * float(ww) * float(a) / count
-                        rows.append(Row(op, _padded([0, w, hx, hy, rho * math.cos(th), rho * math.sin(th)]), 0.0, weight))
+    # 多结构时每个结构一组（边界加光线），每组以 CONF 开头；DMFS 之前还有一行 CONF 1，OpticStudio 读文件时不补时行号会错开，所以同它存盘的行序
+    # with several configurations each gets its own group after a CONF row, with a CONF 1 before DMFS as well, in the row order OpticStudio saves
+    configurations = max(1, lens.num_configs)
+    if configurations > 1:
+        rows.insert(0, Row("CONF", _padded([1])))
+    for config in range(1, configurations + 1):
+        if configurations > 1:
+            rows.append(Row("CONF", _padded([config])))
+        for key, (glass_ops, air_ops) in (("glass", (("MNCG", "MXCG", "MNEG"), None)), ("air", (None, ("MNCA", "MXCA", "MNEA")))):
+            v = bounds[key]
+            ops = glass_ops or air_ops
+            if v is None:
+                continue
+            rows.append(Row("BLNK", comment=f"Default {key} boundaries"))
+            for op, target in zip(ops, v):
+                rows.append(Row(op, _padded([1, image - 1]), float(target), 1.0))
+        for f, (x, y, fw) in enumerate(lens.fields, 1):
+            hx, hy = (x / sx if sx else 0.0), (y / sy if sy else 0.0)
+            rows.append(Row("BLNK", comment=f"Operands for field {f}."))
+            for w, (_, ww) in enumerate(lens.active_wavelengths, 1):
+                for op in operands:
+                    # 先臂后环，同 OpticStudio 存盘的行序 / arm by arm, ring by ring within, as OpticStudio saves them
+                    for th in angles:
+                        for rho, a in zip(radii, ring_w):
+                            weight = float(fw) * float(ww) * float(a) / count
+                            rows.append(Row(op, _padded([0, w, hx, hy, rho * math.cos(th), rho * math.sin(th)]), 0.0, weight))
     return rows

@@ -109,17 +109,18 @@ class OpticalSystem:
     def __init__(self, lens: zmx.Lens, wavelength_um: float | None = None, config: int | None = None,
                  aim_scale: tuple[float, float] | None = None, glasses: materials.Catalog | None = None,
                  media: dict | None = None, primary: "OpticalSystem | None" = None, allow_unverified: bool = False):
-        self.lens = lens
         # 只按手册定义实现、尚未与 OpticStudio 逐条对账的路径（有限物距发射、物高视场、按实光线定的 OBNA 光阑半径）
         # 默认拒绝；调用方显式打开时照算，结果须标 unverified
         self.allow_unverified = bool(allow_unverified)
-        if any(row.op in ("TEMP", "PRES") for row in lens.mce):
-            raise MaterialUnsupported("多重结构 TEMP/PRES 的逐面环境尚未接入系统")
         # 调用方可以给自己的玻璃库（例如 OpticStudio 实际使用的 Glasscat 目录）；默认用进程内共享的那份
         self.glasses = glasses if glasses is not None else catalog()
         # 默认用文件保存时选中的结构（MNUM 第 2 个数）。codex-r017 保存时停在第 5 个结构，
         # 拿结构 1 去比会差 2e-2 mm（docs/plans/rtc/SURFACE-PARAMS.md「其它实测事实」）。
         self.config = lens.current_config if config is None else config
+        if glasses is not None and lens.glass_lookup is None:
+            lens.glass_lookup = glasses.get
+        lens = lens.configured(self.config)
+        self.lens = lens
         self.aim_scale = aim_scale
         self.wavelength = wavelength_um if wavelength_um is not None else lens.wavelengths[lens.primary_wave - 1][0]
         self.primary = primary

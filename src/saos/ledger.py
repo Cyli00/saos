@@ -146,7 +146,7 @@ def append(path: Path, record: dict[str, Any]) -> None:
 # 证据要落到任务里的文件上：只写一句推理，就能把没试过的手段排除掉（2026-11-06 用户决定）
 # evidence has to be a file in the job: a sentence of reasoning alone could rule out a tier nobody tried
 _EVIDENCE = re.compile(r"\b(?:scans|evaluations|scripts|analyses|parallel|explore|notes|sources|lenses|models|checks)/[\w./-]*\w", re.ASCII)
-# 确实跑不了材料搜索时（多重结构、需求固定玻璃）用这个前缀写明原因 / the prefix for a materials search that truly cannot run
+# 确实跑不了材料搜索时（OpticStudio 上的多重结构、需求固定玻璃）用这个前缀写明原因 / the prefix for a materials search that truly cannot run
 NOT_RUNNABLE = "not runnable:"
 # 停在第一轮之前：之后再记轮次，这条停止就不再适用 / a stop before any round: a later round no longer falls under it
 BEFORE_ROUNDS = -1
