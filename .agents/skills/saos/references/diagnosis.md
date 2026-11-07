@@ -13,16 +13,4 @@ Climb from the cheapest test: conserved quantities and invariants (étendue, the
 3. Write the predictions first (mechanism, direction, rough size), save the lens, and run the probes as a scan: `uv run saos scan --job J --plan plan.json` with a `probes` plan. The base and every probe at ±delta run at once on the worker pool, each from the saved lens, with a compensator so defocus does not hide the aberration: `"compensate": "quick_focus"`, your own script `run(w)`, or a `solve`. Quick Focus moves the thickness before the image surface and can fail silently on folded or partly failing systems; the result says when it never moved. Choose delta as a meaningful fraction of the variable's allowed range. The lens is left unchanged; results go to `scans/NNN/`. When the target is a ray quantity, a quick loop over many candidate variables ([scripting.md](scripting.md#choose-where-a-loop-runs)) can rank them first; run the scan on the few it ranks highest, since `rule-out` cites `scans/NNN`.
 4. Read `ranking` and `review`. A `valley` (or `peak`) means both sides moved the target the same way: the variable is already at its optimum, which says nothing about the structure. Optimise first on the variables that move the target. If a prediction failed or a control moved, your model of the system is wrong: fix that before optimising. If nothing moves the target and your first-order reasoning agrees, it is a structure question: rule out the tiers that cannot help (`saos rule-out`, citing `scans/NNN`) and go to `structure`, or ask the user. When the mechanism is colour, or a monochromatic residual the current surfaces cannot move, an expert may fit: [rounds.md](rounds.md#choose-an-expert).
 
-## Probe plan format
-
-```json
-{"target": "spot", "mechanism": "Petzval field curvature: ~73 um sag at 150 um image height",
- "compensate": "quick_focus",
- "probes": [
-   {"id": "l1_rear_r", "key": "3.radius", "delta": 0.02,
-    "prediction": "less lens-1 power lowers the Petzval sum; spot down by a few um", "expect": {"spot": "down"}},
-   {"id": "l2_a4", "script": "explore/l2_a4.py", "delta": 0.001, "control": true,
-    "prediction": "trades astigmatism only, Petzval unchanged", "expect": {"spot": "none"}}]}
-```
-
-A built-in change is a parameter `key` as in scripts (`"3.radius"`, `"lens dome.conic"`, `"12.par1"`; probe a flat surface by its `curvature`). Anything else is a script in the job defining `run(w, delta)`. `measure` (optional) lists the demand items to measure; the default is every item with a bound. Other plan types: `uv run saos scan --help`.
+Plan format: `uv run saos scan --help probes`. Probe a flat surface by its `curvature`; a change no parameter key expresses is a script in the job defining `run(w, delta)`.

@@ -59,6 +59,7 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 - **优化器的通用改进**：rtc DLS 能从违反约束的起点出发（已违约束做带阻尼的恢复步，不整步强制）；WorkerContext 与 ScriptContext 一样提供 `solve`、`merit_add`、`merit_clear`；Hammer/Global 按检查点写进度并可在增益低于 `rel` 时停；专家类逐候选上报进度；加速一律做成通用的物理层面算法，不针对单次建模（2026-11-06 用户决定）。加速先测基线再动手：Hammer/Global 的候选在 rtc 进程池并行，切向导数分行接入，差分时冻结自动半口径只在评价函数不依赖半口径时做（2026-11-06 用户认可，基线与进度见 `docs/plans/rtc-design-stage.md`）。
 - **不设按系统类别的配方**：saos 是给 agent 用的通用光学仿真框架，显微物镜、光纤侧视探头等配方的代码、命令、技能文档与说明一并删除；某类系统的经验提炼成与类别无关的规则写进阶段文件，`library/microscope` 的专利实施例保留为只读数据（2026-11-06 用户决定）。
 - **rtc 支持像方 F 数孔径**：rtc 实现 `image_f_number`（EPD = EFL/F#），“焦距可变、F 数固定”不再借 Float By Stop 加内存变量实现（2026-11-06 用户决定）。
+- **技能只写判断，接口查环境**（2026-11-07 用户决定）：命令用法放 `--help`（大页分主题），脚本接口放 docstring 由 `saos api` 读出，技能不重复；接口只要查得到就算有文档，`tests/test_docs_sync.py` 按此核对。
 - **rtc 的多重结构**（2026-11-07 用户决定）：在 rtc 自己实现，不接开源库；`Lens.configured(c)` 是结构 c 的唯一入口，追迹和一阶量都读它；热跟随规则由 OpticStudio 单元格反推，真值用 `tests/fixtures/cases/thermal.json`；工况由处方 `thermal` 或 `ctx.make_thermal` 声明，不需要启动 OpticStudio；GlassExpert、AsphereExpert 在 rtc 实例上支持多重结构，OpticStudio 上仍拒绝。
 - **统一处方骨架与非序列支持**：序列与纯非序列系统（`"mode": "non_sequential"`）共用同一套处方入口、建模确认、结构指纹、判定和轮次；saos 只校验系统设置、通用面属性和多重结构骨架，具体面型和参数按 OpticStudio 原名透传。非序列能力随真实任务逐步扩展。
 - **窗口、资源与未保存修改保护**：
@@ -112,7 +113,7 @@ Agent 负责光学工程判断（初始结构选型、评价函数构造、变�
 | 根目录 | 只有 `README.md`、`DESIGN.md`、`TODO.md`、`AGENTS.md`、`pyproject.toml`、`uv.lock`、`.gitignore`，以及 `.agents/`（技能源文件）和 `.claude/skills/saos`（指向 `.agents/skills/saos` 的链接）；`ref`（联接到 zea 参考资料）和 `work/` 不入库 |
 | `src/saos/` | 核心工具代码 |
 | `src/rtc/` | rtc 追迹内核（2026-11-03 由并列仓库并入） |
-| `.agents/skills/saos/` | 光学设计工作流技能：`SKILL.md` 入口（定位阶段、各阶段关卡与出口）、`references/` 按阶段的细节与按时机读取的通用参考（`session.md` 会话与长运行、`scripting.md` 脚本与 rtc 实例、`rtc-copy.md` OpticStudio 上的 rtc 副本、`micro.md` 微光学测量、`files.md` 任务目录） |
+| `.agents/skills/saos/` | 光学设计工作流技能：`SKILL.md` 入口（定位阶段、各阶段关卡与出口）、`references/` 按阶段的细节与按时机读取的通用参考（`session.md` 会话与长运行、`scripting.md` 脚本、循环与 rtc 数字、`micro.md` 微光学测量、`files.md` 任务目录） |
 | `docs/` | 跨任务文档：`workflow.drawio`（工作流图）、`adr/NNNN-*.md`、`plans/*.md` |
 | `library/<库>/` | 跨任务共享参考数据（均含 `README.md` 说明来源与用法）：`materials/`、`glasscat/`、`thermal/`、`mechanics/`、`coatings/`、`starts/`、`patents/`、`microscope/`；脚本经 `saos.library` 统一查询。`patents/seq/` 原文件出处与再分发条款未核实，只留本地不入库 |
 | `tests/`、`tests/rtc/` | 核心工具测试与 rtc 回归 |

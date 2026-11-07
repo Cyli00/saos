@@ -122,7 +122,7 @@ uv run saos daemon stop --all    # 逐个停止它们，并清掉已退出进程
 | `SAOS_OPTICSTUDIO_DIR` | OpticStudio 安装目录 |
 | `SAOS_GLASSCAT` | rtc 读的 AGF 玻璃目录文件夹，默认 `Documents/Zemax/Glasscat` |
 
-完整列表见 `uv run saos --help`。
+完整列表见 `uv run saos --help`。大的帮助页分主题（`uv run saos exec --help rtc`），脚本里的 Python 接口用 `uv run saos api` 查。
 
 ## 文档
 

@@ -1,7 +1,7 @@
 # rtc 材料集成与加速：交接
 
 rtc（ray tracing core，`src/rtc/`）提供材料层与编译追迹内核；本文只记 saos 侧行为、准入流程与运行命令。
-决定与实测数字见 ADR-0014，用法见技能 `references/scripting.md`。
+决定与实测数字见 ADR-0014，用法见 `uv run saos exec --help fast`。
 
 ## saos 侧行为
 

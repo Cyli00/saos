@@ -13,24 +13,17 @@ Rounds recorded on rtc are re-measured before anything else in this stage: run `
 
 ## Tolerance scan
 
-When the demand or the user cares how the design survives manufacturing and assembly, run a tolerance scan on the lens of the round you will deliver, before the report. Load that round's lens, then run `uv run saos scan --job J --plan plan.json` with:
+When the demand or the user cares how the design survives manufacturing and assembly, run a tolerance scan on the lens of the round you will deliver, before the report: load that round's lens, then `saos scan --plan` (format: `uv run saos scan --help tolerance`).
 
-```json
-{"tolerance": {"items": [{"key": "3.radius", "min": -0.02, "max": 0.02, "source": "maker table, sources/tolerances.pdf"}],
-               "samples": 200, "seed": 1, "sensitivity": true},
- "compensate": "quick_focus"}
-```
-
-- Each item names a numeric parameter as in scripts: thicknesses, radii or curvatures, `<surface>.nd` / `.vd` for index and Abbe errors, `object.<n>.x|tilt_x|...` for non-sequential parts, coordinate-break `par<N>` for element tilts and decenters. Optional `dist` and `relative`.
 - Every tolerance has a `source` (a maker's table, the user's words, a standard). Never invent tolerances; ask for them like any other bound.
-- Sensitivity (each item alone at its limits) ranks what matters. Monte Carlo gives each check's distribution and pass rate, and the yield (all hard bounds met, all measured goals met).
+- Sensitivity (each item alone at its limits) ranks what matters. Monte Carlo gives each check's distribution and pass rate, and the yield.
 - Choose the sample count from the yield precision the user needs: the standard error of a yield p from N samples is about √(p(1−p)/N). Non-sequential checks trace per sample, so time one check run first.
 
 Without such a need, skip it and offer it when you hand over the report.
 
 ## The report
 
-`uv run saos report --job J` writes `report/index.html` in the user's language: status, the delivered lens, its materials, and for each unmet goal how far it is off. The delivered lens is the achieved round with the smallest shortfall, else the smallest shortfall among deliverable rounds. With no valid round it says so instead of naming a best lens. The report includes the latest tolerance scan and says whether it ran on the delivered lens. Page 1 is a one-sheet summary drawn from the delivered round's exported views (section, prescription, spot, MTF, verdicts, shortfall trend, unverified items and risks); page 2 is the full record. When pointing the user at a detail, say which page holds it.
+`uv run saos report --job J` writes `report/index.html` in the user's language (which round it delivers: `uv run saos report --help`). Page 1 is a one-sheet summary, page 2 the full record; when pointing the user at a detail, say which page holds it.
 
 - The JSON result names a lens in `deliver` only when it is deliverable (`deliverable`, `headline`). Otherwise `deliver` is null and the round shown for diagnosis is under `diagnostic`: never pass it on as the delivery.
 - A later round, stop, rule-out or tolerance scan makes the report stale, and the workflow shows delivery as unfinished until you run it again. Regenerate an outdated report before asking for acceptance; the displayed report must match its sealed HTML and metadata.

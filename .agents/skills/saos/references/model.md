@@ -9,12 +9,12 @@ Models are built, saved, described and approved on rtc, like every stage before 
 - Build or import through `lens build`, `lens load` and `lens save`. Commands use native `.zmx` files (`lens build --as start.zmx`) in OpticStudio 24.1 line format, whichever backend saves them.
 - Keep sourced materials and mechanical semi-diameters (`lens set --param mech_semi_diameter`) in the model; the interference check uses the parts' outer edges.
 - Give surfaces what the model needs with `lens set`; hard limits belong in the demand.
-- When the demand has a temperature range, declare it on rtc with `"thermal": {"temperatures": [...], "housing_tce": <1e-6/K>}` in the prescription, or `ctx.make_thermal(temperatures, housing_tce)` on a lens already built. Configuration 1 stays the nominal lens; the others follow it as OpticStudio's Make Thermal does, in the same `.zmx` rows, so delivery needs no conversion. The temperatures are part of the approved structure, and the barrel's expansion is one number for every surface. rtc takes Standard and Even Asphere surfaces here; other types go through `lens build` on OpticStudio.
+- When the demand has a temperature range, declare it with the prescription's `thermal` block or `ctx.make_thermal` (`uv run saos lens build --help config`). The temperatures are part of the approved structure, the barrel's expansion is one number for every surface, and delivery needs no conversion. rtc takes Standard and Even Asphere surfaces here; other types go through `lens build` on OpticStudio.
 - `opt local`, `opt hammer`, `opt global` and scans run before the first approval, so you can converge and ramp a candidate here. Rounds wait for the approval. Once a model is approved, a lens whose structure differs is refused until a new approval.
 
 ## Set the aperture and mirrors as the real system does
 
-These are part of the approved structure, so settle them with the form. Formats: `uv run saos lens build --help`.
+These are part of the approved structure, so settle them with the form. Formats: `uv run saos lens build --help system`.
 
 - **Variable focal length, fixed F-number:** use `image_f_number` (`EPD = EFL / F#` on an infinite-conjugate lens), so the entrance pupil scales with the focal length as radii and thicknesses vary during optimisation; do not emulate this with `float_by_stop` and a stop semi-diameter variable.
 - **A physical iris or mount sets the beam:** use `float_by_stop`, where the stop's semi-diameter defines the system aperture. Give the stop an explicit circular aperture if it must also clip rays. Its semi-diameter may be a variable (`opt vary --param semi_diameter`); put the F-number requirement in the merit function, or the optimiser buys image quality by closing the iris.
@@ -29,14 +29,7 @@ First list what the user fixed (element count, which parts move, positions, surf
 
 Record each search in the model notes' `exploration.searches`, a null result included (library, query, hits, why you took or left them), and the parts the user fixed in `exploration.fixed_by_user` with their words; `lens approve` refuses a description that has neither (format: `uv run saos lens describe --help`). On the 2026-10-30 fibre zoom job, "redesign L1 and L2" was read as a prescribed structure, the notes said "no structure search", and the start came from slow optimisation instead.
 
-In a job script:
-
-- `saos.starts.generate(ctx.job, bindings, short_seconds=..., prepare=...)` generates library starts. `bindings` map `efl_mm`, `half_field_deg`, `f_number` and `wavelengths_um` to demand item ids. Read `library/starts/README.md` for sources, units and limits; the source examples do not establish a form's physical limits.
-- If strict selection finds nothing, `allow_extrapolation=True` permits exploratory starts outside the example field, f-number or band. Every exceeded condition is kept in the plan and model page; it never changes the demand, source limits or material range checks. Different conjugates stay excluded.
-- `prepare` is required: generated prescriptions have no merit function, so the prepare script sets variables and merit ([merit.md](merit.md)). An empty value is `BAD_ARGS`; a script that fails or leaves the merit empty is a configuration error before screening.
-- `saos.starts.screen(ctx, generated, workers=...)` runs all candidates without optimisation before the shared short stage. Generated files live in `explore/starts/NNN/`.
-- `saos.starts.patents.search(half_field_deg=..., f_number=..., wavelengths_um=..., elements=(lo, hi), ...)` searches 2456 patent examples (`library/patents/README.md` lists filters, tags and conversion rules). Pass the chosen ids to `generate(..., patents=[...])`; zoom lenses are taken one position at a time (`or01401-p2`), and `_SPECIAL` or private glasses need an explicit `materials` mapping, never a substitute. `patents.prescription(id)` gives the prescription alone. Glass codes (`nnnnnn.vvvvvv`) become model glasses; `ctx.GlassExpert` replaces them with in-production glasses before delivery ([rounds.md](rounds.md#choose-an-expert)).
-- `saos.starts.scale_prescription(data, K)` scales your own prescription.
+In a job script, `saos.starts.patents.search` finds patent examples, `saos.starts.generate` turns them or library starts into prescriptions with a `prepare` script for the merit ([merit.md](merit.md)), `saos.starts.screen` runs them, and `saos.starts.scale_prescription` scales your own (`uv run saos api saos.starts.generate`, `saos.starts.patents`). The source examples do not establish a form's physical limits. Patent glass codes become model glasses, which `ctx.GlassExpert` replaces before delivery ([rounds.md](rounds.md#choose-an-expert)).
 
 Scale every start to the demand and the feasibility estimate, not to wherever its source happened to sit. A start scaled to a smaller target because it is easier there changes a directional objective, which is the user's trade (SKILL.md, stop and ask).
 
@@ -81,7 +74,7 @@ Then name the largest residual ([diagnosis.md](diagnosis.md#which-variables-move
 
 A glass search is slow, since every trial re-optimises: on CODE V it took 210 s for a doublet whose merit fell 0.9 %, and 1020 s for a six-element patent lens. Glass choice is not part of the structure, so it needs no new approval. On several configurations the search runs on the rtc instance and compares over all of them, including how the new glass expands; on OpticStudio it refuses, and a surface whose glass changes between configurations refuses on either, so choose those by hand and record why.
 
-An aspheric version adds to the spherical one and never replaces it. Run `ctx.AsphereExpert(surfaces).rank()` on the converged spherical version, using the same merit function, since the ranking reads the merit rows and means little on an unoptimised start. Give it only the surfaces that can be made aspheric, with their slope limits. The ranking is a first-order estimate, so when surfaces rank close, try each and compare after optimising. Convert the fewest that help with `.run(nas)`, converge, and save it as its own lens. Options: [scripting.md](scripting.md#expert-search-classes). Field curvature from the Petzval sum and colour never go to an asphere.
+An aspheric version adds to the spherical one and never replaces it. Run `ctx.AsphereExpert(surfaces).rank()` on the converged spherical version, using the same merit function, since the ranking reads the merit rows and means little on an unoptimised start. Give it only the surfaces that can be made aspheric, with their slope limits. The ranking is a first-order estimate, so when surfaces rank close, try each and compare after optimising. Convert the fewest that help with `.run(nas)`, converge, and save it as its own lens. Options: `uv run saos exec --help experts`. Field curvature from the Petzval sum and colour never go to an asphere.
 
 Put both versions in the model notes' `exploration`: the value of each `must`, the number of aspheres and the gap to the pass lines. In an interactive job the user chooses. In an autonomous job take the spherical version if it passes the reach gate, otherwise the version with the fewest aspheres that passes. Describe and approve the chosen lens.
 
@@ -101,9 +94,9 @@ Consider a resin when the demand or the structure needs moulded aspheres, low we
 
 ## Record material sources
 
-Shared reference data (materials, coatings, thermal dn/dT, mechanics, glass catalogs, patents, starts, microscope objectives) is read through `saos.library`. `library.catalog()` lists each library with its entry count, fields and specification search. `library.find("materials", "NOA", category="adhesive")` returns the entries containing the text with equal fields, each with the sources it cites (`total` plus the first `limit`). `library.index(id, wavelength_nm)` gives a materials-library index and refuses wavelengths outside the model's range; `refractive_index(record, wavelength_nm)` does the same for a record in hand. Read the library's README before using its numbers: it states versions, source grades and limits.
+Shared reference data (materials, coatings, thermal dn/dT, mechanics, glass catalogs, patents, starts, microscope objectives) is read through `saos.library`, starting from `library.catalog()` (`uv run saos api saos.library`). Read the library's README before using its numbers: it states versions, source grades and limits.
 
-Every material needs a source in `sources/materials.yaml` (format in `saos.materials_record`, fields as in `library/materials`). The model page distinguishes source found, data complete, backend supported and actually loaded; without the record, "source found" is unknown. A model glass (`nd`/`Vd` only) is fine for exploration; rounds and reports mark it as not deliverable.
+Every material needs a source in `sources/materials.yaml` (format: `uv run saos api saos.materials_record`, fields as in `library/materials`). The model page distinguishes source found, data complete, backend supported and actually loaded; without the record, "source found" is unknown. A model glass (`nd`/`Vd` only) is fine for exploration; rounds and reports mark it as not deliverable.
 
 ## Describe the model
 

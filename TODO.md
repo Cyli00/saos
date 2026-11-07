@@ -10,3 +10,6 @@
 - OpticStudio 上 `saos opt vary --param radius` 碰到被 CRVT 行盖住的格时不生效也不报错：`RadiusCell.MakeSolveVariable()` 之后存盘的 `CURV` 和 `CRVT` 仍是固定（2026-11-07 实测）。rtc 已改成设在单元格上，ZOS 后端没动。
 - `rtc.zmx` 把厚度拾取的 `solve[4]` 当源面号，而热结构文件实测这一列是源行号（`solve[3]` 是源结构）。旧 pickup 的两份样本按源面号对得上，没有动，等有新样本再核。
 - rtc 的 `TRAC` 与 OpticStudio 没对账：结构 1 的第 14 行差 3.7e-5 mm（sequential）、1.2e-3 mm（iris）。多结构优化的向导行用它，交付前的复测兜底。
+- rtc 的 `TRAR/TRAC/OPDC/OPDX` 按每个波长自己的主光线或质心参考（`rtc_merit`），所以横向色差不进向导行。OpticStudio 的参考是不是也按波长还没实测：要对账时在真机上比一个有明显横向色差的镜头。
+- `ZOS_ERROR` 这个错误码实际表示任一后端的操作失败；改名会破坏协议，暂时只在 `saos --help` 里说明。
+- rtc 上 `lens save` 出现过一次 `VERIFY_FAILED`（`sph2.zmx differs after reloading from the state before saving`，2026-11-07 评测任务 evalafter），原因没查。

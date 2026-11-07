@@ -10,16 +10,21 @@
 - 用户的新决定写进 `DESIGN.md` 对应段落，一句话带日期；`docs/adr/` 是冻结的历史记录，只在追溯某个决定的来由时读，技能、`DESIGN.md`、README 和命令帮助都指向 `DESIGN.md`
 
 # 技能文档（`.agents/skills/saos/`）
-- 改动 agent 可见的接口或行为（CLI、ctx、starts、search、报告/流程判定）时同步技能，写进内容所属的那一份：
+- 技能只写判断：什么时候用、怎么选、出了什么结果该怎么办。接口写在环境里，改接口时改环境，技能不重复：
+  - 命令的参数、格式、结果字段、错误码 → `src/saos/cli_help.py`（大的帮助页按 `TOPICS` 分主题）
+  - 脚本 import 的 Python 接口 → docstring，由 `saos api` 读出
+  - rtc 能算什么这类清单从代码常量生成（`cli_help._operands`），不手写
+- 改动 agent 的判断或流程时，写进内容所属的那一份：
   - 某阶段的做法 → 该阶段文件（`need.md`、`model.md`、`rounds.md`、`delivery.md`）；停滞与诊断 → `diagnosis.md`；评价函数（初筛和轮次共用）→ `merit.md`
-  - `ctx` / `search` 接口、专家类 → `scripting.md`；`starts` → `model.md`；rtc 副本 → `rtc-copy.md`；微光学测量 → `micro.md`
-  - daemon、许可证、长运行与 detach → `session.md`
-  - 任务目录的文件及其类别 → `files.md`
+  - 脚本和循环怎么选、rtc 数字怎么对待、rtc 副本 → `scripting.md`；微光学测量 → `micro.md`
+  - 后端切换、许可证、长运行 → `session.md`
+  - 任务目录里你写的文件和什么指挥你 → `files.md`
+- 帮助也按“都有后端 rtc 和 OpticStudio”来写：只对一个后端成立的说法要点名后端
   - 某一类系统的经验：提炼成与系统类别无关的规则，写进它所属的阶段文件，不按系统类别另开文档
 - `SKILL.md` 每次调用都整份加载，只放每个阶段都用得到的内容：会话开始、阶段路由表（`workflow.current` → 进入时先读的文件 → 完成判据）、全局规则、停下询问、收尾；阶段细节留在阶段文件里
 - 新增参考文件时，在 `SKILL.md` 写明读取条件，agent 才会读到它
 - 新能力写进决定用它的那个阶段文件，写明什么情况下用；实现进度、候选入口和实验开关留在 `docs/plans/`，技能只写 agent 现在能调用的
 - 阶段文件先写该阶段默认后端的做法，另一个后端只写差别
 - 一条规则只写在一处，别处用链接指过去；案例佐证跟着规则走，同样只出现一次
-- 环境里查得到的事实（命令 `--help`、`rtc_admitted.json` 这类数据表、`docs/plans/` 里的算法细节），技能里只写指向它的指针
+- 环境里查得到的事实（命令 `--help`、`saos api`、`rtc_admitted.json` 这类数据表、`docs/plans/` 里的算法细节），技能里只写指向它的指针，指针写在做决定的那一步，写明具体命令和主题
 - 移动或改名技能段落后，搜 `src/`、`docs/`、`DESIGN.md` 里指向它的文件名与"stage N"一类引用，一并更新

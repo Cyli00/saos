@@ -18,7 +18,12 @@ Each job runs one of two workflows, fixed by `saos job create --mode` and shown 
 
 Create an interactive job unless the user asked for an exercise or a test run. Only the user turns an autonomous job interactive, in the window; no job becomes autonomous later. In an interactive job, "go ahead without asking" leaves the mode as it is: the gates still need the user's click, and their words can go in its note.
 
-Run commands from the repository root as `uv run saos ...`. Every command prints one JSON object; `uv run saos <command> --help` documents arguments, results and error codes. Terms: the table 核心术语对照 in `DESIGN.md`.
+Run commands from the repository root as `uv run saos ...`. Every command prints one JSON object. This skill gives the decisions; the interfaces are looked up, before you first use one and whenever a name or format is uncertain:
+
+- `uv run saos <command> --help`: arguments, input formats, result fields, error codes. `exec`, `scan` and `lens build` list topics, read with `--help <topic>`.
+- `uv run saos api [module | ctx]`: the Python helpers scripts import.
+
+Terms: the table 核心术语对照 in `DESIGN.md`.
 
 ## Start a session
 
@@ -35,9 +40,8 @@ Run commands from the repository root as `uv run saos ...`. Every command prints
 
 Read these when their condition first holds:
 
-- [scripting.md](references/scripting.md) before you write an `exec` script or any loop of many evaluations: the worker pool, the `ctx` API, the metric catalog and the expert classes;
+- [scripting.md](references/scripting.md) before you write an `exec` script, any loop of many evaluations, or call `ctx.fast()`;
 - [merit.md](references/merit.md) before you write a merit function, including the one in a `prepare` script;
-- [rtc-copy.md](references/rtc-copy.md) before you call `ctx.fast()`;
 - [micro.md](references/micro.md) when checks measure a fibre probe, endoscope, fibre-tip lens or miniature objective;
 - [diagnosis.md](references/diagnosis.md) when a round `brief` sets `review`, progress stalls, or a `must` misses by a multiple of its pass line;
 - [files.md](references/files.md) before you first write into the job directory.

@@ -10,30 +10,24 @@ Build and change it by [merit.md](merit.md).
 
 ## Optimisers
 
-`opt local --max-seconds S` is local optimisation. `opt hammer --max-seconds S` and `opt global --max-seconds S` run until the budget, then cancel and leave the best system in the editor; global search moves its ten best to `lenses/global/NNN/`. Where your own `saos.search` loops run: [scripting.md](scripting.md#choose-where-a-loop-runs).
+`opt local` optimises locally. `opt hammer` and `opt global` run until the budget, then cancel and leave the best system in the editor. What each does on rtc and on OpticStudio, and its result fields: their `--help`. Where your own `saos.search` loops run: [scripting.md](scripting.md#choose-where-a-loop-runs).
 
-**On rtc**, the default here:
+Rounds on rtc carry `backend: rtc` and `provenance` (paths and operands not reconciled with OpticStudio). Judge and stop on them as usual; delivery re-measures the delivered round ([delivery.md](delivery.md#re-measure-on-opticstudio)).
 
-- **`opt local`.** Damped least squares where boundary rows are exact constraints, not penalties (after CODE V): read `constraints`, `violation.after` and `violated_after`; constraints already violated at the start take damped, line-searched restoration steps into the feasible region rather than a forced full jump. A start where a weighted row cannot be computed (a ray misses) is refused with the failing rows; diagnose it first. `--algorithm dls` only; `cycles` count iterations, `auto` stops at convergence or 200. Cancellation and time limits are checked before each evaluation; cancellation or an exception restores the last accepted point.
-- **`opt hammer|global`.** Hammer archives the systems it finds to `lenses/hammer/NNN/`. Only solutions meeting every constraint compete. On rtc, the candidates after the first local run are tried in `--cores` worker processes. The result lists `checkpoints` (every tenth of the budget, 1–60 s) and `best_at_s`, when the best system was found; `--rel R` stops at a checkpoint whose best merit fell by less than `R` relative to the previous one (`stopped_by: stalled`). Substitution picks among the 8 glasses of the catalog nearest in nd/νd to the current one, not the whole catalog. Material variables and a stop's variable semi-diameter live in memory only: after `lens load`, set them again.
-- **Plots and rounds.** Round plots are rtc's spot, ray fan and FFT MTF. Rounds carry `backend: rtc` and `provenance` (paths and operands not reconciled with OpticStudio). Judge and stop on them as usual; delivery re-measures the delivered round ([delivery.md](delivery.md#re-measure-on-opticstudio)).
-
-**On OpticStudio** (a pin, or a lens rtc cannot trace): `opt local --algorithm auto|dls|od` selects DLS for sequential systems and orthogonal descent for non-sequential ones. Do not run global search next to existing `GLOPT_*` files. Hammer writes no files: keep its result with `lens save`.
-
-**Glass substitution** (`opt vary --param material --mode substitute`) happens only in Hammer or global search, within one catalog per surface. Use it to escape a local minimum, since it only tries the 8 nearest glasses; to choose materials, use `ctx.GlassExpert`. Without `--catalog` it uses `SAOS_CDGM_INPROD` (CDGM Standard or Preferred glasses; `SAOS_NHG_INPROD` is the same for New Huaguang), and the result names the catalog. `outside_catalog` lists surfaces whose current glass is not in it; pass `--catalog` per surface where the maker must stay. Read `materials_changed`: a maker's full catalog often yields discontinued glasses (9 of 12 substitutions on the Cooke sample in SCHOTT were Obsolete); replace an `Obsolete` glass with one in production or ask the user before delivering it. Material and asphere decisions beyond these: [Choose an expert](#choose-an-expert).
+**Glass substitution** (`opt vary --param material --mode substitute`) happens only in Hammer or global search, within one catalog per surface. Use it to escape a local minimum; to choose materials, use `ctx.GlassExpert`. Pass `--catalog` per surface where the maker must stay, and replace an `Obsolete` glass in `materials_changed` with one in production or ask the user before delivering it (9 of 12 substitutions on the Cooke sample in SCHOTT were Obsolete).
 
 Read the result, not just the merit:
 
-- `algorithm` records the native local algorithm. `solver_succeeded`, `improved` and `stopped_by` have distinct meanings; `converged` is unknown when the native API does not establish it.
-- Measurements and review share the command budget. Cancellation waits for native calls to return. An unfinished review is `completed: false, valid: false`; finish the checks before recording a round.
-- Pass `--measure <ids>|hard|all` on every optimisation call so `review` reports before/after demand checks alongside interference. When the merit falls while the checks get worse, inspect and fix the merit function first (missing rim rays, missing fields, unweighted constraints) before spending another optimisation run. `opt`, `scan` and `check` surface any `parts_clash` at the top level of their result and list `"parts_clash"` in `hard_failing`.
+- `solver_succeeded`, `improved` and `stopped_by` have distinct meanings; `converged` is unknown when the native API does not establish it.
+- An unfinished review is `completed: false, valid: false`; finish the checks before recording a round.
+- Pass `--measure <ids>|hard|all` on every optimisation call so `review` reports before/after demand checks alongside interference. When the merit falls while the checks get worse, inspect and fix the merit function first (missing rim rays, missing fields, unweighted constraints) before spending another optimisation run.
 - A failed run leaves the lens marked unsaved: save under a new name to retain it, or load a saved lens with `--discard`.
 
 When you optimise outside the lens's merit function (your own `exec` loop), record the value you optimised with `saos round --merit <value>`.
 
 ## Choose an expert
 
-Two expert classes answer questions the optimisers never ask: which materials, and which surfaces earn an asphere. Run them in an `exec` script; options and how to keep the result are in [scripting.md](scripting.md#expert-search-classes). A stall alone is no reason to call one: name the mechanism behind the largest gap first ([diagnosis.md](diagnosis.md#which-variables-move-the-target)).
+Two expert classes answer questions the optimisers never ask: which materials, and which surfaces earn an asphere. Run them in an `exec` script; options and how to keep the result: `uv run saos exec --help experts`. A stall alone is no reason to call one: name the mechanism behind the largest gap first ([diagnosis.md](diagnosis.md#which-variables-move-the-target)).
 
 `ctx.GlassExpert(surfaces)` is the `materials` tier done glass by glass: in-production neighbours by working-band n/V, anomalous-dispersion glasses first, each trial re-optimised. It is slow ([model.md](model.md#spherical-version-first-an-aspheric-version-to-compare)), so it is not a routine step. Its place is the last round before delivery, with `max_seconds` 120–180 on the surfaces that matter, and only when:
 
@@ -55,7 +49,7 @@ Your own loops (a multi-start, a batch least-squares script, a `ctx.map` search)
 
 `uv run saos round --job J --tier <tier>[,<tier>...] --note "<what you did>"` names every tier the round used. Tiers, low to high: `local`, `variables`, `materials`, `global`, `structure`. The ladder records what was tried; it is not an order. `next_tier` only names the lowest tier neither tried nor ruled out, so choose by the mechanism. When evidence says a tier cannot help, `uv run saos rule-out --job J --tier <tier> --reason "<evidence, e.g. scans/NNN>"` instead of spending a round on it; this holds until the next clear gain. The reason must cite an existing file of the job. `materials` also needs a real attempt, or a reason starting `not runnable:` that says why the search cannot run here (a multi-configuration lens, glasses fixed by the demand).
 
-Read the decision (`achieved`, `exhausted`, `limit`, `continue` with `next_tier`) and compare rounds by shortfall, never by merit. A round whose parts cross, or with a surface whose sag has no real value inside its part edge (`parts_clash.undefined`, checked from radius and conic because OpticStudio and rtc both return the boundary value silently there), carries `parts_clash` and is never achieved or deliverable. Each round exports `evaluations/NNN/viz.json` for the workflow window; a failed export is reported under `viz` and does not affect the round.
+Read the decision (`achieved`, `exhausted`, `limit`, `continue` with `next_tier`) and compare rounds by shortfall, never by merit. A `minimize` or `maximize` objective keeps it at `continue` after every `must` passes, until the ideal value or every tier is tried or ruled out: rule out what cannot help, or stop with the numbers ([delivery.md](delivery.md#stopping)). A round whose parts cross, or with a surface whose sag has no real value inside its part edge (`parts_clash.undefined`, checked from radius and conic because OpticStudio and rtc both return the boundary value silently there), carries `parts_clash` and is never achieved or deliverable.
 
 ## Changing the checks
 
@@ -67,7 +61,7 @@ Before a run you expect to take more than about ten minutes, or any `global` or 
 
 Accuracy follows reachability. Convergence and sampling audits earn their time once the design is close to its pass lines; while it misses by a multiple, sample just finely enough that the verdict cannot flip.
 
-The same goes for manufacturability. Once the design is close to its pass lines and the tolerances have sources, run a sensitivity-only scan (`"samples": 0`, format in [delivery.md](delivery.md#tolerance-scan)) before you polish further. A few items that break the design are a structure question, far cheaper to learn now than at delivery.
+The same goes for manufacturability. Once the design is close to its pass lines and the tolerances have sources, run a sensitivity-only scan (`"samples": 0`, format in `uv run saos scan --help tolerance`) before you polish further. A few items that break the design are a structure question, far cheaper to learn now than at delivery.
 
 If the structure must change beyond the approved description, describe the new model and get it approved before recording rounds on it.
 
