@@ -955,23 +955,31 @@ class RtcBackend(Backend):
         # 单结构文件也可能带一行 MOFF（OpticStudio 的默认空行）/ a single-configuration file may hold OpticStudio's default MOFF row
         if any(row.op != "MOFF" for row in lens.mce) or lens.num_configs > 1:
             raise _unsupported("the lens already has multi-configuration rows; Make Thermal needs a single configuration")
-        before = copy.deepcopy(lens)
-        lens.mce = []
+        # 在副本上生成并验证完才算数：任何一步失败，实例回到调用前的状态
+        # built and verified on a copy: whatever fails, the instance is left as it was before the call
+        saved = self.config, self.held, self._dirty, set(self.unverified_paths)
+        draft = copy.deepcopy(lens)
+        draft.mce = []
+        self.lens, self._view = draft, None
+        self._systems.clear()
         try:
-            thermal.make(lens, [float(t) for t in temperatures], float(tce))
-        except thermal.ThermalUnsupported as exc:
-            self.lens, self._view = before, None
+            thermal.make(draft, [float(t) for t in temperatures], float(tce))
+            self.config = 1
+            self.held = {k: v for k, v in self.held.items() if v != "MarginalRayHeight"}
+            problems = self._file_problems()
+            if not problems:
+                self._changed()
+                problems = self._system_problems()
+            if problems:
+                raise _unsupported("rtc cannot make this lens thermal: " + "; ".join(problems), problems)
+            return self._configurations()
+        except BaseException as exc:
+            self.lens, self._view = lens, None
+            self.config, self.held, self._dirty, self.unverified_paths = saved
             self._systems.clear()
-            raise _unsupported(f"rtc: {exc}") from exc
-        self.config = 1
-        self.held = {k: v for k, v in self.held.items() if v != "MarginalRayHeight"}
-        problems = self._file_problems()
-        if problems:
-            self.lens, self._view = before, None
-            self._systems.clear()
-            raise _unsupported("rtc cannot make this lens thermal: " + "; ".join(problems), problems)
-        self._changed()
-        return self._configurations()
+            if isinstance(exc, (thermal.ThermalUnsupported, ArithmeticError)):
+                raise _unsupported(f"rtc: {exc}") from exc
+            raise
 
     def metric_support(self, *, operand: str | None = None, analysis: str | None = None) -> str:
         if operand is not None and operand not in RAY_OPERANDS | SYSTEM_OPERANDS:

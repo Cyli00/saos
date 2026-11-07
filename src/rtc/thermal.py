@@ -67,11 +67,19 @@ def surface_alphas(specs: list, tces: list[float], expansion: Callable[[str], fl
     return out
 
 
+def _factor(strain: float) -> float:
+    """膨胀因子 1 + α·ΔT。不是正有限数时尺寸已无物理意义（为 0 还会让曲率和 Par 除零）。"""
+    f = 1.0 + strain
+    if not isfinite(f) or f <= 0.0:
+        raise ThermalUnsupported(f"膨胀因子 1 + α·ΔT = {f} 不是正数：温度或膨胀系数超出物理范围")
+    return f
+
+
 def scaled(nominal: Nominal, alpha: float | None, dt: float) -> Nominal:
     """一面在目标温度的曲率、半口径、机械半口径和 Par 系数。"""
     if alpha is None:
         return nominal
-    f = 1.0 + alpha * dt
+    f = _factor(alpha * dt)
     return Nominal(nominal.curvature / f, nominal.semi * f, nominal.mech * f,
                    {n: p / f ** (2 * n - 1) for n, p in nominal.params.items()}, nominal.tce)
 
@@ -100,7 +108,7 @@ def _contact(surface, nominal: Nominal, target: Nominal, alpha: float | None, dt
 def gap_thickness(front, back, front_nominal: Nominal, back_nominal: Nominal, alphas: tuple[float | None, float | None],
                   t: float, dt: float) -> float:
     """间隔 front→back 的热跟随厚度。"""
-    b = front_nominal.tce * dt
+    b = _factor(front_nominal.tce * dt) - 1.0
     z1, z1p = _contact(front, front_nominal, scaled(front_nominal, alphas[0], dt), alphas[0], dt, b)
     z2, z2p = _contact(back, back_nominal, scaled(back_nominal, alphas[1], dt), alphas[1], dt, b, on_barrel=front.index == 0)
     return (t + z2 - z1) * (1.0 + b) - z2p + z1p
@@ -114,40 +122,69 @@ SUPPORTED_OPS = frozenset(GEOMETRY_OPS) | {"PRAM", "GLSS", "TEMP", "PRES", "CHZN
 FIXED, VARIABLE, CONFIG_PICKUP = 0, 1, 2
 
 
-def _literal(lens, op: str, index: int, config: int, param: int, base: float) -> float:
-    """一个几何量在结构 config 的数值：有单元格读单元格（拾取跟到源结构），否则取 LDE。热跟随不能作为源。"""
+def _base(lens, op: str, index: int, param: int) -> float:
+    """没有单元格时的值：LDE 和系统环境。"""
+    if op == "TEMP":
+        return lens.environment.temperature
+    if op == "PRES":
+        return lens.environment.pressure
+    if op == "CHZN":
+        return 0.0
+    s = lens.surface(index)
+    return s.params.get(param, 0.0) if op == "PRAM" else getattr(s, GEOMETRY_OPS[op])
+
+
+def _literal(lens, op: str, index: int, config: int, param: int = 0, _seen: set | None = None) -> float:
+    """一个量在结构 config 的数值：有单元格读单元格（拾取跟到源结构并检测环），否则取 LDE。热跟随不能作为源。"""
     cell = lens.cell(op, index, config, param)
     if cell is None:
-        return base
+        return _base(lens, op, index, param)
     code = cell.solve_code
+    if code == lens.thermal_code:
+        raise ThermalUnsupported(f"{op} 面 {index} 结构 {config}: 热跟随的源必须是固定值或变量")
+    # 厚度行的拾取判据和源的取法与其它行不同（见 zmx.MCEOperand.pickup），统一走 Lens.thickness
+    if op == "THIC":
+        return lens.thickness(index, config, _seen)
     if code in (FIXED, VARIABLE):
         return cell.value
-    if code == CONFIG_PICKUP:
-        scale, offset = cell.pickup or (1.0, 0.0)
-        return scale * _literal(lens, op, index, cell.source_config, param, base) + offset
-    raise ThermalUnsupported(f"{op} 面 {index} 结构 {config}: 热跟随的源必须是固定值或变量")
+    if code != CONFIG_PICKUP:
+        raise ThermalUnsupported(f"{op} 面 {index} 结构 {config}: 求解码 {code} 没有规则")
+    seen = set() if _seen is None else _seen
+    key = (op, index, param, config)
+    if key in seen:
+        raise ThermalUnsupported(f"多重结构拾取成环：{op} 面 {index} 结构 {config}")
+    seen.add(key)
+    scale, offset = cell.pickup_terms
+    return scale * _literal(lens, op, index, cell.source_config, param, seen) + offset
+
+
+def _glass_cell(lens, index: int, config: int):
+    """结构 config 的玻璃所在的单元格：拾取跟到底，没有这一行时为 None。"""
+    seen = set()
+    while (cell := lens.cell("GLSS", index, config)) is not None and cell.solve_code == CONFIG_PICKUP:
+        if config in seen:
+            raise ThermalUnsupported(f"多重结构拾取成环：GLSS 面 {index} 结构 {config}")
+        seen.add(config)
+        config = cell.source_config
+    return cell
 
 
 def _material(lens, index: int, config: int):
-    s = lens.surface(index)
-    cell = lens.cell("GLSS", index, config)
+    cell = _glass_cell(lens, index, config)
     if cell is None:
-        return s.material
-    if cell.solve_code == CONFIG_PICKUP:
-        return _material(lens, index, cell.source_config)
+        return lens.surface(index).material
     return Catalog(cell.text.upper()) if cell.text else None
 
 
 def _nominal(lens, index: int, config: int) -> Nominal:
     s = lens.surface(index)
-    params = {n: _literal(lens, "PRAM", index, config, n, base) for n, base in s.params.items()}
-    return Nominal(_literal(lens, "CRVT", index, config, 0, s.curvature),
-                   _literal(lens, "SDIA", index, config, 0, s.semi_diameter),
-                   _literal(lens, "MCSD", index, config, 0, s.mech_semi_diameter), params, s.tce * 1e-6)
+    params = {n: _literal(lens, "PRAM", index, config, n) for n in s.params}
+    return Nominal(_literal(lens, "CRVT", index, config), _literal(lens, "SDIA", index, config),
+                   _literal(lens, "MCSD", index, config), params, s.tce * 1e-6)
 
 
 def _temperature(lens, config: int) -> float:
-    return _literal(lens, "TEMP", 0, config, 0, lens.environment.temperature)
+    return _literal(lens, "TEMP", 0, config)
 
 
 def _expansion(lens) -> Callable[[str], float]:
@@ -171,17 +208,17 @@ def _alphas(lens, config: int) -> list[float | None]:
     return surface_alphas([_material(lens, s.index, config) for s in ordered], [s.tce * 1e-6 for s in ordered], _expansion(lens))
 
 
-def thickness_cell(lens, cell, alphas: list[float | None] | None = None) -> float:
+def thickness_cell(lens, cell, alphas: list[float | None] | None = None, _seen: set | None = None) -> float:
     """一个热跟随厚度单元格的值。"""
     source, index = cell.source_config, cell.surface
     if alphas is None:
         alphas = _alphas(lens, source)
     s = lens.surface(index)
-    t = _literal(lens, "THIC", index, source, 0, s.thickness)
+    t = _literal(lens, "THIC", index, source, _seen=_seen)
     dt = _temperature(lens, cell.config) - _temperature(lens, source)
     spec = _material(lens, index, source)
     if isinstance(spec, (Catalog, Model)):
-        return t * (1.0 + alphas[index] * dt)
+        return t * _factor(alphas[index] * dt)
     return gap_thickness(s, lens.surface(index + 1), _nominal(lens, index, source), _nominal(lens, index + 1, source),
                          (alphas[index], alphas[index + 1]), t, dt)
 
@@ -202,6 +239,16 @@ def thermal_value(lens, row, alphas: list[float | None]) -> float:
     if row.op == "PRAM":
         return target.params.get(row.param, 0.0)
     raise ThermalUnsupported(f"{row.op} 面 {index}: 这一行没有热跟随规则")
+
+
+def _cell_value(lens, row, alphas: dict[int, list[float | None]]) -> float:
+    """一个数值单元格现在的值，所有读取入口都经这里求值。alphas 按源结构缓存。"""
+    if row.solve_code != lens.thermal_code:
+        return _literal(lens, row.op, row.surface, row.config, row.param)
+    source = row.source_config
+    if source not in alphas:
+        alphas[source] = _alphas(lens, source)
+    return thermal_value(lens, row, alphas[source])
 
 
 def resolve(lens, config: int):
@@ -231,14 +278,7 @@ def resolve(lens, config: int):
         if row.op == "GLSS":
             target.material = _material(lens, row.surface, config)
             continue
-        if row.solve_code == lens.thermal_code:
-            value = thermal_value(lens, row, alphas.setdefault(row.source_config, _alphas(lens, row.source_config)))
-        elif row.op == "THIC" and row.pickup is not None:
-            value = lens.thickness(row.surface, config)
-        elif row.op == "PRAM":
-            value = _literal(lens, "PRAM", row.surface, config, row.param, target.params.get(row.param, 0.0))
-        else:
-            value = _literal(lens, row.op, row.surface, config, 0, getattr(target, GEOMETRY_OPS[row.op]))
+        value = _cell_value(lens, row, alphas)
         if row.op == "PRAM":
             target.params[row.param] = value
         else:
@@ -248,7 +288,7 @@ def resolve(lens, config: int):
             elif row.op == "MCSD":
                 target.mech_fixed = True
     env = lens.environment
-    environment = Environment(_temperature(lens, config), _literal(lens, "PRES", 0, config, 0, env.pressure), env.adjust)
+    environment = Environment(_temperature(lens, config), _literal(lens, "PRES", 0, config), env.adjust)
     return replace(lens, surfaces=surfaces, mce=[], num_configs=1, current_config=1, environment=environment, _cells={}, _cells_size=-1)
 
 
@@ -258,10 +298,18 @@ def refresh(lens) -> None:
     for row in lens.mce:
         code = row.solve_code
         if code == lens.thermal_code and row.op not in ("GLSS", "CHZN"):
-            row.value = thermal_value(lens, row, alphas.setdefault(row.source_config, _alphas(lens, row.source_config)))
+            row.value = _cell_value(lens, row, alphas)
             row.edited = True
         elif code == lens.thermal_code and row.op == "CHZN":
             row.value = 0.0
+        elif code == CONFIG_PICKUP and row.op == "GLSS":
+            source = _glass_cell(lens, row.surface, row.config)
+            if source is not None and source.text != row.text:
+                row.text, row.edited = source.text, True
+        elif code == CONFIG_PICKUP and row.op != "MOFF":
+            value = _cell_value(lens, row, alphas)
+            if value != row.value:
+                row.value, row.edited = value, True
 
 
 def _clear_radius(s) -> float:
@@ -363,6 +411,9 @@ def make(lens, temperatures: list[float], tce: float) -> None:
     lens.mce = rows
     lens._cells_size = -1
     refresh(lens)
+    bad = [(r.op, r.surface, r.config) for r in rows if r.op != "GLSS" and not isfinite(r.value)]
+    if bad:
+        raise ThermalUnsupported(f"热跟随算出非有限值：{bad[:4]}")
 
 
 # Make Thermal 给偶次非球面的 Par 行数（OpticStudio 24.1 存盘实测）

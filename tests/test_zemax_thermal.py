@@ -130,6 +130,32 @@ def test_opticstudio_reads_rtc_file(zos, tmp_path, variant):
             assert math.isclose(a.value, b.value, rel_tol=2e-11, abs_tol=2e-9), (a.op, a.surface, a.param, a.config, a.value, b.value)
 
 
+def test_opticstudio_computes_a_config_pickup_as_rtc_does(zos, tmp_path):
+    """CRVT 结构拾取（比例 2、偏移 0.001）：rtc 写盘时缓存值故意留错，OpticStudio 读进来重算，和 rtc 求的值相同。"""
+    source = tmp_path / "source.zmx"
+    source.write_bytes(rtc_lens.BOM + truth("seq_3")["zmx"].encode("utf-16-le"))
+    rtc = RtcBackend(None, standalone=True)
+    rtc.load(source)
+    lens = rtc.lens
+    nominal, cell = lens.cell("CRVT", 1, 1), lens.cell("CRVT", 1, 2)
+    nominal.value, nominal.edited = 0.02, True
+    cell.value, cell.edited = 0.03, True
+    cell.solve = [2.0, 0.0, 0.0, 1.0, cell.solve[4], 2.0, 0.001, 0.0, float("nan"), 0.0]
+    rtc._changed()
+    written = tmp_path / "written.zmx"
+    rtc.save_as(written)
+    zos.load(written)
+    zos.system.UpdateStatus()
+    saved = tmp_path / "back.zmx"
+    zos.export_native(saved)
+    from rtc import zmx
+
+    theirs = zmx.parse(saved).cell("CRVT", 1, 2)
+    assert theirs.solve_code == 2, theirs.raw
+    assert math.isclose(theirs.value, 0.041, rel_tol=1e-11), theirs.raw
+    assert math.isclose(lens.configured(2).surface(1).curvature, theirs.value, rel_tol=1e-11)
+
+
 @pytest.mark.parametrize("name", ["seq_3", "iris_6", "reflective_3", "seq_asphere"])
 def test_handover_agrees_in_every_configuration(zos, tmp_path, name):
     """rtc 和 OpticStudio 打开同一份热结构文件，每个结构的面数据和光线都一致（交付前复测走的路径）。"""

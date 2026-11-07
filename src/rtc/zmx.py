@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import copy
 import re
 from dataclasses import dataclass, field
 from math import isfinite
@@ -151,6 +152,15 @@ class MCEOperand:
         """拾取类求解的源结构。"""
         return int(self.solve[3]) if len(self.solve) > 3 else 1
 
+    @property
+    def pickup_terms(self) -> tuple[float, float]:
+        """结构拾取的 (比例, 偏移)：解析时只有厚度行填 :attr:`pickup`，其余行直接取 ``solve[5]``、``solve[6]``。"""
+        if self.pickup is not None:
+            return self.pickup
+        if len(self.solve) > 6 and isfinite(self.solve[5]) and isfinite(self.solve[6]):
+            return self.solve[5], self.solve[6]
+        return 1.0, 0.0
+
 
 @dataclass
 class MFERow:
@@ -193,6 +203,15 @@ class Lens:
     glass_lookup: Callable[[str, list[str]], Any] | None = None
     _cells: dict = field(default_factory=dict, repr=False, compare=False)
     _cells_size: int = field(default=-1, repr=False, compare=False)
+
+    def __deepcopy__(self, memo: dict) -> "Lens":
+        # glass_lookup 常是后端的绑定方法，deepcopy 默认会连后端和玻璃库一起复制
+        clone = object.__new__(type(self))
+        memo[id(self)] = clone
+        memo[id(self.glass_lookup)] = self.glass_lookup
+        for name, value in vars(self).items():
+            setattr(clone, name, copy.deepcopy(value, memo))
+        return clone
 
     @property
     def thermal_code(self) -> int:
@@ -252,30 +271,33 @@ class Lens:
 
         pickup（``scale/offset``）按 ``值 = scale·源厚度 + offset`` 求解。源面号取
         ``solve[4]``，源结构固定为当前结构（见 :attr:`MCEOperand.pickup_source`）。
-        源可以再是 pickup，递归求解并检测环。
+        比例和偏移都是默认值的结构拾取（求解码 2）跟到同一行的源结构。
+        源可以再是拾取或热跟随，递归求解并检测环。
         """
-        base = self.surface(index).thickness
         cell = self.cell("THIC", index, config)
-        if cell is not None and cell.solve_code == self.thermal_code:
+        if cell is None:
+            return self.surface(index).thickness
+        seen = set() if _seen is None else _seen
+        key = (index, config)
+        if key in seen:
+            from .thermal import ThermalUnsupported
+
+            raise ThermalUnsupported(f"多重结构拾取成环：THIC 面 {index} 结构 {config}")
+        seen.add(key)
+        if cell.solve_code == self.thermal_code:
             from . import thermal
 
-            return thermal.thickness_cell(self, cell)
-        for row in self.mce:
-            if row.op == "THIC" and row.surface == index and row.config == config:
-                if row.pickup is None:
-                    return row.value
-                seen = set() if _seen is None else _seen
-                key = (index, config)
-                if key in seen:
-                    raise ValueError(f"MCE pickup 成环：面 {index} 结构 {config}")
-                seen.add(key)
-                src_surf, src_cfg = row.pickup_source or (index, config)
-                scale, offset = row.pickup
-                if (src_surf, src_cfg) == key:
-                    # 源自指：按 LDE 基准值求解（否则无解）
-                    return scale * base + offset
-                return scale * self.thickness(src_surf, src_cfg, seen) + offset
-        return base
+            return thermal.thickness_cell(self, cell, _seen=seen)
+        if cell.pickup is not None:
+            src_surf, src_cfg = cell.pickup_source or key
+            scale, offset = cell.pickup
+            if (src_surf, src_cfg) == key:
+                # 源自指：按 LDE 基准值求解（否则无解）
+                return scale * self.surface(index).thickness + offset
+            return scale * self.thickness(src_surf, src_cfg, seen) + offset
+        if cell.solve_code == 2:
+            return self.thickness(index, cell.source_config, seen)
+        return cell.value
 
 
 # ---------------------------------------------------------------- 解析

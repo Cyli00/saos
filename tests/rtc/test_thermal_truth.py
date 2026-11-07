@@ -18,7 +18,7 @@ from rtc.trace import trace  # noqa: E402
 from saos import prescription  # noqa: E402
 from saos.backend import rtc_lens, rtc_merit  # noqa: E402
 from saos.backend.rtc import RtcBackend  # noqa: E402
-from saos.protocol import SaosError  # noqa: E402
+from saos.protocol import ErrorCode, SaosError  # noqa: E402
 from thermal_variants import ALL, TCE, TRUTH_FILE, base, truth  # noqa: E402
 
 pytestmark = pytest.mark.skipif(not TRUTH_FILE.exists(), reason="还没有录热结构真值")
@@ -163,6 +163,145 @@ def thermal_instance(temperatures=(-40.0, 65.0), tce=TCE) -> RtcBackend:
     backend = RtcBackend(None, standalone=True)
     backend.build(prescription.normalize(p))
     return backend
+
+
+def _curvature_pickup(backend: RtcBackend, source: int = 1, config: int = 2) -> None:
+    """面 1 结构 1 的曲率 0.02；结构 config 拾取它：值 = 2·源 + 0.001 = 0.041，缓存值故意留错成 0.03。"""
+    lens = backend.lens
+    nominal, cell = lens.cell("CRVT", 1, 1), lens.cell("CRVT", 1, config)
+    nominal.value, nominal.edited = 0.02, True
+    cell.value, cell.edited = 0.03, True
+    cell.solve = [2.0, 0.0, 0.0, float(source), cell.solve[4], 2.0, 0.001, 0.0, float("nan"), 0.0]
+    backend._changed()
+
+
+def test_curvature_pickup_reads_the_same_on_every_entry_and_after_saving(tmp_path):
+    backend = thermal_instance()
+    _curvature_pickup(backend)
+    want = pytest.approx(0.041, rel=1e-12)
+    assert backend.lens.configured(2).surface(1).curvature == want
+    row = next(k for k, key in enumerate(backend.lens.row_keys(), 1) if key == ("CRVT", 1, 0))
+    assert backend.get_param(f"config.2.{row}") == want
+    assert backend.lens.cell("CRVT", 1, 2).value == want
+    operand = next(o for o in backend.describe_model(None)["configurations"]["operands"] if o["type"] == "CRVT" and o["params"] == [1])
+    assert operand["values"][:2] == [0.02, want] and operand["solves"][1] == "ConfigPickup"
+    backend.select_configuration(2)
+    assert backend.get_param("1.curvature") == want
+
+    path = tmp_path / "pickup.zmx"
+    backend.save_as(path)
+    again = RtcBackend(None, standalone=True)
+    again.load(path)
+    assert again.lens.configured(2).surface(1).curvature == want
+    assert again.lens.cell("CRVT", 1, 2).pickup_terms == (2.0, 0.001)
+
+
+def test_pickup_follows_its_source_when_the_source_changes():
+    backend = thermal_instance()
+    _curvature_pickup(backend)
+    backend.lens.cell("CRVT", 1, 1).value = 0.01
+    backend._changed()
+    assert backend.lens.configured(2).surface(1).curvature == pytest.approx(0.021, rel=1e-12)
+
+
+@pytest.mark.parametrize("op, param", [("CRVT", 0), ("TEMP", 0)])
+def test_pickup_ring_is_refused_not_a_recursion_error(op, param):
+    lens = thermal_instance().lens
+    surface = 0 if op == "TEMP" else 1
+    for config, source in ((1, 2), (2, 1)):
+        lens.cell(op, surface, config, param).solve = [2.0, float(param), 0.0, float(source), 1.0, 1.0, 0.0]
+    with pytest.raises(thermal.ThermalUnsupported, match="成环"):
+        lens.configured(2)
+
+
+def test_glass_and_thickness_pickup_rings_are_refused():
+    lens = lens_of("seq_3")
+    for config, source in ((1, 2), (2, 1)):
+        lens.cell("GLSS", 1, config).solve = [2.0, 0.0, 0.0, float(source), 1.0, 0.0, 0.0]
+    with pytest.raises(thermal.ThermalUnsupported, match="成环"):
+        lens.configured(2)
+    lens = thermal_instance().lens
+    for config, source in ((1, 2), (2, 1)):
+        lens.cell("THIC", 1, config).solve = [2.0, 0.0, 0.0, float(source), 1.0, 1.0, 0.0]
+    with pytest.raises(thermal.ThermalUnsupported, match="成环"):
+        lens.thickness(1, 2)
+
+
+def test_old_thickness_pickup_keeps_its_same_configuration_source():
+    """-1·THIC(面 1, 同结构) + 0.1：实测的旧语义，solve[3] 不参与。"""
+    lens = thermal_instance().lens
+    cell = lens.cell("THIC", 2, 2)
+    cell.solve = [2.0, 0.0, 0.0, 1.0, 1.0, -1.0, 0.1]
+    cell.pickup, cell.pickup_source = (-1.0, 0.1), (1, 2)
+    want = -lens.thickness(1, 2) + 0.1
+    assert lens.thickness(2, 2) == pytest.approx(want, rel=1e-12)
+    assert lens.configured(2).surface(2).thickness == pytest.approx(want, rel=1e-12)
+
+
+def test_alphas_are_computed_once_per_source_configuration(monkeypatch):
+    lens = thermal_instance().lens
+    calls = []
+    real = thermal._alphas
+    monkeypatch.setattr(thermal, "_alphas", lambda lens, config: calls.append(config) or real(lens, config))
+    lens.configured(2)
+    assert calls == [1]
+    calls.clear()
+    thermal.refresh(lens)
+    assert calls == [1]
+
+
+def _state(backend: RtcBackend) -> tuple:
+    return (copy.deepcopy(backend.lens), backend.config, dict(backend.held), backend._dirty, set(backend.unverified_paths))
+
+
+def _single_instance() -> RtcBackend:
+    p = base("sequential")
+    p.setdefault("environment", {})["adjust_index"] = True
+    backend = RtcBackend(None, standalone=True)
+    backend.build(prescription.normalize(p))
+    return backend
+
+
+@pytest.mark.parametrize("temperatures, tce", [
+    (None, TCE),                     # 1 + α·ΔT 恰好为 0：曲率除零
+    ([-1e12], TCE),                  # 因子为负
+    ([1e300], TCE),                  # 系数的高次方上溢
+    ([-40.0], float("nan")),         # 非有限的膨胀系数
+    ([-40.0], 1e9),                  # 镜筒因子为负
+])
+def test_failed_make_thermal_leaves_the_instance_as_it_was(temperatures, tce):
+    backend = _single_instance()
+    if temperatures is None:
+        alpha = next(a for a in thermal._alphas(backend.lens, 1) if a)
+        temperatures = [backend.lens.environment.temperature - 1.0 / alpha]
+    before = _state(backend)
+    with pytest.raises(SaosError) as err:
+        backend.make_thermal(temperatures, tce)
+    assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED
+    assert _state(backend) == before and backend.configuration_count() == 1 and backend.lens.mce == []
+    assert backend.make_thermal([-40.0], TCE)["count"] == 2
+
+
+def test_lens_copy_and_committed_thermal_lens_share_the_instance_glass_lookup():
+    backend = _single_instance()
+    twin = copy.deepcopy(backend.lens)
+    assert twin.glass_lookup is backend.lens.glass_lookup and twin == backend.lens
+    assert twin.surfaces is not backend.lens.surfaces
+    backend.make_thermal([-40.0], TCE)
+    assert backend.lens.glass_lookup.__self__ is backend
+
+
+def test_make_thermal_rolls_back_an_unexpected_failure(monkeypatch):
+    backend = _single_instance()
+    before = _state(backend)
+
+    def fail():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(backend, "_system_problems", fail)
+    with pytest.raises(RuntimeError, match="boom"):
+        backend.make_thermal([-40.0], TCE)
+    assert _state(backend) == before
 
 
 def test_prescription_declares_conditions_without_opticstudio():
