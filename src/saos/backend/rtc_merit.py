@@ -124,6 +124,13 @@ def to_lines(rows: list[Row]) -> list[str]:
     return out
 
 
+def merit_operands() -> frozenset[str]:
+    """rtc 的评价函数能算的全部操作数。/ Every operand rtc's merit function computes."""
+    from saos.backend.rtc import RAY_OPERANDS, SYSTEM_OPERANDS
+
+    return INERT | {"CONF"} | set(BOUNDARY) | LENS_DATA | ARITHMETIC | ABERRATIONS | RAY_OPERANDS | SYSTEM_OPERANDS | {"TTHI", "TOTR"}
+
+
 def unsupported(message: str, rows: list[int] | None = None) -> SaosError:
     return SaosError(ErrorCode.BACKEND_UNSUPPORTED, message, {"rows": rows} if rows else None)
 
@@ -197,9 +204,7 @@ class Evaluator:
     # 每次求值前检查一遍能不能算，免得优化跑到一半才发现 / checked once before evaluating, not mid-optimisation
     @staticmethod
     def check(rows: list[Row]) -> None:
-        from saos.backend.rtc import RAY_OPERANDS, SYSTEM_OPERANDS
-
-        known = INERT | {"CONF"} | set(BOUNDARY) | LENS_DATA | ARITHMETIC | ABERRATIONS | RAY_OPERANDS | SYSTEM_OPERANDS | {"TTHI", "TOTR"}
+        known = merit_operands()
         bad = [k for k, r in enumerate(rows, 1) if r.type not in known]
         if bad:
             names = sorted({rows[k - 1].type for k in bad})

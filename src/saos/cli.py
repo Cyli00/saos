@@ -568,6 +568,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--quote", default=None, help="the user's own words deciding to stop, including the full text of any option they chose; "
                                                   "an autonomous job may stop without it")
     p.set_defaults(func=cmd_stop)
+    p = sub.add_parser("api")
+    p.add_argument("target", nargs="?", help="module, full interface path, ctx or ctx.<name>; omit to list modules")
+    p.set_defaults(func=cmd_api)
+
     p = sub.add_parser("report")
     p.add_argument("--job", required=True)
     p.add_argument("--lang", choices=["en", "zh"], help="report language (default: demand lang, then SAOS_LANG, then the system UI language)")
@@ -615,6 +619,12 @@ def _gate(args: argparse.Namespace, job: jobs.Job) -> bool:
     return False
 
 
+def cmd_api(args: argparse.Namespace) -> dict[str, Any]:
+    from saos import api_help
+
+    return api_help.describe(args.target)
+
+
 def _ensure_window(args: argparse.Namespace) -> dict[str, Any] | None:
     """改动或计算镜头的带任务命令先确保用户的流程图窗口开着（saos.ui.ensure_window）；打不开不影响命令本身。
     Job commands that change or compute the lens first make sure the user's workflow window is open; failing to open it
@@ -638,11 +648,35 @@ def _ensure_window(args: argparse.Namespace) -> dict[str, Any] | None:
         return {"error": f"{type(exc).__name__}: {exc}"[:300]}
 
 
+def _help_topic(argv: list[str]) -> int | None:
+    """saos exec --help params：argparse 的 --help 不带参数，先在这里接住带主题的写法。
+    argparse's --help takes no value, so a help topic is picked up before parsing."""
+    from saos import cli_help
+
+    for flag in ("--help", "-h"):
+        if flag in argv:
+            at = argv.index(flag)
+            key, rest = " ".join(argv[:at]), argv[at + 1:]
+            if key not in cli_help.TOPICS or not rest:
+                return None
+            try:
+                print(cli_help.topic_help(key, rest[0]), end="")
+            except KeyError:
+                _emit(fail(SaosError(ErrorCode.BAD_ARGS, f"no help topic {rest[0]!r} for saos {key}",
+                                     {"topics": [*cli_help.TOPICS[key], "all"]})))
+                return 2
+            return 0
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     try:
         sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
     except AttributeError:
         pass
+    code = _help_topic(sys.argv[1:] if argv is None else argv)
+    if code is not None:
+        return code
     args = build_parser().parse_args(argv)
     if args.group == "daemon" and args.action == "run":
         from saos.daemon import serve

@@ -5,7 +5,9 @@ from __future__ import annotations
 import argparse
 
 
-OVERVIEW = """saos: tools for agents to drive Zemax OpticStudio.
+OVERVIEW = """saos: optical design tools for agents. Two backends compute: rtc (in-house ray
+tracer, no licence) for every workflow stage before delivery, and OpticStudio
+for delivery and what rtc cannot trace. Results name the backend that computed them.
 
 Output protocol (help itself is plain text):
   Success: {"ok": true, "result": ...}, exit 0.
@@ -14,16 +16,21 @@ Output protocol (help itself is plain text):
   Non-finite results: infinity -> "inf"/"-inf", NaN -> null; numpy arrays -> lists.
 
 Process model:
-  Local: daemon control, job, demand, rule-out, stop, report, scan --show.
+  Local: daemon control, job, demand, rule-out, stop, report, scan --show, api.
     ui runs a local service.
-  Daemon: lens, opt, exec, check, round and scan execution. It owns the
-    OpticStudio connection.
+  Daemon: lens, opt, exec, check, round and scan execution. It holds both
+    backends and the loaded lens; OpticStudio starts when a command first needs it.
+
+Error codes
+  ZOS_ERROR means a backend operation failed, on either backend (the name is
+  historical). BACKEND_UNSUPPORTED means the current backend cannot compute this.
 """
 
 CONVENTIONS = """Long operations
   Use --detach for exec, check, round, opt local/hammer/global when computation
   may outlast your caller's time limit. A detached client writes the request to
-  runs/NNN-<op>.request.json and the response to runs/NNN-<op>.json in the job.
+  runs/NNN-<op>.request.json and the response to runs/NNN-<op>.json in the job
+  (<op> like opt-hammer, script-exec; the result's follow names the file).
   The immediate result has detached, run, launcher_pid and follow. The response
   file has status running/done/failed and result or error; job show also reports
   lost if the process disappeared without a final result. Follow with:
@@ -58,12 +65,35 @@ Environment
 Help
   uv run saos <command> --help
   uv run saos <command> <subcommand> --help
+  uv run saos exec --help <topic>; lens build and scan have topics too, each
+    --help lists them, and "all" prints every topic.
+  uv run saos api [module | module.name | ctx]: signatures and docstrings of the
+    Python helpers scripts import.
 """
 
 GROUPS = {
-    "metrics": "Query the backend-neutral metric catalog and store display-only selections for a job.",
+    "metrics": """Query the backend-neutral metric catalog and store display-only selections for a job.
+Scripts use ctx.metric(id, **params) and ctx.metrics() (workers too). A demand item
+checks a metric with check: {metric: {id, params, pick}}; pick defaults to value and
+takes only a scalar the catalog declares. An MTF check needs params.frequency
+(cycles/mm) and takes the minimum over the chosen fields' curves, the diffraction
+limit excluded. A check or round archives the full result, and the catalog code
+counts toward the check version, like saos.kit. field_focus is the geometric RMS
+best-focus curve, not tangential or sagittal field curvature and not a diffraction
+depth of focus.
+Live values in the window: on rtc the daemon hands a .zmx snapshot to a dedicated rtc
+process at optimiser progress callbacks and the idle refresh after a lens change. It
+uses no worker or licence, keeps only the newest pending snapshot and computes the
+demand's catalog items and the selected extras; operand, analysis and script items keep
+their last formal measurement, and a formal measurement supersedes older frames. Live
+numbers are previews, not evidence; each item's view names its lens state.
+SAOS_LIVE_FRAME_S (default 10 s) bounds a frame: on timeout the process is killed, the
+error published and the next snapshot starts afresh. SAOS_LIVE_S=0 or SAOS_VIEW=0 turns
+submissions off. OpticStudio starts no live process and keeps its bounded measurement
+after each reply (SAOS_LIVE_S).
+""",
     "daemon": 'Control the per-instance daemon holding rtc and a private standalone OpticStudio.\nJobs and daemon state use SAOS_INSTANCE (or SAOS_HOME).\n',
-    "job": """Manage local job directories without contacting OpticStudio.
+    "job": """Manage local job directories without the daemon.
 Jobs live in work/<instance>/jobs/<job>. show, cancel and verify read/write job
 files directly and remain available while the daemon is busy.
 """,
@@ -76,8 +106,8 @@ Before load/unload/build replace the lens, the agent's unsaved edits require
 lens save or --discard. Archived rounds cannot be overwritten. The workflow
 window (saos ui) shows the current lens.
 """,
-    "opt": 'Configure and run optimization on the loaded job lens: OpticStudio, or on an\nrtc instance damped least squares with boundary rows as exact constraints and\nrtc Hammer/global search.\nlocal/hammer/global require the current demand to be confirmed and free of\nblocking questions. Model approval is required to record rounds. Geometry and\nmaterial changes require saving before worker scans; model glass is exploratory\nand cannot be delivered. Optimization keeps the best reached system in memory.\n',
-    "demand": """Validate and confirm sources/demand.yaml locally, without OpticStudio.
+    "opt": 'Configure and run optimization on the loaded job lens, on the backend computing it.\nlocal/hammer/global require the current demand to be confirmed and free of\nblocking questions. Model approval is required to record rounds. Geometry and\nmaterial changes require saving before worker scans; model glass is exploratory\nand cannot be delivered. Optimization keeps the best reached system in memory.\n',
+    "demand": """Validate and confirm sources/demand.yaml locally, without the daemon.
 Format: .agents/skills/saos/demand.example.yaml; shortfall and stop rules: saos round --help.
 Each bound needs a source; confirmation records the user's actual approval and
 content hash. Constants, variables, objectives (except their descriptions), structure
@@ -149,17 +179,30 @@ COMMANDS = {
         "Returns job, path, state, workflow, lenses, log_tail (--log count), progress,\n"
         "  cancel_requested and the last 5 detached runs. Works while the daemon is busy.\n"
         "  workflow has current (interview, demand_confirm, modeling, model_approve,\n"
-        "  design, deliver, zos or final_report), steps with status done/active/\n"
+        "  design or deliver), steps with status done/active/\n"
         "  waiting/blocked/pending and detail, blocking open questions and the round\n"
         "  decision; it is what the workflow window shows.\n"
-        "  A quiet log is not proof of a stalled computation; use progress and runs.", "JOB_NOT_FOUND"),
+        "  A quiet log is not proof of a stalled computation; use progress and runs.\n"
+        "  Files the tools write under the job, with paths in command results:\n"
+        "  job.json, log.jsonl (every command with arguments and success or error, not its\n"
+        "  result), progress.json, view.json and metrics.json (current lens and values for\n"
+        "  the window, not evidence), metric_selection.json (display only); confirmations.jsonl\n"
+        "  and models/NNN-<lens>/approval.json (approvals, via window, cli or auto);\n"
+        "  revisions.jsonl (changes asked at a gate, unanswered ones in workflow.revisions);\n"
+        "  evaluations/NNN/ (each check or round: snapshot, support/ copy of checks/, exports,\n"
+        "  authoritative result.json, viz.json); ledger.jsonl and lenses/rounds/rNNN.* (rounds\n"
+        "  and confirm rows; lens save refuses the archive); ruled_out.jsonl, stops.jsonl;\n"
+        "  scripts/, analyses/, parallel/NNN/, scans/NNN/, runs/; lenses/scans/NNN/,\n"
+        "  lenses/global/NNN/, lenses/hammer/NNN/ (lenses for lens load),\n"
+        "  lenses/rounds/orphaned/ (failed attempts); report/ (index.html and latest.json are\n"
+        "  the latest); seals.jsonl (hashes of sealed files).", "JOB_NOT_FOUND"),
     "job verify": (
         "Check hashes of sealed evidence files against seals.jsonl locally.",
         "Returns intact and problems for modified/missing files; inspect intact even\n"
         "  when the command succeeds. Does not repair or rewrite evidence.", "JOB_NOT_FOUND"),
     "job cancel": (
         "Request cooperative cancellation by writing the job's cancel.request.",
-        "Works while the daemon is busy. OpticStudio optimizers receive Cancel;\n"
+        "Works while the daemon is busy. Optimizers stop at their next check;\n"
         "  scan/map workers finish their current points; scripts must check progress()\n"
         "  or cancel_requested(). Completed results remain archived.", "JOB_NOT_FOUND"),
     "lens import": (
@@ -167,7 +210,7 @@ COMMANDS = {
         "SRC is an external path; --as chooses the destination name, default source\n"
         "  name. Existing files require --overwrite. Load the imported lens to use it.", "FILE_NOT_FOUND, FILE_EXISTS, PATH_OUTSIDE_JOB"),
     "lens load": (
-        "Load FILE from this job's lenses/ into OpticStudio.",
+        "Load FILE from this job's lenses/ onto the backend the workflow stage uses.",
         "Unsaved agent changes require saving or --discard. Updates current lens\n"
         "  state and view.json for the workflow window.", "FILE_NOT_FOUND, UNSAVED_CHANGES, ZOS_LOAD_FAILED, PATH_OUTSIDE_JOB"),
     "lens unload": (
@@ -223,10 +266,12 @@ COMMANDS = {
         "Evaluate an optimization operand on the loaded job lens.",
         "TYPE is the operand name; --int1/--int2 and --d1 through --d6 supply its\n"
         "  parameters. Example: uv run saos lens operand --job J EFFL --int2 2.\n"
-        "  Returns the measured operand value; no evidence archive is written.", "BAD_ARGS, NO_LENS_LOADED, JOB_MISMATCH, ZOS_ERROR"),
+        "  Returns the measured operand value; no evidence archive is written.\n"
+        "  rtc computes the operands in: uv run saos exec --help rtc.", "BAD_ARGS, BACKEND_UNSUPPORTED, NO_LENS_LOADED, JOB_MISMATCH, ZOS_ERROR"),
     "lens analysis": (
-        "Run an OpticStudio analysis and export numeric and text results.",
-        "TYPE is an AnalysisIDM name; --list lists available types. --set KEY=VALUE\n"
+        "Run an analysis on the current backend and export numeric and text results.",
+        "TYPE is an AnalysisIDM name; --list lists the current backend's types (rtc has\n"
+        "  FftMtf only, shaped like OpticStudio's export and not reconciled). --set KEY=VALUE\n"
         "  uses settings object names; Field/Wavelength/Surface accept numbers or all,\n"
         "  enums use member names.\n"
         "  Writes analyses/NNN-TYPE.json and .txt; grids larger than 256x256 are reduced.\n"
@@ -236,6 +281,12 @@ COMMANDS = {
         "  No result object: ZOS_ERROR with details.kind=no_results and settings.", "BAD_ARGS, NO_LENS_LOADED, JOB_MISMATCH, ZOS_ERROR"),
     "lens build": ("Build and save a sequential, mixed-mode or pure non-sequential lens from Prescription JSON.", "", "BAD_ARGS, FILE_EXISTS, UNSAVED_CHANGES, ZOS_ERROR"),
     "exec": ("Execute a Python script defining run(ctx) inside the daemon on this job.", "", "SCRIPT_ERROR, UNSAVED_CHANGES, JOB_MISMATCH, ZOS_CONNECTION_LOST"),
+    "api": ("Read signatures and docstrings of the Python helpers scripts import, from the code; no daemon needed.",
+            "No target lists modules (saos.ctx.rows, saos.micro, saos.starts.patents, saos.search,\n"
+            "  saos.library, saos.kit ...). A module lists its functions and classes with the first\n"
+            "  paragraph of each docstring; a full path (saos.starts.patents.search) gives the\n"
+            "  whole docstring, with methods for a class. ctx lists the ctx methods and ctx.<name>\n"
+            "  gives one. Which to use when and what they cover: uv run saos exec --help.", "BAD_ARGS"),
     "scan": (
         "Scan, compare structures, minimize, probe or tolerance with the daemon's worker pool.",
         "Use --plan to execute, or --show [NNN] to read progress/results locally.\n"
@@ -247,7 +298,7 @@ COMMANDS = {
 }
 
 COMMANDS.update({
-    "opt vary": ('Make surface parameters or multi-configuration cells variable/fixed.', 'Use --param with --surfaces (1-16 or 1,3,5-7), --config-rows with\n  optional --configs (default all), or --param with --objects; these forms are\n  mutually exclusive. --objects varies non-sequential object position, tilt\n  or parameters (--param x/y/z/tilt_x/tilt_y/tilt_z/par<N>/column header) and\n  returns object_solves; in a mixed-mode lens --group names the NonSequential\n  surface holding them (optional when there is only one).\n  Configuration variables need at least 2 configurations and return\n  config_solves keyed by row.configuration. Only thickness may vary at object.\n  Material needs --mode: model varies nd/Vd (not deliverable); substitute lets\n  Hammer/global swap real glasses. --catalog selects one catalog per surface,\n  default installed SAOS_CDGM_INPROD, otherwise all catalogs in use;\n  SAOS_NHG_INPROD is another option. Catalog is added only after validation.\n  catalog reports the actual choice; outside_catalog warns about existing\n  glasses that substitution may replace. Use per-surface catalogs to preserve\n  manufacturers. Local optimization does not substitute glasses. --off fixes\n  variables (model glasses keep their current nd/Vd). Partial failures can leave\n  earlier surfaces modified and the lens dirty. Design constraints:\n  .agents/skills/saos/references/rounds.md.', 'BAD_ARGS, NO_LENS_LOADED, JOB_MISMATCH, ZOS_ERROR'),
+    "opt vary": ('Make surface parameters or multi-configuration cells variable/fixed.', 'Use --param with --surfaces (1-16 or 1,3,5-7), --config-rows with\n  optional --configs (default all), or --param with --objects; these forms are\n  mutually exclusive. --objects varies non-sequential object position, tilt\n  or parameters (--param x/y/z/tilt_x/tilt_y/tilt_z/par<N>/column header) and\n  returns object_solves; in a mixed-mode lens --group names the NonSequential\n  surface holding them (optional when there is only one).\n  Configuration variables need at least 2 configurations and return\n  config_solves keyed by row.configuration. Only thickness may vary at object.\n  Material needs --mode: model varies nd/Vd (not deliverable); substitute lets\n  Hammer/global swap real glasses. --catalog selects one catalog per surface,\n  default installed SAOS_CDGM_INPROD, otherwise all catalogs in use;\n  SAOS_NHG_INPROD is another option. Catalog is added only after validation.\n  catalog reports the actual choice; outside_catalog warns about existing\n  glasses that substitution may replace. Use per-surface catalogs to preserve\n  manufacturers. Local optimization does not substitute glasses. --off fixes\n  variables (model glasses keep their current nd/Vd). Partial failures can leave\n  earlier surfaces modified and the lens dirty.\n  Material variables and a stop\'s variable semi-diameter live in memory on rtc: set them\n  again after lens load. Substitution tries the 8 glasses of the catalog nearest in nd/Vd.\n  Read materials_changed: a maker\'s full catalog often yields discontinued glasses.', 'BAD_ARGS, NO_LENS_LOADED, JOB_MISMATCH, ZOS_ERROR'),
     "opt merit": ("Clear, build, add to, script or inspect the loaded lens's merit function.", "", "BAD_ARGS, FILE_NOT_FOUND, NO_LENS_LOADED, JOB_MISMATCH, ZOS_ERROR"),
     "demand show": (
         "Validate sources/demand.yaml and show its current version and confirmation.",
@@ -282,7 +333,7 @@ COMMANDS.update({
         "  --merit records a finite external objective instead of the lens merit.\n"
         "  record.backend names who computed the round. On an rtc instance rounds carry\n"
         "  backend rtc and provenance (paths and operands not reconciled with\n"
-        "  OpticStudio). --confirm [--of N], on an OpticStudio instance with no lens\n"
+        "  OpticStudio). --confirm [--of N], computed on OpticStudio with no lens\n"
         "  needed, re-measures rtc round N (default: the round saos report would\n"
         "  deliver) and appends a tier confirm record; reading the ledger puts its\n"
         "  numbers into round N (confirmed_by, rtc keeps the old ones). agrees is false\n"
@@ -399,13 +450,18 @@ Common errors
 
 for _name, _purpose, _details in (
     ("local", "Run local optimisation once the demand is confirmed (a model, once approved, must match).",
-     "Algorithms: auto/dls/od. Auto selects DLS for sequential systems, OD for NSC. Cycles: auto/1/5/10/50."),
+     "Algorithms: auto/dls/od. Auto selects DLS for sequential systems, OD for NSC; rtc has dls only and answers od with BACKEND_UNSUPPORTED. Cycles: auto/1/5/10/50; on rtc they count iterations and auto stops at convergence or 200. "
+     "On rtc boundary rows are exact constraints, not penalties: read constraints, violation.after and violated_after. A violated start takes damped restoration steps; "
+     "a start where a weighted row cannot be computed is refused with the failing rows. Cancellation or an exception restores the last accepted point."),
     ("hammer", "Run Hammer once the demand is confirmed (a model, once approved, must match).",
-     "Requires --max-seconds. Material substitution uses opt vary --param material --mode substitute."),
+     "Requires --max-seconds. Material substitution uses opt vary --param material --mode substitute. On rtc, hammer archives what it finds to lenses/hammer/NNN/; on OpticStudio it writes no files, so keep the result with lens save."),
     ("global", "Run global search once the demand is confirmed (a model, once approved, must match).",
-     "Requires --max-seconds. The ten best systems are archived under lenses/global/NNN/."),
+     "Requires --max-seconds. The ten best systems are archived under lenses/global/NNN/. Do not run it next to existing GLOPT_* files on OpticStudio."),
 ):
     if _name != "local":
+        _details += (" On rtc only solutions meeting every constraint compete, candidates after the first local run are tried in "
+                     "--cores worker processes, and the result lists checkpoints (every tenth of the budget, 1-60 s) and best_at_s; "
+                     "--rel R stops at a checkpoint whose best merit fell by less than R (stopped_by: stalled).")
         _details += (" Refused with BAD_ARGS while the lens in memory comes from a temporary copy (after ctx.restored() or an "
                      "expert run); lens save first.")
     COMMANDS[f"opt {_name}"] = (
@@ -417,7 +473,7 @@ for _name, _purpose, _details in (
         "DEMAND_NOT_CONFIRMED, MODEL_NOT_APPROVED, DEMAND_BLOCKED, BAD_ARGS, ZOS_ERROR",
     )
 
-MERIT_HELP_EPILOG = 'Input: wizard --file JSON object (all fields optional)\n  {\n    "type": "RMS", "data": "Wavefront", "reference": "Centroid",\n    "rings": 3, "arms": 6, "glass": [1, 10, 0.5], "air": [0.1, 20, 0.1],\n    "start_at": 1, "assume_axial_symmetry": true\n  }\n  type/data/reference match OpticStudio wizard choices, ignoring case/spaces;\n  invalid names report available choices. Defaults shown above, except glass\n  and air are disabled if omitted. Each is [minimum, maximum, edge] thickness\n  in lens units. arms is 6, 8 or 10; rings and start_at are integers from 1;\n  other keys are rejected. Folded, cylindrical and other non-rotationally\n  symmetric systems must use assume_axial_symmetry:false or the wizard samples\n  only half the pupil. Omitting --file uses defaults.\n\nInput: wizard --file for a non-sequential system (OpticStudio\'s NSC wizard)\n  {\n    "criterion": "Total Flux", "detector": 3, "source": "All",\n    "ray_sampling": "Low (1X)", "boundary": "Greater Than", "target": 1, "weight": 1\n  }\n  Keys: criterion (one of the wizard\'s 13, e.g. Total Flux, Spatial Uniformity,\n  RMS Spot Radius, X Centroid), detector (object number), source (All or object\n  number), ray_sampling (Low (1X) to 1024X), edge_sampling, boundary (Equal To,\n  Greater Than, Less Than), target, weight, configuration, start_at, overwrite,\n  minimum_flux, split, scatter, polarization, ignore_errors. Wrong names list\n  the choices. For add in NSC use NSTR to trace and NSDD to read detectors,\n  filling int1, int2 and data with their parameter columns.\n\nInput: add --file JSON operand list (--file required)\n  [\n    {"type": "EFFL", "int1": 0, "int2": 2, "data": [], "target": 50, "weight": 1},\n    {"type": "TOTR", "int1": 0, "int2": 0, "target": 100, "weight": 0.1}\n  ]\n  type is a MeritOperandType name (case-insensitive). int1/int2 default to 0;\n  data supplies remaining operand parameters (up to 8 columns total including\n  int1/int2). target defaults to 0, weight to 1. Rows insert in list order before the first\n  DMFS (at the end without one), so rebuilding the default function from DMFS\n  keeps them; later rows move down. The batch is read back and refused whole\n  when OpticStudio would change a value (e.g. a wavelength number out of range).\n  clear removes all rows; show reads rows and calculates the current merit.\n\nResults and files\n  Changes the in-memory merit function; use lens save to persist it. Returns\n  loaded lens state, merit and rows; no separate archive is written.\n\nCommon errors\n  BAD_ARGS (unknown operand/wizard choice), FILE_NOT_FOUND, NO_LENS_LOADED,\n  JOB_MISMATCH, ZOS_ERROR.\n'
+MERIT_HELP_EPILOG = 'Input: wizard --file JSON object (all fields optional)\n  {\n    "type": "RMS", "data": "Wavefront", "reference": "Centroid",\n    "rings": 3, "arms": 6, "glass": [1, 10, 0.5], "air": [0.1, 20, 0.1],\n    "start_at": 1, "assume_axial_symmetry": true\n  }\n  type/data/reference match OpticStudio wizard choices, ignoring case/spaces;\n  invalid names report available choices. Defaults shown above, except glass\n  and air are disabled if omitted. Each is [minimum, maximum, edge] thickness\n  in lens units. arms is 6, 8 or 10; rings and start_at are integers from 1;\n  other keys are rejected. Folded, cylindrical and other non-rotationally\n  symmetric systems must use assume_axial_symmetry:false or the wizard samples\n  only half the pupil. Omitting --file uses defaults.\n\nInput: wizard --file for a non-sequential system (OpticStudio\'s NSC wizard)\n  {\n    "criterion": "Total Flux", "detector": 3, "source": "All",\n    "ray_sampling": "Low (1X)", "boundary": "Greater Than", "target": 1, "weight": 1\n  }\n  Keys: criterion (one of the wizard\'s 13, e.g. Total Flux, Spatial Uniformity,\n  RMS Spot Radius, X Centroid), detector (object number), source (All or object\n  number), ray_sampling (Low (1X) to 1024X), edge_sampling, boundary (Equal To,\n  Greater Than, Less Than), target, weight, configuration, start_at, overwrite,\n  minimum_flux, split, scatter, polarization, ignore_errors. Wrong names list\n  the choices. For add in NSC use NSTR to trace and NSDD to read detectors,\n  filling int1, int2 and data with their parameter columns.\n\nInput: add --file JSON operand list (--file required)\n  [\n    {"type": "EFFL", "int1": 0, "int2": 2, "data": [], "target": 50, "weight": 1},\n    {"type": "TOTR", "int1": 0, "int2": 0, "target": 100, "weight": 0.1}\n  ]\n  type is a MeritOperandType name (case-insensitive). int1/int2 default to 0;\n  data supplies remaining operand parameters (up to 8 columns total including\n  int1/int2). target defaults to 0, weight to 1. Rows insert in list order before the first\n  DMFS (at the end without one), so rebuilding the default function from DMFS\n  keeps them; later rows move down. The batch is read back and refused whole\n  when OpticStudio would change a value (e.g. a wavelength number out of range).\n  clear removes all rows; show reads rows and calculates the current merit.\n\nOn rtc\n  Row format and merit value as on OpticStudio, saved in the .zmx. A batch with an\n  operand outside this list is refused whole and the merit function stays as it was:\n  <RTC_MERIT_OPERANDS>\n  TRAR/TRAX/TRAY/TRAC/TRCX/TRCY and OPDC/OPDX/OPDM take Int1 0 and one wavelength.\n  Rebuild a merit function that uses refused operands with opt merit wizard and\n  ctx.merit_add. The wizard is RMS only with Gaussian quadrature; start_at keeps the\n  rows before it; wavefront data refuses mirrors, so use SpotRadius on a reflective form.\n  Spot and wavefront rows refer to each wavelength\'s own chief ray or centroid, so lateral\n  colour does not enter them; add DIFF rows of REAY between wavelengths.\n  air and glass bounds run from surface 1 to the one before the image, so air max also\n  bounds the back focal distance. Edge rows measure at the semi-diameter, not at the part\n  edges parts_clash uses.\n  On several configurations the wizard writes one group per configuration after a CONF\n  row. opt vary --param marks the current configuration\'s cell; a cell following another\n  configuration refuses it; opt vary --config-rows R --configs C names cells directly.\n\nResults and files\n  Changes the in-memory merit function; use lens save to persist it. Returns\n  loaded lens state, merit and rows; no separate archive is written.\n\nCommon errors\n  BAD_ARGS (unknown operand/wizard choice), FILE_NOT_FOUND, NO_LENS_LOADED,\n  JOB_MISMATCH, ZOS_ERROR.\n'
 
 EXEC_HELP_EPILOG = """Input: a Python script defining run(ctx)
   def run(ctx):
@@ -430,23 +486,20 @@ EXEC_HELP_EPILOG = """Input: a Python script defining run(ctx)
   --args-file is a JSON object. Repeated --arg KEY=VALUE overrides its keys;
   VALUE is parsed as JSON or retained as text. --name selects the archive label.
   Requires the job's lens when the script uses optical operations. Always use
-  ctx.load/save_as rather than raw ZOS-API file operations to track lens state.
+  ctx.load/save_as so the daemon tracks the lens state. Change the lens only through
+  ctx; underscore members of ctx.backend and optimiser internals skip the step gate,
+  the review and the unsaved-lens bookkeeping.
 
 Context and file operations
-  ctx.system: PrimarySystem; ctx.zosapi: ZOSAPI namespace; ctx.backend: backend.
-  Editing: ctx.merit_add(rows) (ordered, before DMFS, id/ref rows; saos.ctx.rows
-    builds thickness, sag-gap and NA-proxy rows), ctx.solve(key, kind, ...),
-    ctx.insert_surface(i, type, **values), ctx.change_surface_type(ref, type).
-  Experts (sequential; several configurations on the rtc instance only, with a merit
-    function covering each): ctx.GlassExpert(surfaces | "model",
-    catalogs=..., partial="working"|"gF").run() / .candidates(s);
-    ctx.AsphereExpert(surfaces, terms=4, engine="opticstudio"|"rtc").rank() /
-    .run(nas); engine="rtc" ranks by ray errors in an rtc copy, acceptance stays
-    on the MFE. They keep the lens in memory only: save with ctx.save_as(name);
-    asphere run changes structure.
+  ctx.backend: the backend computing now. On OpticStudio only: ctx.system
+    (PrimarySystem), ctx.zosapi (ZOSAPI namespace); on rtc they raise, see topic rtc.
+  ctx.info(): the system settings (on OpticStudio with the catalogs in use).
+  ctx.surface_params(surface): the surface type's parameter columns (par, name, value,
+    read_only).
   ctx.job, ctx.args, ctx.lens (Path or None), ctx.dirty.
   ctx.path(rel): path contained in the job; ctx.mark_dirty(): record edits.
-  ctx.load(name), ctx.save_as(name, overwrite=False): names relative to lenses/.
+  ctx.load(name), ctx.save_as(name, overwrite=False): names relative to lenses/. load
+    replaces the current lens without an unsaved-changes prompt: save first.
   ctx.show(): push geometry/Lens Data/interference to the workflow window now;
     ctx.progress and the end of every command push it on their own.
   ctx.progress(stage, **numbers): report progress and refresh the window's current
@@ -490,24 +543,29 @@ Parameters (also available on worker w)
     without starting it). housing_tce in 1e-6/K. Scripts only, not checks.
 
 Sequential rays, analyses and focus
-  ctx.trace(rays, to=None): rays are (wave,hx,hy,px,py) tuples. Returns numpy arrays
-    x,y,z,l,m,n,error,vignette,intensity and mask ok. Coordinates are target-local;
+  ctx.trace(rays, to=None): rays are (wave,hx,hy,px,py) tuples. Returns a Rays object
+    with numpy-array attributes x,y,z,l,m,n,error,vignette,intensity and mask ok (t.x, t.ok). Coordinates are target-local;
     kit.global_matrix(ctx, surface) supplies rotation/translation to global.
-    Measured cost on this machine: about 20 microseconds/ray (pythonnet calls).
   ctx.spot(fields=((0,0),), wave=None, grid=21, to=None, refocus=False, min_rays=3):
     per-field/per-wave pass rate, chief intercept, centroid, RMS and geometric
     radius about centroid. refocus adds best shift along local target z and RMS,
     extrapolating straight rays (requires uniform medium beyond target).
     Afocal systems reject an implicit image-plane target: use direction cosines,
     afocal operands/analyses or an explicit finite target instead.
-  ctx.op(name, int1=0, int2=0, *data): any optimization operand.
+  ctx.op(name, int1=0, int2=0, *data): an optimization operand; rtc computes the ones
+    in topic rtc and raises BACKEND_UNSUPPORTED for others.
   ctx.analysis(name, settings=None): exported numeric data without files; status
     ok/partial/empty, problems and text_head when incomplete. Inspect these before
-    rerunning. ctx.quick_focus(): OpticStudio quick focus.
+    rerunning: they tell a model without a result from an interface limit.
+  ctx.quick_focus(): quick focus (rtc: smallest RMS spot over fields and wavelengths).
+  ctx.clearances(glass=True|False|None): smallest glass thicknesses and air gaps out to
+    the part edges; ctx.part_radii(): {surface: edge radius}; ctx.parts_clash(). They use
+    the part edges of the interference check that blocks rounds and delivery.
   with ctx.huygens(wave=None, pupil=64, image=128) as h: h.psf(field, delta_um)
     returns kit.Psf (values[y][x] unnormalised, dx/dy in um) or None; field is a
     field number or (x, y) in field units, added for the session only. Keep focus
-    scans and field sweeps in one session (each session opens an analysis window).
+    scans and field sweeps in one session (each session opens an analysis window on
+    OpticStudio, and a few hundred crashed it).
     kit.psf_widths(p, n_photon=1, ee=0.8): fwhm_x/fwhm_y through the peak and
     ee_diameter about the centroid. kit.psf_axial(peak_at, step_um, reaches=(15, 30),
     n_photon=1, scan="window"): peak_at(k) gives the peak k steps out of focus (move
@@ -519,7 +577,8 @@ Sequential rays, analyses and focus
     ctx.aperture(surface): the surface aperture. rtc: huygens and wavefront_rms
     are BACKEND_UNSUPPORTED until reconciled with OpticStudio.
   from saos import kit: global_matrix, sag, pupil, best_focus, material_nd
-    (model glass uses its solve's nd), profile, fwhm. Optical evaluations use ZOS-API.
+    (model glass uses its solve's nd), profile, fwhm. Optical evaluations go through
+    the current backend.
   from saos import micro: micro-optics measurements (focus depth in a medium,
     marginal NA, part gaps and housing clearance, collection, PSF widths, zoom
     travel); DesignFailure means inf through micro.guarded. Definitions are in
@@ -589,8 +648,9 @@ Parallel work
     unchanged. w exposes the kit methods, measure,args,path,job,worker,reload,cache;
     its cache is fresh per item.
   Persistent pool on the backend the daemon computes on (closed when it switches):
-    OpticStudio workers start in about 6-8 s/instance, reused until idle for
-    SAOS_POOL_IDLE_S (default 600). ctx.pool_close() releases licences immediately.
+    workers are reused until idle for SAOS_POOL_IDLE_S (default 600);
+    ctx.pool_close() closes them at once. OpticStudio workers start in about
+    6-8 s/instance and each holds a licence.
     Workers run below normal priority. workers defaults to 4, capped by available
     cores. Licence limit is 8 total including user windows and daemon; inspect
     uv run saos daemon status first. Refused sizes are not retried until pool closes.
@@ -599,7 +659,7 @@ Parallel work
     and results are sealed in parallel/NNN/. job cancel waits for current items.
     The pool serves one scan or map at a time (POOL_BUSY).
 
-Search control (from saos import search; evaluations still use ZOS-API)
+Search control (from saos import search; evaluations still go through ctx)
   search.grid(axes): Cartesian parameter grid.
   search.root(f,lo,hi,target=0,scan=9,xtol=None): scan then Brent; skip None/inf.
   search.minimize(f,start,step,bounds=None,method="nelder-mead",max_evals=200,
@@ -618,6 +678,136 @@ Common errors
   ZOS_CONNECTION_LOST instead ends the daemon; restart after inspecting evidence.
   VALUE_NOT_APPLIED, PATH_OUTSIDE_JOB, UNSAVED_CHANGES, JOB_MISMATCH, POOL_BUSY,
   BUSY, DAEMON_TIMEOUT (client wait ended; computation may continue).
+
+Editing the lens from a script
+  solve, merit_add and merit_clear are on worker contexts w too, so prepare(w) scripts
+  use the same calls; use ctx.system only for what they do not cover. A new surface or
+  type changes the structure, which the round gate compares with the approved model.
+  Check scripts cannot call these methods.
+  ctx.merit_add(rows): inserts in order before the first DMFS (at the end without one)
+    and returns row numbers. A row has type, params (or int1/int2/data), target, weight;
+    id and {"ref": id} refer to an earlier row of the batch. Loads as one merit file and
+    is read back: 1501 rows take about 65 ms instead of 9.8 s row by row, and a value
+    OpticStudio would silently change refuses the batch and leaves the merit function
+    as it was. Rows after the insertion point move down. ctx.merit_clear(): all rows.
+  saos.ctx.rows builds common constraints:
+    thickness_bounds(s, minimum=, maximum=) (CTGT/CTLT);
+    sag_gap(front, front + 1, [(x, y), ...], minimum=): front thickness + back sag -
+      front sag at each point; holds only at those points, adjacent coaxial surfaces;
+    na_proxy(surface, wave, index=, target=, minimum=): RAGA/RAGB direction cosine of the
+      axial marginal ray scaled by a fixed index; a proxy, not the NA check.
+    Design rules, native operands so DLS and Hammer keep them; each threshold is yours to
+    source; each reads its target while met, and rtc refuses distortion and ray_bend:
+    clearances(first, last, glass_center=(min, max), glass_edge=, air_center=, air_edge=);
+    total_track(minimum=, maximum=); distortion(wave, [hy, ...], maximum=, reference_field=1)
+      (DISG in percent, both signs; field 1 must be on axis, else pass the on-axis field);
+    chief_ray_angle(image, wave, [hy, ...], maximum=) (RAID, degrees);
+    ray_bend([surfaces], wave, [(hx, hy, px, py), ...], maximum=) (|RAID - RAED|, degrees).
+    They constrain the sampled points only; the demand checks still judge.
+  ctx.solve("5.thickness", "marginal_ray_height", height=0, zone=0): one cell's solve,
+    returned read back: fixed, variable, pickup(surface, scale=1, offset=0),
+    marginal_ray_height on thicknesses, f_number(value) on radii. rtc: fixed, variable.
+  ctx.insert_surface(3, "EvenAspheric", radius=-40, thickness=2): before the image,
+    values set as ctx.set does. ctx.change_surface_type(3, "Standard"): OpticStudio
+    SurfaceType names, any case; rtc: Standard and EvenAspheric.
+  Example:
+    from saos.ctx import rows
+    def run(ctx):
+        ctx.solve("4.thickness", "marginal_ray_height")
+        added = ctx.merit_add([
+            {"id": "efl", "type": "EFFL", "params": [0, 1], "target": 50, "weight": 1},
+            {"type": "OPGT", "params": [{"ref": "efl"}], "target": 45, "weight": 10},
+            *rows.thickness_bounds(1, minimum=3, maximum=7),
+            *rows.sag_gap(1, 2, [(r, 0) for r in (0, 2, 4, 6)], minimum=0.5, weight=100)])
+        return {"rows": added}
+  exec adds hints to its result and archive when a script reaches a surface through
+  ctx.system.LDE.GetSurfaceAt(n) that ctx.get/ctx.set cover; it never refuses a script.
+
+Expert search classes (saos.ctx.experts)
+  Work on the current backend and worker contexts, not on rtc copies or in checks;
+  non-sequential and mixed-mode lenses are BACKEND_UNSUPPORTED, and so are several
+  configurations on OpticStudio. On several configurations on rtc they start from the
+  configuration the others follow, the merit function must cover every configuration
+  (BAD_ARGS otherwise; the wizard's does) and a surface whose glass changes between
+  configurations refuses. Algorithms and limits: docs/plans/optical-experts.md.
+  ctx.AsphereExpert([1, 3, 5], terms=4, max_seconds=60).rank() ranks surfaces and restores
+    the lens; .run(nas=2) converts and optimises the best, reranking after each, and
+    changes the structure. The residual comes from the merit rows (pass residual(ctx) when
+    positive-weight contributions do not add up to 100 %). engine="opticstudio" (the
+    default, named for the method: merit rows on the current backend) or engine="rtc"
+    (ranks by ray errors in an rtc copy; acceptance stays on the merit function). Other
+    surface types need an AsphereProfile, finite slope limits a
+    constraints(ctx, surface, limit_waves) provider.
+  ctx.GlassExpert([1, 3], catalogs=["SAOS_CDGM_INPROD"], neighbors=7, partial="working"|"gF",
+    max_seconds=120).run() searches glass by glass; surfaces="model" takes every
+    model-glass surface, including an approved environment medium modelled that way, so
+    before delivery pass the surfaces a round's model_glass lists instead.
+    .candidates(surface) lists candidates without changing the lens. Cost, transmission,
+    weight and expansion filters exist only through your feasible(ctx, surface);
+    candidate_filter narrows the list.
+  Neither saves the lens or records a round. Keep a result with ctx.save_as(name) or
+  saos lens save, never system.Save(): their temporary snapshots move OpticStudio's
+  SystemFile, and opt hammer/global refuse until the lens is saved.
+
+The rtc instance
+  When the daemon computes on rtc, ctx is rtc. lens build takes Standard, Paraxial,
+  EvenAspheric, Biconic and Toroidal surfaces, EPD or object-space NA, angle or
+  object-height fields, infinite or finite objects, circular apertures, variables and
+  marginal-ray-height thickness solves, Standard mirrors and coaxial reflective forms;
+  the rest comes back as one BACKEND_UNSUPPORTED. A change recomputes solves and
+  automatic semi-diameters (the object surface keeps its file value). lens save writes
+  an OpticStudio .zmx.
+  ctx.op and opt merit: REAX|Y|Z etc. take Int1 surface, Int2 wavelength, data Hx, Hy, Px, Py.
+    Computed: <RTC_OPERANDS>
+  Works as on OpticStudio: ctx.trace, spot, cra, field_profile, set, get, kept; ctx.quick_focus
+    is smallest RMS spot over every field and wavelength. ctx.merit_add, ctx.change_surface_type
+    (Standard, EvenAspheric) and ctx.solve with fixed or variable work; other solves refuse.
+  ctx.analysis("FftMtf", {...}) is the one analysis, not yet reconciled.
+  ctx.huygens, ctx.wavefront_rms are BACKEND_UNSUPPORTED until rtc's PSF is reconciled;
+    a check using them is filed under backend_unsupported. So is one using ctx.system or
+    ctx.zosapi: read the lens through ctx.get, ctx.op (SSAG, INDX, ...) and ctx.trace.
+  Every exec result carries computed_by: the backend, the operands used that rtc has not
+    reconciled with OpticStudio, and the unreconciled paths this lens takes.
+  EXPP and EXPD are paraxial on rtc while OpticStudio uses small-field real rays; on the
+    lenses measured they differ by up to 0.83 %, largest with strong surfaces. PETZ is a
+    radius and reads 0 when every field is on axis.
+
+The rtc copy (ctx.fast, while the daemon computes on OpticStudio)
+  fast = ctx.fast(freeze_solves=False) (w.fast() in a worker) is an in-memory copy of the
+  current lens, unsaved changes included, traced by rtc in float64. It has set, get, values,
+  kept, trace, spot, cra, field_profile and configuration; operands, analyses, measure and
+  checks are not there. Refused on the rtc instance and in check scripts. First trace after
+  rtc's code changes compiles (about 6 s, once), later processes load from cache (about 1 s).
+  Example:
+    from saos import search
+    def run(ctx):
+        fast = ctx.fast(freeze_solves=True)
+        steps = {"2.radius": 0.5, "3.radius": 1.0, "3.thickness": 0.2}
+        def worst_rms(x):
+            fast.set(x)
+            rows = fast.spot([(0, 0), (0, 0.7), (0, 1)], wave=[1, 2, 3], grid=15, refocus=True)
+            values = [r.get("rms_radius_best") for r in rows]
+            return None if None in values else max(values)
+        found = search.minimize(worst_rms, fast.values(steps), steps, max_seconds=60,
+                                should_stop=ctx.cancel_requested)
+        fast.set(found["best"])
+        fast.push(ctx)
+        return {"built": fast.agreement, "rtc": found["best_f"], "opticstudio": ctx.measure(["spot"])}
+  Build check: every parameter and medium index at every wavelength, then the chief ray and
+    a 5x5 pupil at every field and wavelength; a one-sided ray or a difference beyond 1e-6 mm
+    or 1e-7 in direction raises VERIFY_FAILED. fast.agreement keeps it;
+    fast.compare(ctx, fields, wave, grid) repeats it after push.
+  Refusals: a lens or change outside its reach raises BACKEND_UNSUPPORTED naming the item and
+    leaves the copy as it was. Materials follow src/saos/backend/rtc_admitted.json; others only
+    at the wavelengths whose INDX matched at build. Unknown glass or invalid nd/vd: BAD_ARGS.
+  Solves stay at their saved values. While the lens has one, changes refuse;
+    freeze_solves=True keeps saved values, fast.held lists them, writing one raises
+    VALUE_NOT_APPLIED.
+  fast.push(ctx) writes every parameter changed through fast.set to the OpticStudio lens.
+    check and round then warn until an OpticStudio optimisation completes.
+  Material keys: material, nd, vd, dpgf. Writing nd, vd or dpgf of a catalog glass makes a model
+    glass (dPgF 0); fast.kept(["1.material"]) restores the catalog glass. A model glass reads
+    back as {"nd", "vd", "dpgf"} and push writes it whole.
 """
 
 DESCRIBE_HELP_EPILOG = """Input: --notes JSON object (optional)
@@ -724,16 +914,65 @@ ARGUMENT_HELP = {
 ARGUMENT_HELP.update({f"d{i}": f"operand data parameter {i} (default: %(default)s)" for i in range(1, 7)})
 
 
+# 大帮助页按段拆成主题：--help 只给概览和主题表，段标题前缀 → 主题名 / topic name -> heading prefix
+TOPICS = {
+    "exec": {"params": "Parameters", "measure": "Sequential rays", "extrema": "Extrema", "checks": "Demand checks",
+             "edit": "Editing the lens", "experts": "Expert search", "rtc": "The rtc instance", "fast": "The rtc copy",
+             "nsc": "Non-sequential", "parallel": "Parallel work", "search": "Search control"},
+    "lens build": {"system": "System fields", "surfaces": "Surfaces and image", "config": "Configurations", "nsc": "Non-sequential"},
+    "scan": {"keys": "Parameter keys", "grid": "Grid", "candidates": "Structure candidates", "minimize": "Multi-start",
+             "probes": "Perturbation", "tolerance": "Tolerance", "common": "Common optional"},
+}
+
+
+def _operands(text: str) -> str:
+    """操作数表从 rtc 的常量生成，帮助不会和代码分叉。/ Operand lists come from rtc's constants, so help cannot drift from the code."""
+    if "<RTC_" not in text:
+        return text
+    from saos.backend import rtc, rtc_merit
+
+    computed = sorted(rtc.RAY_OPERANDS | rtc.SYSTEM_OPERANDS)
+    merit = sorted(rtc_merit.merit_operands() - rtc_merit.INERT)
+    return text.replace("<RTC_OPERANDS>", ", ".join(computed)).replace("<RTC_MERIT_OPERANDS>", ", ".join(merit))
+
+
+def _formats() -> dict[str, str]:
+    from saos import prescription, scan
+
+    return {"lens build": prescription.HELP_EPILOG, "scan": scan.HELP_EPILOG, "exec": EXEC_HELP_EPILOG,
+            "lens describe": DESCRIBE_HELP_EPILOG, "opt merit": MERIT_HELP_EPILOG}
+
+
+def _sections(text: str) -> list[str]:
+    """按顶格行切段。/ Split at lines that start in column 0."""
+    parts: list[list[str]] = []
+    for line in text.strip("\n").split("\n"):
+        if line and not line[0].isspace() or not parts:
+            parts.append([])
+        parts[-1].append(line)
+    return ["\n".join(part).rstrip() for part in parts]
+
+
+def topic_help(key: str, topic: str | None = None) -> str:
+    """topic 为 None：概览加主题表；all：全部；否则该主题。未知主题抛 KeyError。
+    None gives the overview with the topic table, all gives everything, otherwise that topic."""
+    text = _operands(_formats()[key])
+    if topic == "all":
+        return text
+    named = {slug: next(s for s in _sections(text) if s.startswith(prefix)) for slug, prefix in TOPICS[key].items()}
+    if topic is not None:
+        return named[topic] + "\n"
+    rest = [s for s in _sections(text) if s not in named.values()]
+    table = "\n".join(f"  {slug:<12}{body.split(chr(10), 1)[0].rstrip(':')}" for slug, body in named.items())
+    return "\n\n".join([*rest, f"Topics: uv run saos {key} --help <topic>, or all\n{table}"]) + "\n"
+
+
 def configure(parser, path: str = "", *, commands=None, groups=None) -> None:
     if commands is None:
         commands = COMMANDS
     if groups is None:
         groups = GROUPS
-    from saos import prescription, scan
-
-    formats = {"lens build": prescription.HELP_EPILOG, "scan": scan.HELP_EPILOG,
-               "exec": EXEC_HELP_EPILOG, "lens describe": DESCRIBE_HELP_EPILOG,
-               "opt merit": MERIT_HELP_EPILOG}
+    formats = _formats()
 
     def visit(current, key):
         current.formatter_class = argparse.RawDescriptionHelpFormatter
@@ -747,8 +986,10 @@ def configure(parser, path: str = "", *, commands=None, groups=None) -> None:
             current.description = "Purpose and prerequisites\n  " + purpose
             if key == "scan":
                 current.description += "\n  " + details
-            if key in formats:
-                current.epilog = formats[key]
+            if key in TOPICS:
+                current.epilog = topic_help(key)
+            elif key in formats:
+                current.epilog = _operands(formats[key])
             elif key in ("opt local", "opt hammer", "opt global"):
                 current.epilog = "Prerequisites and operation\n  " + details
             else:

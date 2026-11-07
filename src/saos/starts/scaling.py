@@ -117,6 +117,7 @@ def scale_surface(surface: dict[str, Any], factor: float) -> dict[str, Any]:
 
 
 def scale_prescription(data: dict[str, Any], factor: float) -> dict[str, Any]:
+    """Scale a single-configuration sequential prescription by factor. / 把单配置序列处方按倍率缩放。"""
     factor = _factor(factor)
     data = _mapping(data, "处方")
     if data.get("mode", "sequential") != "sequential" or data.get("configurations"):

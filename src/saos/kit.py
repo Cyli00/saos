@@ -238,10 +238,12 @@ def analysis(ctx, name: str, settings: dict[str, Any] | None = None) -> dict[str
 
 
 def quick_focus(ctx) -> dict[str, Any]:
+    """Quick focus on the current backend (rtc: smallest RMS spot). / 当前后端的快速调焦。"""
     return ctx.backend.quick_focus()
 
 
 def primary_wave(ctx) -> int:
+    """The primary wavelength number. / 主波长序号。"""
     return ctx.backend.primary_wave()
 
 
@@ -505,9 +507,9 @@ def spread(x: np.ndarray, y: np.ndarray) -> dict[str, Any]:
 
 def best_focus(rays: Rays) -> float | None:
     """沿目标面局部 z 平移多少时弥散斑 RMS 最小（闭式解）。前提：目标面之后是均匀介质，光线是直线；
-    这只是把 OpticStudio 追迹出的位置和方向沿直线外推，不是追迹。
+    这只是把后端追迹出的位置和方向沿直线外推，不是追迹。
     The shift along the target surface's local z that minimises the RMS spot (closed form). Precondition: a homogeneous
-    medium after the target surface, so rays are straight; this extrapolates OpticStudio's traced rays, it traces nothing."""
+    medium after the target surface, so rays are straight; this extrapolates the backend's traced rays, it traces nothing."""
     good = rays.ok & (np.abs(rays.n) > 1e-12)
     return focus_shift(rays.x[good], rays.y[good], rays.l[good] / rays.n[good], rays.m[good] / rays.n[good])
 

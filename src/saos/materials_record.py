@@ -38,6 +38,7 @@ def _bad(message: str) -> SaosError:
 
 
 def validate(data: Any) -> dict[str, Any]:
+    """校验 materials.yaml 的内容，不合格抛 BAD_ARGS。/ Validate the record's content; BAD_ARGS when it is malformed."""
     if not isinstance(data, dict) or data.get("schema") != 1:
         raise _bad("must be a mapping with schema: 1")
     sources = data.get("sources") or {}

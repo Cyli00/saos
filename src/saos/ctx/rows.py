@@ -58,6 +58,7 @@ def compile_rows(rows, start):
 
 
 def thickness_bounds(surface, *, minimum=None, maximum=None, weight=1):
+    """CTGT/CTLT rows bounding the centre thickness of a surface. / 中心厚度上下限（CTGT/CTLT）。"""
     integer(surface, "surface")
     number(weight, "weight", nonnegative=True)
     if minimum is None and maximum is None:

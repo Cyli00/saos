@@ -83,6 +83,8 @@ def candidate_window(glasses, n, v, neighbors=7, *, special=(), feasibility_phas
 
 
 class GlassExpert:
+    """Searches glass by glass among in-production neighbours. Usage and limits: saos exec --help experts. / 逐片搜索在产近邻玻璃。"""
+
     def __init__(self, ctx, surfaces, *, catalogs=None, directory=None, materials=None,
                  coordinate_wavelengths_um=None, coordinates=None, optimizer=None, feasible=None,
                  candidate_filter=None, element_power=None, substitute=None, neighbors=7,

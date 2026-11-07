@@ -81,6 +81,8 @@ def _focus_column(lens, surface, config):
 
 
 class AsphereExpert:
+    """Ranks which surfaces earn an asphere and converts the best. Usage and limits: saos exec --help experts. / 排出最值得做非球面的面并转换。"""
+
     def __init__(self, ctx, surfaces, *, terms=4, profile=None, residual=None, optimizer=None,
                  slope_limit_waves=None, wavelength_um=None, slope_vector=None, constraints=None,
                  feasible=None, candidate_filter=None, single_sided=True, allow_successive=True,

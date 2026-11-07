@@ -172,7 +172,12 @@ def search(*, half_field_deg: float | None = None, f_number: float | None = None
            ttl_over_efl_max: float | None = None, bfl_over_efl_min: float | None = None, signs: str | None = None,
            country: str | None = None, allow_extrapolation: bool = False, limit: int = 20,
            root: Path | None = None) -> dict[str, Any]:
-    """按规格检索。半视场、f/#、波段与原例比较：原例覆盖需求的排前面，越接近需求越靠前，再按片数少的优先。
+    """Search 2456 patent examples by specification; library/patents/README.md lists filters, tags and conversion rules.
+
+    signs is a regular expression over the power signs (^\\+-\\+$ for a positive-negative-positive triplet). Pass chosen ids to generate(..., patents=[...]). Zoom lenses are taken one position at a time (or01401-p2), and _SPECIAL or
+    private glasses need an explicit materials mapping, never a substitute. Glass codes (nnnnnn.vvvvvv) become model glasses.
+
+    按规格检索。半视场、f/#、波段与原例比较：原例覆盖需求的排前面，越接近需求越靠前，再按片数少的优先。
     变焦镜头（zoom=True）逐个位置比较，结果给出最接近的位置。返回 {"candidates", "excluded", "total"}，excluded 是各原因的条数。"""
     if conjugate not in ("infinite", "finite", "afocal"):
         raise _bad("conjugate 取 infinite、finite 或 afocal")

@@ -102,7 +102,17 @@ def query(targets: dict, *, root: Path | None = None, conjugate: str = "infinite
 def generate(job: jobs.Job, bindings: dict, *, short_seconds: float, prepare: str,
              root: Path | None = None, conjugate: str = "infinite", allow_extrapolation: bool = False, backend_factory=None,
              patents: list | None = None, patents_root: Path | None = None) -> dict[str, Any]:
-    """patents 给出时候选改为这些专利库条目（ID 或 {id, materials, allow_unrecognized}，先用 patents.search 挑选），不读起点库。"""
+    """Generate starts from the library, or from patents when given, scaled to the demand; files go to explore/starts/NNN/.
+
+    bindings map efl_mm, half_field_deg, f_number and wavelengths_um to demand item ids. prepare is required: generated
+    prescriptions have no merit function, so the script sets variables and merit. An empty value is BAD_ARGS, and a script
+    that fails or leaves the merit empty is a configuration error before screening. If strict selection finds nothing,
+    allow_extrapolation=True permits exploratory starts outside the example field, f-number or band: every exceeded condition
+    is kept in the plan and model page, the demand, source limits and material range checks do not change, and different
+    conjugates stay excluded. library/starts/README.md has sources, units and limits.
+
+    patents 给出时候选改为这些专利库条目（ID 或 {id, materials, allow_unrecognized}，先用 patents.search 挑选），不读起点库。
+    """
     if isinstance(short_seconds, bool) or not isinstance(short_seconds, (int, float)) or not math.isfinite(short_seconds) or short_seconds <= 0:
         raise SaosError(ErrorCode.BAD_ARGS, "短优化预算必须为有限正秒数")
     if not isinstance(prepare, str) or not prepare.strip():
@@ -234,6 +244,7 @@ def generate(job: jobs.Job, bindings: dict, *, short_seconds: float, prepare: st
 
 
 def screen(ctx, generated: dict, *, workers: int | None = None) -> dict:
+    """Run all candidates of generate() without optimisation before the shared short stage. / 先不优化跑一遍全部候选。"""
     from saos import scan
     if not generated.get("screen_plan") or not generated.get("short_plan"):
         raise SaosError(ErrorCode.BAD_ARGS, "没有可初筛的候选，查看 generated.json 的排除与未评估原因")

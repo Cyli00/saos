@@ -2,7 +2,9 @@
 
 - 技能（SKILL.md 与 references）、DESIGN.md、各级命令帮助和 workflow.drawio 中出现的命令都存在于命令行；
   已删除的命令只能以历史说明出现。
-- 反向：使用 saos 的 agent 能调用的命令和 Python 接口都写进技能文档，或显式列为内部接口（INTERNAL）。
+- 反向：使用 saos 的 agent 能调用的命令和 Python 接口都查得到：写在命令帮助或技能里，或能经 saos api 读到 docstring，
+  否则显式列为内部接口（INTERNAL、api_help.HIDDEN）。技能文档只放判断，接口说明放帮助（DESIGN.md）。
+- 技能里的链接和帮助主题都指向存在的东西。
 - workflow.drawio 能被 draw.io 官方查看器渲染（默认跳过，需要 Chrome 和网络：SAOS_RENDER_DRAWIO=1 uv run pytest tests/test_docs_sync.py -s，
   打印出 PNG 路径，供人看图核对）。
 """
@@ -10,11 +12,9 @@
 from __future__ import annotations
 
 import html
-import importlib
 import inspect
 import json
 import os
-import pkgutil
 import re
 import shutil
 import subprocess
@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from saos import cli, config
+from saos import api_help, cli, cli_help, config
 
 ROOT = config.REPO_ROOT
 DOCS = ("DESIGN.md", *sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / ".agents" / "skills" / "saos").rglob("*.md")))
@@ -33,32 +33,8 @@ REMOVED = {"probe", "reverify"}
 HISTORY_MARKS = ("原", "并入", "取消", "旧", "removed", "folded", "former")
 SKILL_DOCS = tuple(name for name in DOCS if name.startswith(".agents/"))
 # agent 脚本里直接调用的 Python 包；包内新增的子模块自动纳入核对
-AGENT_PACKAGES = ("saos.ctx", "saos.starts", "saos.search", "saos.micro", "saos.library")
-# 有意不写进技能的接口：内部辅助、只靠命令帮助说明的命令。新增接口要么写进技能文档，要么加在这里
-INTERNAL = {
-    "saos.library.root",
-    "ctx.analysis", "ctx.child", "ctx.configurations", "ctx.describe", "ctx.detector", "ctx.dirty", "ctx.lens", "ctx.lib", "ctx.mark_dirty",
-    "ctx.memo", "ctx.nsc_trace", "ctx.object_index", "ctx.objects", "ctx.op", "ctx.path", "ctx.quick_focus", "ctx.ray_hits", "ctx.save_as",
-    "ctx.show", "ctx.spot", "ctx.surface", "ctx.trace", "ctx.values", "ctx.zosapi",
-    "saos daemon run", "saos job list", "saos lens analysis", "saos lens info", "saos lens operand",
-    "saos lens surfaces", "saos lens unload", "saos ui serve",
-    "saos.ctx.experts.ExpertMethods", "saos.ctx.experts.asphere.mfe_residual", "saos.ctx.experts.asphere.topology",
-    "saos.ctx.experts.glass.GlassCandidate", "saos.ctx.experts.glass.candidate_window", "saos.ctx.experts.glass.special_glasses",
-    "saos.ctx.experts.ranking.SurfaceSensitivity", "saos.ctx.experts.ranking.usable_fraction",
-    "saos.ctx.hints.direct_api_hints",
-    "saos.ctx.rows.compile_rows", "saos.ctx.rows.integer", "saos.ctx.rows.number",
-    "saos.search.Budget", "saos.search.Stop", "saos.search.axis", "saos.search.ranked",
-    "saos.starts.generate.query", "saos.starts.generate.requirements",
-    "saos.starts.library.entries", "saos.starts.library.entry_path", "saos.starts.library.library_root", "saos.starts.library.load_entry",
-    "saos.starts.paraxial.Surface", "saos.starts.paraxial.back_focal_distance", "saos.starts.paraxial.effective_focal_length",
-    "saos.starts.paraxial.front_focal_distance", "saos.starts.paraxial.system_matrix",
-    "saos.starts.patents.build_index", "saos.starts.patents.describe", "saos.starts.patents.library_root", "saos.starts.patents.load_index",
-    "saos.starts.patents.start_entries",
-    "saos.starts.prediction.predict",
-    "saos.starts.scaling.scale_surface",
-    "saos.starts.seq.elements", "saos.starts.seq.geometry", "saos.starts.seq.paraxial", "saos.starts.seq.parse", "saos.starts.seq.read",
-    "saos.starts.seq.to_prescription",
-}
+# 查不到说明但有意保留的接口：内部辅助。Python 包里的内部名字在 api_help.HIDDEN
+INTERNAL = {"ctx.child", "ctx.describe", "saos daemon run", "saos ui serve"} | api_help.HIDDEN
 
 
 def _subcommands(parser) -> dict:
@@ -79,7 +55,22 @@ def _help_sources(parser, command="saos") -> list[tuple[str, str, str]]:
         sources.append((f"{command} --help ({field})", value, value))
     for name, child in _subcommands(parser).items():
         sources.extend(_help_sources(child, f"{command} {name}"))
+    if command == "saos":
+        sources += [(f"saos {key} --help {slug}", text, text) for key, slug, text in _help_topics()]
     return sources
+
+
+def _help_topics() -> list[tuple[str, str, str]]:
+    return [(key, slug, cli_help.topic_help(key, slug)) for key, topics in cli_help.TOPICS.items() for slug in topics]
+
+
+def _all_help() -> str:
+    def walk(parser):
+        yield parser.format_help()
+        for child in _subcommands(parser).values():
+            yield from walk(child)
+
+    return "\n".join([*walk(cli.build_parser()), *(cli_help.topic_help(key, "all") for key in cli_help.TOPICS)])
 
 
 def _diagram_boxes() -> list[str]:
@@ -97,17 +88,7 @@ def _agent_interface() -> set[str]:
     from saos.scripting import ScriptContext
 
     names |= {f"ctx.{name}" for klass in ScriptContext.__mro__[:-1] for name in vars(klass) if not name.startswith("_")}
-    for package in AGENT_PACKAGES:
-        root = importlib.import_module(package)
-        modules = [root]
-        if hasattr(root, "__path__"):
-            modules += [importlib.import_module(info.name) for info in pkgutil.walk_packages(root.__path__, f"{package}.")
-                        if not any(part.startswith("_") for part in info.name.split("."))]
-        for module in modules:
-            names |= {f"{module.__name__}.{name}" for name, obj in vars(module).items()
-                      if not name.startswith("_") and (inspect.isfunction(obj) or inspect.isclass(obj))
-                      and obj.__module__ == module.__name__}
-    return names
+    return names | set(api_help.public_names(hidden=True))
 
 
 def _documented(text: str, key: str) -> bool:
@@ -162,12 +143,83 @@ def test_the_diagram_names_every_workflow_step_command():
     assert [c for c in step_commands.values() if c not in boxes] == []
 
 
-def test_every_agent_interface_is_in_the_skill_or_marked_internal():
-    text = "\n".join((ROOT / name).read_text(encoding="utf-8") for name in SKILL_DOCS)
+def _has_docstring(key: str) -> bool:
+    if key.startswith("saos "):
+        return False
+    if key.startswith("ctx."):
+        member = api_help._ctx_members()[key[4:]]
+    else:
+        member = api_help.public_names(hidden=True)[key]
+    return bool(inspect.getdoc(member))
+
+
+def test_every_agent_interface_can_be_looked_up_or_is_marked_internal():
+    text = "\n".join([_all_help(), *((ROOT / name).read_text(encoding="utf-8") for name in SKILL_DOCS)])
     interface = _agent_interface()
-    missing = sorted(key for key in interface - INTERNAL if not _documented(text, key))
-    assert not missing, f"写进 .agents/skills/saos/，或在本文件 INTERNAL 里标为内部接口：{missing}"
+    missing = sorted(key for key in interface - INTERNAL if not _documented(text, key) and not _has_docstring(key))
+    assert not missing, f"写进命令帮助或 docstring（saos api 读得到），或标为内部接口：{missing}"
     assert not INTERNAL - interface, f"INTERNAL 里已不存在的接口：{sorted(INTERNAL - interface)}"
+
+
+def test_every_help_topic_finds_its_section_and_keeps_all_the_text():
+    for key, topics in cli_help.TOPICS.items():
+        whole = cli_help.topic_help(key, "all")
+        for slug in topics:
+            assert cli_help.topic_help(key, slug).strip() in whole, (key, slug)
+        overview = cli_help.topic_help(key)
+        assert all(f"  {slug:<12}" in overview for slug in topics), key
+
+
+def test_the_rtc_operand_lists_in_help_come_from_the_code():
+    from saos.backend import rtc, rtc_merit
+
+    listed = cli_help.topic_help("exec", "rtc")
+    assert all(name in listed for name in rtc.RAY_OPERANDS | rtc.SYSTEM_OPERANDS)
+    assert "<RTC_" not in listed
+    merit = _subcommands(_subcommands(cli.build_parser())["opt"])["merit"].format_help()
+    assert all(name in merit for name in rtc_merit.merit_operands() - rtc_merit.INERT)
+
+
+def test_a_help_topic_prints_and_an_unknown_one_lists_the_choices(capsys):
+    assert cli.main(["exec", "--help", "rtc"]) == 0
+    assert "The rtc instance" in capsys.readouterr().out
+    assert cli.main(["exec", "--help", "nosuch"]) == 2
+    assert '"topics"' in capsys.readouterr().out
+
+
+def test_saos_api_reads_the_code(capsys):
+    assert cli.main(["api", "saos.ctx.rows"]) == 0
+    listing = json.loads(capsys.readouterr().out)["result"]
+    assert "sag_gap" in {row["name"] for row in listing["names"]}
+    assert cli.main(["api", "ctx.make_thermal"]) == 0
+    assert "temperatures" in json.loads(capsys.readouterr().out)["result"]["signature"]
+    assert cli.main(["api", "saos.nothing"]) == 1
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "BAD_ARGS"
+
+
+def test_skill_links_and_help_pointers_resolve():
+    skill = ROOT / ".agents" / "skills" / "saos"
+    broken = []
+    pointer = re.compile(r"saos (exec|scan|lens build) --help ([a-z]+)")
+    for path in skill.rglob("*.md"):
+        text = path.read_text(encoding="utf-8")
+        for target, anchor in re.findall(r"\]\(([^)#\s]*\.[a-z]+)?(?:#([^)\s]+))?\)", text):
+            linked = (path.parent / target) if target else path
+            if not linked.is_file():
+                broken.append(f"{path.name}: {target}")
+            elif anchor:
+                headings = re.findall(r"^#+ (.+)$", linked.read_text(encoding="utf-8"), re.M)
+                slugs = {re.sub(r"[^\w\- ]", "", h).strip().lower().replace(" ", "-") for h in headings}
+                if anchor not in slugs:
+                    broken.append(f"{path.name}: {target}#{anchor}")
+        for command, topic in pointer.findall(text):
+            if topic not in cli_help.TOPICS[command] and topic != "all":
+                broken.append(f"{path.name}: {command} --help {topic}")
+    for path in (ROOT / "src").rglob("*.py"):
+        for name in re.findall(r"references/([a-z-]+\.md)", path.read_text(encoding="utf-8")):
+            if not (skill / "references" / name).is_file():
+                broken.append(f"{path.name}: references/{name}")
+    assert not broken, broken
 
 
 @pytest.mark.skipif(os.environ.get("SAOS_RENDER_DRAWIO") != "1", reason="需要 Chrome 和网络（draw.io 官方查看器），设置 SAOS_RENDER_DRAWIO=1")

@@ -155,6 +155,7 @@ def rms_radius(hits, dz: float = 0.0) -> float:
 
 
 def centroid(hits) -> tuple[float, float]:
+    """Centroid (x, y) of the rays in hits. / 光线落点质心。"""
     x, y, _, _ = ray_arrays(hits, False)
     if len(x) == 0:
         raise DesignFailure("no ray reaches the sample: the centroid is undefined")
@@ -228,6 +229,7 @@ def marginal_na(ctx, wave: int, to: int | str | None = None, rays: int = 32) -> 
 # ---- 零件几何 / part geometry ----
 
 def is_coordinate_break(row: dict[str, Any]) -> bool:
+    """Whether a surface row is a coordinate break, on either backend. / 这一面是否坐标断点（两个后端都认）。"""
     # OpticStudio 叫 "Coordinate Break"，rtc 叫 "COORDBRK" / "Coordinate Break" in OpticStudio, "COORDBRK" in rtc
     return "COORD" in str(row["type"]).upper()
 
