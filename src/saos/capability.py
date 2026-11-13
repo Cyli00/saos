@@ -260,7 +260,28 @@ def _verdict(source: dict[str, Any], load: Callable[[Any], None]) -> dict[str, A
         return {**source, "backend": "zos", "refused": refused[:REFUSED_SHOWN] + ([f"and {more} more"] if more > 0 else [])}
     known = rtc_merit.merit_operands()
     return {**source, "backend": "rtc", "unreconciled": backend.unverified(), "carried_unread": backend.carried_unread(),
-            "merit_refused": sorted({row.type for row in backend.merit if row.type not in known})}
+            "merit_refused": sorted({row.type for row in backend.merit if row.type not in known}),
+            "operands_refused": _operands_refused(backend)}
+
+
+def _operands_refused(backend) -> list[str]:
+    """能力表按探针镜头说 rtc 算得了、在这份镜头上却拒算的操作数（例如镜头带双锥面时的 Seidel 各项）：逐个在镜头上
+    试一次。参数取能算的缺省值；参数本身不适用（光线丢失之类）的报错不算拒算。
+    Operands rtc computes on the probe lenses but refuses on this lens (the Seidel terms on a biconic lens, say), each
+    tried once on the lens; an error about the arguments (a ray missing) is not a refusal."""
+    from saos.backend import rtc
+
+    last = backend.surface_count() - 1
+    refused = []
+    for op in sorted(rtc.RAY_OPERANDS | rtc.SYSTEM_OPERANDS - {"CONF"}):
+        ray = op in rtc.RAY_OPERANDS or op in ("PARY", "PATY")
+        int1 = last if ray else 1 if op in ("SSAG", "INDX", "TTHI") else 0
+        try:
+            backend.operand(op, int1, last - 1 if op == "TTHI" else 0, [0.0, 0.0, 0.0, 0.0] if ray else [])
+        except SaosError as exc:
+            if exc.code == ErrorCode.BACKEND_UNSUPPORTED:
+                refused.append(op)
+    return refused
 
 
 def lens(path: Path) -> dict[str, Any]:

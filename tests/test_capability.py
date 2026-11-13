@@ -173,3 +173,21 @@ def test_settings_carried_unread_are_named_only_when_the_lens_changes_them(tmp_p
     verdict = capability.lens(path)
     assert verdict["backend"] == "rtc"
     assert verdict["carried_unread"] == ["coating_file", "header line APDX", "polarization"]
+
+
+SEIDEL = ["ASTI", "COMA", "DIST", "FCUR", "SPHA"]
+
+
+@pytest.mark.parametrize("path, refused", [(Path(__file__).parent / "rtc" / "fixtures" / "lenses" / f"{name}.zmx", SEIDEL)
+                                           for name in ("piA-r012", "piB-r007", "codex-r017")] + [(CASES / "sequential.zmx", [])])
+def test_a_lens_verdict_names_the_operands_rtc_refuses_on_it(path, refused):
+    # 能力表按探针镜头判；双锥面、环面、理想透镜上 Seidel 各项会被拒，--lens 要当场说出来，measure 实际也拒
+    # the table judges on probe lenses; on biconic, toroidal or paraxial surfaces the Seidel terms are refused, and
+    # --lens says so, as measure finds
+    from saos import measure
+
+    verdict = capability.lens(path)
+    assert verdict["backend"] == "rtc" and verdict["operands_refused"] == refused
+    for op in SEIDEL:
+        item = measure.run(path, [{"operand": {"type": op}}])["items"][0]
+        assert (item["trust"] == "refused") == (op in refused), op

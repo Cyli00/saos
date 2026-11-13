@@ -360,8 +360,10 @@ COMMANDS = {
                  "  (the paths this lens takes, as computed_by will list them), carried_unread\n"
                  "  (settings of a .zmx that differ from OpticStudio's defaults and that rtc saves\n"
                  "  back without applying: polarization, coating_file, or \"header line KEY\" for a\n"
-                 "  line it cannot name) and merit_refused (merit operands in the file that rtc\n"
-                 "  does not compute); or zos, with refused\n"
+                 "  line it cannot name), merit_refused (merit operands in the file that rtc\n"
+                 "  does not compute) and operands_refused (operands the table lists as computed\n"
+                 "  that rtc refuses on this lens, such as the Seidel terms on a biconic surface,\n"
+                 "  each tried once); or zos, with refused\n"
                  "  (what rtc cannot reproduce, as backend_switch.stayed will say). Catalog glasses\n"
                  "  are read from SAOS_GLASSCAT as the daemon does. --job J reads --lens from the\n"
                  "  job's lenses/. A malformed prescription is BAD_ARGS, as in lens build.",
