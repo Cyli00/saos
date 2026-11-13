@@ -593,10 +593,14 @@ class Daemon:
         Why rtc cannot build this lens build prescription, without changing state; a malformed prescription is op_build's to report."""
         if op != "lens.build" or not isinstance(args.get("prescription"), dict):
             return None
-        from saos.backend import rtc_lens
+        from saos.backend.rtc import RtcBackend
 
         try:
-            rtc_lens.from_prescription(prescription.normalize(args["prescription"]))
+            # Build it on a scratch instance: refusals such as an aspheric mirror or a material only show once the system
+            # is built; converting the prescription alone lets them through, and the build then fails on rtc half way
+            glasses = getattr(self.rtc, "glasses", None)
+            RtcBackend(None, glass_dir=glasses.folder if glasses is not None else None, standalone=True).build(
+                prescription.normalize(args["prescription"]))
         except SaosError as exc:
             return exc.message if exc.code == ErrorCode.BACKEND_UNSUPPORTED else None
         return None
