@@ -79,7 +79,8 @@ def from_prescription(p: dict[str, Any], *, experimental: bool = False):
     if field is None:
         problems.append(f"fields.type {p['fields']['type']} (rtc has angle and object_height)")
     for key in ("afocal", "apodization", "polarization", "coating_file", "ray_aiming_options"):
-        if p.get(key):
+        # Present at all counts: afocal: true normalises to {}, which a truthiness test lets through
+        if p.get(key) is not None:
             problems.append(f"{key} (not reproduced or written by rtc)")
     if p.get("telecentric_object"):
         problems.append("telecentric_object")
