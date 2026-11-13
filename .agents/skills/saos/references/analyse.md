@@ -16,7 +16,7 @@ To compare lenses, measure each with the same definition: the same field points 
 
 ## Which backend gives the number
 
-The job computes on rtc, and every result carries `computed_by`. A number goes to the user from rtc only when rtc computes it on reconciled paths: if rtc refuses the quantity, or `computed_by` lists an unreconciled operand or path the number depends on, run `uv run saos daemon use zos --job J` and measure it on OpticStudio. An analysis job never changes stage, so the pin holds until `uv run saos daemon use auto`; release it when the OpticStudio numbers are in, since it holds a licence ([session.md](session.md#two-backends-in-one-daemon)). With no OpticStudio available, tell the user which numbers cannot be given and why; never hand over the unreconciled value instead.
+The job computes on rtc. An answer needs `trust` `reconciled` or `measured`; anything lower is measured on OpticStudio as [SKILL.md](../SKILL.md#what-a-number-can-decide) describes. An analysis job never changes stage, so the pin holds until `uv run saos daemon use auto`: release it as soon as the OpticStudio numbers are in.
 
 ## When the question is a design
 

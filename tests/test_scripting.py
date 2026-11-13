@@ -31,7 +31,8 @@ def run(daemon, job, source, name="probe", **args):
 def test_script_result_and_archive(daemon, loaded):
     source = "def run(ctx):\n    return {'n': len(ctx.backend.surfaces()), 'lens': ctx.lens.name, 'x': ctx.args['x']}\n"
     out = run(daemon, loaded, source, x=3)
-    assert out["ok"] and out["result"] == {"script": "scripts/001-probe.py", "result": {"n": 4, "lens": "a.zmx", "x": 3}}
+    assert out["ok"] and out["result"] == {"script": "scripts/001-probe.py", "result": {"n": 4, "lens": "a.zmx", "x": 3},
+                                    "computed_by": {"backend": "fake", "version": "fake", "precision": None}, "trust": None}
     assert (loaded.root / "scripts" / "001-probe.py").read_text(encoding="utf-8") == source
     record = json.loads((loaded.root / "scripts" / "001-probe.json").read_text(encoding="utf-8"))
     assert record["ok"] and record["result"]["x"] == 3 and record["args"] == {"x": 3}

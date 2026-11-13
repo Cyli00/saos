@@ -12,7 +12,7 @@ Build and change it by [merit.md](merit.md).
 
 `opt local` optimises locally. `opt hammer` and `opt global` run until the budget, then cancel and leave the best system in the editor. What each does on rtc and on OpticStudio, and its result fields: their `--help`. Where your own `saos.search` loops run: [scripting.md](scripting.md#choose-where-a-loop-runs).
 
-Rounds on rtc carry `backend: rtc` and `provenance` (paths and operands not reconciled with OpticStudio). Judge and stop on them as usual; delivery re-measures the delivered round ([delivery.md](delivery.md#re-measure-on-opticstudio)).
+Rounds on rtc carry `trust` `reconciled` or `unreconciled`; judge and stop on both ([SKILL.md](../SKILL.md#what-a-number-can-decide)), and delivery re-measures the delivered round ([delivery.md](delivery.md#re-measure-on-opticstudio)).
 
 **Glass substitution** (`opt vary --param material --mode substitute`) happens only in Hammer or global search, within one catalog per surface. Use it to escape a local minimum; to choose materials, use `ctx.GlassExpert`. Pass `--catalog` per surface where the maker must stay, and replace an `Obsolete` glass in `materials_changed` with one in production or ask the user before delivering it (9 of 12 substitutions on the Cooke sample in SCHOTT were Obsolete).
 

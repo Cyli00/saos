@@ -792,14 +792,31 @@ def wave_profile(ctx, fn: Callable[..., float | None], lo: float, hi: float, n: 
 
 # ---------- 缓存与任务内模块 / cache and job modules ----------
 
+# kit.memo 在 ctx.cache 里存“这一项用到的操作数”的键前缀 / key prefix under which memo keeps the operands an entry used
+_USED = "saos.kit.memo:used"
+
+
 def memo(ctx, key: Any, compute: Callable[[], Any]) -> Any:
     """在 ctx.cache 里按 key 记住 compute() 的结果。一次判定（check、round、measure）内所有判定脚本共享同一个 cache，
     镜头在判定期间不变；exec 脚本自己改了镜头之后要 ctx.cache.clear()。
     Remember compute() under key in ctx.cache. All check scripts of one evaluation (check, round, measure) share one
     cache and the lens does not change during it; an exec script that changes the lens must call ctx.cache.clear()."""
     cache = ctx.cache
+    # rtc 实例按判定项记用到的未对账操作数：算的时候单独记一份，从缓存取回时补记给取用的那一项
+    # the rtc instance grades each check by the operands it used: note them apart while computing, replay them on a hit
+    backend = getattr(ctx, "backend", None)
+    take, note = getattr(backend, "take_used", None), getattr(backend, "note_used", None)
     if key not in cache:
-        cache[key] = compute()
+        outer = take() if take else frozenset()
+        try:
+            cache[key] = compute()
+        finally:
+            if take:
+                inner = take()
+                cache[(_USED, key)] = inner
+                note(outer | inner)
+    elif note:
+        note(cache.get((_USED, key), ()))
     return cache[key]
 
 

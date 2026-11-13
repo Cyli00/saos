@@ -303,6 +303,7 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
         "stage": "zos",
         "backend": measured_by.get("backend", "zos"),
         **({"provenance": measured_by["provenance"]} if measured_by.get("provenance") else {}),
+        "trust": evaluation.get("trust"),
         # tier 留第一个层级，兼容旧记录；tiers 是本轮用到的全部层级 / tier keeps the first for older readers; tiers lists them all
         "tier": tiers[0],
         "tiers": tiers,
@@ -487,5 +488,6 @@ def _rebase(ctx, h: dict[str, Any], scripts: dict[str, Any], best: dict[str, Any
         "failing": {i["id"]: i["shortfall"] for i in ev["items"] if i.get("shortfall", 0) > 0},
         "merit": best.get("merit"), "demand_sha": sha, "method_sha": method_sha, "confirmation": confirmation,
         "backend": (ev.get("environment") or {}).get("backend", "zos"),
+        "trust": ev.get("trust"),
         **{k: best.get(k) for k in ("model", "materials", "coatings", "model_glass", "environment", "stage")}, "time": jobs.now_iso(),
     }

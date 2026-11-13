@@ -24,7 +24,7 @@ from typing import Any, Callable
 from saos import config, geometry, i18n, jobs, lens_files, parallel, prescription, scripting, timing, workflow
 from saos.backend import Backend, make_backend
 from saos.backend.base import same_number, same_path
-from saos.protocol import ErrorCode, SaosError, decode, encode, fail, ok, write_json
+from saos.protocol import ErrorCode, SaosError, decode, encode, fail, ok, stamp, write_json
 
 log = logging.getLogger("saos.daemon")
 
@@ -57,6 +57,9 @@ SEARCH_FILES = {"hammer": "{stem}_*_HAMMER.zmx", "global": "GLOPT_*.zmx"}
 # remind to record a round once this many optimisations (or scripts) ran since the last one: a long run history with an
 # almost empty ledger leaves the stop rule without evidence (nightvision: one round after 59 scripts, 2026-10-19)
 ROUND_REMINDER = {"opt": 2, "exec": 15}
+# 结果里给出 computed_by 与 trust 的操作（lens analysis --list 除外）；exec、check、round 自己给（判定按项分档）
+# operations whose results carry computed_by and trust (not lens analysis --list); exec, check and round add their own (checks graded per item)
+STAMPED = frozenset({"lens.operand", "lens.analysis", "metrics.get", "opt.merit", "opt.local", "opt.hammer", "opt.global"})
 RUN_KINDS = {"opt.local": "opt", "opt.hammer": "opt", "opt.global": "opt", "script.exec": "exec", "scan.run": "scan"}
 COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
 # 交付之前的计算都在 rtc 上（模型页的布局图在 rtc 上由 saos 自己画）；复测要 OpticStudio
@@ -255,6 +258,8 @@ class Daemon:
             if take_used is not None:
                 take_used()
             result = handler(args)
+            if op in STAMPED and isinstance(result, dict) and not args.get("list"):
+                result.update(stamp(self.backend))
         except SaosError as exc:
             error = exc
         except Exception as exc:  # noqa: BLE001 - 后台进程不能因单个请求崩溃

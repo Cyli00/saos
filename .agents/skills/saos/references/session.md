@@ -12,9 +12,9 @@ The licence caps how many OpticStudio instances run at a time, the user's open w
 
 `uv run saos daemon start` runs each command on the backend its job's workflow stage uses: rtc for every stage before delivery, OpticStudio for delivery and always for `round --confirm` and tolerance scans. Details and `daemon start --backend rtc` for a machine without OpticStudio: `uv run saos daemon start --help`.
 
-When a command moves to the other backend, the loaded lens is handed over through its file, so save it first. `handover.agrees: false` lists what rtc and OpticStudio read differently; these stay on the lens as unverified provenance until the re-measurement before delivery, so tell the user when one concerns a demand item. `backend_switch.stayed` means rtc cannot reproduce the lens and OpticStudio keeps computing it.
+When a command moves to the other backend, the loaded lens is handed over through its file, so save it first. `handover.agrees: false` lists what rtc and OpticStudio read differently; these stay in `computed_by.unverified`, which makes every rtc number on that lens `unreconciled` until the re-measurement before delivery, so tell the user when one concerns a demand item. `backend_switch.stayed` means rtc cannot reproduce the lens and OpticStudio keeps computing it.
 
-`saos daemon use zos|rtc` pins a backend for the current workflow stage, for instance for an OpticStudio analysis rtc lacks during the design rounds (`uv run saos daemon use --help`). Pin for a named step and say which item needs it, since every result you get under it costs a licence the stage rule would not.
+`saos daemon use zos|rtc` pins a backend for the current workflow stage (`uv run saos daemon use --help`). Pin OpticStudio only when a number's `trust` is below the decision it has to make ([SKILL.md](../SKILL.md#what-a-number-can-decide)), for a named step, and say which item needs it, since every result you get under it costs a licence the stage rule would not.
 
 ## Long runs
 

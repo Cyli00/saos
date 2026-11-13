@@ -15,6 +15,12 @@ Output protocol (help itself is plain text):
   Failure: {"ok": false, "error": {"code": ..., "message": ..., "details": ...}}, exit 1.
   Invalid CLI arguments use the same error envelope, exit 2.
   Non-finite results: infinity -> "inf"/"-inf", NaN -> null; numpy arrays -> lists.
+  Numbers carry trust: measured (OpticStudio), reconciled (rtc, only paths
+    compared with OpticStudio), unreconciled (rtc, through a path or operand that
+    computed_by lists as unverified or operands_unverified) or refused (no number).
+    lens operand, lens analysis, metrics get, opt merit/local/hammer/global and exec
+    give one per result with computed_by; check and round give one per item and one
+    for the whole evaluation.
 
 Process model:
   Local: daemon control, job, demand, rule-out, stop, report, scan --show, api,
@@ -353,18 +359,23 @@ COMMANDS.update({
         "Confirmation is not required, so use this while framing feasibility.\n"
         "  --only lists comma-separated check ids; a partial result is never achieved.\n"
         "  Writes a snapshot and evidence to evaluations/NNN/; evidence_file points to\n"
-        "  the complete result. Each item includes duration_s. A check changing the lens\n"
-        "  cannot be accepted as read-only evidence. warnings flags rtc results pushed\n"
-        "  with fast.push and not yet closed by an OpticStudio optimisation.",
+        "  the complete result. Each item includes duration_s and trust; on rtc an item\n"
+        "  also lists the unreconciled operands it used (operands_unverified), and the\n"
+        "  result's trust is the weakest of them. A check changing the lens cannot be\n"
+        "  accepted as read-only evidence. warnings flags rtc results pushed with\n"
+        "  fast.push and not yet closed by an OpticStudio optimisation.",
         "BAD_ARGS, NO_LENS_LOADED, JOB_MISMATCH, FILE_NOT_FOUND"),
     "round": (
         "Record a measured round for a confirmed demand and approved lens structure.",
         "Requires no blocking questions and a nonterminal demand version. --tier is\n"
         "  comma-separated local,variables,materials,global,structure; omit for round 0.\n"
         "  --merit records a finite external objective instead of the lens merit.\n"
-        "  record.backend names who computed the round. On an rtc instance rounds carry\n"
-        "  backend rtc and provenance (paths and operands not reconciled with\n"
-        "  OpticStudio). --confirm [--of N], computed on OpticStudio with no lens\n"
+        "  record.backend names who computed the round and record.trust its level. On an\n"
+        "  rtc instance rounds carry backend rtc and provenance (paths and operands not\n"
+        "  reconciled with OpticStudio). Rounds recorded before trust existed get it on\n"
+        "  reading, from backend and provenance; an rtc round without provenance reads as\n"
+        "  unreconciled. A confirmed round reads as measured, its rtc level under rtc.\n"
+        "  --confirm [--of N], computed on OpticStudio with no lens\n"
         "  needed, re-measures rtc round N (default: the round saos report would\n"
         "  deliver) and appends a tier confirm record; reading the ledger puts its\n"
         "  numbers into round N (confirmed_by, rtc keeps the old ones). agrees is false\n"
@@ -696,8 +707,9 @@ The rtc instance
   A check using a refused measurement is filed under backend_unsupported. So is one using
     ctx.system or ctx.zosapi: read the lens through ctx.get, ctx.op (SSAG, INDX, ...) and
     ctx.trace.
-  Every exec result carries computed_by: the backend, the operands used that rtc has not
-    reconciled with OpticStudio, and the unreconciled paths this lens takes.
+  Every exec result carries trust and computed_by: the backend, the operands used that rtc
+    has not reconciled with OpticStudio, and the unreconciled paths this lens takes. A value
+    read through ctx.memo counts the operands of the call that computed it.
   EXPP and EXPD are paraxial on rtc while OpticStudio uses small-field real rays; on the
     lenses measured they differ by up to 0.83 %, largest with strong surfaces. PETZ is a
     radius and reads 0 when every field is on axis.

@@ -59,7 +59,7 @@ from typing import Any
 
 from saos import jobs
 from saos.demand import TIERS, as_current, confirmation_for, digest
-from saos.protocol import ErrorCode, SaosError, jsonable, read_jsonl
+from saos.protocol import ErrorCode, SaosError, jsonable, read_jsonl, trust
 
 LEDGER_FILE = "ledger.jsonl"
 STOPS_FILE = "stops.jsonl"
@@ -70,7 +70,7 @@ REBASE = "rebase"
 CONFIRM = "confirm"
 # 复测时换成 OpticStudio 数值的字段 / the fields a confirmation replaces with OpticStudio's numbers
 MEASURED = ("evaluation", "shortfall", "achieved", "parts_clash", "pursuing", "measurement_errors", "hard_failing", "values", "failing",
-            "materials", "coatings", "model_glass")
+            "materials", "coatings", "model_glass", "trust")
 
 
 def load(path: Path, demand: dict[str, Any] | None = None, *, raw: bool = False) -> list[dict[str, Any]]:
@@ -82,6 +82,10 @@ def load(path: Path, demand: dict[str, Any] | None = None, *, raw: bool = False)
     rows = read_jsonl(path)
     for r in rows:
         r["shortfall"] = float(r["shortfall"])
+        # 可信等级出现之前的记录没有 trust：按 backend 与 provenance 推出，文件不改
+        # records older than trust levels lack the field: derive it from backend and provenance, leaving the file alone
+        if r.get("trust") is None:
+            r["trust"] = trust(r.get("backend", "zos"), r.get("provenance"))
         if demand is not None:
             stored = version(r)[0]
             current = as_current(stored, demand, "compute", path.parent)

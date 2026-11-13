@@ -21,7 +21,7 @@ A loop of many evaluations (a scan of a few variables, multi-starts, a sensitivi
 
 ## Numbers from rtc
 
-Every `exec` result carries `computed_by`: a number built on an item it lists is an estimate, so say so where you write it. Automatic semi-diameters are one such item: measured against OpticStudio they differ by up to 0.19 mm on rotationally symmetric lenses and 0.70 mm on a toroidal one, so a part-edge limit that close is settled on OpticStudio.
+Every `exec` result carries `trust` and `computed_by`, one level for everything the script returns; what each level may decide is in [SKILL.md](../SKILL.md#what-a-number-can-decide). When a script returns several numbers, say which of them rest on the items `computed_by` lists. Automatic semi-diameters are one such item: measured against OpticStudio they differ by up to 0.19 mm on rotationally symmetric lenses and 0.70 mm on a toroidal one, so a part-edge limit that close is settled on OpticStudio.
 
 ## The rtc copy
 

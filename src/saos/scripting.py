@@ -18,7 +18,7 @@ from saos.ctx.experts import ExpertMethods
 from saos.kit import KitMethods
 from saos.metrics import MetricMethods
 from saos.lens_files import companion
-from saos.protocol import ErrorCode, SaosError, finite, jsonable, write_json
+from saos.protocol import ErrorCode, SaosError, finite, jsonable, stamp, write_json
 
 if TYPE_CHECKING:
     from saos.daemon import Daemon
@@ -369,10 +369,11 @@ def execute(daemon: Daemon, job: jobs.Job, name: str, source: str, args: dict[st
             raise SaosError(ErrorCode.BAD_ARGS, f"run(ctx) must return JSON-serializable data: {exc}") from exc
         record.update(ok=True, result=result)
         out = {"script": rel, "result": result}
-        provenance = getattr(daemon.backend, "provenance", None)
-        if callable(provenance) and getattr(daemon.backend, "standalone", False):
-            # rtc 实例的数值标明来源与未对账的路径 / rtc-instance numbers carry their source and unreconciled paths
-            record["computed_by"] = out["computed_by"] = provenance()
+        # 结果标明哪个后端算的、可信等级；rtc 实例上另带未对账的路径与操作数
+        # the result names its backend and trust level; on the rtc instance also the unreconciled paths and operands
+        stamped = stamp(daemon.backend)
+        record.update(stamped)
+        out.update(stamped)
         if hints:
             out["hints"] = hints
         return out

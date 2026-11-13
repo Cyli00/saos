@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from saos import i18n, jobs
-from saos.protocol import ErrorCode, SaosError, read_jsonl, write_json
+from saos.protocol import ErrorCode, SaosError, read_jsonl, trust, write_json
 
 if TYPE_CHECKING:
     from saos.scripting import ScriptContext
@@ -779,6 +779,20 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
     items = []
     total = 0.0
     shared = ctx.child(ctx.args, cache={})
+    # 版本只取实际执行本次测量的后端实例，不回退到 daemon 启动时的后端（那可能是另一个版本）
+    # the version comes from the backend that measured this round only, never the daemon's start backend (another version)
+    identity = ctx.backend.identity()
+    backend_name = identity["backend"]
+    # rtc 实例上按项记用到的未对账操作数；本镜头经过的未对账路径对每一项都算
+    # on the rtc instance each item records the unreconciled operands it used; the lens's unreconciled paths count for all
+    take_used = getattr(ctx.backend, "take_used", None) if getattr(ctx.backend, "standalone", False) else None
+    paths = None
+    if take_used is not None:
+        from saos.backend.rtc import unreconciled
+
+        paths = ctx.backend.unverified()
+        take_used()
+    operands: set[str] = set()
     for index, spec in enumerate(specs):
         item_folder = folder / f"{index:03d}-{spec['id']}"
         item_folder.mkdir()
@@ -786,6 +800,14 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
         measured = measure(shared, spec, item_folder, scripts)
         # 每项耗时写进结果，便于看出哪几项判定最慢、探索时值得单独测哪几项
         item = {k: v for k, v in spec.items() if k != "check"} | measured | {"duration_s": round(time.monotonic() - started, 2)}
+        used = unreconciled(take_used()) if take_used is not None else []
+        operands.update(used)
+        if used:
+            item["operands_unverified"] = used
+        if measured.get("error_kind") == "backend":
+            item["trust"] = "refused"
+        elif not measured.get("error"):
+            item["trust"] = trust(backend_name, {"unverified": paths, "operands_unverified": used} if take_used is not None else None)
         value = measured["value"]
         if spec["goal"] is not None:
             g = shortfall(spec, value)
@@ -799,13 +821,9 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
         items.append(item)
     judged = [i for i in items if i["goal"] is not None]
     daemon = getattr(ctx, "_daemon", None)
-    # 版本只取实际执行本次测量的后端实例，不回退到 daemon 启动时的后端（那可能是另一个版本）
-    # the version comes from the backend that measured this round only, never the daemon's start backend (another version)
-    identity = ctx.backend.identity()
-    backend_name = identity["backend"]
-    # rtc 实例上的判定：记下用到的、未与 OpticStudio 对账的计算路径和操作数
-    # checks on the rtc instance record the calculation paths and operands not reconciled with OpticStudio
-    provenance = ctx.backend.provenance() if backend_name == "rtc" and hasattr(ctx.backend, "provenance") else None
+    # rtc 实例上的判定：记下用到的、未与 OpticStudio 对账的计算路径和操作数（各项之和）
+    # checks on the rtc instance record the calculation paths and operands not reconciled with OpticStudio (all items')
+    provenance = {"unverified": paths, "operands_unverified": sorted(operands)} if take_used is not None else None
     from saos import geometry
 
     clash = geometry.parts_clash(ctx.backend)
@@ -824,6 +842,8 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
               # 当前后端算不了的条目（rtc 上没有的分析或 ctx.system）：改写检查或换到能算的后端，不能当作设计不达标
               # items the current backend cannot compute: rewrite the check or use a backend that can; never a design result
               "backend_unsupported": [i["id"] for i in items if i.get("error_kind") == "backend"],
+              # 整次判定的可信等级：按各项合起来用到的路径和操作数分档 / graded by the paths and operands all items used together
+              "trust": trust(backend_name, provenance),
               "demand": demand, "demand_sha": compute_digest(demand), "method_sha": method_digest(scripts),
               "support_files": support, **({"saos_code_files": code} if code else {}),
               "environment": {"saos_code_sha256": getattr(daemon, "code_sha256", None),
@@ -831,7 +851,7 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
                               "backend": backend_name,
                               "backend_version": identity["version"],
                               "precision": identity["precision"],
-                              **({"provenance": {k: provenance[k] for k in ("unverified", "operands_unverified")}} if provenance else {})},
+                              **({"provenance": provenance} if provenance else {})},
               "lens": lens or ctx.describe(), "evidence_dir": folder.relative_to(ctx.job.root).as_posix(),
               "evidence_file": (folder / "result.json").relative_to(ctx.job.root).as_posix()}
     write_json(folder / "result.json", result)
