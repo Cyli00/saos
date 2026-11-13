@@ -66,7 +66,10 @@ OPTICSTUDIO_ONLY = frozenset({"round.confirm"})
 OPTICSTUDIO_SCANS = ("tolerance",)
 # 一个后台进程持有两个后端时按流程阶段（saos.ui.stage）选后端：交付阶段是 zemax 的最后优化与测量
 # with both backends, the workflow stage picks one: delivery is zemax's final optimisation and measurement
-STAGE_BACKENDS = {"interview": "rtc", "demand_confirm": "rtc", "modeling": "rtc", "model_approve": "rtc", "design": "rtc", "deliver": "zos"}
+# 分析任务（job create --mode analyse）只有 analyse 一步，同交付前各步在 rtc 上算；rtc 拒绝或没对上的量由 agent 用 daemon use zos 补
+# an analysis job's one step computes on rtc like the stages before delivery; daemon use zos covers what rtc refuses
+STAGE_BACKENDS = {"interview": "rtc", "demand_confirm": "rtc", "modeling": "rtc", "model_approve": "rtc", "design": "rtc", "deliver": "zos",
+                  "analyse": "rtc"}
 # 不切换后端的操作：只读当前状态，或是切换前的准备（保存）/ ops that never switch: they read the current state or prepare a switch
 UNROUTED = frozenset({"ping", "shutdown", "daemon.use", "lens.import", "lens.unload", "lens.info", "lens.surfaces", "lens.save",
                        "metrics.list", "metrics.select"})

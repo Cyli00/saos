@@ -66,9 +66,11 @@ class Job:
 
     @property
     def mode(self) -> str:
-        """interactive（用户在关卡确认、可要求修改）或 autonomous（agent 自行过关卡并记录理由）；旧任务没有这一项，按 interactive。
-        interactive (the user confirms the gates and may ask for changes) or autonomous (the agent passes them with its
-        reasons on record); older jobs lack the field and count as interactive."""
+        """interactive（用户在关卡确认、可要求修改）、autonomous（agent 自行过关卡并记录理由）或 analyse（回答关于现成镜头的
+        问题，没有关卡）；旧任务没有这一项，按 interactive。
+        interactive (the user confirms the gates and may ask for changes), autonomous (the agent passes them with its
+        reasons on record) or analyse (answers about existing lenses, no gates); older jobs lack the field and count as
+        interactive."""
         return mode_of(self.root)
 
     @property
@@ -270,8 +272,9 @@ def get_job(job_id: str) -> Job:
     return Job(job_id, root)
 
 
-# 任务的两种流程：做题、测试用 autonomous，从头设计用 interactive / the two workflows of a job
-MODES = ("interactive", "autonomous")
+# 任务的流程：从头设计用 interactive，做题、测试用 autonomous，关于现成镜头的问题（测量、对比）用 analyse，它没有关卡
+# the workflows of a job: interactive and autonomous design, and analyse for questions about existing lenses (no gates)
+MODES = ("interactive", "autonomous", "analyse")
 # 用户在窗口里对关卡提出的修改意见 / change requests the user made at a gate in the window
 REVISIONS_FILE = "revisions.jsonl"
 
@@ -286,7 +289,11 @@ def mode_of(root: Path) -> str:
 
 def require_autonomous(root: Path, what: str) -> None:
     """agent 自己过关卡、自己停止只在自主任务里可以。/ Only an autonomous job lets the agent pass a gate or stop by itself."""
-    if mode_of(root) != "autonomous":
+    mode = mode_of(root)
+    if mode == "analyse":
+        raise SaosError(ErrorCode.BAD_ARGS, f"{what} belongs to a design job; this is an analysis job, which has no gates. "
+                        "For a design, create an interactive job and import the lens (saos job create, saos lens import)")
+    if mode != "autonomous":
         raise SaosError(ErrorCode.BAD_ARGS, f"{what} by the agent alone is only for autonomous jobs; this job is interactive, so the user decides "
                         "(the workflow window's button, or --quote with their words when the window cannot be used)")
 
@@ -296,6 +303,9 @@ def make_interactive(job: Job) -> dict[str, Any]:
     Turn an autonomous job interactive: only the user does it, in the window; never the other way round."""
     if job.mode == "interactive":
         return {"mode": "interactive", "changed": False}
+    if job.mode == "analyse":
+        # 分析任务没有关卡可交给用户；要设计就另建任务 / an analysis job has no gates; a design gets its own job
+        raise SaosError(ErrorCode.BAD_ARGS, "an analysis job has no gates to hand to the user; create an interactive job for a design")
     job.update_state(mode="interactive", mode_changed_at=now_iso())
     job.append_log({"op": "job.mode", "ok": True, "args": {"mode": "interactive"}})
     return {"mode": "interactive", "changed": True}

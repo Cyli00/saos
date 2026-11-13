@@ -1,22 +1,24 @@
 ---
 name: saos
-description: Run the saos optical design workflow, taking a user's optical need through an agreed demand, an approved model and design rounds to a delivered lens with an OpticStudio-measured HTML report. Use for designing, simulating or debugging an optical system in this repository. Not for changing saos itself (src/, tests/, CLI, docs); use normal repository work for that.
+description: Run the saos optical design workflow, taking a user's optical need through an agreed demand, an approved model and design rounds to a delivered lens with an OpticStudio-measured HTML report. Use for designing, simulating or debugging an optical system in this repository, including a question about an existing lens (a number, a curve, two lenses compared), which runs as an analysis job without the design stages. Not for changing saos itself (src/, tests/, CLI, docs); use normal repository work for that.
 ---
 
 # saos optical design workflow
 
 Deliver a lens the user can build and an HTML report whose numbers were measured by the OpticStudio backend, with every unmet goal stated with its gap. A conclusion that the need cannot be met, backed by evidence and the user's decision to stop, is also a valid outcome.
 
-You are the designer: models, starting forms, variables, merit functions, algorithms and experiments are your judgement. The user owns three decisions: the need, the model and stopping. In an interactive job the user passes each gate; in an autonomous job you take them with your reasons on record (next section). This skill gives no permission to infer or bypass one.
+You are the designer: models, starting forms, variables, merit functions, algorithms and experiments are your judgement. The user owns three decisions: the need, the model and stopping. In an interactive job the user passes each gate; in an autonomous job you take them with your reasons on record (next section); an analysis job has none. This skill gives no permission to infer or bypass one.
 
-## Interactive or autonomous
+## Interactive, autonomous or analysis
 
-Each job runs one of two workflows, fixed by `saos job create --mode` and shown as `workflow.mode`:
+Each job runs one of three workflows, fixed by `saos job create --mode` and shown as `workflow.mode`:
 
 - **interactive** (the default; designing from scratch): the user passes each gate with the workflow window's button, or asks for changes there instead. A change request appears in `workflow.revisions` and in `sources/interview.md`; answer it with a new demand version or model description, which returns to the gate. [Stop and ask](#stop-and-ask) applies as written.
 - **autonomous** (exercises and tests): pass the gates yourself with `--reason` (`demand confirm`, `lens approve`), source open questions as `agent assumption: <why>` instead of blocking on them, stop with `saos stop --reason` (no `--quote`) when the evidence says so, and decide the cases in [Stop and ask](#stop-and-ask) yourself, writing each decision and its evidence into `sources/interview.md`. Everything a gate checks still applies (sources, the search record, the rebuild reason), and the report lists each decision as not confirmed by the user.
 
-Create an interactive job unless the user asked for an exercise or a test run. Only the user turns an autonomous job interactive, in the window; no job becomes autonomous later. In an interactive job, "go ahead without asking" leaves the mode as it is: the gates still need the user's click, and their words can go in its note.
+- **analyse**: the user wants an answer about lenses that already exist (an operand, a curve, a comparison), not a new design. No demand and no gates; `workflow.current` is `analyse` throughout ([analyse.md](references/analyse.md)).
+
+Create an analysis job when the user asks about a lens rather than for one, and an interactive job for a design unless the user asked for an exercise or a test run. A job keeps its mode: when an analysis turns into a design, start a new interactive job. Only the user turns an autonomous job interactive, in the window; no job becomes autonomous later. In an interactive job, "go ahead without asking" leaves the mode as it is: the gates still need the user's click, and their words can go in its note.
 
 Run commands from the repository root as `uv run saos ...`. Every command prints one JSON object. This skill gives the decisions; the interfaces are looked up, before you first use one and whenever a name or format is uncertain:
 
@@ -28,7 +30,7 @@ Terms: [terms.md](references/terms.md), read when you are unsure what a saos ter
 ## Start a session
 
 1. Before other work, run `uv run saos daemon status` and read [session.md](references/session.md). Ask in your first reply for any missing precondition it lists; never work around one silently.
-2. For a new need, create the job (`uv run saos job create --name <name> --mode interactive|autonomous`, see [above](#interactive-or-autonomous)) and enter stage 1. Otherwise run `uv run saos job show <job>`, reread the demand with `uv run saos demand show --job J`, and enter the stage `workflow.current` names. A step with status `blocked` waits on the open question in `workflow.blocking`: get it answered before optimising or recording rounds. `progress` and `runs` show work still running; follow it rather than starting it again.
+2. For a new need, create the job (`uv run saos job create --name <name> --mode interactive|autonomous|analyse`, see [above](#interactive-autonomous-or-analysis)) and enter stage 1, or for an analysis job read [analyse.md](references/analyse.md). Otherwise run `uv run saos job show <job>`, reread the demand with `uv run saos demand show --job J`, and enter the stage `workflow.current` names. A step with status `blocked` waits on the open question in `workflow.blocking`: get it answered before optimising or recording rounds. `progress` and `runs` show work still running; follow it rather than starting it again.
 3. On entering a stage, read its file before acting. The stage is done when its last column holds.
 
 | `workflow.current` | Stage | Read | Done when |
@@ -37,6 +39,7 @@ Terms: [terms.md](references/terms.md), read when you are unsure what a saos ter
 | `modeling`, `model_approve` | 2. Choose and approve the model | [model.md](references/model.md) | the model page of the lens you will optimise is approved (likewise) |
 | `design` | 3. Design in rounds | [rounds.md](references/rounds.md) | the round decision is `achieved`, `exhausted` or `limit`, or a stop is recorded |
 | `deliver` | 4. Deliver | [delivery.md](references/delivery.md) | every item of [Finish](#finish) holds |
+| `analyse` | Analysis job | [analyse.md](references/analyse.md) | the user has the answer, each number with its definition, lens and backend |
 
 Read these when their condition first holds:
 
@@ -48,7 +51,7 @@ Read these when their condition first holds:
 
 ## Rules in every stage
 
-- **Measured evidence.** Every optical number you decide on comes from a saos backend (operand, ray trace, analysis, check), and every number you deliver comes from OpticStudio. Hand estimates guide reasoning and are labelled as estimates; never write your own ray tracer, paraxial or aberration calculator or surrogate. rtc is the one other tracer. The daemon computes stages 1 to 3 on it ([session.md](references/session.md#two-backends-in-one-daemon)), and the round you deliver is re-measured on OpticStudio first ([delivery.md](references/delivery.md#re-measure-on-opticstudio)).
+- **Measured evidence.** Every optical number you decide on comes from a saos backend (operand, ray trace, analysis, check), and every number you deliver from a design comes from OpticStudio (an analysis job's answer follows [analyse.md](references/analyse.md#which-backend-gives-the-number)). Hand estimates guide reasoning and are labelled as estimates; never write your own ray tracer, paraxial or aberration calculator or surrogate. rtc is the one other tracer. The daemon computes stages 1 to 3 on it ([session.md](references/session.md#two-backends-in-one-daemon)), and the round you deliver is re-measured on OpticStudio first ([delivery.md](references/delivery.md#re-measure-on-opticstudio)).
 - **One definition per number.** Optimisation targets, script objectives and first-order estimates use the demand checks' definition, or are compared with them on the same lens before you draw a conclusion.
 - **No silent relaxing.** A goal that cannot be met is reported with its gap. Changing what the demand judges (the full list is in the [format](demand.example.yaml) header) goes back to the user for a new confirmation.
 - **Sourced materials in delivery.** Model glasses are for exploration only.
@@ -59,7 +62,7 @@ Read these when their condition first holds:
 
 ## Stop and ask
 
-Ask the user, with the evidence, its impact and your recommended options, as soon as one of these holds; you do not have to exhaust every tier first (in an autonomous job, decide and record instead, [above](#interactive-or-autonomous)):
+Ask the user, with the evidence, its impact and your recommended options, as soon as one of these holds; you do not have to exhaust every tier first (in an autonomous job, decide and record instead, [above](#interactive-autonomous-or-analysis)):
 
 - the demand contradicts itself, or a constant, range or pass line rests on a weak basis;
 - a measurement can be read in more than one way and the choice changes the result;

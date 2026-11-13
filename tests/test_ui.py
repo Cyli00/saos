@@ -261,6 +261,28 @@ def test_the_user_can_ask_for_changes_at_a_gate_and_switch_an_autonomous_job_to_
     assert jobs.get_job(auto.id).mode == "interactive"
 
 
+def test_an_analysis_job_has_one_step_no_gates_and_computes_on_rtc(ui, fake_lens_file):
+    from saos.daemon import STAGE_BACKENDS
+    from saos.protocol import SaosError
+
+    (daemon, _), srv = ui
+    job = jobs.create_job("mtf-question", "analyse")
+    assert job.mode == "analyse"
+    call(daemon, "lens.import", job=job.id, src=str(fake_lens_file), name="a.zmx")
+    call(daemon, "lens.load", job=job.id, file="a.zmx")
+    snap = stage.snapshot(job)
+    assert snap["current"] == "analyse" and [s["id"] for s in snap["steps"]] == ["analyse"]
+    assert snap["steps"][0]["detail"] == {"lens": "a.zmx"}
+    # 写了需求单也不会走进设计阶段；关卡只属于设计任务 / a demand file does not start the design stages; gates belong to design jobs
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
+    assert stage.snapshot(job)["current"] == "analyse"
+    with pytest.raises(SaosError, match="analysis job"):
+        demand.confirm(job.root, "", via="auto", reason="题目给定")
+    assert get(srv, f"/api/mode?job={job.id}", data={"mode": "interactive"})[1]["error"]["code"] == "BAD_ARGS"
+    assert jobs.get_job(job.id).mode == "analyse"
+    assert daemon._stage_of({"job": job.id}) == "analyse" and STAGE_BACKENDS["analyse"] == "rtc"
+
+
 def test_the_quote_fallback_is_refused_while_the_window_is_open(flow, monkeypatch):
     import saos.ui as ui_pkg
     from saos import cli

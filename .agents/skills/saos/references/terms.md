@@ -14,6 +14,7 @@ The Chinese and English names saos uses, with what each covers. Use these names 
 | **重测基准** | Rebase (`rebase`) | 判定代码改动后，用新判定重测此前最佳归档镜头的记录；数值一致则延续比较窗口，不一致则开启新窗口（*勿称：reverify、回归测试*） |
 | **复测** | Confirmation (`confirm`) | 在 OpticStudio 上重测 rtc 记下的一轮（`saos round --confirm`，逐轮复测在需求访谈时约定，默认不做）；不单独成轮，其数值替换那一轮的数值，结论与 rtc 不同则回到设计（*勿与重测基准混淆*） |
 | **设计任务** | Design Job (`jobs/<job>/`) | 从一份用户需求到交付的一次完整设计及其文件目录（*勿称：项目、会话、run*） |
+| **分析任务** | Analysis Job (`job create --mode analyse`) | 回答关于现成镜头的问题（某个量、某条曲线、两个镜头对比）的任务，没有需求单、关卡、轮次和报告；要按目标改镜头时另建设计任务（*勿称：仿真任务*） |
 | **运行实例** | Instance (`work/<instance>/`) | 一个后台进程及其独占运行目录，不同实例可并行（*勿单称“实例”指代 OpticStudio 进程*） |
 | **计算后端** | Backend (`zos`, `rtc`) | 后台进程里持有镜头并完成计算的一方：`zos` 是 OpticStudio 会话，`rtc` 做交付之前的全部计算，`zos` 做交付前的最后优化与交付轮测量；`fake` 仅供工具测试 |
 | **OpticStudio 实例** | OpticStudio Instance | 占用一个 ZOS-API 许可的 OpticStudio 进程（桌面窗口、standalone 会话或 Worker）（*勿称：license 槽*） |

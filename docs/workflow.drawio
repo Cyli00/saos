@@ -1,6 +1,6 @@
 <mxfile host="saos" modified="2026-11-03T00:00:00+00:00" agent="saos" version="21.3.7" type="device">
   <diagram id="saos-workflow" name="saos workflow">
-    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1050" pageHeight="876" math="0" shadow="0">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1050" pageHeight="940" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -173,6 +173,12 @@
         </mxCell>
         <mxCell id="note" value="自主任务：agent 用 --reason 通过关卡，报告注明未经用户确认。阶段与完成判据见 .agents/skills/saos/SKILL.md。" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;strokeColor=none;fillColor=none;fontSize=11.5;fontColor=#6B7280;" vertex="1" parent="1">
           <mxGeometry x="30" y="822" width="900" height="22" as="geometry" />
+        </mxCell>
+        <mxCell id="analyse" value="&lt;b&gt;分析任务：只有“分析”一步&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#6B7280&quot;&gt;saos job create --mode analyse · saos backends · saos daemon use&lt;/font&gt;" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;align=left;verticalAlign=middle;spacingLeft=10;fontSize=13;fontColor=#111827;fillColor=#E8F0FE;strokeColor=#3B6FD8;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="30" y="856" width="420" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="analyse_note" value="关于现成镜头的问题（某个量、某条曲线、两个镜头对比）：没有需求单、关卡、轮次和报告；在 rtc 上算，rtc 拒绝或没对上的量在 OpticStudio 上补，每个数标明后端。要按目标改镜头时另建设计任务。" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;strokeColor=none;fillColor=none;fontSize=11.5;fontColor=#6B7280;" vertex="1" parent="1">
+          <mxGeometry x="470" y="852" width="540" height="58" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

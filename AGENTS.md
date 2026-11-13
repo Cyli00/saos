@@ -28,7 +28,7 @@
   - 脚本 import 的 Python 接口 → docstring，由 `saos api` 读出；ctx 方法的说明只写在 docstring（英文部分），`exec --help` 各主题里用一行 `<CTX 名字 …>` 从它生成，主题里只写跨方法的说明。ctx 上转调 kit 函数的方法沿用函数的 docstring（`kit.documented_like`）
   - rtc 能算什么这类清单从代码常量生成（`cli_help._operands`），不手写；镜头能带什么、各项是否对过账由 `saos backends` 现场用探针镜头问 rtc 后端（`src/saos/capability.py`），新增一类处方选项时在它的探针表里加一项
 - 改动 agent 的判断或流程时，写进内容所属的那一份：
-  - 某阶段的做法 → 该阶段文件（`need.md`、`model.md`、`rounds.md`、`delivery.md`）；停滞与诊断 → `diagnosis.md`；评价函数（初筛和轮次共用）→ `merit.md`
+  - 某阶段的做法 → 该阶段文件（`need.md`、`model.md`、`rounds.md`、`delivery.md`），分析任务 → `analyse.md`；停滞与诊断 → `diagnosis.md`；评价函数（初筛和轮次共用）→ `merit.md`
   - 脚本和循环怎么选、rtc 数字怎么对待、rtc 副本 → `scripting.md`；微光学测量 → `micro.md`
   - 后端切换、许可证、长运行 → `session.md`
   - 任务目录里你写的文件和什么指挥你 → `files.md`

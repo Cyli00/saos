@@ -15,6 +15,8 @@ from saos import client, demand, i18n, jobs, ledger, model_gate
 from saos.protocol import ErrorCode, SaosError, finite
 
 STEPS = ("interview", "demand_confirm", "modeling", "model_approve", "design", "deliver")
+# 分析任务（jobs.MODES 的 analyse）只有这一步，没有关卡 / an analysis job has this one step and no gates
+ANALYSE_STEPS = ("analyse",)
 FINAL = ("achieved", "exhausted", "limit", "stopped")
 
 
@@ -219,6 +221,10 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
         if detached:
             out["progress"] = {**detached[-1], "detail": detached[-1]["folder"]}
 
+    if job.mode == "analyse":
+        out["lang"] = i18n.resolve()
+        return {**out, "steps": [{"id": "analyse", "status": "active", "detail": {"lens": job_state.get("current_lens")}}],
+                "current": "analyse"}
     # 可行性记录（need.md：explore/feasibility/README.md）写了没有 / whether the feasibility record exists
     out["feasibility"] = (root / "explore" / "feasibility" / "README.md").is_file()
     try:

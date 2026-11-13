@@ -8,7 +8,8 @@ const POLL_MS = 1500;
 
 const TEXT = {
   zh: {
-    interview: "访谈与可行性判断", demand_confirm: "确认需求单", modeling: "起型、探索与建模", model_approve: "确认建模说明", design: "自主设计", deliver: "交付报告",
+    interview: "访谈与可行性判断", demand_confirm: "确认需求单", modeling: "起型、探索与建模", model_approve: "确认建模说明", design: "自主设计", deliver: "交付报告", analyse: "分析",
+    analyse_sub: "测量与对比现成镜头 · 每个数标明后端",
     back_reject: "调整设计", legacy_job: "历史任务：请新建任务并重测",
     no_demand: "访谈中，尚无需求单", invalid_demand: "需求单未通过校验", first: "等待用户确认", reconfirm: "需求已改动，待重新确认",
     waiting: "等你确认", blocked: "待回答", active: "进行中", running: "运行中",
@@ -89,7 +90,8 @@ const TEXT = {
     gate_ok: "确认", gate_note_short: "备注（要求修改时必填）", ld_objects: "非序列物体", no_ld: "等待镜头数据",
   },
   en: {
-    interview: "Interview & feasibility", demand_confirm: "Confirm demand", modeling: "Start designs & model", model_approve: "Approve model", design: "Autonomous design", deliver: "Delivery report",
+    interview: "Interview & feasibility", demand_confirm: "Confirm demand", modeling: "Start designs & model", model_approve: "Approve model", design: "Autonomous design", deliver: "Delivery report", analyse: "Analysis",
+    analyse_sub: "Measure and compare existing lenses · each number names its backend",
     back_reject: "revise design", legacy_job: "Legacy job: create a new job and remeasure",
     no_demand: "interviewing, no demand yet", invalid_demand: "demand fails validation", first: "waiting for the user", reconfirm: "demand changed, confirm again",
     waiting: "your turn", blocked: "question", active: "in progress", running: "running",
@@ -292,6 +294,7 @@ function nodeSub(step) {
     const rtc = last.backend === "rtc" ? ` · ${t("tag_rtc")}` : "";
     return `${t("select_round", last.round)} · G ${fmtG(last.shortfall)} · ${last.tiers.join("+")}${rtc}${unclosed}`;
   }
+  if (step.id === "analyse") return state.progress ? `${state.progress.op}` : d?.lens || t("analyse_sub");
   if (step.id === "deliver") {
     if (d && state.confirm_pending != null) return `${t("st_" + d)} · ${t("confirm_pending", state.confirm_pending)}`;
     return d ? `${t("st_" + d)} · ${step.status === "done" ? t("report_ready") : t("report_todo")}` : t("deliver_cmd");
@@ -308,7 +311,8 @@ function renderArc() {
   if (!W) return;
   const x0 = 8, x1 = W - 8, yTop = 22, yEnd = H - 44;
   const P = (s) => [(1 - s) ** 2 * x0 + 2 * (1 - s) * s * ((x0 + x1) / 2) + s * s * x1, (1 - s) ** 2 * yEnd + 2 * (1 - s) * s * (yTop - 20) + s * s * yEnd];
-  const steps = state.steps, n = steps.length, ts = steps.map((_, i) => 0.03 + (0.94 * i) / (n - 1));
+  // 分析任务只有一个节点，放在弧顶 / an analysis job has one node, at the top of the arc
+  const steps = state.steps, n = steps.length, ts = steps.map((_, i) => (n > 1 ? 0.03 + (0.94 * i) / (n - 1) : 0.5));
   const at = steps.findIndex((s) => s.status !== "done"), doneT = at < 0 ? 1 : ts[at];
   const running = !!state.progress;
   const room = Math.max(8, Math.floor((W / n) / (lang === "zh" ? 11 : 6.2)));

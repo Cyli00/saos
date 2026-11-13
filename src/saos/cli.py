@@ -400,7 +400,8 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--name", required=True)
     create.add_argument("--mode", choices=jobs.MODES, default="interactive",
                         help="interactive: the user confirms the gates in the window and may ask for changes (designing from scratch); "
-                             "autonomous: the agent passes the gates with --reason and records its decisions (exercises, tests)")
+                             "autonomous: the agent passes the gates with --reason and records its decisions (exercises, tests); "
+                             "analyse: answers about existing lenses (measure, compare), no demand and no gates")
     jsub.add_parser("list")
     show = jsub.add_parser("show")
     show.add_argument("job")
