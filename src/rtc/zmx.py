@@ -303,7 +303,7 @@ class Lens:
 # ---------------------------------------------------------------- 解析
 
 # LDE 之前出现的顶层关键字；第一个 SURF 之后出现的非缩进行一律视为 MFE 行。
-_HEADER_KEYS = {
+HEADER_KEYS = {
     "VERS", "MODE", "NAME", "AUTH", "IWDP", "PFIL", "LANG", "UNIT", "ENPD", "ENVD",
     "GFAC", "GCAT", "RAIM", "PUSH", "SDMA", "OMMA", "FTYP", "ROPD", "HYPR", "PICB",
     "XFLN", "YFLN", "FWGN", "VDXN", "VDYN", "VCXN", "VCYN", "VANN", "WAVM", "PWAV",
@@ -510,7 +510,7 @@ def parse_text(text: str, path: str = "") -> Lens:
             # 面之后的 BLNK 是评价函数的空行或注释行：要占一个行号，OPGT、DIFF 等按行号引用
             # a BLNK after the surfaces is a merit row (blank or comment); it holds a row number that OPGT, DIFF, … refer to
             lens.mfe.append(MFERow(op=key, numbers=[], raw=raw_line.strip()))
-        elif key in _HEADER_KEYS:
+        elif key in HEADER_KEYS:
             lens.raw[key] = raw_line.strip()
         elif seen_surface:
             # 第一个 SURF 之后的非缩进行 = MFE 操作数

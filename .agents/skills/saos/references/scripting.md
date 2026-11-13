@@ -1,6 +1,6 @@
 # Scripts and loops
 
-Interfaces live where you can look them up: `uv run saos exec --help` lists the `ctx` topics (`params`, `measure`, `edit`, `rtc`, `fast`, `parallel`, `experts`, ...), and `uv run saos api <module>` gives the Python helpers (`saos.ctx.rows`, `saos.kit`, `saos.search`). Before your first script on rtc, read `uv run saos exec --help rtc`: it lists what rtc computes. This file holds the choices those pages cannot make for you.
+Interfaces live where you can look them up: `uv run saos exec --help` lists the `ctx` topics (`params`, `measure`, `edit`, `rtc`, `fast`, `parallel`, `experts`, ...), and `uv run saos api <module>` gives the Python helpers (`saos.ctx.rows`, `saos.kit`, `saos.search`). Before your first script on rtc, run `uv run saos backends` for what rtc computes, with which status, and what it refuses, and read `uv run saos exec --help rtc` for its conventions. This file holds the choices those pages cannot make for you.
 
 ## Choose where a loop runs
 

@@ -4,7 +4,7 @@ The outcome of this stage is an approved model description: a structure chosen f
 
 ## Build the model
 
-Models are built, saved, described and approved on rtc, like every stage before delivery; the model page then shows the meridional section drawn from the viz data, the same one the workflow window shows. A surface type or setting rtc cannot trace comes back as `backend_switch.stayed`: the lens then computes on OpticStudio, and you tell the user which item caused it ([session.md](session.md#two-backends-in-one-daemon)).
+Models are built, saved, described and approved on rtc, like every stage before delivery; the model page then shows the meridional section drawn from the viz data, the same one the workflow window shows. A surface type or setting rtc cannot trace comes back as `backend_switch.stayed`: the lens then computes on OpticStudio, and you tell the user which item caused it ([session.md](session.md#two-backends-in-one-daemon)). Find out before you build: `uv run saos backends` gives the status of every surface type, aperture, field type, solve and setting on rtc, and `uv run saos backends --prescription <file>` judges the prescription you wrote (`--lens <file>` an existing `.zmx`), naming under `refused` what would move it to OpticStudio.
 
 - Build or import through `lens build`, `lens load` and `lens save`. Commands use native `.zmx` files (`lens build --as start.zmx`) in OpticStudio 24.1 line format, whichever backend saves them.
 - Keep sourced materials and mechanical semi-diameters (`lens set --param mech_semi_diameter`) in the model; the interference check uses the parts' outer edges.
@@ -21,7 +21,7 @@ These are part of the approved structure, so settle them with the form. Formats:
 - **A coaxial reflective or catadioptric form:** Standard mirrors, negative thicknesses after a reflection, and decentred circular obscurations or rectangular apertures for holes and supports.
 - **A beam that clips off axis by design:** `fields.vignetting` describes it at launch.
 
-All of these compute on rtc, ray aiming off or real; real aiming with a stop-defined aperture or a mirror is listed in `computed_by`. A mirror on another surface type, other aperture shapes, tilts and folds keep the lens on OpticStudio for stages 1 to 3 (`backend_switch.stayed`), which holds a licence throughout: choose them when the optics needs them and tell the user why. rtc's wavefront operands refuse mirrors, and the wizard defaults to wavefront: for a reflective form on rtc, set its `data` to `SpotRadius`.
+All of these compute on rtc, ray aiming off or real; real aiming with a stop-defined aperture or a mirror is listed in `computed_by`. What `uv run saos backends` marks `refused` (a mirror on another surface type, other aperture shapes, tilts and folds among them) keeps the lens on OpticStudio for stages 1 to 3 (`backend_switch.stayed`), which holds a licence throughout: choose it when the optics needs it and tell the user why. rtc's wavefront operands refuse mirrors, and the wizard defaults to wavefront: for a reflective form on rtc, set its `data` to `SpotRadius`.
 
 ## Choose a starting form
 

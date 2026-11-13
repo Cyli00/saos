@@ -26,7 +26,7 @@
 - 技能只写判断：什么时候用、怎么选、出了什么结果该怎么办。接口写在环境里，改接口时改环境，技能不重复：
   - 命令的参数、格式、结果字段、错误码 → `src/saos/cli_help.py`（大的帮助页按 `TOPICS` 分主题）
   - 脚本 import 的 Python 接口 → docstring，由 `saos api` 读出
-  - rtc 能算什么这类清单从代码常量生成（`cli_help._operands`），不手写
+  - rtc 能算什么这类清单从代码常量生成（`cli_help._operands`），不手写；镜头能带什么、各项是否对过账由 `saos backends` 现场用探针镜头问 rtc 后端（`src/saos/capability.py`），新增一类处方选项时在它的探针表里加一项
 - 改动 agent 的判断或流程时，写进内容所属的那一份：
   - 某阶段的做法 → 该阶段文件（`need.md`、`model.md`、`rounds.md`、`delivery.md`）；停滞与诊断 → `diagnosis.md`；评价函数（初筛和轮次共用）→ `merit.md`
   - 脚本和循环怎么选、rtc 数字怎么对待、rtc 副本 → `scripting.md`；微光学测量 → `micro.md`

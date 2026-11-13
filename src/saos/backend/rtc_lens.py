@@ -362,6 +362,38 @@ def carried_lines(text: str) -> dict[str, list[str]]:
     return {"header": header, "tail": tail}
 
 
+# The coating file an OpticStudio default save names; another name means coatings rtc does not apply
+DEFAULT_COATING_FILE = "COATING.DAT"
+# Header lines the .zmx reader does not list but OpticStudio writes in every save (EERA in 738 of the repo's 836 .zmx
+# files, NOTE for the notes text); neither changes a computed number
+SAVED_INERT_HEADER = frozenset({"EERA", "NOTE"})
+
+
+def unread_settings(carried: dict[str, list[str]] | None) -> list[str]:
+    """Settings this lens sets away from OpticStudio's defaults that rtc carries over and never applies.
+
+    polarization when POLS is not unpolarized (first number 1 in a default save), coating_file when a COFN line names a
+    file other than COATING.DAT. Any other carried header line whose keyword neither the .zmx reader nor
+    SAVED_INERT_HEADER knows comes back as "header line KEY": rtc cannot tell which setting it holds (apodization other
+    than uniform is expected here, but no OpticStudio save with one has been checked yet)."""
+    from rtc import zmx
+
+    out: list[str] = []
+    for line in (carried or {}).get("header", []):
+        key, *values = line.split()
+        key = key.upper()
+        if key == "POLS":
+            if values[:1] != ["1"]:
+                out.append("polarization")
+        elif key == "COFN":
+            files = [v.strip('"') for v in values if v != "QF"]
+            if files[:1] != [DEFAULT_COATING_FILE]:
+                out.append("coating_file")
+        elif key not in zmx.HEADER_KEYS and key not in SAVED_INERT_HEADER:
+            out.append(f"header line {key}")
+    return sorted(set(out))
+
+
 def unknown_surface_lines(lens) -> list[str]:
     """面块里 rtc 没见过、也不建模的行（拾取等求解、膜层…）：照算或丢掉都会让存盘的镜头与 rtc 算的不同，交给调用方拒绝。
     Surface lines rtc has neither seen nor models (pickups and other solves, coatings, …); the caller refuses them."""

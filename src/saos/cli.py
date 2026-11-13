@@ -571,6 +571,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("api")
     p.add_argument("target", nargs="?", help="module, full interface path, ctx or ctx.<name>; omit to list modules")
     p.set_defaults(func=cmd_api)
+    p = sub.add_parser("backends")
+    which = p.add_mutually_exclusive_group()
+    which.add_argument("--lens", help="a .zmx file: which backend computes it, and why")
+    which.add_argument("--prescription", help="a saos lens build Prescription JSON file: which backend builds it, and why")
+    p.add_argument("--job", help="read --lens from this job's lenses/ instead of a file path")
+    p.set_defaults(func=cmd_backends)
 
     p = sub.add_parser("report")
     p.add_argument("--job", required=True)
@@ -623,6 +629,18 @@ def cmd_api(args: argparse.Namespace) -> dict[str, Any]:
     from saos import api_help
 
     return api_help.describe(args.target)
+
+
+def cmd_backends(args: argparse.Namespace) -> dict[str, Any]:
+    from saos import capability
+
+    if args.prescription:
+        return capability.from_prescription(Path(args.prescription))
+    if args.lens:
+        return capability.lens(jobs.get_job(args.job).resolve_lens(args.lens, must_exist=True) if args.job else Path(args.lens))
+    if args.job:
+        raise SaosError(ErrorCode.BAD_ARGS, "--job names where --lens is read from; give --lens too")
+    return capability.table()
 
 
 def _ensure_window(args: argparse.Namespace) -> dict[str, Any] | None:

@@ -17,6 +17,11 @@
 - 2026-11-10 真机验证：`ctx.seidel` 的逐面 W040/W131/W222/W220P/W311 与 OpticStudio 的 SPHA/COMA/ASTI/FCUR/DIST 操作数一致（1.3e-15 波），合计也与它的 Seidel 表 TOT 一致；但 Seidel 表的 W311 逐面值与 DIST 操作数本身差到 3e-3 波（W040 等四列只差 6e-7）。DIST(Int1=0) 改为像面实际畸变百分比（-0.020651% 对 0.153820 波），与 Seidel 表 TOT 不是同一量。有限物距的 OPD 在物距 100 mm 的 sequential 上与 OpticStudio OPDC 差 ≤ 2.6e-8 波。
 - OPDX 还剩一处没查清：21 点整光瞳方格组（本来就左右对称，补全不改变它）上 rtc 与 OpticStudio 差到 6.97e-3 波，差几乎是一个线性函数（残差 1.8e-5 波），而向导的高斯求积组补全后离线复算与真机差值一致到 4 位。另外 `truth.json` 的 `opd` 行里 OPDX 一列与 OPDC 逐条相等：录入时用 `ctx.op` 单独求一行，质心参考要靠评价函数里的同组行才成立，这份真值验证不了 OPDX，重录时要把成组的 OPDX 行放进评价函数再读。
 - rtc 向导与 OpticStudio 原生向导的行结构不同：`rings=3, arms=6` 时 rtc 每个视场/波长写 9 个光瞳点，OpticStudio 对离轴视场写 9 个、对轴上视场只写 3 个（同一 `Ring=2` 采样），所以 rtc 81 行对 OpticStudio 63 行；glass/air 边界行也一边 6 行、一边 12 行。2026-11-10 真机实测，向导建出的评价函数值因此差约一倍（Centroid：rtc 0.323395 对 OpticStudio 0.165489）。原生 `Ring` 与 saos `rings` 的换算、轴上视场的臂数和边界组数都还没对账。
+- `saos backends` 的 `measurements` 没列 `ctx.spot`、`ctx.trace`、`ctx.quick_focus`：`RtcBackend` 算它们时不往 `_used` 记未对账标记，按 `provenance()` 的规则会被判成 `reconciled`，而点列 RMS/GEO 的取样与 OpticStudio 的 Standard Spot 不同、没有对账。先定点列要不要在 `RtcBackend` 里记标记，再把它们列进表。
+- `BICONICZ` 在 `rtc.RECONCILED_TYPES` 里（`.zmx` 读得了），`rtc_lens.TYPES` 没有它（处方建不出），所以 `saos backends` 整表的 `surface_type` 不列它；`--lens` 的判定是对的。
+- `capability.table()` 为取 `OPTICSTUDIO_ONLY`、`OPTICSTUDIO_SCANS`、`STAGE_BACKENDS` 三个常量导入了整个 `saos.daemon`。
+- 两处未上真机验证：（1）后台进程 `lens build` 的预检改成在临时 `RtcBackend` 上完整建一遍后，带 Even Asphere 反射镜的处方应留在 OpticStudio（`backend_switch.stayed`）而不是在 rtc 上报 `BACKEND_UNSUPPORTED`，`tests/test_zemax_rtc.py` 还没有这条用例；（2）`rtc_lens.unread_settings` 不知道非均匀切趾在 `.zmx` 文件头里写成哪一行（仓库 836 份 `.zmx` 没有一份带切趾），现在只能报成 `header line KEY`，要一份 OpticStudio 存盘的高斯切趾样本来定名。
+- `ctx.seidel` 和 SPHA、COMA、ASTI、FCUR 的逐面值已与 OpticStudio 对上（见上面 2026-11-10 一条），但它们不在 `rtc.RECONCILED_OPERANDS` 里，`computed_by` 和 `saos backends` 仍报 `unreconciled`。W311 与 DIST 有差异，不能一起准入。准不准入由用户定。
 
 ## rtc 待办（2026-11-10 从已删除的计划文档并入；当时的细节用 `git show 3c488f0:docs/plans/<文件>` 查）
 

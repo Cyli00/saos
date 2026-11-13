@@ -16,7 +16,8 @@ Output protocol (help itself is plain text):
   Non-finite results: infinity -> "inf"/"-inf", NaN -> null; numpy arrays -> lists.
 
 Process model:
-  Local: daemon control, job, demand, rule-out, stop, report, scan --show, api.
+  Local: daemon control, job, demand, rule-out, stop, report, scan --show, api,
+    backends.
     ui runs a local service.
   Daemon: lens, opt, exec, check, round and scan execution. It holds both
     backends and the loaded lens; OpticStudio starts when a command first needs it.
@@ -69,6 +70,8 @@ Help
     --help lists them, and "all" prints every topic.
   uv run saos api [module | module.name | ctx]: signatures and docstrings of the
     Python helpers scripts import.
+  uv run saos backends [--lens FILE | --prescription FILE]: what rtc computes and
+    which backend a lens lands on.
 """
 
 GROUPS = {
@@ -289,6 +292,27 @@ COMMANDS = {
             "  paragraph of each docstring; a full path (saos.starts.patents.search) gives the\n"
             "  whole docstring, with methods for a class. ctx lists the ctx methods and ctx.<name>\n"
             "  gives one. Which to use when and what they cover: uv run saos exec --help.", "BAD_ARGS"),
+    "backends": ("Say what rtc computes and which backend a lens lands on, before you build or measure; no daemon, no licence.",
+                 "Without arguments: rtc's capability table. Each item of rtc.aperture, fields,\n"
+                 "  ray_aiming, surface_type, surface_aperture, solve and lens (named as in lens build\n"
+                 "  prescriptions), of measurements and of analyses has a status and, unless\n"
+                 "  reconciled, why. rtc.operands and rtc.merit_operands list names by status.\n"
+                 "    reconciled    rtc computes it; compared with OpticStudio\n"
+                 "    unreconciled  rtc computes it; results list it in computed_by\n"
+                 "    refused       BACKEND_UNSUPPORTED; a lens holding it computes on OpticStudio\n"
+                 "  always_zos names the operations, scan plans and workflow stages that run on\n"
+                 "  OpticStudio whatever the lens. The statuses are asked of the rtc backend with\n"
+                 "  probe lenses when the command runs (about 1 s), not kept in a list.\n"
+                 "  --lens FILE.zmx or --prescription FILE.json: backend is rtc, with unreconciled\n"
+                 "  (the paths this lens takes, as computed_by will list them), carried_unread\n"
+                 "  (settings of a .zmx that differ from OpticStudio's defaults and that rtc saves\n"
+                 "  back without applying: polarization, coating_file, or \"header line KEY\" for a\n"
+                 "  line it cannot name) and merit_refused (merit operands in the file that rtc\n"
+                 "  does not compute); or zos, with refused\n"
+                 "  (what rtc cannot reproduce, as backend_switch.stayed will say). Catalog glasses\n"
+                 "  are read from SAOS_GLASSCAT as the daemon does. --job J reads --lens from the\n"
+                 "  job's lenses/. A malformed prescription is BAD_ARGS, as in lens build.",
+                 "BAD_ARGS, FILE_NOT_FOUND, JOB_NOT_FOUND, PATH_OUTSIDE_JOB"),
     "scan": (
         "Scan, compare structures, minimize, probe or tolerance with the daemon's worker pool.",
         "Use --plan to execute, or --show [NNN] to read progress/results locally.\n"
@@ -762,11 +786,11 @@ Expert search classes (saos.ctx.experts)
   SystemFile, and opt hammer/global refuse until the lens is saved.
 
 The rtc instance
-  When the daemon computes on rtc, ctx is rtc. lens build takes Standard, Paraxial,
-  EvenAspheric, Biconic and Toroidal surfaces, EPD or object-space NA, angle or
-  object-height fields, infinite or finite objects, circular apertures, variables and
-  marginal-ray-height thickness solves, Standard mirrors and coaxial reflective forms;
-  the rest comes back as one BACKEND_UNSUPPORTED. A change recomputes solves and
+  uv run saos backends answers what rtc takes and computes as JSON, for the whole table
+  or for one lens or prescription; ask it before choosing a surface type, aperture or
+  solve. This topic adds the conventions and measured differences.
+  When the daemon computes on rtc, ctx is rtc. What lens build refuses comes back as
+  one BACKEND_UNSUPPORTED listing every item. A change recomputes solves and
   automatic semi-diameters (the object surface keeps its file value). lens save writes
   an OpticStudio .zmx.
   ctx.op and opt merit: REAX|Y|Z etc. take Int1 surface, Int2 wavelength, data Hx, Hy, Px, Py.
@@ -774,10 +798,24 @@ The rtc instance
   Works as on OpticStudio: ctx.trace, spot, cra, field_profile, set, get, kept; ctx.quick_focus
     is smallest RMS spot over every field and wavelength. ctx.merit_add, ctx.change_surface_type
     (Standard, EvenAspheric) and ctx.solve with fixed or variable work; other solves refuse.
-  ctx.analysis("FftMtf", {...}) is the one analysis, not yet reconciled.
-  ctx.huygens, ctx.wavefront_rms are BACKEND_UNSUPPORTED until rtc's PSF is reconciled;
-    a check using them is filed under backend_unsupported. So is one using ctx.system or
-    ctx.zosapi: read the lens through ctx.get, ctx.op (SSAG, INDX, ...) and ctx.trace.
+  ctx.wavefront_rms traces a 64 x 64 pupil grid; its ray OPDs match OpticStudio's OPDC and
+    the RMS came within 0.2 % of OpticStudio's Zernike analysis on the cases measured, so
+    computed_by lists it as WAVEFRONT_RMS. Mirrors refuse, like the wavefront merit rows.
+  ctx.seidel and SPHA, COMA, ASTI, FCUR, DIST, PETC, PARY, PATY take coaxial Standard and
+    Even Asphere refracting surfaces; mirrors, Paraxial, Biconic and Toroidal surfaces
+    refuse. On 2026-11-10 the surface values matched OpticStudio's operands to 1.3e-15 and
+    the sums to its OPD and real-ray transverse aberrations; the Seidel table's W311
+    differs slightly from the DIST operand, and DIST(Int1=0) is a percentage distortion.
+    PARY and PATY interpret Hy as the actual field fraction before the tangent, so 0.6 Hy on
+    a 5-degree field is 3 degrees.
+  ctx.merit_jacobian(): the Jacobian of the merit function at the current lens, the one
+    each opt local step uses: variables, rows (the merit row of each residual), residuals
+    (sqrt(weight) x (value - target)), jacobian[row][variable], steps, merit, and
+    constraints (labels, values >= 0 when met, jacobian) for the boundary rows. The lens
+    is unchanged. rtc only.
+  A check using a refused measurement is filed under backend_unsupported. So is one using
+    ctx.system or ctx.zosapi: read the lens through ctx.get, ctx.op (SSAG, INDX, ...) and
+    ctx.trace.
   Every exec result carries computed_by: the backend, the operands used that rtc has not
     reconciled with OpticStudio, and the unreconciled paths this lens takes.
   EXPP and EXPD are paraxial on rtc while OpticStudio uses small-field real rays; on the

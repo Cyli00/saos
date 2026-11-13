@@ -634,6 +634,13 @@ class RtcBackend(Backend):
         self._systems.clear()
         self._view = None
 
+    def carried_unread(self) -> list[str]:
+        """Settings of the loaded .zmx that rtc carries over unread and that differ from OpticStudio's defaults
+        (rtc_lens.unread_settings); empty for a lens built from a prescription, which writes none of them."""
+        from saos.backend import rtc_lens
+
+        return rtc_lens.unread_settings(self._carried)
+
     def unverified(self) -> list[str]:
         """本镜头用到的、只按手册定义实现而未与 OpticStudio 对账的计算路径（standalone 才有）。
         Calculation paths of this lens implemented from the manual but not reconciled with OpticStudio (standalone only)."""
