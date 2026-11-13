@@ -63,7 +63,7 @@ Read these when their condition first holds:
 
 ## What a number can decide
 
-Every result that carries a number has `trust`, and each check item has its own: `measured` (OpticStudio), `reconciled` (rtc, only on paths compared with OpticStudio), `unreconciled` (rtc, through a path or operand that `computed_by` lists), `refused` (no number; the item is in `backend_unsupported`).
+Every result that carries a number has `trust`, and each check item has its own: `measured` (OpticStudio), `reconciled` (rtc, only on paths compared with OpticStudio), `unreconciled` (rtc, through a path or operand that `computed_by` lists; a number from operands alone counts only the paths in its `unverified_affecting`), `refused` (no number; the item is in `backend_unsupported`).
 
 | `trust` | Estimate | Feasibility verdict | Judge a round | Analysis answer | Deliver a design |
 |---|---|---|---|---|---|

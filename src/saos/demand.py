@@ -849,14 +849,21 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
         measured = measure(shared, spec, item_folder, scripts)
         # 每项耗时写进结果，便于看出哪几项判定最慢、探索时值得单独测哪几项
         item = {k: v for k, v in spec.items() if k != "check"} | measured | {"duration_s": round(time.monotonic() - started, 2)}
-        used = unreconciled(take_used()) if take_used is not None else []
+        raw = take_used() if take_used is not None else frozenset()
+        used = unreconciled(raw) if take_used is not None else []
         operands.update(used)
         if used:
             item["operands_unverified"] = used
+        provenance = {"unverified": paths, "operands_unverified": used} if take_used is not None else None
+        # 操作数判定的依赖已知，只按它实际依赖的路径分档；脚本、分析和度量目录项按整份镜头
+        # an operand check depends on known things and is graded by those paths only; scripts, analyses, metrics by the lens
+        if provenance is not None and "operand" in spec["check"]:
+            provenance["unverified_affecting"] = ctx.backend.affected_by(raw)
+            item["unverified_affecting"] = provenance["unverified_affecting"]
         if measured.get("error_kind") == "backend":
             item["trust"] = "refused"
         elif not measured.get("error"):
-            item["trust"] = trust(backend_name, {"unverified": paths, "operands_unverified": used} if take_used is not None else None)
+            item["trust"] = trust(backend_name, provenance)
         value = measured["value"]
         if spec["goal"] is not None:
             g = shortfall(spec, value)

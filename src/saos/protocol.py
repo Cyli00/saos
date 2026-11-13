@@ -152,10 +152,10 @@ TRUST_LEVELS = ("measured", "reconciled", "unreconciled", "refused")
 
 def trust(backend: str | None, provenance: dict[str, Any] | None = None) -> str | None:
     """一个数的可信等级：OpticStudio 算的是 measured；rtc 算的，经过未对账的计算路径或操作数时是 unreconciled，否则
-    reconciled；没有来源记录的 rtc 数（来源记录出现之前的旧轮次）按 unreconciled 算；其他后端（测试用的 fake）为 None。
+    reconciled（来源记录带 unverified_affecting 时只看其中的路径）；没有来源记录的 rtc 数（来源记录出现之前的旧轮次）按 unreconciled 算；其他后端（测试用的 fake）为 None。
     旧记录没有 trust 字段时也用它从 backend 和 provenance 推出。
     A number's trust level: measured from OpticStudio; from rtc, unreconciled when it took a calculation path or operand
-    not reconciled with OpticStudio, else reconciled; an rtc number without provenance (rounds older than provenance)
+    not reconciled with OpticStudio (only the paths in unverified_affecting where the provenance has it), else reconciled; an rtc number without provenance (rounds older than provenance)
     counts as unreconciled; other backends (fake, for tests) give None. Also derives the level of old records."""
     if backend == "zos":
         return "measured"
@@ -163,17 +163,22 @@ def trust(backend: str | None, provenance: dict[str, Any] | None = None) -> str 
         return None
     if provenance is None:
         return "unreconciled"
-    return "unreconciled" if provenance.get("unverified") or provenance.get("operands_unverified") else "reconciled"
+    # 给了 unverified_affecting（这个数实际依赖的路径）时按它分档，否则按镜头的全部路径
+    # unverified_affecting (the paths this number depends on), where given, grades it instead of every path of the lens
+    paths = provenance["unverified_affecting"] if "unverified_affecting" in provenance else provenance.get("unverified")
+    return "unreconciled" if paths or provenance.get("operands_unverified") else "reconciled"
 
 
-def stamp(backend: Any) -> dict[str, Any]:
+def stamp(backend: Any, single: bool = False) -> dict[str, Any]:
     """一次命令结果的来源与等级：computed_by 是后端身份，rtc 实例上另带 unverified（本镜头经过的未对账路径）与
-    operands_unverified（自上次取走以来用到的未对账操作数，取走后清空）；trust 按 trust() 分档。
+    operands_unverified（自上次取走以来用到的未对账操作数，取走后清空）；single 为真（结果只来自单个操作数）时另带
+    unverified_affecting；trust 按 trust() 分档。
     Source and level of one command's result: computed_by is the backend identity, on the rtc instance with unverified
     (unreconciled paths this lens takes) and operands_unverified (unreconciled operands used since last taken, then
-    cleared); trust is graded by trust()."""
+    cleared), and with single (a result from one operand alone) unverified_affecting; trust is graded by trust()."""
     identity = backend.identity()
-    provenance = backend.provenance() if getattr(backend, "standalone", False) and hasattr(backend, "provenance") else None
+    standalone = getattr(backend, "standalone", False) and hasattr(backend, "provenance")
+    provenance = (backend.provenance(single=True) if single else backend.provenance()) if standalone else None
     return {"computed_by": provenance or identity, "trust": trust(identity.get("backend"), provenance)}
 
 

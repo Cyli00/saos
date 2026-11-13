@@ -70,7 +70,7 @@ def run(lens: Path, checks: list[Any], *, job_root: Path | None = None, demand_i
     with tempfile.TemporaryDirectory(prefix="saos-measure-") as scratch:
         ctx = WorkerContext(backend, Path(job_root) if job_root else Path(scratch), lens, 0)
 
-        def graded(compute) -> dict[str, Any]:
+        def graded(compute, single: bool = False) -> dict[str, Any]:
             backend.take_used()
             try:
                 value = compute()
@@ -78,13 +78,17 @@ def run(lens: Path, checks: list[Any], *, job_root: Path | None = None, demand_i
                 if exc.code == ErrorCode.BACKEND_UNSUPPORTED:
                     return {"value": None, "trust": "refused", "error": exc.message}
                 raise
-            used = unreconciled(backend.take_used())
-            return {"value": value, "trust": trust("rtc", {"unverified": paths, "operands_unverified": used}),
+            raw = backend.take_used()
+            used = unreconciled(raw)
+            provenance = {"unverified": paths, "operands_unverified": used}
+            # 单个操作数按它实际依赖的路径分档（与 lens operand 同一规则）/ one operand: graded by the paths it depends on
+            affecting = {"unverified_affecting": backend.affected_by(raw)} if single else {}
+            return {"value": value, "trust": trust("rtc", {**provenance, **affecting}), **affecting,
                     **({"operands_unverified": used} if used else {})}
 
         items = []
         for kind, spec in specs:
-            out = graded(lambda: _one(ctx, kind, spec))
+            out = graded(lambda: _one(ctx, kind, spec), single=kind == "operand")
             items.append({"check": {kind: spec}, **out, "value": finite(out["value"])})
         result: dict[str, Any] = {"lens": str(lens), "computed_by": {**backend.identity(), "unverified": paths}, "items": items}
         if demand:
@@ -94,8 +98,9 @@ def run(lens: Path, checks: list[Any], *, job_root: Path | None = None, demand_i
             wanted = demand_ids or [s["id"] for s in demand_mod.checked(d) if s["goal"] is not None or "direction" in s]
             rows = []
             # 逐项单独测，才能按项分档；同一次 quick 内的缓存因此不跨项共用 / one quick per item, so each is graded on its own
+            kinds = {s["id"]: next(iter(s["check"])) for s in demand_mod.checked(d)}
             for item_id in dict.fromkeys(wanted):
-                out = graded(lambda: demand_mod.quick(ctx, [item_id]))
+                out = graded(lambda: demand_mod.quick(ctx, [item_id]), single=kinds.get(item_id) == "operand")
                 quick = out.pop("value") or {}
                 error = (quick.get("errors") or {}).get(item_id)
                 if error and (quick.get("error_kinds") or {}).get(item_id) == "backend":

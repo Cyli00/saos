@@ -259,7 +259,8 @@ class Daemon:
                 take_used()
             result = handler(args)
             if op in STAMPED and isinstance(result, dict) and not args.get("list"):
-                result.update(stamp(self.backend))
+                # 单个操作数的结果按它实际依赖的未对账路径分档 / a single operand is graded by the paths it depends on
+                result.update(stamp(self.backend, single=op == "lens.operand"))
         except SaosError as exc:
             error = exc
         except Exception as exc:  # noqa: BLE001 - 后台进程不能因单个请求崩溃

@@ -8,10 +8,15 @@ import json
 import pytest
 import yaml
 
-from saos import demand, jobs, ledger, prescription
+from pathlib import Path
+
+from saos import config, demand, jobs, ledger, prescription
+from saos.backend import rtc
 from saos.backend.rtc import RtcBackend
 from saos.daemon import Daemon
-from saos.protocol import ErrorCode, SaosError
+from saos.protocol import ErrorCode, SaosError, trust
+
+CASES = Path(__file__).parent / "fixtures" / "cases"
 
 # 模型玻璃单透镜，半口径全部固定、物在无穷远、不追光线瞄准：rtc 在它上面不经过任何未对账的路径
 # a model-glass singlet with every semi-diameter fixed, the object at infinity and no ray aiming: rtc takes no unreconciled path
@@ -62,11 +67,96 @@ def test_an_operand_used_by_one_request_does_not_mark_the_next(saos_home):
     assert out["trust"] == "reconciled" and out["computed_by"]["operands_unverified"] == []
 
 
-def test_a_path_the_lens_takes_makes_every_number_unreconciled(saos_home):
-    # 像面半口径不固定：自动半口径未对账，已对账的 REAY 也随之降档 / an automatic image semi-diameter is unreconciled
-    daemon, job = _rtc_job({k: v for k, v in CLEAN.items() if k != "image"})
-    ray = call(daemon, "lens.operand", job=job.id, **REAY)["result"]
-    assert ray["trust"] == "unreconciled" and any("semi-diameters" in u for u in ray["computed_by"]["unverified"])
+AUTO_IMAGE = {k: v for k, v in CLEAN.items() if k != "image"}
+EFFL = {"type": "EFFL"}
+
+
+def test_an_operand_that_does_not_read_semi_diameters_keeps_its_grade_on_automatic_ones(saos_home, tmp_path):
+    # 像面半口径不固定：自动半口径未对账，但 EFFL、REAY 不读半口径，只有它们的结果保持 reconciled
+    # an automatic image semi-diameter is unreconciled, but EFFL and REAY do not read it, so they alone stay reconciled
+    from saos import measure
+
+    daemon, job = _rtc_job(AUTO_IMAGE)
+    for spec in (EFFL, REAY):
+        out = call(daemon, "lens.operand", job=job.id, **spec)["result"]
+        # 镜头的全部路径照旧列在 unverified / unverified still lists every path of the lens
+        assert out["computed_by"]["unverified"] == [rtc.AUTO_SEMI] and out["computed_by"]["unverified_affecting"] == []
+        assert out["trust"] == "reconciled", spec
+    # 脚本的依赖不可知：用的同样是 REAY，也按整份镜头降档 / a script's dependencies are unknown: graded by the whole lens
+    source = "def run(ctx):\n    return ctx.op('REAY', 2, 1, 0, 1, 0, 1)\n"
+    assert call(daemon, "script.exec", job=job.id, name="ray", source=source)["result"]["trust"] == "unreconciled"
+    lens = job.resolve_lens("a.zmx", must_exist=True)
+    rows = measure.run(lens, [{"operand": EFFL}, {"metric": {"id": "min_gap", "params": {"front": 1}}}])["items"]
+    assert rows[0]["trust"] == "reconciled" and rows[0]["unverified_affecting"] == []
+    # 按半口径取点的量（间隙）仍降档 / a quantity sampled out to the semi-diameters (a gap) stays unreconciled
+    assert rows[1]["trust"] == "unreconciled" and "unverified_affecting" not in rows[1]
+
+
+def test_paths_that_change_the_geometry_still_mark_every_number(saos_home, tmp_path):
+    # 有限物距、近轴边缘光线高度求解改的是光线或几何，EFFL 照旧降档
+    # a finite object and a marginal-ray-height solve change the rays or the geometry, so EFFL stays unreconciled
+    daemon, job = _rtc_job({**AUTO_IMAGE, "object": {"thickness": 200}})
+    out = call(daemon, "lens.operand", job=job.id, **EFFL)["result"]
+    assert out["trust"] == "unreconciled" and any("finite object" in p for p in out["computed_by"]["unverified_affecting"])
+    backend = RtcBackend(None, glass_dir=config.glass_dir(), standalone=True)
+    backend.load(CASES / "sequential.zmx")
+    backend.take_used()
+    backend.operand("EFFL", 0, 0, [])
+    provenance = backend.provenance(single=True)
+    assert provenance["unverified_affecting"] == ["paraxial marginal ray height solves"]
+    assert trust("rtc", provenance) == "unreconciled"
+    # 半口径定孔径（Float By Stop Size 配不固定的光阑半口径）时自动半口径照旧算 / it counts when it sets the aperture
+    backend = RtcBackend(None, glass_dir=config.glass_dir(), standalone=True)
+    backend.load(CASES / "iris.zmx")
+    next(s for s in backend.lens.surfaces if s.is_stop).semi_fixed = False
+    assert backend.affected_by({"EFFL"}) == [rtc.AUTO_SEMI]
+    # 用了不在名单里的操作数也照旧算 / so does any operand outside the list
+    backend = RtcBackend(None, glass_dir=config.glass_dir(), standalone=True)
+    backend.load(CASES / "reflective.zmx")
+    assert backend.affected_by({"EFFL"}) == [] and backend.affected_by({"EFFL", "TOTR"}) == [rtc.AUTO_SEMI]
+
+
+def _scaled_semi(name, k, floating=False):
+    backend = RtcBackend(None, glass_dir=config.glass_dir(), standalone=True)
+    backend.load(CASES / name)
+    for s in backend.lens.surfaces[1:]:
+        if not s.semi_fixed:
+            s.semi_diameter *= k
+            s.semi_fixed = True
+        if floating and s is not backend.lens.surfaces[-1]:
+            s.aperture_code = 10
+    backend._systems.clear()
+    return backend
+
+
+@pytest.mark.parametrize("name", ["reflective.zmx", "iris.zmx", "sequential.zmx"])
+def test_the_semi_independent_operands_do_not_move_when_the_semi_diameters_do(name):
+    # rtc.SEMI_INDEPENDENT 的依据：自动半口径改成 0.5–3 倍、每面都设浮动孔径，这些操作数逐位不变
+    # the grounds for rtc.SEMI_INDEPENDENT: semi-diameters scaled 0.5–3x, floating apertures on every surface, bit-identical
+    def values(backend):
+        last = len(backend.lens.surfaces) - 1
+        calls = {"EFFL": (0, 0, []), "EXPP": (0, 0, []), "EXPD": (0, 0, []), "INDX": (1, 0, []), "SSAG": (1, 0, [1.0, 0.5]),
+                 "SPHA": (0, 0, []), "COMA": (0, 0, []), "ASTI": (0, 0, []), "FCUR": (0, 0, []),
+                 "REAY": (last, 0, [0, 1, 0, 1]), "REAX": (last, 0, [1, 0, 0.3, 0]), "REAC": (last, 0, [0, 1, 0, 0.5])}
+        assert set(calls) | {"CONF"} == rtc.SEMI_INDEPENDENT
+        out = {}
+        for op, args in calls.items():
+            try:
+                out[op] = backend.operand(op, *args)
+            except SaosError as exc:
+                # 反射系统上 Seidel 两种状态下都拒算，没有数可比 / Seidel is refused on mirrors either way
+                assert exc.code == ErrorCode.BACKEND_UNSUPPORTED
+                out[op] = "refused"
+        return out
+
+    base = _scaled_semi(name, 1.0)
+    reference = values(base)
+    assert rtc.AUTO_SEMI not in base.unverified() and list(reference.values()).count("refused") <= 4
+    for k in (0.5, 1.5, 3.0):
+        for floating in (False, True):
+            backend = _scaled_semi(name, k, floating)
+            assert any(a.semi_diameter != b.semi_diameter for a, b in zip(backend.lens.surfaces[1:], base.lens.surfaces[1:]))
+            assert values(backend) == reference, (k, floating)
 
 
 def test_each_check_item_is_graded_by_what_it_used(saos_home):

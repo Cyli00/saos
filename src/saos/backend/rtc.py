@@ -61,6 +61,18 @@ SYSTEM_OPERANDS = frozenset({"EFFL", "WFNO", "ISFN", "TOTR", "TTHI", "EPDI", "EN
 # 2026-11-10. DIST and the whole ctx.seidel table (SEIDEL) stay out: OpticStudio's W311 differs from its DIST by 3e-3 waves
 RECONCILED_OPERANDS = frozenset({"REAX", "REAY", "REAC", "INDX", "SSAG", "EXPP", "EXPD", "CONF", "EFFL", "SPHA", "COMA", "ASTI", "FCUR"})
 
+AUTO_SEMI = "automatic semi-diameters (pupil-rim rays of every field and wavelength)"
+# 不依赖自动半口径的操作数：半口径只经三处进入数值，Float By Stop Size 的光阑半口径（定孔径）、浮动孔径的裁切（只改
+# 渐晕标记，REA* 照旧给坐标）和按半口径取点的边厚类操作数（不在这里）。这些操作数在半口径改成 0.5–3 倍时逐位不变
+# （tests/test_trust.py 在 reflective、iris 上验证，含每面浮动孔径）。只在半口径不定孔径时成立，见 affected_by。
+# 名单单列，不跟 RECONCILED_OPERANDS 走：新准入的操作数要先证明不读半口径再加进来
+# Operands that do not depend on the automatic semi-diameters: a semi-diameter reaches a number only as the stop's under
+# Float By Stop Size, as floating-aperture clipping (vignetting flags only; REA* still report coordinates) and in the
+# edge-thickness operands, which are not here. These stay bit-identical with the semi-diameters scaled 0.5–3x
+# (tests/test_trust.py, reflective and iris, floating apertures included). Listed apart from RECONCILED_OPERANDS: a newly
+# admitted operand joins only once shown not to read semi-diameters.
+SEMI_INDEPENDENT = frozenset({"REAX", "REAY", "REAC", "INDX", "SSAG", "EXPP", "EXPD", "CONF", "EFFL", "SPHA", "COMA", "ASTI", "FCUR"})
+
 # wavefront_rms 的光瞳取样（每边点数）/ pupil samples per side for wavefront_rms
 WAVEFRONT_GRID = 64
 IDENTITY = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
@@ -680,7 +692,7 @@ class RtcBackend(Backend):
             if not getattr(shape, "verified", False):
                 out.append(f"surface {surface.index} type {surface.type}")
         if any(s.index > 0 and not s.semi_fixed for s in lens.surfaces):
-            out.append("automatic semi-diameters (pupil-rim rays of every field and wavelength)")
+            out.append(AUTO_SEMI)
         if any("MAZH" in s.raw for s in lens.surfaces):
             out.append("paraxial marginal ray height solves")
         out += [f"material path {path}" for path in sorted(self.unverified_paths)]
@@ -692,10 +704,38 @@ class RtcBackend(Backend):
                 out.append(f"traces differently from OpticStudio at handover: {self.handover['rays']}")
         return out
 
-    def provenance(self) -> dict[str, Any]:
-        """脚本结果的来源记录：后端身份、未对账的计算路径、用到的未对账操作数；取走后清空操作数记录。
-        Provenance for a script result: backend identity, unreconciled paths, unreconciled operands used (then cleared)."""
-        return {**self.identity(), "unverified": self.unverified(), "operands_unverified": unreconciled(self.take_used())}
+    def provenance(self, single: bool = False) -> dict[str, Any]:
+        """脚本结果的来源记录：后端身份、未对账的计算路径、用到的未对账操作数；取走后清空操作数记录。single 为真时
+        （结果只来自用到的这些操作数，例如 lens operand）另给 unverified_affecting：其中这个数实际依赖的路径。
+        Provenance for a script result: backend identity, unreconciled paths, unreconciled operands used (then cleared).
+        With single (the result comes from the operands used alone, as in lens operand) also unverified_affecting: the
+        paths among them this number depends on."""
+        used = self.take_used()
+        out = {**self.identity(), "unverified": self.unverified(), "operands_unverified": unreconciled(used)}
+        if single:
+            out["unverified_affecting"] = self.affected_by(used)
+        return out
+
+    def affected_by(self, used) -> list[str]:
+        """只由 used 这些操作数算出的数依赖本镜头的哪些未对账路径。每条路径默认影响所有数；只有证明过不依赖的才去掉，
+        现在只有一条：全部是 SEMI_INDEPENDENT 里的操作数、且半口径不定孔径（不是 Float By Stop Size 配不固定的光阑半口径）
+        时，自动半口径不算。脚本、分析和度量目录的结果依赖不可知，不用它。
+        The unreconciled paths of this lens a number computed from the operands used alone depends on. Every path counts
+        by default; one is dropped only where shown not to matter: automatic semi-diameters, for operands all in
+        SEMI_INDEPENDENT on a lens whose semi-diameters do not set the aperture. Scripts, analyses and metrics, whose
+        dependencies are unknown, do not use it."""
+        paths = self.unverified()
+        names = {str(n).upper() for n in used}
+        if AUTO_SEMI in paths and names and names <= SEMI_INDEPENDENT and not self._semi_sets_aperture():
+            paths = [p for p in paths if p != AUTO_SEMI]
+        return paths
+
+    def _semi_sets_aperture(self) -> bool:
+        lens = self._need_lens()
+        if lens.aperture_type != "FLOA":
+            return False
+        stop = next((s for s in lens.surfaces if s.is_stop), None)
+        return stop is None or not stop.semi_fixed
 
     def take_used(self) -> frozenset[str]:
         """取走并清空自上次取走以来用到的操作数与测量名（含已对账的）。/ Take and clear the operands and measurements used since last taken."""

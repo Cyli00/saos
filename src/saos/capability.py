@@ -238,6 +238,9 @@ def table() -> dict[str, Any]:
             "re-measured on OpticStudio.",
             "An item's why lists every path its probe lens takes, so object_na and object_height also show the finite object "
             "they require.",
+            "A path makes every number of the lens unreconciled, except automatic semi-diameters for a number from operands "
+            "in rtc.SEMI_INDEPENDENT alone (lens operand, operand checks) when the semi-diameters do not set the aperture; "
+            "results show it in unverified_affecting.",
             "Ask about a real lens with --lens or --prescription: combinations (a mirror with real ray aiming, a surface type "
             "inside multi-configuration rows, a catalog glass) are judged on the lens, not in this table.",
         ],

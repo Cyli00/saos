@@ -20,7 +20,11 @@ Output protocol (help itself is plain text):
     computed_by lists as unverified or operands_unverified) or refused (no number).
     lens operand, lens analysis, metrics get, opt merit/local/hammer/global and exec
     give one per result with computed_by; check, round and measure give one per item,
-    check and round also one for the whole evaluation.
+    check and round also one for the whole evaluation. A number from operands alone
+    (lens operand, an operand check, measure's operand items) is graded by
+    unverified_affecting, the paths among unverified it depends on (automatic
+    semi-diameters do not reach the operands in rtc.SEMI_INDEPENDENT unless they set
+    the aperture); everything else by every path, which unverified always lists.
 
 Process model:
   Local: daemon control, job, demand, rule-out, stop, report, scan --show, api,
@@ -335,8 +339,9 @@ COMMANDS = {
                 "  also measures the job's demand checks (every item entering G, or --only ids),\n"
                 "  each on its own, with the same definitions as check and round. --job also reads\n"
                 "  --lens from the job's lenses/. Returns items (and demand): value, trust,\n"
-                "  operands_unverified when used, error; an item rtc cannot compute has trust\n"
-                "  refused. computed_by gives the lens's unreconciled paths. The daemon's loaded\n"
+                "  operands_unverified when used, unverified_affecting on operand items, error;\n"
+                "  an item rtc cannot compute has trust refused. computed_by gives the lens's\n"
+                "  unreconciled paths. The daemon's loaded\n"
                 "  lens and state are untouched, so measurements run in parallel with it and with\n"
                 "  each other. A lens rtc cannot read is BACKEND_UNSUPPORTED (see saos backends).",
                 "BAD_ARGS, BACKEND_UNSUPPORTED, FILE_NOT_FOUND, JOB_NOT_FOUND, PATH_OUTSIDE_JOB"),
@@ -404,8 +409,9 @@ COMMANDS.update({
         "  --only lists comma-separated check ids; a partial result is never achieved.\n"
         "  Writes a snapshot and evidence to evaluations/NNN/; evidence_file points to\n"
         "  the complete result. Each item includes duration_s and trust; on rtc an item\n"
-        "  also lists the unreconciled operands it used (operands_unverified), and the\n"
-        "  result's trust is the weakest of them. A check changing the lens cannot be\n"
+        "  also lists the unreconciled operands it used (operands_unverified), an operand\n"
+        "  item the paths its number depends on (unverified_affecting), and the result's\n"
+        "  trust is the weakest of them. A check changing the lens cannot be\n"
         "  accepted as read-only evidence. warnings flags rtc results pushed with\n"
         "  fast.push and not yet closed by an OpticStudio optimisation.",
         "BAD_ARGS, NO_LENS_LOADED, JOB_MISMATCH, FILE_NOT_FOUND"),
@@ -761,7 +767,9 @@ The rtc instance
     ctx.trace.
   Every exec result carries trust and computed_by: the backend, the operands used that rtc
     has not reconciled with OpticStudio, and the unreconciled paths this lens takes. A value
-    read through ctx.memo counts the operands of the call that computed it.
+    read through ctx.memo counts the operands of the call that computed it. A script's
+    dependencies are unknown, so every path counts against it, even where lens operand
+    grades the same operand by unverified_affecting.
   EXPP and EXPD are paraxial on rtc while OpticStudio uses small-field real rays; on the
     lenses measured they differ by up to 0.83 %, largest with strong surfaces. PETZ is a
     radius and reads 0 when every field is on axis.
