@@ -79,6 +79,7 @@ TEXT: dict[str, tuple[str, str]] = {
     "auto.demand": ("需求单 {sha}：{reason}", "Demand {sha}: {reason}"),
     "auto.model": ("建模结构 {model}：{reason}", "Model structure {model}: {reason}"),
     "auto.rebuild": ("（重建原因：{reason}）", " (why rebuilt: {reason})"),
+    "auto.reach": ("（差距门禁凭证据放行 {items}：{evidence}）", " (reach gate passed on evidence for {items}: {evidence})"),
     "auto.stop": ("第 {n} 轮后停止：{reason}", "Stopped after round {n}: {reason}"),
     "auto.assumption": ("假设的界限 {id} = {bound}：{source}", "Assumed limit {id} = {bound}: {source}"),
     "confirmed.auto": ("agent 自行确认（自主运行）：{reason}", "Confirmed by the agent (autonomous run): {reason}"),
@@ -341,7 +342,7 @@ def chart(rounds: list[dict[str, Any]], t: Tr) -> str:
 
 
 def autonomy_items(job: jobs.Job, confirmed: dict[str, Any] | None, decision: dict[str, Any]) -> list[dict[str, Any]]:
-    """agent 自行做出的决定（via=auto）：需求确认、各次模型确认、停止，以及确认时依据只是 agent 假设的界限（ADR-0021）。
+    """agent 自行做出的决定（via=auto）：需求确认、各次模型确认、停止，以及确认时依据只是 agent 假设的界限。
     Decisions the agent took alone (via=auto): the demand confirmation, each model approval, a stop, and the limits that
     rested only on an agent assumption when the demand was confirmed."""
     from saos import model_gate
@@ -351,7 +352,7 @@ def autonomy_items(job: jobs.Job, confirmed: dict[str, Any] | None, decision: di
         out.append({"kind": "demand", "sha": confirmed["demand_sha"][:8], "reason": confirmed.get("reason", "")})
         out += [{"kind": "assumption", "id": w["id"], "bound": w["bound"], "source": w["source"]}
                 for w in confirmed.get("weak_basis") or [] if w.get("source")]
-    out += [{"kind": "model", "model": r["model"], "reason": r.get("reason", ""), "rebuild": r.get("rebuild_reason")}
+    out += [{"kind": "model", "model": r["model"], "reason": r.get("reason", ""), "rebuild": r.get("rebuild_reason"), "reach": r.get("reach_waived")}
             for r in model_gate.approvals(job) if r.get("via") == "auto"]
     stopped = decision.get("stopped")
     if stopped and stopped.get("via") == "auto":
@@ -368,7 +369,10 @@ def autonomy_section(data: dict[str, Any], t: Tr) -> str:
         if a["kind"] == "demand":
             lines.append(t("auto.demand", sha=e(a["sha"]), reason=e(a["reason"])))
         elif a["kind"] == "model":
-            lines.append(t("auto.model", model=e(a["model"]), reason=e(a["reason"])) + (t("auto.rebuild", reason=e(a["rebuild"])) if a.get("rebuild") else ""))
+            waived = a.get("reach")
+            lines.append(t("auto.model", model=e(a["model"]), reason=e(a["reason"])) + (t("auto.rebuild", reason=e(a["rebuild"])) if a.get("rebuild") else "")
+                         + (t("auto.reach", items=e(", ".join(f"{i['id']} ×{fmt(i['multiple'])}" for i in waived["items"])), evidence=e(waived["evidence"]))
+                            if waived else ""))
         elif a["kind"] == "stop":
             lines.append(t("auto.stop", n=a["n"], reason=e(a["reason"])))
         else:
@@ -422,7 +426,7 @@ def build(job: jobs.Job) -> dict[str, Any]:
     # only rounds without a model glass that keep the hard conditions are deliverable; otherwise show the best one marked as not deliverable
     deliver = ledger.deliver_round(rounds)
     if not ledger.confirmed(deliver):
-        # rtc 轮次要先在 OpticStudio 上复测，报告只用 OpticStudio 的数（ADR-0017）/ an rtc round is re-measured on OpticStudio first
+        # rtc 轮次要先在 OpticStudio 上复测，报告只用 OpticStudio 的数/ an rtc round is re-measured on OpticStudio first
         raise SaosError(ErrorCode.BAD_ARGS, f"round {deliver['round']} was measured on rtc; re-measure it on an OpticStudio instance with "
                         f"saos round --confirm --of {deliver['round']} before reporting", {"round": deliver["round"], "backend": "rtc"})
     eval_file = job.root / deliver["evaluation"]

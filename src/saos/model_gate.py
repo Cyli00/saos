@@ -245,9 +245,9 @@ def fingerprint_changes(approved: dict, current: dict, desc: dict | None = None)
     if a.get("mode") != b.get("mode"):
         return ["mode"]
     _align(a, b)
-    # rtc 实例读不出的系统设置（偏振、切趾、膜层文件）不比较：rtc 存盘原样带过去，交付前在 OpticStudio 上复测时核对（ADR-0017）
+    # rtc 实例读不出的系统设置（偏振、切趾、膜层文件）不比较：rtc 存盘原样带过去，交付前在 OpticStudio 上复测时核对
     # settings the rtc instance cannot read are not compared: rtc carries them over on save and the OpticStudio
-    # re-measurement before delivery checks them (ADR-0017)
+    # re-measurement before delivery checks them
     for key in (desc or {}).get("unread") or ():
         a.pop(key, None)
         b.pop(key, None)
@@ -348,11 +348,18 @@ def reach_blocking(data: dict[str, Any]) -> list[dict[str, Any]]:
     return [i for i in reach.get("items") or [] if i.get("blocking")]
 
 
-def _require_reachable(data: dict[str, Any]) -> None:
+def _require_reachable(job: jobs.Job, data: dict[str, Any]) -> dict[str, Any] | None:
     """自主任务没有人替 agent 把关：差距过大的结构不能自己批准（2026-11-06 用户决定）。用户指定的结构没有别的选择，只记录不拦。
-    Nobody checks an autonomous job: it cannot approve a structure too far off. A structure the user fixed has no alternative: recorded, not refused."""
+    quality 类差 threshold 到 hard_threshold 倍之间的，说明里写了 notes.reach_evidence（闭合差距的机理，引用任务里已有的文件）
+    就放行，返回放行的项和这段证据，随确认记录存档（2026-11-10 用户决定）。
+    Nobody checks an autonomous job: it cannot approve a structure too far off. A structure the user fixed has no alternative:
+    recorded, not refused. A quality must between threshold and hard_threshold times off passes when the notes carry
+    reach_evidence (the mechanism that closes the gap, citing an existing file of the job); what was waived is returned
+    and kept with the approval."""
+    from saos import ledger
+
     if (data.get("approval_schema") or 0) < 4:
-        return
+        return None
     reach = (data.get("shown") or {}).get("reach")
     if not reach or not reach.get("measured"):
         raise SaosError(ErrorCode.BAD_ARGS, "this description measured no must objective, so nothing shows the structure can reach the demand: "
@@ -360,36 +367,22 @@ def _require_reachable(data: dict[str, Any]) -> None:
     if reach["unclassified"]:
         raise SaosError(ErrorCode.BAD_ARGS, f"give these must objectives a class (first_order or quality) in the demand and confirm it again: {reach['unclassified']}",
                         {"unclassified": reach["unclassified"]})
-    if reach["blocking"] and not reach["prescribed"]:
-        raise SaosError(ErrorCode.BAD_ARGS, f"structure too far from the demand to enter the rounds: {reach['blocking']}. A first_order must has to pass, a quality must has to be "
+    if not reach["blocking"] or reach["prescribed"]:
+        return None
+    blocking = reach_blocking(data)
+    hard = [i["id"] for i in blocking if not i.get("waivable")]
+    evidence = str((data.get("notes") or {}).get("reach_evidence") or "").strip()
+    cited = [path for path in ledger._EVIDENCE.findall(evidence) if (job.root / path).exists()]
+    if hard or not cited:
+        limit = reach.get("hard_threshold")
+        waiver = "" if hard or limit is None else (
+            f" These are under {limit:g} times off, so the gate also opens on evidence: write notes.reach_evidence naming the mechanism that closes "
+            "each gap and its expected gain, citing an existing file of this job (scans/NNN, explore/...), then run lens describe again.")
+        raise SaosError(ErrorCode.BAD_ARGS, f"structure too far from the demand to enter the rounds: {hard or reach['blocking']}. A first_order must has to pass, a quality must has to be "
                         f"under {reach['threshold']:g} times its bound, on a converged optimisation. Optimise to convergence, ramp, change the form or add elements "
-                        "(skill: model.md, reach gate); if no structure passes, report the gap instead of approving",
-                        {"blocking": reach_blocking(data)})
-
-
-def reach_blocking(data: dict[str, Any]) -> list[dict[str, Any]]:
-    """说明记下的、差距过大的 must 及其倍数；没有这项记录的旧说明为空。/ The musts recorded as too far off; empty for older descriptions."""
-    reach = (data.get("shown") or {}).get("reach") or {}
-    return [i for i in reach.get("items") or [] if i.get("blocking")]
-
-
-def _require_reachable(data: dict[str, Any]) -> None:
-    """自主任务没有人替 agent 把关：差距过大的结构不能自己批准（2026-11-06 用户决定）。用户指定的结构没有别的选择，只记录不拦。
-    Nobody checks an autonomous job: it cannot approve a structure too far off. A structure the user fixed has no alternative: recorded, not refused."""
-    if (data.get("approval_schema") or 0) < 4:
-        return
-    reach = (data.get("shown") or {}).get("reach")
-    if not reach or not reach.get("measured"):
-        raise SaosError(ErrorCode.BAD_ARGS, "this description measured no must objective, so nothing shows the structure can reach the demand: "
-                        "fix the checks or the demand, run lens describe again")
-    if reach["unclassified"]:
-        raise SaosError(ErrorCode.BAD_ARGS, f"give these must objectives a class (first_order or quality) in the demand and confirm it again: {reach['unclassified']}",
-                        {"unclassified": reach["unclassified"]})
-    if reach["blocking"] and not reach["prescribed"]:
-        raise SaosError(ErrorCode.BAD_ARGS, f"structure too far from the demand to enter the rounds: {reach['blocking']}. A first_order must has to pass, a quality must has to be "
-                        f"under {reach['threshold']:g} times its bound, on a converged optimisation. Optimise to convergence, ramp, change the form or add elements "
-                        "(skill: model.md, reach gate); if no structure passes, report the gap instead of approving",
-                        {"blocking": reach_blocking(data)})
+                        "(skill: model.md, reach gate); if no structure passes, report the gap instead of approving." + waiver,
+                        {"blocking": blocking, "reach_evidence_cited": cited})
+    return {"items": [{"id": i["id"], "multiple": i["multiple"]} for i in blocking], "evidence": evidence, "cited": cited}
 
 
 def approval_gate(job: jobs.Job) -> dict[str, Any] | None:
@@ -416,7 +409,7 @@ def approve(job: jobs.Job, model: str, quote: str, rebuild_reason: str = "", *, 
             reason: str = "") -> dict[str, Any]:
     """记录用户对一份建模说明的确认。via="window"：用户在流程图窗口里点了确认，shown_sha 须等于该说明的 shown_sha（窗口显示后
     没有重出），quote 是可选备注，重建原因取自说明的 notes.rebuild_reason；via="cli"：窗口用不了时的降级，quote 须是用户单条
-    消息的原文，记录标明非窗口确认（ADR-0020）。
+    消息的原文，记录标明非窗口确认。
     Record the user's approval of a description. via="window": pressed in the workflow window, shown_sha must equal the
     description's (not redone since it was shown), quote is an optional note and the rebuild reason comes from
     notes.rebuild_reason; via="cli": the fallback, quote is one user message verbatim, recorded as not from the window.
@@ -453,14 +446,11 @@ def approve(job: jobs.Job, model: str, quote: str, rebuild_reason: str = "", *, 
     if via == "auto":
         rebuild_reason = rebuild_reason or str((data.get("notes") or {}).get("rebuild_reason") or "")
     if (data.get("approval_schema") or 0) >= 3 and not data.get("exploration_recorded"):
-        # 第 3 版说明起，起型检索记录是确认的前提（ADR-0020 之后的用户决定）；之前的说明照旧可以确认
-        # from schema 3 a starting-form search record is required (user decision after ADR-0020); older descriptions still approve
+        # 第 3 版说明起，起型检索记录是确认的前提（用户决定）；之前的说明照旧可以确认
+        # from schema 3 a starting-form search record is required (user decision); older descriptions still approve
         raise SaosError(ErrorCode.BAD_ARGS, "this description records no starting-form search: add exploration.searches (library, query, hits, "
                         "decision) or exploration.fixed_by_user (parts, quote) to the notes, run lens describe again and show the new page")
-    if via == "auto":
-        _require_reachable(data)
-    if via == "auto":
-        _require_reachable(data)
+    waived = _require_reachable(job, data) if via == "auto" else None
     if not isinstance(rebuild_reason, str):
         raise SaosError(ErrorCode.BAD_ARGS, "重建原因必须为文字")
     previous = approvals(job)
@@ -473,7 +463,9 @@ def approve(job: jobs.Job, model: str, quote: str, rebuild_reason: str = "", *, 
               "time": jobs.now_iso(timespec="microseconds"), "approval_sequence": max((r.get("approval_sequence", 0) for r in previous), default=0) + 1,
               "fingerprint_sha": data["fingerprint_sha"],
               # 用户确认时页面上仍有的自动检查结果，一并留档 / warnings still on the page when the user approved
-              "warnings_acknowledged": data.get("warnings", [])}
+              "warnings_acknowledged": data.get("warnings", []),
+              # 自主任务凭证据放行的差距门禁项 / reach-gate items an autonomous job passed on evidence
+              **({"reach_waived": waived} if waived else {})}
     if "shown_sha" in data:
         # 确认页四节（选型依据、需求逐项、计算有效性、下一阶段预算）的摘要，以及当时仍为“未知”的条目；旧描述没有这两项，不写
         # digest of the four sections shown (structure choice, requirements, computation validity, next budget) and the items still unknown then; older descriptions lack them

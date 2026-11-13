@@ -240,10 +240,8 @@ TEXT: dict[str, tuple[str, str]] = {
     "verdict.not_screened": ("已生成，未初筛", "Generated, not screened"),
     "verdict.invalid": ("预算内无效", "invalid within budget"),
     "w.prescribed_changed": ("当前结构与最初认可的指定结构存在差异：{changed}", "The current structure differs from the first approved prescribed model: {changed}"),
-    "w.reach_blocked": ("差距过大，自主任务不能批准这个结构：{ids}（一阶量须达标，其余须在界限 {threshold:g} 倍以内）。用户可以破例确认。",
-                        "Too far from the demand for an autonomous job to approve: {ids} (first-order items must pass, others must be within {threshold:g} times the bound). The user may overrule this."),
-    "w.reach_blocked": ("差距过大，自主任务不能批准这个结构：{ids}（一阶量须达标，其余须在界限 {threshold:g} 倍以内）。用户可以破例确认。",
-                        "Too far from the demand for an autonomous job to approve: {ids} (first-order items must pass, others must be within {threshold:g} times the bound). The user may overrule this."),
+    "w.reach_blocked": ("差距过大，自主任务不能批准这个结构：{ids}（一阶量须达标，其余须在界限 {threshold:g} 倍以内；不到 {hard:g} 倍的可凭 notes.reach_evidence 放行）。用户可以破例确认。",
+                        "Too far from the demand for an autonomous job to approve: {ids} (first-order items must pass, others must be within {threshold:g} times the bound; under {hard:g} times they may pass on notes.reach_evidence). The user may overrule this."),
     "w.no_screening": ("没有初筛记录；可确认模型，但选型依据尚缺。", "No screening record; approval is allowed, but comparison evidence is missing."),
     "w.approval_evidence": ("历史模型确认不可用或未封存：{paths}", "Historical model approvals unavailable or unsealed: {paths}"),
     "w.checks_changed": ("判定方法已变，已有结果使用旧判定。", "Check methods changed; recorded results use earlier checks."),
@@ -1412,7 +1410,7 @@ def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, An
     requirements = _requirements(d, measured, demand_error)
     reach = demand.reach(d, {r["id"]: r["value"] for r in requirements["rows"]}) if d is not None else None
     if reach and reach["blocking"]:
-        found.append(("reach_blocked", {"threshold": reach["threshold"], "ids": ", ".join(
+        found.append(("reach_blocked", {"threshold": reach["threshold"], "hard": reach["hard_threshold"], "ids": ", ".join(
             f"{i['id']} ×{i['multiple']:.3g}" for i in reach["items"] if i["blocking"])}))
     materials = material_rows(job, desc, (measured or {}).get("backend") or desc.get("backend"))
     chosen_row = selection.get("chosen") if selection.get("mode") == "free" else None

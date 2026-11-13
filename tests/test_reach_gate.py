@@ -102,6 +102,57 @@ def test_autonomous_approval_is_refused_when_a_quality_must_is_far_off(lens_job)
     assert model_gate.approvals(job) == []
 
 
+def _track(lens_job) -> float:
+    job, described = lens_job(goal(must={"max": 5.0}, scale=1.0))
+    with pytest.raises(SaosError) as refused:
+        model_gate.approve(job, described["folder"], "", via="auto", reason="量总长")
+    return 5.0 * refused.value.details["blocking"][0]["multiple"]
+
+
+def _describe_with(lens_job, bound: float, evidence: str | None, explore: bool = True):
+    job, _ = lens_job(goal(must={"max": bound}, scale=1.0))
+    if explore:
+        folder = job.root / "explore" / "ramp"
+        folder.mkdir(parents=True)
+        (folder / "README.md").write_text("逐级放开孔径的记录", encoding="utf-8")
+    notes = {**NOTES, **({"reach_evidence": evidence} if evidence else {})}
+    out = lens_job.daemon.handle({"op": "lens.describe", "args": {"job": job.id, "notes": notes}})
+    assert out["ok"], out
+    return job, out["result"]
+
+
+def test_between_five_and_ten_times_an_autonomous_job_passes_only_on_cited_evidence(lens_job):
+    track = _track(lens_job)
+    evidence = "球差占差距的大半，explore/ramp/README.md 里再加一片后降到 2 倍"
+    # 差 7 倍、没写证据：拒绝，并说明可以凭证据放行 / 7 times off without evidence: refused, with the way through
+    job, described = _describe_with(lens_job, track / 7.0, None)
+    with pytest.raises(SaosError, match="reach_evidence") as refused:
+        model_gate.approve(job, described["folder"], "", via="auto", reason="理由")
+    assert refused.value.details["blocking"][0]["waivable"] is True
+    # 证据引用的文件不存在：照样拒绝 / evidence citing a file that does not exist is no evidence
+    job, described = _describe_with(lens_job, track / 7.0, evidence, explore=False)
+    with pytest.raises(SaosError, match="too far") as refused:
+        model_gate.approve(job, described["folder"], "", via="auto", reason="理由")
+    assert refused.value.details["reach_evidence_cited"] == []
+    # 证据引用了任务里的文件：放行，放行的项和证据随确认记录存档，报告的自主决定里列出
+    job, described = _describe_with(lens_job, track / 7.0, evidence)
+    record = model_gate.approve(job, described["folder"], "", via="auto", reason="理由")
+    assert record["reach_waived"]["items"][0]["id"] == "length" and record["reach_waived"]["items"][0]["multiple"] == pytest.approx(7.0)
+    assert record["reach_waived"]["cited"] == ["explore/ramp/README.md"]
+    items = report.autonomy_items(job, None, {})
+    assert [i["reach"]["evidence"] for i in items if i["kind"] == "model"] == [evidence]
+
+
+def test_ten_times_off_is_refused_whatever_the_evidence(lens_job):
+    track = _track(lens_job)
+    job, described = _describe_with(lens_job, track / 10.5, "explore/ramp/README.md 说能降下来")
+    with pytest.raises(SaosError) as refused:
+        model_gate.approve(job, described["folder"], "", via="auto", reason="理由")
+    assert "reach_evidence" not in refused.value.message and refused.value.details["blocking"][0]["waivable"] is False
+    out = demand.reach(goal(must={"max": 1.0}, **{"class": "first_order"}), {"length": 1.01})
+    assert out["items"][0]["blocking"] and not out["items"][0]["waivable"]
+
+
 def test_autonomous_approval_is_refused_for_a_first_order_miss_or_a_missing_class(lens_job):
     job, described = lens_job(goal(must={"max": 90.0}, **{"class": "first_order"}))
     with pytest.raises(SaosError, match="too far"):

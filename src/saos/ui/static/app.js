@@ -362,7 +362,7 @@ function renderTop() {
     mc.querySelector(".k").textContent = t("merit");
     mc.querySelector(".mv").textContent = m.merit != null ? fmtG(m.merit) : "–";
     odo(mc.querySelector(".gv"), m.shortfall ? fmtG(g) : "–");
-    // rtc 实时帧（ADR-0022）：优化中带步数；出错时标红并把原因放进悬停提示 / live rtc frames carry the step; errors go to the title
+    // rtc 实时帧：优化中带步数；出错时标红并把原因放进悬停提示 / live rtc frames carry the step; errors go to the title
     const lv = m.live || {};
     mc.querySelector(".it").textContent = lv.preview && m.iteration != null ? t("iteration", m.iteration) : "";
     mc.classList.toggle("err", lv.status === "error");
@@ -1573,7 +1573,7 @@ function renderRounds(view) {
 
 // ---------------- 确认关卡 / gates ----------------
 
-// 需求单与建模说明由用户在窗口里点确认（ADR-0020）；命令行的 --quote 只在窗口用不了时可用
+// 需求单与建模说明由用户在窗口里点确认；命令行的 --quote 只在窗口用不了时可用
 // the user confirms the demand and approves a model here; the CLI's --quote only works when the window cannot be used
 let gateKey = null;
 let signedAt = 0;
@@ -1584,7 +1584,7 @@ function gateShell(title, sub, stateText, body) {
 
 function renderGate() {
   const el = $("gate");
-  // 自主任务：只说明谁在过关卡，并给用户一个改为参与的按钮（反过来只能在建任务时定，ADR-0021）
+  // 自主任务：只说明谁在过关卡，并给用户一个改为参与的按钮（反过来只能在建任务时定）
   if (state.mode === "autonomous") {
     if (gateKey === "autonomous" + lang) return;
     gateKey = "autonomous" + lang;
@@ -1622,7 +1622,6 @@ function renderGate() {
     fact("fk_model", `<code>${esc(m.model)}</code>`);
     if (m.page) sub = `<button class="lnk" id="gate-open">${esc(t("gate_open"))} ↗</button>`;
     if (m.rebuild_reason) fact("fk_rebuild", esc(m.rebuild_reason));
-    if (m.reach_blocking?.length) fact("fk_reach", esc(t("gate_reach", m.reach_blocking.map((b) => `${b.id} ×${b.multiple === "inf" ? "∞" : sig(b.multiple, 3)}`).join(", "))), "bad");
     if (m.reach_blocking?.length) fact("fk_reach", esc(t("gate_reach", m.reach_blocking.map((b) => `${b.id} ×${b.multiple === "inf" ? "∞" : sig(b.multiple, 3)}`).join(", "))), "bad");
     const todo = [];
     if (!m.rebuild_reason && m.rebuild_required) { ready = false; todo.push(t("gate_no_rebuild")); }
@@ -1672,7 +1671,7 @@ const boundText = (b) => (!b ? "" : "equals" in b ? `= ${sig(b.equals, 4)}${b.to
   : [b.min != null ? `≥ ${sig(b.min, 4)}` : "", b.max != null ? `≤ ${sig(b.max, 4)}` : ""].filter(Boolean).join(" · "));
 const fmtVal = (v) => (v == null ? "–" : Math.abs(v) >= 1e5 || (v !== 0 && Math.abs(v) < 1e-3) ? v.toExponential(2) : sig(v, 4));
 const liveItems = () => state?.metrics?.items || {};
-// 一项的单位：目录条目由后端写好 pick 与所选标量的单位（ADR-0022），其余用需求单写的单位
+// 一项的单位：目录条目由后端写好 pick 与所选标量的单位，其余用需求单写的单位
 // a catalog entry carries its pick and that scalar's unit from the backend; other items use the demand's unit
 const unitOfItem = (m) => {
   const e = liveItems()[m.id];
@@ -1680,7 +1679,7 @@ const unitOfItem = (m) => {
   return e.pick ? e.unit : (e.scalar_units?.value ?? e.unit ?? m.unit);
 };
 
-// 圆环与需求卡的条目：需求里带判定的条目在前，用户追加的只看不判定的目录指标在后（ADR-0022）
+// 圆环与需求卡的条目：需求里带判定的条目在前，用户追加的只看不判定的目录指标在后
 // gauges and the need card: checked demand items first, then the display-only catalog metrics the user added
 function judgeItems() {
   const items = (state?.metric_items || []).map((m) => ({ ...m, display: false }));
@@ -1822,7 +1821,7 @@ function needCanvas() {
 // 界限线：需求的界限（equals 带容差时画两条）/ the demand's bound lines
 const boundLines = (b) => (!b ? [] : "equals" in b ? [b.equals - (b.tol || 0), b.equals + (b.tol || 0)].filter((v, k, a) => a.indexOf(v) === k) : [b.min, b.max].filter((v) => v != null));
 
-// 目录指标的曲线组（ADR-0022 的 curve 形态）：每组 x 与若干条 y；scatter 画点；判定标量与 y 同单位时画界限线，
+// 目录指标的曲线组（curve 形态）：每组 x 与若干条 y；scatter 画点；判定标量与 y 同单位时画界限线，
 // MTF 判定频率画竖线。窗口只画导出的数据
 // a catalog curve result: series of x with named y arrays; scatter as dots; bound lines when the judged scalar shares
 // the y unit; a vertical line at the MTF judging frequency. The window draws exported data only
@@ -1882,7 +1881,7 @@ function drawCurve(m, e) {
   }
 }
 
-// 目录指标的表格（ADR-0022 的 table 形态）：列取各行共有的简单值 / a catalog table: columns are the rows' simple values
+// 目录指标的表格（table 形态）：列取各行共有的简单值 / a catalog table: columns are the rows' simple values
 function drawTable(e) {
   const host = $("need").querySelector(".need-table");
   const rows = e.table?.rows || [];
@@ -1943,7 +1942,7 @@ $("need-mode").addEventListener("click", (e) => {
 
 // ---------------- 指标目录与追加选择 ----------------
 
-// 目录与保存都经后台进程；优化占着它时会失败（BUSY 等），未保存的选择留在窗口里，空闲后自动再存（ADR-0022）
+// 目录与保存都经后台进程；优化占着它时会失败（BUSY 等），未保存的选择留在窗口里，空闲后自动再存
 // listing and saving go through the daemon; while it is busy the unsaved selection stays here and is saved once idle
 let catalog = null;
 let draft = null;
