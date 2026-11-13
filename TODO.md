@@ -21,6 +21,7 @@
 - `BICONICZ` 在 `rtc.RECONCILED_TYPES` 里（`.zmx` 读得了），`rtc_lens.TYPES` 没有它（处方建不出），所以 `saos backends` 整表的 `surface_type` 不列它；`--lens` 的判定是对的。
 - `capability.table()` 为取 `OPTICSTUDIO_ONLY`、`OPTICSTUDIO_SCANS`、`STAGE_BACKENDS` 三个常量导入了整个 `saos.daemon`。
 - 两处未上真机验证：（1）后台进程 `lens build` 的预检改成在临时 `RtcBackend` 上完整建一遍后，带 Even Asphere 反射镜的处方应留在 OpticStudio（`backend_switch.stayed`）而不是在 rtc 上报 `BACKEND_UNSUPPORTED`，`tests/test_zemax_rtc.py` 还没有这条用例；（2）`rtc_lens.unread_settings` 不知道非均匀切趾在 `.zmx` 文件头里写成哪一行（仓库 836 份 `.zmx` 没有一份带切趾），现在只能报成 `header line KEY`，要一份 OpticStudio 存盘的高斯切趾样本来定名。
+- 判定上收进度量目录（2026-11-13 统计 `work/` 里 16 个任务的 254 个脚本判定）：点列/PSF/包围能量 57 个（17 种 id），零件间隙与边厚 34 个，收集与 NA 31 个，畸变/视场 25 个，长度类 22 个，焦点/变焦/热 21 个，材料/质量 17 个，有效性 15 个，CRA/相对照度 7 个，MTF 6 个；95 个脚本没有 docstring。目录现有 11 项，`spot` 只算单波长、绕自身质心。最值得先收的是多色点列（参考点和波长权重要做成参数，各任务定义不一），其次是零件间隙/边厚和收集比例（`saos.micro` 已有原语）。按 `AGENTS.md`，上收前后同一批镜头的数值要逐项一致，需要把这些任务的镜头和脚本拿来对跑，还没做。
 
 ## rtc 待办（2026-11-10 从已删除的计划文档并入；当时的细节用 `git show 3c488f0:docs/plans/<文件>` 查）
 

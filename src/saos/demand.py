@@ -27,6 +27,7 @@ One structure often cannot meet every objective; the weighted shortfall then fav
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import math
@@ -582,6 +583,34 @@ def confirmation_for(root: Path, sha: str, demand: dict[str, Any] | None = None)
 CONFIRM_VIA = ("window", "cli", "auto")
 
 
+def check_scripts(root: Path, demand: dict[str, Any]) -> list[dict[str, Any]]:
+    """每个脚本判定量的是什么：id、脚本路径、哈希，以及脚本模块 docstring 的第一段（没有为 None）。用户确认的是需求单，
+    判定的真实含义在脚本里，这一段是确认页上给用户看的说明。
+    What each script check measures: id, script path, hash and the first paragraph of the script's module docstring
+    (None without one). The user confirms the demand; a script's docstring is what the confirmation page shows of it."""
+    out = []
+    for item_id, script in prepare_scripts(root, demand).items():
+        if item_id in (SUPPORT_KEY, CODE_KEY):
+            continue
+        spec = next(i for i in checked(demand) if i["id"] == item_id)
+        doc = None
+        if script.get("source") is not None:
+            try:
+                doc = (ast.get_docstring(ast.parse(script["source"])) or "").split("\n\n")[0].strip() or None
+            except SyntaxError:
+                doc = None
+        out.append({"id": item_id, "script": spec["check"]["script"], "sha256": script.get("sha256"), "doc": doc})
+    return out
+
+
+def _changed_since(confirmed: dict[str, Any] | None, scripts: list[dict[str, Any]]) -> list[str] | None:
+    """确认之后改过的判定脚本；确认记录早于脚本哈希（旧记录）时为 None。/ Scripts changed since the confirmation; None for older records."""
+    if confirmed is None or "check_scripts" not in confirmed:
+        return None
+    at = confirmed["check_scripts"]
+    return [s["id"] for s in scripts if at.get(s["id"]) != s["sha256"]]
+
+
 def confirm(root: Path, quote: str, *, via: str = "cli", shown_sha: str | None = None, reason: str = "") -> dict[str, Any]:
     """记录用户对当前需求的确认。via="window"：用户在流程图窗口里点了确认，shown_sha 是窗口显示的那一版（须仍是当前版），
     quote 是可选备注；via="cli"：窗口用不了时的降级，quote 须是用户单条消息的原文，记录与报告标明非窗口确认。
@@ -614,7 +643,11 @@ def confirm(root: Path, quote: str, *, via: str = "cli", shown_sha: str | None =
     # 存下用户确认时看到的全文（含总结和待确认问题），之后改写总结也能追溯
     # keep the full text the user saw (summary and open questions included), so later rewording stays traceable
     # weak_basis：确认时依据只是 agent 假设的界限，应当已经逐条摆给用户 / limits resting on an agent assumption, which the user should have seen one by one
-    record = {"demand_sha": sha, "via": via, "quote": quote, "time": jobs.now_iso(), "weak_basis": weak, "content": path.read_text(encoding="utf-8")}
+    # 确认时各判定脚本的哈希：脚本之后改了，demand show 会列出来（不拒绝，改了覆盖范围算需求变更由 agent 判断）
+    # each check script's hash at confirmation: demand show lists the scripts changed since (no refusal)
+    scripts = {s["id"]: s["sha256"] for s in check_scripts(root, d)}
+    record = {"demand_sha": sha, "via": via, "quote": quote, "time": jobs.now_iso(), "weak_basis": weak, "check_scripts": scripts,
+              "content": path.read_text(encoding="utf-8")}
     if via == "auto":
         record["reason"] = reason
     with (root / CONFIRMATIONS_FILE).open("a", encoding="utf-8") as fh:
@@ -635,8 +668,12 @@ def confirm_gate(root: Path) -> dict[str, Any] | None:
     if confirmation_for(root, sha, d) is not None:
         return None
     weak = weak_basis(d)
+    try:
+        scripts = [{k: s[k] for k in ("id", "script", "doc")} for s in check_scripts(root, d)]
+    except SaosError:
+        scripts = []
     return {"demand_sha": sha, "summary": d["summary"], "weak_basis": weak, "missing_source": [w["id"] for w in weak if w["source"] is None],
-            "blocking_questions": blocking_questions(d)}
+            "blocking_questions": blocking_questions(d), "check_scripts": scripts}
 
 
 def show(root: Path) -> dict[str, Any]:
@@ -645,7 +682,13 @@ def show(root: Path) -> dict[str, Any]:
     d = load_job(root)
     sha = digest(d)
     confirmed = confirmation_for(root, sha, d)
+    scripts = check_scripts(root, d)
+    changed = _changed_since(confirmed, scripts)
     return {"demand_sha": sha, "confirmed": confirmed, "blocking_questions": blocking_questions(d),
+            # 脚本判定的说明（docstring 第一段）与没写说明的脚本 / what each script check measures, and the scripts without a docstring
+            "check_scripts": [{k: s[k] for k in ("id", "script", "doc")} for s in scripts],
+            "undocumented_checks": [s["id"] for s in scripts if s["doc"] is None],
+            **({"checks_changed_since_confirm": changed} if changed else {}),
             "open_questions": [q["question"] for q in d.get("open_questions") or [] if not q.get("blocking")],
             "counts": {s: len(d.get(s) or []) for s in SECTIONS}, "checks": [i["id"] for i in checked(d)],
             "summary": d["summary"], "notes": d.get("notes") or [],

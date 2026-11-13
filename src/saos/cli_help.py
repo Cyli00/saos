@@ -343,7 +343,12 @@ COMMANDS.update({
     "demand show": (
         "Validate sources/demand.yaml and show its current version and confirmation.",
         "Returns version/hash, confirmation, open questions, summary and weak_basis\n"
-        "  for unsourced/assumed limits. Allowed top-level fields: constants, variables,\n"
+        "  for unsourced/assumed limits; check_scripts gives each script check's id, path\n"
+        "  and the first paragraph of its module docstring (doc, what the confirmation\n"
+        "  window shows), undocumented_checks the ones without, and\n"
+        "  checks_changed_since_confirm the scripts whose hash differs from the one the\n"
+        "  confirmation recorded (omitted when none or for older confirmations).\n"
+        "  Allowed top-level fields: constants, variables,\n"
         "  objectives, open_questions, summary, notes, lang, stop. Check method: operand,\n"
         "  analysis or script. Bounds use finite max/min or equals+tol; directional\n"
         "  goals use minimize/maximize with scale (maximize also ideal), not must.max=0.\n"
@@ -355,7 +360,8 @@ COMMANDS.update({
         "  while it is open. Every limit requires source. --quote is one user message\n"
         "  verbatim; the record and the report mark it as not confirmed in the window.\n"
         "  In an autonomous job pass the gate with --reason instead (via: auto).\n"
-        "  Appends confirmations.jsonl bound to the demand hash; opens/raises the\n"
+        "  Appends confirmations.jsonl bound to the demand hash, with each check script's\n"
+        "  hash (check_scripts); opens/raises the\n"
         "  workflow window unless SAOS_UI=0 and reports its state under ui.", "BAD_ARGS, DEMAND_BLOCKED, FILE_NOT_FOUND, JOB_NOT_FOUND"),
     "check": (
         "Measure demand checks on the loaded job lens without recording a round.",
