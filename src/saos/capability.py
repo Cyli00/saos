@@ -15,9 +15,10 @@ import copy
 import json
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Callable
 
-from saos import config, prescription
+from saos import config, kit, prescription
 from saos.protocol import ErrorCode, SaosError
 
 STATUS = {
@@ -224,6 +225,8 @@ def table() -> dict[str, Any]:
                 "seidel": _measured(base, lambda b: b.seidel()),
                 "wavefront_rms": _measured(base, lambda b: b.wavefront_rms(1, [1])),
                 "huygens": _measured(base, lambda b: b.huygens(1, 32, 32)),
+                "spot": _measured(base, lambda b: kit.spot(SimpleNamespace(backend=b), [(0.0, 0.0)])),
+                "quick_focus": _measured(_built(_probe()), lambda b: b.quick_focus()),
             },
             "analyses": analyses,
         },

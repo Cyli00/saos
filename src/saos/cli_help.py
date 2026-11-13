@@ -738,8 +738,10 @@ The rtc instance
   an OpticStudio .zmx.
   ctx.op and opt merit: REAX|Y|Z etc. take Int1 surface, Int2 wavelength, data Hx, Hy, Px, Py.
     Computed: <RTC_OPERANDS>
-  Works as on OpticStudio: ctx.trace, spot, cra, field_profile, set, get, kept; ctx.quick_focus
-    is smallest RMS spot over every field and wavelength. ctx.merit_add, ctx.change_surface_type
+  Works as on OpticStudio: ctx.trace, cra, field_profile, set, get, kept. ctx.spot (and the
+    spot, best_focus, field_focus metrics) samples a square pupil grid, not OpticStudio's
+    Standard Spot, so computed_by lists it as SPOT; ctx.quick_focus is smallest RMS spot over
+    every field and wavelength, listed as QUICK_FOCUS. ctx.merit_add, ctx.change_surface_type
     (Standard, EvenAspheric) and ctx.solve with fixed or variable work; other solves refuse.
   ctx.wavefront_rms traces a 64 x 64 pupil grid; its ray OPDs match OpticStudio's OPDC and
     the RMS came within 0.2 % of OpticStudio's Zernike analysis on the cases measured, so

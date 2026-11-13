@@ -635,6 +635,11 @@ def spot(ctx, fields: Iterable[Iterable[float]] = ((0.0, 0.0),), wave: int | Ite
             row.update(centroid=None, rms_radius=None, geo_radius=None)
             if refocus:
                 row.update(best_dz=None, rms_radius_best=None)
+    # 点列统计的取样（方格光瞳）与 OpticStudio 的 Standard Spot 不同、没对账：记在统计上，单根光线的 ctx.trace 不记
+    # spot statistics sample a square pupil grid, not OpticStudio's Standard Spot, and are unreconciled; ctx.trace is not marked
+    note = getattr(getattr(ctx, "backend", None), "note_used", None)
+    if note is not None:
+        note(["SPOT"])
     return rows
 
 

@@ -1451,6 +1451,7 @@ class RtcBackend(Backend):
         if (cell is None or cell.solve_code not in (0, 1)) and any(r.op == "THIC" and r.surface == index for r in lens.mce):
             raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"surface {index} thickness comes from a multi-configuration row")
         before = lens.thickness(index, self.config)
+        self._used.add("QUICK_FOCUS")
         grid = np.asarray(pupil(21), dtype=float)
         sx, sy = self._system(lens.primary_wave)._field_scale()
         for _ in range(5):

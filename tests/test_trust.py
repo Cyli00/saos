@@ -146,3 +146,73 @@ def test_measure_runs_a_jobs_demand_checks_item_by_item(saos_home, tmp_path):
     rows = {r["id"]: r for r in measure.run(_clean_file(tmp_path), [], job_root=job.root, demand=True)["demand"]}
     assert rows["height"]["trust"] == "reconciled" and rows["length"]["trust"] == "unreconciled"
     assert rows["length"]["value"] == pytest.approx(52.0)
+
+
+def test_measure_and_the_daemon_give_the_same_numbers_for_the_same_lens(saos_home, tmp_path):
+    # 同一镜头经 daemon 的 demand.check 与无状态的 saos measure：每项数值和等级逐项一致（操作数、度量目录、脚本）
+    # the same lens through the daemon's demand.check and the stateless saos measure: every value and grade agrees
+    from saos import measure
+
+    daemon, job = _rtc_job()
+    (job.root / "checks").mkdir(exist_ok=True)
+    (job.root / "checks" / "focal.py").write_text(MEMO_SCRIPT, encoding="utf-8")
+    spot = {"metric": {"id": "spot", "params": {"fields": [[0, 0], [0, 1]]}, "pick": "rms_radius"}}
+    data = {"schema": 2, "constants": [_bounded("ray", {"operand": REAY}), _bounded("focal", {"operand": TOTR}),
+                                       _bounded("script", {"script": "checks/focal.py"}), _bounded("spot", spot),
+                                       _bounded("efl", {"metric": {"id": "efl"}}), _bounded("mtf", {"operand": {"type": "MTFT"}})],
+            "objectives": [{"id": "height", "description": "height", "check": {"operand": REAY}, "origin": "user",
+                            "must": {"max": 1e6}, "scale": 1.0, "source": "user"}],
+            "summary": "two paths"}
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    demand._PREPARED.clear()
+    reply = call(daemon, "demand.check", job=job.id)
+    assert reply["ok"], reply
+    via_daemon = {i["id"]: i for i in reply["result"]["items"]}
+    demand._PREPARED.clear()
+    via_measure = {r["id"]: r for r in measure.run(job.resolve_lens("a.zmx", must_exist=True), [], job_root=job.root, demand=True)["demand"]}
+    assert set(via_measure) == set(via_daemon) == {"ray", "focal", "script", "spot", "efl", "mtf", "height"}
+    for item_id, row in via_measure.items():
+        assert row["trust"] == via_daemon[item_id]["trust"], item_id
+        assert row["value"] == via_daemon[item_id]["value"], item_id
+    assert via_measure["spot"]["value"] is not None and via_measure["mtf"]["value"] is None
+
+
+def test_spot_statistics_and_quick_focus_are_unreconciled_but_a_single_ray_trace_is_not(saos_home):
+    # 点列取 31×31 方格之类的光瞳采样，与 OpticStudio 的 Standard Spot 不同；快速对焦同样没对账；单根光线等同 REAX/REAY
+    # spot statistics and quick focus sample the pupil differently from OpticStudio; a single ray is as reconciled as REAY
+    daemon, job = _rtc_job()
+    source = "def run(ctx):\n    return float(ctx.trace([[1, 0, 1, 0, 1]]).y[0])\n"
+    traced = call(daemon, "script.exec", job=job.id, name="ray", source=source)["result"]
+    assert traced["trust"] == "reconciled" and traced["computed_by"]["operands_unverified"] == []
+    source = "def run(ctx):\n    return ctx.spot([(0, 0), (0, 1)])[0]['rms_radius']\n"
+    spot = call(daemon, "script.exec", job=job.id, name="spot", source=source)["result"]
+    assert spot["trust"] == "unreconciled" and spot["computed_by"]["operands_unverified"] == ["SPOT"]
+    source = "def run(ctx):\n    return ctx.quick_focus()\n"
+    focus = call(daemon, "script.exec", job=job.id, name="focus", source=source)["result"]
+    assert focus["trust"] == "unreconciled" and focus["computed_by"]["operands_unverified"] == ["QUICK_FOCUS"]
+
+
+def test_the_spot_metric_and_a_cached_spot_carry_the_mark_in_a_demand_check(saos_home):
+    daemon, job = _rtc_job()
+    (job.root / "checks").mkdir(exist_ok=True)
+    cached = "def run(ctx):\n    return ctx.memo('spot', lambda: ctx.spot([(0, 0)]))[0]['rms_radius']\n"
+    (job.root / "checks" / "spot.py").write_text(cached, encoding="utf-8")
+    spot = {"metric": {"id": "spot", "params": {"fields": [[0, 0]]}, "pick": "rms_radius"}}
+    data = {"schema": 2, "constants": [_bounded("ray", {"operand": REAY}), _bounded("metric", spot),
+                                       _bounded("first", {"script": "checks/spot.py"}), _bounded("second", {"script": "checks/spot.py"})],
+            "objectives": [{"id": "height", "description": "height", "check": {"operand": REAY}, "origin": "user",
+                            "must": {"max": 1e6}, "scale": 1.0, "source": "user"}],
+            "summary": "spot marks"}
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    demand._PREPARED.clear()
+    items = {i["id"]: i for i in call(daemon, "demand.check", job=job.id)["result"]["items"]}
+    assert items["ray"]["trust"] == "reconciled"
+    for item_id in ("metric", "first", "second"):
+        assert items[item_id]["trust"] == "unreconciled" and items[item_id]["operands_unverified"] == ["SPOT"], item_id
+
+
+def test_the_capability_table_lists_spot_and_quick_focus_as_unreconciled():
+    from saos import capability
+
+    measurements = capability.table()["rtc"]["measurements"]
+    assert measurements["spot"] == {"status": "unreconciled"} and measurements["quick_focus"] == {"status": "unreconciled"}
