@@ -360,3 +360,34 @@ def test_a_prescription_rtc_cannot_build_is_built_on_opticstudio_and_stays_there
         assert "EVENASPH mirror" in result["backend_switch"]["stayed"]
     finally:
         daemon.pool.close()
+
+
+@pytest.mark.parametrize("name", ["iris", "reflective", "sequential"])
+def test_the_semi_independent_operands_do_not_move_with_the_semi_diameters_on_opticstudio(zos, name):
+    """rtc.SEMI_INDEPENDENT 在 OpticStudio 上也成立：非光阑面的半口径改成 0.5 倍并设浮动孔径，边缘光线被挡（渐晕码非 0），
+    REAY 仍给它的坐标，13 个操作数与改之前相同（2026-11-14 首次实测：iris、reflective、sequential 在 0.5/1.5/3 倍、
+    有无浮动孔径下都在 1e-12 以内）。"""
+    from saos.backend import rtc
+
+    def values():
+        n = zos.system.LDE.NumberOfSurfaces - 1
+        calls = {"EFFL": (0, 0, []), "EXPP": (0, 0, []), "EXPD": (0, 0, []), "INDX": (1, 0, []), "SSAG": (1, 0, [1.0, 0.5]),
+                 "SPHA": (0, 0, []), "COMA": (0, 0, []), "ASTI": (0, 0, []), "FCUR": (0, 0, []),
+                 "REAY": (n, 0, [0, 1, 0, 1]), "REAX": (n, 0, [1, 0, 0.3, 0]), "REAC": (n, 0, [0, 1, 0, 0.5])}
+        assert set(calls) | {"CONF"} == rtc.SEMI_INDEPENDENT
+        return {op: zos.operand(op, *args) for op, args in calls.items()}
+
+    zos.load(CASES / f"{name}.zmx")
+    before = values()
+    lde = zos.system.LDE
+    floating = zos.zosapi().Editors.LDE.SurfaceApertureTypes.FloatingAperture
+    for i in range(1, lde.NumberOfSurfaces - 1):
+        row = lde.GetSurfaceAt(i)
+        if not row.IsStop:
+            row.SemiDiameter = float(row.SemiDiameter) * 0.5
+            row.ApertureData.ChangeApertureTypeSettings(row.ApertureData.CreateApertureTypeSettings(floating))
+    rim = zos.trace_batch(np.array([[1, 0, 1, 0, 1.0]]), lde.NumberOfSurfaces - 1)
+    assert rim.error[0] == 0 and rim.vignette[0] != 0
+    after = values()
+    for op, value in before.items():
+        assert after[op] == pytest.approx(value, rel=1e-12, abs=1e-12), op
