@@ -331,3 +331,32 @@ def ctx_pupil():
     from saos.kit import pupil
 
     return pupil(7)
+
+
+def test_a_prescription_rtc_cannot_build_is_built_on_opticstudio_and_stays_there(zos, saos_home, monkeypatch):
+    """带偶次非球面反射镜的处方：daemon 的预检在临时 rtc 上建一遍发现建不了，就在 OpticStudio 上建，而不是报
+    BACKEND_UNSUPPORTED；之后的命令留在 OpticStudio（backend_switch.stayed），数是 measured。"""
+    from case_variants import _reflective_even_asphere, base
+
+    from saos import jobs
+    from saos.backend.rtc import RtcBackend
+    from saos.daemon import Daemon
+
+    monkeypatch.setenv("SAOS_BACKEND", "auto")
+    raw = base("reflective")
+    _reflective_even_asphere(raw)
+    rtc = RtcBackend(None, standalone=True)
+    daemon = Daemon(rtc, rtc.identity(), start_zos=lambda: (zos, zos.identity()))
+    try:
+        job = jobs.create_job("even-asphere-mirror")
+        built = daemon.handle({"op": "lens.build", "args": {"job": job.id, "prescription": prescription.normalize(raw), "file": "refl.zmx"}})
+        assert built["ok"], built
+        switch = built["result"]["backend_switch"]
+        assert switch["to"] == "zos" and "EVENASPH mirror" in switch["reason"]
+        effl = daemon.handle({"op": "lens.operand", "args": {"job": job.id, "type": "EFFL"}})
+        assert effl["ok"], effl
+        result = effl["result"]
+        assert result["computed_by"]["backend"] == "zos" and result["trust"] == "measured"
+        assert "EVENASPH mirror" in result["backend_switch"]["stayed"]
+    finally:
+        daemon.pool.close()
