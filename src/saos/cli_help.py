@@ -254,8 +254,11 @@ COMMANDS = {
         "  without a class, a first_order must not met, or another must 5 times off or more\n"
         "  (a structure the demand prescribes is only recorded). Under 10 times off, such\n"
         "  a must passes when the notes carry reach_evidence citing an existing file of the\n"
-        "  job; approval.json then keeps reach_waived. The user may overrule the gate by\n"
-        "  approving. Seals approval.json with fingerprint, outstanding warnings,\n"
+        "  job; approval.json then keeps reach_waived. The 5 and 10 come from 11 earlier\n"
+        "  jobs: of 5 between 5 and 10 times off, 2 later passed; of 6 at 10 or more, none.\n"
+        "  The user may overrule the gate by approving. A description with no\n"
+        "  starting-form search record is approved with exploration_missing kept in\n"
+        "  approval.json. Seals approval.json with fingerprint, outstanding warnings,\n"
         "  shown_sha (digest of the four sections the page showed) and the unknowns\n"
         "  still open then (unknowns_acknowledged). Descriptions made before these\n"
         "  fields existed lack the last two.\n"
@@ -423,9 +426,12 @@ COMMANDS.update({
     "rule-out": (
         "Exclude strategy tiers using evidence for the current demand version locally.",
         "Requires an existing round in this demand version. --tier repeats or uses\n"
-        "  commas; --reason must cite an existing file of the job (scans/NNN, scripts/NNN-...,\n"
-        "  explore/...). materials also needs a materials round or a GlassExpert script, or a\n"
-        "  reason starting 'not runnable:'. Appends ruled_out.jsonl.\n"
+        "  commas; --reason cites an existing file of the job (scans/NNN, scripts/NNN-...,\n"
+        "  explore/...); materials also wants a materials round or a GlassExpert script, or a\n"
+        "  reason starting 'not runnable:'. Without them the rule-out is still appended to\n"
+        "  ruled_out.jsonl with unsupported (no_evidence_file, materials_never_tried) and\n"
+        "  warnings; the round decision lists its tiers in tiers_ruled_out_without_evidence\n"
+        "  and the report's exhausted verdict names them.\n"
         "  Stop logic no longer waits for these tiers until the next clear gain.", "BAD_ARGS, FILE_NOT_FOUND, JOB_NOT_FOUND"),
     "stop": (
         "Record the decision to stop this demand version locally.",

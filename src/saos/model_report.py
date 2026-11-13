@@ -138,9 +138,10 @@ TEXT: dict[str, tuple[str, str]] = {
         "minimum negative-lens centre {need} of table 17-2 in 李晓彤's textbook.",
     ),
     "w.no_search_record": (
-        "没有起型检索记录：notes 的 exploration 要列出 searches（库、检索条件、命中数、取舍），或 fixed_by_user（用户固定了哪些部分及其原话）；缺少时这份说明不能确认。",
-        "No starting-form search record: notes.exploration must list searches (library, query, hits, decision) or fixed_by_user "
-        "(the parts the user fixed and their words); without it this description cannot be approved.",
+        "没有起型检索记录：notes 的 exploration 应列出 searches（库、检索条件、命中数、取舍），或 fixed_by_user（用户固定了哪些部分及其原话）；"
+        "照样确认，等于接受一个没有和别的结构比过的起点。",
+        "No starting-form search record: notes.exploration should list searches (library, query, hits, decision) or fixed_by_user "
+        "(the parts the user fixed and their words); approving anyway accepts a start nobody compared with another structure.",
     ),
     "h.exploration": ("起型检索", "Starting-form search"),
     "th.exploration": ("库|检索条件|命中数|取舍", "Library|Query|Hits|Decision"),

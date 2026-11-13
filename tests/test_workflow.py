@@ -949,17 +949,25 @@ def test_rule_out_needs_a_reason_and_feeds_the_round_decision(setup):
         ledger.record_rule_out(job.root, sha, ["fancy"], "x")
     (job.root / "notes").mkdir(exist_ok=True)
     (job.root / "notes" / "probe.json").write_text("{}", encoding="utf-8")
-    with pytest.raises(SaosError, match="existing file"):
-        ledger.record_rule_out(job.root, sha, ["structure"], "no variable moves the target, by reasoning alone")
-    with pytest.raises(SaosError, match="materials tier was never tried"):
-        ledger.record_rule_out(job.root, sha, ["materials"], "notes/probe.json: no variable moves the target")
-    ledger.record_rule_out(job.root, sha, ["materials", "global", "structure"], "not runnable: glasses fixed by the demand, notes/probe.json")
+    # 缺证据的排除照样记下，记录和返回值标出缺什么 / a rule-out without the evidence is recorded and says what is missing
+    bare = ledger.record_rule_out(job.root, sha, ["global"], "no variable moves the target, by reasoning alone")
+    assert bare["unsupported"] == ["no_evidence_file"] and "cites no existing file" in bare["warnings"][0]
+    untried = ledger.record_rule_out(job.root, sha, ["materials"], "notes/probe.json: no variable moves the target")
+    assert untried["unsupported"] == ["materials_never_tried"]
+    backed = ledger.record_rule_out(job.root, sha, ["materials", "global", "structure"], "not runnable: glasses fixed by the demand, notes/probe.json")
+    assert "unsupported" not in backed and "warnings" not in backed
     call(daemon, "lens.set", job=job.id, surface=1, param="radius", value=60.0)
     out = call(daemon, "round.record", job=job.id, tier="local,variables")["result"]
     assert out["record"]["tiers"] == ["local", "variables"] and out["record"]["tier"] == "local"
     # 改半径不改变假后端的 TOTR，没有进步，排除的层级算作处理过 / the radius does not change the fake TOTR: no gain, the rule-out holds
     d = out["decision"]
     assert d["last_gain_round"] == 0 and d["tiers_ruled_out_since_gain"] == ["materials", "global", "structure"] and d["status"] == "exhausted"
+    # 后来补了证据也不抹掉先前缺证据的那几条 / later evidence does not erase the unsupported rule-outs before it
+    assert d["tiers_ruled_out_without_evidence"] == ["materials", "global"]
+    from saos import report
+
+    verdict = report.judgement(d, demand.load_job(job.root)["stop"], report.Tr("en"))
+    assert verdict.endswith("; Materials, Global optimisation were ruled out without a job file as evidence, or with the materials tier never tried")
     assert call(daemon, "round.record", job=job.id, tier="local,bogus")["error"]["code"] == ErrorCode.BAD_ARGS
 
 

@@ -46,7 +46,7 @@ const TEXT = {
     only_3d: "各面不在同一个对称平面里，只有 3D 视图", disconnected: "与 saos ui 服务断开，正在重连…", notice_close: "知道了", lens_data: "Lens Data", ld_type: "面型", ld_comment: "注释", ld_radius: "半径", ld_thickness: "厚度",
     gate_demand: "确认需求单", gate_model: "确认建模说明", gate_weak: "依据薄弱的界限", gate_missing: (ids) => `这些条目还没有来源，不能确认：${ids}`,
     gate_open: "打开说明页", gate_rebuild: (r) => `重建原因：${r}`, gate_no_rebuild: "结构与上次确认不同，说明里还没写重建原因：请 agent 补上后重新出说明",
-    gate_no_search: "说明里没有起型检索记录：请 agent 补上后重新出说明", gate_note: "备注（可不填）", gate_done: "已记录你的确认", gate_old: "这份说明是旧格式，窗口里不能确认：请 agent 重新出说明",
+    gate_no_search: "说明里没有起型检索记录：确认即表示接受一个没有和别的结构比过的起点", gate_note: "备注（可不填）", gate_done: "已记录你的确认", gate_old: "这份说明是旧格式，窗口里不能确认：请 agent 重新出说明",
     gate_revise: "要求修改", gate_revise_need: "先在备注里写要改什么", gate_revised: (n) => `已要求修改，等 agent 出新版：${n}`, gate_revise_done: "修改意见已记下",
     mode_auto: "自主运行：agent 自行通过关卡并记录理由，报告标明未经你确认", mode_to_interactive: "改为由我确认", mode_switched: "已改为参与模式：之后的关卡由你确认",
     ld_material: "材料", ld_sd: "半口径", ld_conic: "圆锥", ld_solve: "V 为变量，其他字母为求解或 pickup",
@@ -80,7 +80,7 @@ const TEXT = {
     k_live: "当前镜头", k_review: "回看", k_hint: "点刻度或拖动，回看某一轮", k_follow: "跟随最新",
     need_none: "需求单里还没有带判定方法的条目。", need_empty: "这一条还没有测量值。", need_live: "当前",
     expand: "放大", close: "关闭", gate_wait: "等你确认", gate_signed: "已确认", gate_signed_at: (h) => `已于 ${h} 确认`, gate_auto: "自主运行",
-    fk_demand: "需求", fk_weak: "依据薄弱", fk_missing: "缺来源", fk_model: "模型", fk_rebuild: "重建", fk_reach: "差距", fk_todo: "待补", gate_reach: (s) => `离需求太远：${s}。确认即表示破例，让它进入设计轮次`,
+    fk_demand: "需求", fk_weak: "依据薄弱", fk_missing: "缺来源", fk_model: "模型", fk_rebuild: "重建", fk_search: "起型检索", fk_reach: "差距", fk_todo: "待补", gate_reach: (s) => `离需求太远：${s}。确认即表示破例，让它进入设计轮次`,
     need_curve: "曲线", need_table: "表格", need_trend: "各轮", display_only: "只看", iteration: (n) => `第 ${n} 步`,
     pick_title: "指标目录", pick_save: "保存", pick_catalog: "目录", pick_chosen: "追加显示（不参与判定）", pick_none: "还没有追加的指标。",
     pick_hint: "点左侧条目加入；key 是显示名，参数按 JSON 填写（悬停看可用参数）。需求单里绑定的指标自动显示，不用在这里加。",
@@ -128,7 +128,7 @@ const TEXT = {
     only_3d: "The surfaces share no plane of symmetry: 3D view only", disconnected: "Lost the saos ui service; reconnecting…", notice_close: "Dismiss", lens_data: "Lens Data", ld_type: "Type", ld_comment: "Comment", ld_radius: "Radius", ld_thickness: "Thickness",
     gate_demand: "Confirm demand", gate_model: "Approve model", gate_weak: "Limits on a weak basis", gate_missing: (ids) => `These items have no source yet, so the demand cannot be confirmed: ${ids}`,
     gate_open: "Open the page", gate_rebuild: (r) => `Why it was rebuilt: ${r}`, gate_no_rebuild: "The structure differs from the last approval and the description gives no reason yet: ask the agent to add it and describe again",
-    gate_no_search: "The description records no starting-form search: ask the agent to add it and describe again", gate_note: "Note (optional)", gate_done: "Your confirmation is recorded", gate_old: "This description predates window approval: ask the agent to describe again",
+    gate_no_search: "The description records no starting-form search: approving accepts a start nobody compared with another structure", gate_note: "Note (optional)", gate_done: "Your confirmation is recorded", gate_old: "This description predates window approval: ask the agent to describe again",
     gate_revise: "Ask for changes", gate_revise_need: "Write what to change in the note first", gate_revised: (n) => `Changes requested, waiting for a new version: ${n}`, gate_revise_done: "Your change request is recorded",
     mode_auto: "Autonomous run: the agent passes the gates with its reasons on record, and the report says you did not confirm them", mode_to_interactive: "Let me confirm instead", mode_switched: "Now interactive: you confirm the next gates",
     ld_material: "Material", ld_sd: "Semi-dia.", ld_conic: "Conic", ld_solve: "V marks a variable, other letters a solve or pickup",
@@ -162,7 +162,7 @@ const TEXT = {
     k_live: "Current lens", k_review: "reviewing", k_hint: "click a tick or drag to review a round", k_follow: "following the latest",
     need_none: "The demand has no checked items yet.", need_empty: "No measured value for this item yet.", need_live: "now",
     expand: "Expand", close: "Close", gate_wait: "your turn", gate_signed: "confirmed", gate_signed_at: (h) => `confirmed at ${h}`, gate_auto: "autonomous",
-    fk_demand: "Demand", fk_weak: "Weak basis", fk_missing: "No source", fk_model: "Model", fk_rebuild: "Rebuild", fk_reach: "Gap", fk_todo: "To add", gate_reach: (s) => `Far from the demand: ${s}. Approving overrules this and lets it enter the rounds`,
+    fk_demand: "Demand", fk_weak: "Weak basis", fk_missing: "No source", fk_model: "Model", fk_rebuild: "Rebuild", fk_search: "Search", fk_reach: "Gap", fk_todo: "To add", gate_reach: (s) => `Far from the demand: ${s}. Approving overrules this and lets it enter the rounds`,
     need_curve: "Curve", need_table: "Table", need_trend: "Rounds", display_only: "view only", iteration: (n) => `step ${n}`,
     pick_title: "Metric catalog", pick_save: "Save", pick_catalog: "Catalog", pick_chosen: "Shown in addition (not judged)", pick_none: "No added metrics yet.",
     pick_hint: "Click an entry on the left to add it; key is the display name, params are JSON (hover to see the allowed ones). Metrics bound in the demand show up by themselves.",
@@ -1629,7 +1629,8 @@ function renderGate() {
     if (m.reach_blocking?.length) fact("fk_reach", esc(t("gate_reach", m.reach_blocking.map((b) => `${b.id} ×${b.multiple === "inf" ? "∞" : sig(b.multiple, 3)}`).join(", "))), "bad");
     const todo = [];
     if (!m.rebuild_reason && m.rebuild_required) { ready = false; todo.push(t("gate_no_rebuild")); }
-    if (m.exploration_missing) { ready = false; todo.push(t("gate_no_search")); }
+    // 没有起型检索记录只提示、不禁用确认：用户可以接受一个没有比较过的起点 / shown, not blocking: the user may accept an uncompared start
+    if (m.exploration_missing) fact("fk_search", esc(t("gate_no_search")), "bad");
     if (!m.shown_sha) { ready = false; todo.push(t("gate_old")); }
     if (todo.length) fact("fk_todo", todo.map(esc).join("<br>"), "bad");
   }

@@ -66,6 +66,8 @@ TEXT: dict[str, tuple[str, str]] = {
     "chart.inf": ("∞：无有效值", "∞: no valid value"),
     "judge.achieved": ("第 {n} 轮所有带达标线的项都已满足", "every item with a pass line is met in round {n}"),
     "judge.limit": ("已用完轮次上限 max_rounds = {cap}", "used up max_rounds = {cap}"),
+    "judge.unsupported": ("；其中 {tiers} 是在没有任务文件作证据、或材料层从没试过的情况下排除的",
+                          "; {tiers} were ruled out without a job file as evidence, or with the materials tier never tried"),
     "judge.exhausted": (
         "自第 {n} 轮以来 G 没有缩小 {rel:.0%} 以上，允许的手段（{tiers}）都已试过或排除",
         "G has not shrunk by {rel:.0%} or more since round {n}, and every allowed tier ({tiers}) was tried or ruled out",
@@ -80,6 +82,7 @@ TEXT: dict[str, tuple[str, str]] = {
     "auto.model": ("建模结构 {model}：{reason}", "Model structure {model}: {reason}"),
     "auto.rebuild": ("（重建原因：{reason}）", " (why rebuilt: {reason})"),
     "auto.reach": ("（差距门禁凭证据放行 {items}：{evidence}）", " (reach gate passed on evidence for {items}: {evidence})"),
+    "auto.unsearched": ("（没有起型检索记录）", " (no starting-form search recorded)"),
     "auto.stop": ("第 {n} 轮后停止：{reason}", "Stopped after round {n}: {reason}"),
     "auto.assumption": ("假设的界限 {id} = {bound}：{source}", "Assumed limit {id} = {bound}: {source}"),
     "confirmed.auto": ("agent 自行确认（自主运行）：{reason}", "Confirmed by the agent (autonomous run): {reason}"),
@@ -352,7 +355,8 @@ def autonomy_items(job: jobs.Job, confirmed: dict[str, Any] | None, decision: di
         out.append({"kind": "demand", "sha": confirmed["demand_sha"][:8], "reason": confirmed.get("reason", "")})
         out += [{"kind": "assumption", "id": w["id"], "bound": w["bound"], "source": w["source"]}
                 for w in confirmed.get("weak_basis") or [] if w.get("source")]
-    out += [{"kind": "model", "model": r["model"], "reason": r.get("reason", ""), "rebuild": r.get("rebuild_reason"), "reach": r.get("reach_waived")}
+    out += [{"kind": "model", "model": r["model"], "reason": r.get("reason", ""), "rebuild": r.get("rebuild_reason"), "reach": r.get("reach_waived"),
+             "unsearched": bool(r.get("exploration_missing"))}
             for r in model_gate.approvals(job) if r.get("via") == "auto"]
     stopped = decision.get("stopped")
     if stopped and stopped.get("via") == "auto":
@@ -372,7 +376,7 @@ def autonomy_section(data: dict[str, Any], t: Tr) -> str:
             waived = a.get("reach")
             lines.append(t("auto.model", model=e(a["model"]), reason=e(a["reason"])) + (t("auto.rebuild", reason=e(a["rebuild"])) if a.get("rebuild") else "")
                          + (t("auto.reach", items=e(", ".join(f"{i['id']} ×{fmt(i['multiple'])}" for i in waived["items"])), evidence=e(waived["evidence"]))
-                            if waived else ""))
+                            if waived else "") + (t("auto.unsearched") if a.get("unsearched") else ""))
         elif a["kind"] == "stop":
             lines.append(t("auto.stop", n=a["n"], reason=e(a["reason"])))
         else:
@@ -394,7 +398,9 @@ def judgement(decision: dict[str, Any], stop: dict[str, Any], t: Tr) -> str:
         return t("judge.stopped", n=s["round"], reason=s["reason"], quote=s["quote"])
     if status == "exhausted":
         tiers = t("list_sep").join(t.tier(x) for x in ledger.TIERS if x in stop["tiers"])
-        return t("judge.exhausted", n=decision["last_gain_round"], rel=stop["rel"], tiers=tiers)
+        weak = decision.get("tiers_ruled_out_without_evidence") or []
+        return t("judge.exhausted", n=decision["last_gain_round"], rel=stop["rel"], tiers=tiers) + (
+            t("judge.unsupported", tiers=t("list_sep").join(t.tier(x) for x in weak)) if weak else "")
     return t("judge.continue", tier=t.tier(decision["next_tier"]))
 
 

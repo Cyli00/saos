@@ -445,11 +445,9 @@ def approve(job: jobs.Job, model: str, quote: str, rebuild_reason: str = "", *, 
         rebuild_reason = rebuild_reason or str((data.get("notes") or {}).get("rebuild_reason") or "")
     if via == "auto":
         rebuild_reason = rebuild_reason or str((data.get("notes") or {}).get("rebuild_reason") or "")
-    if (data.get("approval_schema") or 0) >= 3 and not data.get("exploration_recorded"):
-        # 第 3 版说明起，起型检索记录是确认的前提（用户决定）；之前的说明照旧可以确认
-        # from schema 3 a starting-form search record is required (user decision); older descriptions still approve
-        raise SaosError(ErrorCode.BAD_ARGS, "this description records no starting-form search: add exploration.searches (library, query, hits, "
-                        "decision) or exploration.fixed_by_user (parts, quote) to the notes, run lens describe again and show the new page")
+    # 没有起型检索记录不拒绝确认：页面上有这条警告，确认记录里标出，自主任务的报告列出（2026-11-13 用户决定：只守昂贵的事）
+    # a missing starting-form search no longer refuses approval: the page warns, the record and an autonomous report say so
+    exploration_missing = (data.get("approval_schema") or 0) >= 3 and not data.get("exploration_recorded")
     waived = _require_reachable(job, data) if via == "auto" else None
     if not isinstance(rebuild_reason, str):
         raise SaosError(ErrorCode.BAD_ARGS, "重建原因必须为文字")
@@ -464,6 +462,7 @@ def approve(job: jobs.Job, model: str, quote: str, rebuild_reason: str = "", *, 
               "fingerprint_sha": data["fingerprint_sha"],
               # 用户确认时页面上仍有的自动检查结果，一并留档 / warnings still on the page when the user approved
               "warnings_acknowledged": data.get("warnings", []),
+              **({"exploration_missing": True} if exploration_missing else {}),
               # 自主任务凭证据放行的差距门禁项 / reach-gate items an autonomous job passed on evidence
               **({"reach_waived": waived} if waived else {})}
     if "shown_sha" in data:

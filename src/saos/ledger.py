@@ -147,8 +147,10 @@ def append(path: Path, record: dict[str, Any]) -> None:
         fh.write(json.dumps(jsonable(record), ensure_ascii=False) + "\n")
 
 
-# 证据要落到任务里的文件上：只写一句推理，就能把没试过的手段排除掉（2026-11-06 用户决定）
-# evidence has to be a file in the job: a sentence of reasoning alone could rule out a tier nobody tried
+# 证据要落到任务里的文件上：只写一句推理，就能把没试过的手段排除掉（2026-11-06 用户决定）。排除不因此被拒，
+# 缺证据的排除记在记录里，在轮次结论和交付报告里标出（2026-11-13 用户决定：关卡只设在昂贵的地方）
+# evidence has to be a file in the job: a sentence of reasoning alone could rule out a tier nobody tried. Such a
+# rule-out is no longer refused: it is marked in the record and shown in the round decision and the delivery report
 _EVIDENCE = re.compile(r"\b(?:scans|evaluations|scripts|analyses|parallel|explore|notes|sources|lenses|models|checks)/[\w./-]*\w", re.ASCII)
 # 确实跑不了材料搜索时（OpticStudio 上的多重结构、需求固定玻璃）用这个前缀写明原因 / the prefix for a materials search that truly cannot run
 NOT_RUNNABLE = "not runnable:"
@@ -156,9 +158,13 @@ NOT_RUNNABLE = "not runnable:"
 BEFORE_ROUNDS = -1
 
 
+def _cites_evidence(root: Path, reason: str) -> bool:
+    return any((root / path).exists() for path in _EVIDENCE.findall(reason))
+
+
 def _require_evidence(root: Path, reason: str) -> None:
-    cited = _EVIDENCE.findall(reason)
-    if not any((root / path).exists() for path in cited):
+    if not _cites_evidence(root, reason):
+        cited = _EVIDENCE.findall(reason)
         raise SaosError(ErrorCode.BAD_ARGS, f"--reason must cite an existing file of this job as evidence (scans/NNN, scripts/NNN-..., explore/...); found {cited or 'none'}")
 
 
@@ -214,8 +220,13 @@ def ruled_out_for(root: Path, demand_sha: str, demand: dict[str, Any] | None = N
 
 
 def record_rule_out(root: Path, demand_sha: str, tiers: list[str], reason: str, demand: dict[str, Any] | None = None) -> dict[str, Any]:
-    """带证据排除层级，免得为了走完阶梯去试与诊断结论无关的手段。只对最后一次进步之后有效。
-    Rule tiers out with the evidence, so no round is spent on a tier the diagnosis says cannot help. Holds until the next gain."""
+    """带证据排除层级，免得为了走完阶梯去试与诊断结论无关的手段。只对最后一次进步之后有效。理由没有引用任务里已有的
+    文件（no_evidence_file）、或排除了本任务从没试过的 materials 层而理由不以 not runnable: 开头（materials_never_tried）时
+    照样记下，记录的 unsupported 列出缺的是哪一项，轮次结论的 tiers_ruled_out_without_evidence 和交付报告会标出来。
+    Rule tiers out with the evidence, so no round is spent on a tier the diagnosis says cannot help. Holds until the next
+    gain. A reason citing no existing job file (no_evidence_file), or ruling out a never-tried materials tier without
+    starting with "not runnable:" (materials_never_tried), is still recorded: unsupported names what is missing, and the
+    round decision's tiers_ruled_out_without_evidence and the delivery report show it."""
     reason = str(reason or "").strip()
     unknown = [t for t in tiers if t not in TIERS]
     if not tiers or unknown:
@@ -225,13 +236,17 @@ def record_rule_out(root: Path, demand_sha: str, tiers: list[str], reason: str, 
     rounds = load(root / LEDGER_FILE, demand)
     if not rounds or version(rounds[-1])[0] != demand_sha:
         raise SaosError(ErrorCode.BAD_ARGS, "record a round under the current demand first; a tier is ruled out after a given round")
-    _require_evidence(root, reason)
+    unsupported = [] if _cites_evidence(root, reason) else ["no_evidence_file"]
     if "materials" in tiers and not reason.lower().startswith(NOT_RUNNABLE) and not _materials_tried(root, rounds):
-        raise SaosError(ErrorCode.BAD_ARGS, "the materials tier was never tried in this job: run ctx.GlassExpert or record a materials round, "
-                        f"or start --reason with '{NOT_RUNNABLE}' and say why the search cannot run here")
-    record = {"round": int(rounds[-1]["round"]), "demand_sha": demand_sha, "tiers": list(dict.fromkeys(tiers)), "reason": reason, "time": jobs.now_iso()}
+        unsupported.append("materials_never_tried")
+    record = {"round": int(rounds[-1]["round"]), "demand_sha": demand_sha, "tiers": list(dict.fromkeys(tiers)), "reason": reason,
+              **({"unsupported": unsupported} if unsupported else {}), "time": jobs.now_iso()}
     append(root / RULED_OUT_FILE, record)
-    return record
+    warnings = {"no_evidence_file": "--reason cites no existing file of this job (scans/NNN, scripts/NNN-..., explore/...)",
+                "materials_never_tried": "the materials tier was never tried in this job (no materials round, no GlassExpert "
+                                         f"script) and --reason does not start with '{NOT_RUNNABLE}'"}
+    return {**record, **({"warnings": [warnings[u] + "; the round decision and the delivery report will show this rule-out as unsupported"
+                                       for u in unsupported]} if unsupported else {})}
 
 
 def _materials_tried(root: Path, rounds: list[dict[str, Any]]) -> bool:
@@ -334,6 +349,7 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str
     tried = {t for r in since if valid(r) for t in tiers_of(r)}
     gain_round = int(window[last_gain]["round"])
     excluded = {t for x in ruled or [] if int(x["round"]) >= gain_round for t in x["tiers"]}
+    unsupported = {t for x in ruled or [] if int(x["round"]) >= gain_round and x.get("unsupported") for t in x["tiers"]}
     untried = [t for t in tiers if t not in tried and t not in excluded]
     # 重测记录不计入轮次上限 / re-measurements (rebase) do not count against max_rounds
     in_version = current_version(rounds)
@@ -347,6 +363,9 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str
         "rounds_without_gain": len(since),
         "tiers_tried_since_gain": sorted(tried & set(tiers), key=TIERS.index),
         "tiers_ruled_out_since_gain": sorted((excluded - tried) & set(tiers), key=TIERS.index),
+        # 排除理由缺证据的层级（record_rule_out 的 unsupported）/ tiers ruled out without the evidence record_rule_out asks for
+        **({"tiers_ruled_out_without_evidence": sorted((unsupported - tried) & set(tiers), key=TIERS.index)}
+           if (unsupported - tried) & set(tiers) else {}),
         "untried_tiers": untried,
         # 轮次预算按需求版本计：用户确认新版本后重新计数 / the round budget counts per demand version
         "rounds_in_version": counted,

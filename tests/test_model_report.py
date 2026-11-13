@@ -388,15 +388,16 @@ def test_approval_records_the_digest_and_the_unknowns_shown(saos_home, fake_lens
     assert model_gate.require_approved(job, backend.describe_model(None))["model"] == out["folder"]
 
 
-def test_a_description_without_a_search_record_cannot_be_approved(saos_home, fake_lens_file):
-    # 10-30 的任务写一句“未进行结构搜索”就过了关 / on 2026-10-30 one line saying "no structure search" passed
+def test_a_description_without_a_search_record_is_approved_with_the_warning_on_record(saos_home, fake_lens_file):
+    # 10-30 的任务写一句“未进行结构搜索”就过了关：现在不拒绝，页面警告，确认记录标出
+    # on 2026-10-30 one line saying "no structure search" passed: not refused now, but warned on the page and marked in the record
     backend, daemon, job = _started_daemon(fake_lens_file, "search-record")
     base = {"surfaces": {"0": "object"}, "first_order": ["f"], "next_budget": BUDGET}
     text = _describe(daemon, job, {**base, "exploration": "按用户指定结构，未进行结构搜索"})
     assert any("No starting-form search record" in w for w in text["warnings"])
-    with pytest.raises(SaosError) as err:
-        model_gate.approve(job, text["folder"], "可以")
-    assert err.value.code == ErrorCode.BAD_ARGS and "exploration.searches" in err.value.message
+    assert model_gate.approval_gate(job)["exploration_missing"]
+    record = model_gate.approve(job, text["folder"], "可以")
+    assert record["exploration_missing"] and any("No starting-form search record" in w for w in record["warnings_acknowledged"])
     assert "旧格式的文字记录" in (job.root / text["folder"] / "index.html").read_text(encoding="utf-8")
 
     # 零命中也是记录 / a search with no hits is a record too
@@ -404,7 +405,8 @@ def test_a_description_without_a_search_record_cannot_be_approved(saos_home, fak
                               "decision": "no finite-conjugate probe forms; synthesised paraxially"}]}
     out = _describe(daemon, job, {**base, "exploration": searched})
     assert not any("search record" in w for w in out["warnings"])
-    assert model_gate.approve(job, out["folder"], "可以")["model"] == out["folder"]
+    approved = model_gate.approve(job, out["folder"], "可以")
+    assert approved["model"] == out["folder"] and "exploration_missing" not in approved
 
     bad = daemon.handle({"op": "lens.describe", "args": {"job": job.id, "notes": {**base, "exploration": {"searches": [{"library": "patents"}]}}}})
     assert not bad["ok"] and bad["error"]["code"] == ErrorCode.BAD_ARGS and "searches[0]" in bad["error"]["message"]
