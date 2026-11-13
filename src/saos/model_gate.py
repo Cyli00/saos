@@ -408,11 +408,11 @@ def approval_gate(job: jobs.Job) -> dict[str, Any] | None:
 def approve(job: jobs.Job, model: str, quote: str, rebuild_reason: str = "", *, via: str = "cli", shown_sha: str | None = None,
             reason: str = "") -> dict[str, Any]:
     """记录用户对一份建模说明的确认。via="window"：用户在流程图窗口里点了确认，shown_sha 须等于该说明的 shown_sha（窗口显示后
-    没有重出），quote 是可选备注，重建原因取自说明的 notes.rebuild_reason；via="cli"：窗口用不了时的降级，quote 须是用户单条
-    消息的原文，记录标明非窗口确认。
+    没有重出），quote 是可选备注，重建原因取自说明的 notes.rebuild_reason；via="cli"：quote 是用户在对话里单条
+    消息的原文；via="ask"：quote 是用户在询问工具里的回答。三种渠道地位相同，记录写明渠道。
     Record the user's approval of a description. via="window": pressed in the workflow window, shown_sha must equal the
     description's (not redone since it was shown), quote is an optional note and the rebuild reason comes from
-    notes.rebuild_reason; via="cli": the fallback, quote is one user message verbatim, recorded as not from the window.
+    notes.rebuild_reason; via="cli": quote is one user message verbatim; via="ask": their answer in the ask-user tool. The three count the same.
     via="auto"：只在自主任务里，agent 用 reason 写明为什么选这个结构；重建原因同样来自 --rebuild-reason 或 notes.rebuild_reason。
     via="auto": autonomous jobs only, with the agent's reason for the structure; the rebuild reason as above."""
     from saos.demand import CONFIRM_VIA
@@ -425,7 +425,7 @@ def approve(job: jobs.Job, model: str, quote: str, rebuild_reason: str = "", *, 
     data_file = folder / "model.json"
     if not data_file.is_file():
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"{model} has no model.json; run lens describe first")
-    if via == "cli" and not quote.strip():
+    if via in ("cli", "ask") and not quote.strip():
         raise SaosError(ErrorCode.BAD_ARGS, "quote must keep the user's own words of approval")
     reason = str(reason or "").strip()
     if via == "auto":

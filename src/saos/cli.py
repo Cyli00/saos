@@ -131,9 +131,7 @@ def cmd_lens(args: argparse.Namespace) -> Any:
     if action == "approve":
         from saos import ui
 
-        via = "auto" if args.reason else "cli"
-        if via == "cli":
-            ui.require_window_closed(args.job, "approve")
+        via = "auto" if args.reason else "ask" if args.asked else "cli"
         return _lens_request("lens.approve", args, {"model": args.model, "quote": args.quote or "", "rebuild_reason": args.rebuild_reason,
                                                     "via": via, "reason": args.reason or ""})
     if action == "set":
@@ -273,7 +271,8 @@ def cmd_stop(args: argparse.Namespace) -> Any:
     root = jobs.get_job(args.job).root
     d = demand.load_job(root)
     # 不带 --quote 的停止只在自主任务里可以（record_stop 核对）/ a stop without --quote: autonomous jobs only
-    return ledger.record_stop(root, demand.compute_digest(d), args.reason, args.quote or "", d, via="cli" if args.quote else "auto")
+    return ledger.record_stop(root, demand.compute_digest(d), args.reason, args.quote or "", d,
+                              via=("ask" if args.asked else "cli") if args.quote else "auto")
 
 
 def cmd_demand(args: argparse.Namespace) -> Any:
@@ -281,13 +280,10 @@ def cmd_demand(args: argparse.Namespace) -> Any:
 
     root = jobs.get_job(args.job).root
     if args.action == "confirm":
-        from saos import ui
-
         if args.reason:
             result = demand.confirm(root, args.quote or "", via="auto", reason=args.reason)
             return result
-        ui.require_window_closed(args.job, "confirm")
-        result = demand.confirm(root, args.quote)
+        result = demand.confirm(root, args.quote, via="ask" if args.asked else "cli")
         # 需求确认后确保流程图小窗口开着（已开着就不再开第二个）；SAOS_UI=0 时不开
         # make sure the workflow window is open once the demand is confirmed (no second one); not with SAOS_UI=0
         if os.environ.get("SAOS_UI") != "0":
@@ -441,7 +437,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lang", choices=("zh", "en"), help="page language (default: the demand lang, then SAOS_LANG, then the system language)")
     p = lens_cmd("approve")
     p.add_argument("--model", required=True, help="the description folder, e.g. models/001-start")
-    p.add_argument("--quote", default=None, help="the user's own words of approval (fallback when the window cannot be used)")
+    p.add_argument("--quote", default=None, help="the user's own words of approval in the conversation, verbatim; counts the same as the window's button")
+    p.add_argument("--asked", action="store_true", help="the quote is the user's answer in your ask-user tool: the question, the options shown and the one chosen")
     p.add_argument("--reason", default=None, help="autonomous jobs only: why this structure is the one to design")
     p.add_argument("--rebuild-reason", default="", help="required for structural or environment-declaration changes under the round gate comparison; appended samples are allowed")
     p = lens_cmd("set")
@@ -523,7 +520,8 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--job", required=True)
     q = dsub.add_parser("confirm")
     q.add_argument("--job", required=True)
-    q.add_argument("--quote", default=None, help="the user's own words of approval (fallback when the window cannot be used)")
+    q.add_argument("--quote", default=None, help="the user's own words of approval in the conversation, verbatim; counts the same as the window's button")
+    q.add_argument("--asked", action="store_true", help="the quote is the user's answer in your ask-user tool: the question, the options shown and the one chosen")
     q.add_argument("--reason", default=None, help="autonomous jobs only: why this demand is fit to work on")
     dm.set_defaults(func=cmd_demand)
 
@@ -568,6 +566,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reason", required=True, help="why the rounds stop, with the evidence (e.g. scans/NNN, notes/findings.md F20)")
     p.add_argument("--quote", default=None, help="the user's own words deciding to stop, including the full text of any option they chose; "
                                                   "an autonomous job may stop without it")
+    p.add_argument("--asked", action="store_true", help="the quote is the user's answer in your ask-user tool: the question, the options shown and the one chosen")
     p.set_defaults(func=cmd_stop)
     p = sub.add_parser("api")
     p.add_argument("target", nargs="?", help="module, full interface path, ctx or ctx.<name>; omit to list modules")
@@ -578,6 +577,10 @@ def build_parser() -> argparse.ArgumentParser:
     which.add_argument("--prescription", help="a saos lens build Prescription JSON file: which backend builds it, and why")
     p.add_argument("--job", help="read --lens from this job's lenses/ instead of a file path")
     p.set_defaults(func=cmd_backends)
+    p = sub.add_parser("skill")
+    p.add_argument("--install", metavar="DIR", help="copy the saos skill into DIR/saos (an agent's skills folder)")
+    p.add_argument("--overwrite", action="store_true", help="replace an existing DIR/saos")
+    p.set_defaults(func=cmd_skill)
     p = sub.add_parser("measure")
     p.add_argument("--lens", required=True, help="a .zmx file to measure on rtc in this process (no daemon, no licence)")
     p.add_argument("--job", help="read --lens from this job's lenses/; needed for --demand")
@@ -650,6 +653,27 @@ def cmd_backends(args: argparse.Namespace) -> dict[str, Any]:
     if args.job:
         raise SaosError(ErrorCode.BAD_ARGS, "--job names where --lens is read from; give --lens too")
     return capability.table()
+
+
+def cmd_skill(args: argparse.Namespace) -> dict[str, Any]:
+    import shutil
+
+    from saos import config
+
+    source = config.skill_dir()
+    if not (source / "SKILL.md").is_file():
+        raise SaosError(ErrorCode.FILE_NOT_FOUND, f"the saos skill is missing at {source}")
+    out: dict[str, Any] = {"skill": str(source), "checkout": config.IN_CHECKOUT, "library": str(config.library_dir()),
+                           "work": str(config.WORK_ROOT)}
+    if args.install:
+        target = Path(args.install).expanduser().resolve() / "saos"
+        if target.exists():
+            if not args.overwrite:
+                raise SaosError(ErrorCode.FILE_EXISTS, f"{target} exists; pass --overwrite to replace it")
+            shutil.rmtree(target)
+        shutil.copytree(source, target, ignore=shutil.ignore_patterns("__pycache__"))
+        out["installed"] = str(target)
+    return out
 
 
 def cmd_measure(args: argparse.Namespace) -> dict[str, Any]:

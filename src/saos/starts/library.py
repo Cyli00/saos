@@ -27,4 +27,4 @@ def load_entry(root: Path, entry_id: str) -> dict:
 
 
 def library_root() -> Path:
-    return config.REPO_ROOT / "library" / "starts"
+    return config.library_dir() / "starts"

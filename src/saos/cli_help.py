@@ -24,7 +24,7 @@ Output protocol (help itself is plain text):
 
 Process model:
   Local: daemon control, job, demand, rule-out, stop, report, scan --show, api,
-    backends, measure (rtc in its own process: a lens file in, numbers out).
+    skill, backends, measure (rtc in its own process: a lens file in, numbers out).
     ui runs a local service.
   Daemon: lens, opt, exec, check, round and scan execution. It holds both
     backends and the loaded lens; OpticStudio starts when a command first needs it.
@@ -60,7 +60,11 @@ Busy, cancellation and timeouts
 
 Environment
   SAOS_INSTANCE: work/<instance> (default main); isolates jobs and daemon state.
+    work/ is the repository's in a source checkout, ~/.saos/work for an installed
+    package (saos skill shows which).
   SAOS_HOME: explicit runtime directory, overriding SAOS_INSTANCE.
+  SAOS_LIBRARY: the shared reference library (default: the checkout's library/,
+    or the copy shipped in the package).
   SAOS_LANG: zh/en for human outputs; command help/errors always English.
   SAOS_UI=0: disable automatic workflow windows.
   SAOS_LIVE_S: seconds the daemon spends measuring the live metrics after each
@@ -118,7 +122,7 @@ window (saos ui) shows the current lens.
 """,
     "opt": 'Configure and run optimization on the loaded job lens, on the backend computing it.\nlocal/hammer/global require the current demand to be confirmed and free of\nblocking questions. Model approval is required to record rounds. Geometry and\nmaterial changes require saving before worker scans; model glass is exploratory\nand cannot be delivered. Optimization keeps the best reached system in memory.\n',
     "demand": """Validate and confirm sources/demand.yaml locally, without the daemon.
-Format: .agents/skills/saos/demand.example.yaml; shortfall and stop rules: saos round --help.
+Format: demand.example.yaml in the saos skill (saos skill gives its folder); shortfall and stop rules: saos round --help.
 Each bound needs a source; confirmation records the user's actual approval and
 content hash. Constants, variables, objectives (except their descriptions), structure
 and stop define the version; rewording a description, the summary, questions or
@@ -246,10 +250,11 @@ COMMANDS = {
         "", "NO_LENS_LOADED, JOB_MISMATCH, BAD_ARGS, ZOS_ERROR"),
     "lens approve": (
         "Record the user's approval after showing models/NNN-<lens>/index.html.",
-        "The user normally approves with the workflow window's button (via: window);\n"
-        "  this command is the fallback when the window cannot be used and is refused\n"
-        "  while it is open. --model is the job-relative description folder; --quote is\n"
-        "  one user message verbatim (via: cli); an autonomous job passes the gate with\n"
+        "The user approves with the workflow window's button (via: window), or you\n"
+        "  record their approval here: --quote is one user message verbatim (via: cli),\n"
+        "  with --asked their answer in your ask-user tool, question, options and choice\n"
+        "  (via: ask). The three count the same; records and reports name the channel.\n"
+        "  --model is the job-relative description folder; an autonomous job passes the gate with\n"
         "  --reason instead (via: auto), which is refused while shown.reach blocks: a must\n"
         "  without a class, a first_order must not met, or another must 5 times off or more\n"
         "  (a structure the demand prescribes is only recorded). Under 10 times off, such\n"
@@ -306,6 +311,12 @@ COMMANDS = {
             "  paragraph of each docstring; a full path (saos.starts.patents.search) gives the\n"
             "  whole docstring, with methods for a class. ctx lists the ctx methods and ctx.<name>\n"
             "  gives one. Which to use when and what they cover: uv run saos exec --help.", "BAD_ARGS"),
+    "skill": ("Say where the saos skill, library and work directory are; --install copies the skill to another agent.",
+              "Returns skill (the folder holding SKILL.md), checkout (true when running from\n"
+              "  the repository), library and work. --install DIR copies the skill into\n"
+              "  DIR/saos, for an agent whose skills live elsewhere; --overwrite replaces an\n"
+              "  existing copy. An installed package ships the skill and library inside it.",
+              "FILE_EXISTS, FILE_NOT_FOUND"),
     "measure": ("Measure a lens file on rtc in this process: no daemon, no licence, no evidence; about 1 s cold.",
                 "--check takes one demand-style check as JSON and repeats:\n"
                 "  '{\"operand\": {\"type\": \"EFFL\", \"int2\": 1}}' or\n"
@@ -365,13 +376,14 @@ COMMANDS.update({
         "  objectives, open_questions, summary, notes, lang, stop. Check method: operand,\n"
         "  analysis or script. Bounds use finite max/min or equals+tol; directional\n"
         "  goals use minimize/maximize with scale (maximize also ideal), not must.max=0.\n"
-        "  Legacy harness.yaml is not converted. Format: .agents/skills/saos/demand.example.yaml.", "BAD_ARGS, FILE_NOT_FOUND, JOB_NOT_FOUND"),
+        "  Legacy harness.yaml is not converted. Format: demand.example.yaml in the saos skill (saos skill gives its folder).", "BAD_ARGS, FILE_NOT_FOUND, JOB_NOT_FOUND"),
     "demand confirm": (
         "Record the user's approval of the exact current demand version.",
-        "The user normally confirms with the workflow window's button (via: window);\n"
-        "  this command is the fallback when the window cannot be used and is refused\n"
-        "  while it is open. Every limit requires source. --quote is one user message\n"
-        "  verbatim; the record and the report mark it as not confirmed in the window.\n"
+        "The user confirms with the workflow window's button (via: window), or you record\n"
+        "  their confirmation here: --quote is one user message verbatim (via: cli), with\n"
+        "  --asked their answer in your ask-user tool, question, options and choice (via:\n"
+        "  ask). The three count the same; records and reports name the channel. Every\n"
+        "  limit requires source.\n"
         "  In an autonomous job pass the gate with --reason instead (via: auto).\n"
         "  Appends confirmations.jsonl bound to the demand hash, with each check script's\n"
         "  hash (check_scripts); opens/raises the\n"
@@ -455,7 +467,8 @@ COMMANDS.update({
     "stop": (
         "Record the decision to stop this demand version locally.",
         "Refers to the last round of the version. --reason cites evidence; --quote\n"
-        "  is the user's words including the selected option. An autonomous job may\n"
+        "  is the user's words including the selected option (via: cli; --asked when they\n"
+        "  answered your ask-user tool, via: ask). An autonomous job may\n"
         "  stop without --quote (via: auto, marked in the report). Appends stops.jsonl;\n"
         "  future rounds in this version are refused and reports show reason/quote.\n"
         "  With no round in the version (no structure passed the reach gate) the demand must\n"

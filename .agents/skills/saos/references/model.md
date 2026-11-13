@@ -104,7 +104,7 @@ Write `notes/model-NNN.json` (format: `uv run saos lens describe --help`): what 
 
 ## Approval and what counts as a structural change
 
-In an interactive job the user approves with the button in the workflow window ([need.md](need.md#confirm-and-set-up-the-window) has the gate rule and the `lens approve --quote` fallback); the window opens the page and records the approval with the fingerprint, `shown_sha`, unknowns and warnings shown. In an autonomous job, `uv run saos lens approve --job J --model models/NNN-<lens> --reason "<the search, the screening, the first-order numbers>"` records the same with your reason. Approval does not certify unknown computations. Rounds refuse a lens whose structure matches no approved description, so a structural change later needs a new description and approval.
+In an interactive job the user approves in the window, in the conversation or through your ask-user tool ([need.md](need.md#confirm-and-set-up-the-window) has the channels); the window opens the page and records the approval with the fingerprint, `shown_sha`, unknowns and warnings shown. In an autonomous job, `uv run saos lens approve --job J --model models/NNN-<lens> --reason "<the search, the screening, the first-order numbers>"` records the same with your reason. Approval does not certify unknown computations. Rounds refuse a lens whose structure matches no approved description, so a structural change later needs a new description and approval.
 
 The approved structure is what `saos round` compares against:
 

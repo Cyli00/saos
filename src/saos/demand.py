@@ -312,8 +312,7 @@ def prepare_scripts(root: Path, demand: dict[str, Any]) -> dict[str, dict[str, A
         from saos import config
 
         for name in ("metrics.py", "kit.py", "micro.py"):
-            path = config.REPO_ROOT / "src" / "saos" / name
-            code[path.relative_to(config.REPO_ROOT).as_posix()] = jobs.sha256_file(path)
+            code[f"src/saos/{name}"] = jobs.sha256_file(config.code_path(f"src/saos/{name}"))
     if code:
         # 只在判定确实用到 saos 代码时才加这一项，旧任务的判定版本不变 / added only when used, so older jobs keep their version
         scripts[CODE_KEY] = {"source": None, "sha256": hashlib.sha256(json.dumps(code, sort_keys=True).encode()).hexdigest(), "files": code}
@@ -328,13 +327,14 @@ def code_files(root: Path) -> dict[str, str]:
     if not base.is_dir():
         return {}
     text = "\n".join(f.read_text(encoding="utf-8", errors="ignore") for f in sorted(base.rglob("*.py")) if "__pycache__" not in f.parts)
-    package = config.REPO_ROOT / "src" / "saos"
-    paths = []
+    names = []
     if re.search(r"\bctx\.metrics?\s*\(|\bsaos\.metrics\b|from\s+saos\s+import\s+[^\n]*\bmetrics\b", text):
-        paths.extend(package / name for name in ("metrics.py", "micro.py", "kit.py"))
-    if paths or _KIT_RE.search(text):
-        paths.append(package / "kit.py")
-    return {f.relative_to(config.REPO_ROOT).as_posix(): jobs.sha256_file(f) for f in paths}
+        names.extend(("metrics.py", "micro.py", "kit.py"))
+    if names or _KIT_RE.search(text):
+        names.append("kit.py")
+    # 标签仍写 src/saos/<文件>，旧任务的判定版本不变；装成包时文件在包目录里
+    # labels stay src/saos/<file> so older check versions keep their hash; the files are read from the package
+    return {f"src/saos/{name}": jobs.sha256_file(config.code_path(f"src/saos/{name}")) for name in names}
 
 
 def method_digest(scripts: dict[str, dict[str, Any]]) -> str:
@@ -578,9 +578,11 @@ def confirmation_for(root: Path, sha: str, demand: dict[str, Any] | None = None)
                  if (c.get("demand_sha") if demand is None else as_current(c.get("demand_sha"), demand, "confirm", root)) == sha), None)
 
 
-# window：用户在窗口里点；cli：窗口用不了时用户原话；auto：自主任务里 agent 带理由自行通过
-# window: the user pressed the button; cli: the user's words when the window cannot be used; auto: an autonomous job's agent
-CONFIRM_VIA = ("window", "cli", "auto")
+# window：用户在窗口里点；cli：用户在对话里的原话；ask：用户在 agent 的询问工具里的回答（问题、选项与所选）；auto：自主任务里
+# agent 带理由自行通过。前三种地位相同，记录只写明渠道（2026-11-13 用户决定）
+# window: the button; cli: the user's words in the conversation; ask: their answer in the agent's ask-user tool; auto: an
+# autonomous job's agent. The first three count the same; records only name the channel
+CONFIRM_VIA = ("window", "cli", "ask", "auto")
 
 
 def check_scripts(root: Path, demand: dict[str, Any]) -> list[dict[str, Any]]:
@@ -613,18 +615,19 @@ def _changed_since(confirmed: dict[str, Any] | None, scripts: list[dict[str, Any
 
 def confirm(root: Path, quote: str, *, via: str = "cli", shown_sha: str | None = None, reason: str = "") -> dict[str, Any]:
     """记录用户对当前需求的确认。via="window"：用户在流程图窗口里点了确认，shown_sha 是窗口显示的那一版（须仍是当前版），
-    quote 是可选备注；via="cli"：窗口用不了时的降级，quote 须是用户单条消息的原文，记录与报告标明非窗口确认。
+    quote 是可选备注；via="cli"：quote 是用户在对话里单条消息的原文；via="ask"：quote 是用户在询问工具里的回答（问题、选项与所选）。
+    三种渠道地位相同，记录与报告写明渠道。
     确认前须校验通过；没有 blocking 问题时才算可以开工。
     Record the user's approval of the current demand. via="window": the user pressed confirm in the workflow window,
-    shown_sha is the version it showed (still current) and quote an optional note; via="cli": the fallback when the
-    window cannot be used, quote is one user message verbatim, and records and reports say it was not a window confirmation.
+    shown_sha is the version it showed (still current) and quote an optional note; via="cli": quote is one user message
+    verbatim; via="ask": quote is their answer in the ask-user tool. The three count the same; records name the channel.
     via="auto"：只在自主任务里，agent 用 reason 写明为什么这一版可以开工，记录和报告标明未经用户确认。
     via="auto": autonomous jobs only; the agent states in reason why this version is fit to work on, and records and
     reports say the user did not confirm it."""
     if via not in CONFIRM_VIA:
         raise SaosError(ErrorCode.BAD_ARGS, f"via must be one of {CONFIRM_VIA}")
     quote, reason = str(quote or "").strip(), str(reason or "").strip()
-    if via == "cli" and not quote:
+    if via in ("cli", "ask") and not quote:
         raise SaosError(ErrorCode.BAD_ARGS, "--quote must hold the user's own words of approval")
     if via == "auto":
         jobs.require_autonomous(root, "confirming the demand")
@@ -821,7 +824,7 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
     for rel in code:
         target_file = folder / "support" / "_saos" / rel
         target_file.parent.mkdir(parents=True, exist_ok=True)
-        target_file.write_bytes((config.REPO_ROOT / rel).read_bytes())
+        target_file.write_bytes(config.code_path(rel).read_bytes())
     items = []
     total = 0.0
     shared = ctx.child(ctx.args, cache={})

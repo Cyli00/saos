@@ -295,7 +295,7 @@ def require_autonomous(root: Path, what: str) -> None:
                         "For a design, create an interactive job and import the lens (saos job create, saos lens import)")
     if mode != "autonomous":
         raise SaosError(ErrorCode.BAD_ARGS, f"{what} by the agent alone is only for autonomous jobs; this job is interactive, so the user decides "
-                        "(the workflow window's button, or --quote with their words when the window cannot be used)")
+                        "(the workflow window's button, their words in the conversation with --quote, or their answer to your ask-user tool with --quote --asked)")
 
 
 def make_interactive(job: Job) -> dict[str, Any]:

@@ -283,20 +283,21 @@ def test_an_analysis_job_has_one_step_no_gates_and_computes_on_rtc(ui, fake_lens
     assert daemon._stage_of({"job": job.id}) == "analyse" and STAGE_BACKENDS["analyse"] == "rtc"
 
 
-def test_the_quote_fallback_is_refused_while_the_window_is_open(flow, monkeypatch):
+def test_a_quote_counts_like_the_window_and_names_its_channel(flow, monkeypatch):
+    # 2026-11-13 用户决定确认渠道平权：窗口开着时也接受原话，记录写明渠道
+    # the user's decision: channels count the same; a quote is accepted with the window open and the record names it
     import saos.ui as ui_pkg
     from saos import cli
 
     daemon, job = flow
     (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
     monkeypatch.setattr(ui_pkg, "window_open", lambda job_id: True)
-    assert cli.main(["demand", "confirm", "--job", job.id, "--quote", "可以"]) != 0
-    assert demand.confirmations(job.root) == []
-    monkeypatch.setattr(ui_pkg, "window_open", lambda job_id: False)
     assert cli.main(["demand", "confirm", "--job", job.id, "--quote", "可以"]) == 0
     assert demand.confirmations(job.root)[-1]["via"] == "cli"
-    # 没有 via 的旧记录与命令行确认一样标为非窗口确认 / older records without via read as command-line confirmations
-    assert report.TEXT["confirmed"][0].startswith("用户确认（非窗口确认）")
+    assert cli.main(["demand", "confirm", "--job", job.id, "--quote", "问：按这一版开工吗？选项：是 / 否。选了：是", "--asked"]) == 0
+    assert demand.confirmations(job.root)[-1]["via"] == "ask"
+    assert cli.main(["demand", "confirm", "--job", job.id, "--asked"]) != 0
+    assert report.TEXT["confirmed"][0].startswith("用户在对话里确认") and "非窗口" not in report.TEXT["confirmed"][0]
 
 
 def test_the_window_forwards_metric_queries_and_selections_to_the_daemon(ui, monkeypatch):

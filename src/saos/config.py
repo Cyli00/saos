@@ -7,7 +7,38 @@ import os
 import re
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+PACKAGE_DIR = Path(__file__).resolve().parent
+REPO_ROOT = PACKAGE_DIR.parents[1]
+# 源码检出（仓库里 uv run）还是装好的包：装成包时 REPO_ROOT 指不到仓库，库、技能和运行目录改用包内副本与用户目录
+# a source checkout (uv run in the repository) or an installed package, whose REPO_ROOT is no repository
+IN_CHECKOUT = (REPO_ROOT / "pyproject.toml").is_file() and (REPO_ROOT / "src" / "saos").resolve() == PACKAGE_DIR
+# 装成包时随包分发的共享库与技能（pyproject 的 force-include）/ the library and skill shipped inside the wheel
+PACKAGED_LIBRARY = PACKAGE_DIR / "_library"
+PACKAGED_SKILL = PACKAGE_DIR / "_skill"
+
+
+def library_dir() -> Path:
+    """共享参考库的位置：SAOS_LIBRARY > 源码检出的 library/ > 包内副本。
+    The shared reference library: SAOS_LIBRARY, else the checkout's library/, else the copy inside the package."""
+    explicit = os.environ.get("SAOS_LIBRARY")
+    if explicit:
+        return Path(explicit).resolve()
+    return REPO_ROOT / "library" if IN_CHECKOUT else PACKAGED_LIBRARY
+
+
+def skill_dir() -> Path:
+    """saos 技能（SKILL.md 与 references/）的位置：源码检出里是 .agents/skills/saos，装成包时是包内副本。
+    The saos skill: .agents/skills/saos in a checkout, the copy inside the package otherwise."""
+    return REPO_ROOT / ".agents" / "skills" / "saos" if IN_CHECKOUT else PACKAGED_SKILL
+
+
+def code_path(rel: str) -> Path:
+    """判定记录里 saos 代码文件的标签（src/saos/<文件>，与旧记录一致）对应的实际文件；装成包时在包目录里。
+    The file behind a check record's saos code label (src/saos/<file>, as older records name it), in the package."""
+    prefix = "src/saos/"
+    if not rel.startswith(prefix):
+        raise ValueError(f"not a saos code label: {rel}")
+    return PACKAGE_DIR / rel[len(prefix):]
 
 DEFAULT_OPTICSTUDIO_DIR = r"C:\Program Files\Ansys Zemax OpticStudio 2024 R1.00"
 # 锁定 OpticStudio 2024 R1.00
@@ -24,7 +55,9 @@ def compute_cores() -> int:
     return max(1, (os.cpu_count() or 1) - RESERVED_CORES)
 
 
-WORK_ROOT = REPO_ROOT / "work"
+# 运行目录的根：源码检出里是仓库的 work/；装成包时落到用户目录，不写进 site-packages
+# the root of runtime directories: the checkout's work/, or the user's home for an installed package
+WORK_ROOT = REPO_ROOT / "work" if IN_CHECKOUT else Path.home() / ".saos" / "work"
 DEFAULT_INSTANCE = "main"
 INSTANCE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$")
 

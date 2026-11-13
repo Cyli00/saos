@@ -31,3 +31,28 @@ def test_bad_instance_name_rejected(monkeypatch, name):
     with pytest.raises(SaosError) as exc:
         config.saos_home()
     assert exc.value.code == ErrorCode.BAD_ARGS
+
+
+def test_the_checkout_finds_its_library_and_skill_and_an_override_wins(monkeypatch, tmp_path):
+    monkeypatch.delenv("SAOS_LIBRARY", raising=False)
+    assert config.IN_CHECKOUT and config.library_dir() == config.REPO_ROOT / "library"
+    assert (config.skill_dir() / "SKILL.md").is_file()
+    monkeypatch.setenv("SAOS_LIBRARY", str(tmp_path))
+    assert config.library_dir() == tmp_path.resolve()
+
+
+def test_check_records_keep_their_code_labels_whatever_the_install(monkeypatch):
+    # 判定记录里的标签是 src/saos/<文件>：装成包后标签不变，旧任务的判定版本因此不变
+    # labels stay src/saos/<file>, so an installed package gives older jobs the same check version
+    assert config.code_path("src/saos/kit.py") == config.PACKAGE_DIR / "kit.py"
+    with pytest.raises(ValueError):
+        config.code_path("library/x.py")
+
+
+def test_the_skill_is_installed_into_another_agents_folder(tmp_path):
+    from saos import cli
+
+    assert cli.main(["skill", "--install", str(tmp_path)]) == 0
+    assert (tmp_path / "saos" / "SKILL.md").is_file() and (tmp_path / "saos" / "references" / "need.md").is_file()
+    assert cli.main(["skill", "--install", str(tmp_path)]) != 0
+    assert cli.main(["skill", "--install", str(tmp_path), "--overwrite"]) == 0

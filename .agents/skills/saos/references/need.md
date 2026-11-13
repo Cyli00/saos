@@ -68,7 +68,13 @@ Checks live in `checks/` with every helper module or data file they use; the `sa
 
 Show the demand in plain language with the feasibility verdicts. Go through every limit that `uv run saos demand show --job J` lists under `weak_basis` one by one and get explicit approval of its content.
 
-In an interactive job the user confirms a gate by pressing its button in the workflow window, with an optional note, or asks for changes with the other button; the window shows the summary and weak-basis limits and records the exact version it showed. This holds for both gates (here and the model approval). `demand confirm --quote` and `lens approve --quote` are the fallback for when the window cannot be used, and are refused while it is open; the quote is one message of the user's, verbatim, and the record and the report mark it as not confirmed in the window. The tools keep the full demand text the user saw.
+In an interactive job the user confirms a gate in whichever channel they are using, and each counts the same; the record and the report name the channel. This holds for both gates (here and the model approval):
+
+- the workflow window: its button, with an optional note, or the other button to ask for changes; the window shows the summary, the weak-basis limits and the check scripts, and records the exact version it showed;
+- the conversation: `demand confirm --quote` or `lens approve --quote` with one message of the user's, verbatim;
+- your ask-user tool: the same with `--asked`, the quote holding the question, the options shown and the one chosen.
+
+Whatever the channel, the user must have seen what they confirm: the demand in plain language with the weak-basis limits, or the model page. The tools keep the full demand text.
 
 In an autonomous job, write the feasibility verdicts, the directional-objective estimates, every weak-basis limit and every interpretation of yours into `sources/interview.md`, then run `uv run saos demand confirm --job J --reason "<the statement it follows and the assumptions made>"`.
 

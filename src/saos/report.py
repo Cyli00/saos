@@ -145,7 +145,8 @@ TEXT: dict[str, tuple[str, str]] = {
     "blocked.clash": ("<b>没有可交付的镜头</b>：下面这一轮的零件交叠（{what}），物理上不成立，不能作为设计交付。",
                       "<b>No deliverable lens</b>: parts of the round below clash ({what}); it is physically impossible and is not a deliverable design."),
     "model_ok": ("建模说明：{model}（用户已确认）", "Model description: {model} (approved by the user)"),
-    "confirmed": ("用户确认（非窗口确认）：{quote}", "Confirmed by the user (not in the window): {quote}"),
+    "confirmed": ("用户在对话里确认：{quote}", "Confirmed by the user in the conversation: {quote}"),
+    "confirmed.ask": ("用户在询问中确认：{quote}", "Confirmed by the user when asked: {quote}"),
     "confirmed.window": ("用户在窗口里确认。", "Confirmed by the user in the window."),
     "confirmed.note": ("用户在窗口里确认，备注：{quote}", "Confirmed by the user in the window, with the note: {quote}"),
     "not_recorded": ("（未记录）", "(not recorded)"),
@@ -601,6 +602,8 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
         confirmed_text = t("not_recorded")
     elif confirmed.get("via") == "auto":
         confirmed_text = t("confirmed.auto", reason=e(confirmed.get("reason", "")))
+    elif confirmed.get("via") == "ask":
+        confirmed_text = t("confirmed.ask", quote=e(confirmed.get("quote", "")))
     elif confirmed.get("via") == "window":
         confirmed_text = t("confirmed.note", quote=e(confirmed.get("quote"))) if confirmed.get("quote") else t("confirmed.window")
     else:

@@ -163,14 +163,6 @@ def window_open(job_id: str) -> bool:
     return job_id not in server.closed_jobs() and time.time() - float(_opened().get(job_id, 0)) < OPENING_S
 
 
-def require_window_closed(job_id: str, what: str) -> None:
-    """确认关卡的降级入口（--quote）只在窗口用不了时可用：窗口开着就请用户在窗口里点确认。
-    The --quote fallback of a gate works only when the window cannot be used; with it open the user confirms there."""
-    if window_open(job_id):
-        raise SaosError(ErrorCode.BAD_ARGS, f"the workflow window is open: ask the user to press the {what} button there (a note is optional); "
-                        "--quote is only for when the window cannot be used", {"window": "open"})
-
-
 def _raise_window(job_id: str) -> bool:
     """Windows：按标题（saos · <任务号>）找到这个任务的窗口，最小化的先恢复，再放到最上层，都不夺键盘焦点
     （用户可能正在别的窗口里打字）。找不到窗口时 False。

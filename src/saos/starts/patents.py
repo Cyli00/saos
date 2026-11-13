@@ -28,7 +28,7 @@ def _bad(message: str, **details) -> SaosError:
 
 
 def library_root() -> Path:
-    return config.REPO_ROOT / "library" / "patents"
+    return config.library_dir() / "patents"
 
 
 def _source(title: str) -> dict[str, Any]:

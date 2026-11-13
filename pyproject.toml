@@ -26,6 +26,11 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/saos", "src/rtc"]
 
+# 装成包时随包带上共享库和技能（config.library_dir / config.skill_dir 在包内找它们）
+[tool.hatch.build.targets.wheel.force-include]
+"library" = "saos/_library"
+".agents/skills/saos" = "saos/_skill"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [

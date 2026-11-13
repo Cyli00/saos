@@ -60,7 +60,7 @@ saos（simulate any optical system）让 AI agent 替你做光学设计。你用
 
 ### 你要做的三个决定
 
-agent 自己决定结构、变量、优化算法和实验，只在下面三处停下来等你。你的原话会逐字记录在任务里，所以回答时把选择说清楚。
+agent 自己决定结构、变量、优化算法和实验，只在下面三处停下来等你。你可以在流程窗口里点确认，也可以直接在对话里回答或在 agent 的选项里选，三种方式效力相同，记录里会写明是哪一种；你的原话会逐字记录在任务里，所以回答时把选择说清楚。
 
 | 时机 | 你看到什么 | 你决定什么 |
 |---|---|---|
@@ -121,8 +121,22 @@ uv run saos daemon stop --all    # 逐个停止它们，并清掉已退出进程
 | `SAOS_UI=0` | 不自动打开流程窗口 |
 | `SAOS_OPTICSTUDIO_DIR` | OpticStudio 安装目录 |
 | `SAOS_GLASSCAT` | rtc 读的 AGF 玻璃目录文件夹，默认 `Documents/Zemax/Glasscat` |
+| `SAOS_LIBRARY` | 共享参考库的位置，默认是仓库的 `library/`，装成包时用包内副本 |
 
 完整列表见 `uv run saos --help`。大的帮助页分主题（`uv run saos exec --help rtc`），脚本里的 Python 接口用 `uv run saos api` 查；rtc 能算什么、一份镜头或处方会落在哪个后端用 `uv run saos backends` 查。
+
+### 在别的仓库或 agent 里用
+
+saos 可以装成一个包，在任何能跑命令行的 agent 里用，不需要本仓库：
+
+```bash
+uv build                                  # 在本仓库生成 dist/saos-*.whl，包里带着共享库和技能
+uv tool install dist/saos-0.1.0-py3-none-any.whl
+saos skill                                # 查看技能、共享库和任务目录在哪
+saos skill --install <agent 的技能目录>     # 把技能复制过去，例如 ~/.claude/skills
+```
+
+装成包时任务目录默认在 `~/.saos/work`（仓库里仍是 `work/`），命令写成 `saos ...` 而不是 `uv run saos ...`。
 
 ## 文档
 

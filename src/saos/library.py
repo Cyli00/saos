@@ -19,7 +19,7 @@ _SOURCE_KEYS = ("source", "source_ids", "sources")
 
 
 def root() -> Path:
-    return config.REPO_ROOT / "library"
+    return config.library_dir()
 
 
 def _file(*parts: str) -> Path:
@@ -94,7 +94,7 @@ def catalog() -> list[dict[str, Any]]:
     Each library with its purpose, current entry count, entry fields, README and specification search."""
     out = []
     for name, (_, purpose, search) in LIBRARIES.items():
-        item: dict[str, Any] = {"library": name, "purpose": purpose, "readme": f"library/{name}/README.md", "search": search}
+        item: dict[str, Any] = {"library": name, "purpose": purpose, "readme": (root() / name / "README.md").as_posix(), "search": search}
         try:
             rows, _ = _load(name)
             item["entries"] = len(rows)
