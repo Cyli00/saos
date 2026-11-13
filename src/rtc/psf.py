@@ -73,8 +73,7 @@ def opd_rays(system: OpticalSystem, px, py, hx: float = 0.0, hy: float = 0.0, *,
     """视场 (hx, hy) 下一批光线相对该视场主光线的 OPD（mm），参考球心在主光线与像面的交点。
     返回 (opd, ok)：ok 为假的光线（追迹出错、被渐晕或拦截）opd 为 nan。不去倾斜；主光线自身的 OPD 恒为 0。
 
-    参考球半径取近轴出瞳到像面的轴向距离（与轴上视场时的 :func:`opd_map` 同一定义）；离轴视场时
-    OpticStudio 以主光线在出瞳的点到像点的距离为半径，两者在离轴时不同，尚未与 OpticStudio 对账。
+    定义见 :func:`opd_from_trace`。``experimental`` 只放开反射面。
     """
     _check_opd(system, experimental)
     px = np.atleast_1d(np.asarray(px, float))
@@ -85,10 +84,26 @@ def opd_rays(system: OpticalSystem, px, py, hx: float = 0.0, hy: float = 0.0, *,
     return opd[1:], ok[1:]
 
 
-def opd_from_trace(system: OpticalSystem, block, *, chief_index: int = 0,
-                   experimental: bool = False, hx: float = 0.0, hy: float = 0.0):
-    """从同一视场、包含主光线的追迹结果计算 OPD（mm），复用光程和像面交点。"""
-    _check_opd(system, experimental)
+def _incoming_path(system: OpticalSystem, block, hx: float, hy: float) -> np.ndarray:
+    """发射处到第 1 面交点的光程（mm）。RayBlock.opl 与 PLEN 一样从第 1 面计起，这一段要另补：
+    无穷远物取交点在入射方向上的投影（同一入射等相位面），有限物距取物点到交点的距离。
+    漏掉它时，第 1 面弯曲的镜头 OPD 差几百个波（sequential 案例对 OpticStudio OPDC 实测差 346–1092 个波）。"""
+    first = np.c_[block.x[:, 0], block.y[:, 0], block.z[:, 0] + system.items[0].vertex_z]
+    n0 = abs(system.n_before(0))
+    if system.finite_object:
+        ox, oy = system.object_point(hx, hy)
+        origin = np.array([float(ox), float(oy), system.items[0].vertex_z - system.object_thickness])
+        return n0 * np.linalg.norm(first - origin[None, :], axis=1)
+    if system.lens.field_type != "ANGLE":
+        raise NotImplementedError("无穷远物体的波前只支持角度视场")
+    fx, fy = system.field_slopes(hx, hy)
+    direction = np.asarray([float(fx), float(fy), 1.0])
+    direction /= np.linalg.norm(direction)
+    return n0 * (first @ direction)
+
+
+def reference_sphere(system: OpticalSystem, block, chief_index: int = 0) -> tuple[np.ndarray, float, float]:
+    """参考球 (球心, 半径, 取根的符号)：球心在主光线像点，半径是出瞳平面沿主光线到像点的距离。"""
     z_pos, _ = exit_pupil(system)
     if not np.isfinite(z_pos):
         raise ValueError("出瞳在无穷远：请用平面参考（reference='planar'）而不是球面参考")
@@ -96,26 +111,30 @@ def opd_from_trace(system: OpticalSystem, block, *, chief_index: int = 0,
     if int(block.error[chief_index]) != 0 or int(block.vig[chief_index]) != 0:
         raise ValueError("主光线追不到像面或被拦截，没有参考球面")
     C = np.array([block.x[chief_index, k_img], block.y[chief_index, k_img], block.z[chief_index, k_img]])
-    R = abs(z_pos)
-    n_img = system.items[-1].n_after
-    incoming = np.zeros(len(block.error))
-    sign = system.items[-1].sign if experimental else 1.0
-    root_sign = -1.0
-    if experimental:
-        if system.finite_object or system.lens.field_type != "ANGLE":
-            raise NotImplementedError("实验波前目前只支持无穷远物体、角度视场")
-        # PLEN 从第 1 面计起；波前还需该面各交点相对同一入射等相位面的光程。
-        fx, fy = system.field_slopes(hx, hy)
-        direction = np.asarray([float(fx), float(fy), 1.0])
-        direction /= np.linalg.norm(direction)
-        first = np.c_[block.x[:, 0], block.y[:, 0], block.z[:, 0] + system.items[0].vertex_z]
-        incoming = abs(system.n_before(0)) * ((first - first[chief_index]) @ direction)
-        chief_n = sign * block.n[chief_index, k_img]
-        if abs(chief_n) < 1e-14:
-            raise ValueError("主光线与像面相切，参考球半径没有定义")
-        R = abs(z_pos / chief_n)
-        root_sign = 1.0 if z_pos * chief_n > 0 else -1.0
-        n_img = abs(n_img)
+    # 奇数次反射后光线沿 −z 传播：方向还原成几何方向
+    chief_n = system.items[-1].sign * block.n[chief_index, k_img]
+    if abs(chief_n) < 1e-14:
+        raise ValueError("主光线与像面相切，参考球半径没有定义")
+    return C, abs(z_pos / chief_n), 1.0 if z_pos * chief_n > 0 else -1.0
+
+
+def opd_from_trace(system: OpticalSystem, block, *, chief_index: int = 0,
+                   experimental: bool = False, hx: float = 0.0, hy: float = 0.0, reference=None):
+    """从同一视场、包含主光线的追迹结果计算 OPD（mm），复用光程和像面交点。``hx``、``hy`` 必须是 block 的视场。
+
+    参考球见 :func:`reference_sphere`；光程含发射处到第 1 面的一段（:func:`_incoming_path`）。
+    ``reference`` 给出别的系统的参考球时用它，OPD 仍相对本批的主光线：OpticStudio 的 OPDC/OPDM/OPDX 在非主波长上
+    用的是主波长的参考球，球心和半径都取主波长（2026-11-10 真机：用本波长的参考球差 1.2e-2 个波，换成主波长后差 1e-10）。
+    无穷远物、角度视场下与 OpticStudio OPDC 逐条对过（tests/rtc/test_case_truth.py，1e-5 个波以内）；
+    有限物距按同一定义实现，没有真值。``experimental`` 只放开反射面。"""
+    _check_opd(system, experimental)
+    k_img = len(system.items) - 1
+    if int(block.error[chief_index]) != 0 or int(block.vig[chief_index]) != 0:
+        raise ValueError("主光线追不到像面或被拦截，没有参考球面")
+    C, R, root_sign = reference_sphere(system, block, chief_index) if reference is None else reference
+    incoming = _incoming_path(system, block, hx, hy)
+    sign = system.items[-1].sign
+    n_img = abs(system.items[-1].n_after)
 
     def path(b):
         opl = b.opl[:, k_img] + b.phase[:, k_img] + incoming
@@ -124,7 +143,7 @@ def opd_from_trace(system: OpticalSystem, block, *, chief_index: int = 0,
         diff = P - C[None, :]
         bq = -(diff * d).sum(axis=1)
         cq = (diff * diff).sum(axis=1) - R * R
-        # 反向延长到参考球面：s² − 2·bq·s + cq = 0 的负根（此前写成 −bq − √…，交点不在球面上）
+        # 延长到参考球面：s² − 2·bq·s + cq = 0，取出瞳所在一侧的根
         discriminant = bq * bq - cq
         s = bq + root_sign * np.sqrt(np.maximum(discriminant, 0.0))
         s = np.where(discriminant >= 0.0, s, np.nan)

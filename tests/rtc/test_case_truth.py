@@ -19,6 +19,7 @@ from rtc.system import OpticalSystem
 from rtc.trace import aperture_clipped, trace
 from saos.backend import rtc_lens
 from saos.backend.rtc import RtcBackend
+from saos.protocol import ErrorCode, SaosError
 
 # 没有瞄准的路径，内核和 OpticStudio 在 1e-13 量级上一致；实际瞄准收敛误差大，单独放宽
 POSITION_TOL = 1e-9
@@ -124,7 +125,7 @@ def test_first_order_quantities_match_opticstudio(name):
     assert firstorder.petzval_radius(system) == pytest.approx(want["PETZ"], rel=1e-9)
 
 
-EXIT_PUPIL_NAMES = [pytest.param(name, marks=pytest.mark.xfail(strict=True, reason="瞄准开时 OpticStudio 的出瞳随最大视场变，规则未定（docs/plans/rtc-unify.md）"))
+EXIT_PUPIL_NAMES = [pytest.param(name, marks=pytest.mark.xfail(strict=True, reason="瞄准开时 OpticStudio 的出瞳随最大视场变，规则未定（rtc.system.OpticalSystem.exit_pupil 的说明）"))
                     if name == "iris_real" else name for name in ALL_NAMES]
 
 
@@ -254,6 +255,36 @@ def test_experimental_opdc_matches_opticstudio(name):
         opd, ok = psf.opd_rays(system, rows[:, 0], rows[:, 1], field["hx"], field["hy"], experimental=True)
         assert ok.any(), (name, field["hx"], field["hy"])
         assert opd[ok] / (system.wavelength * 1e-3) == pytest.approx(rows[ok, 2], abs=1e-5, rel=0)
+
+
+def test_default_opd_matches_opticstudio_on_a_curved_first_surface():
+    # 评价函数的 OPDC/OPDX/OPDM 走默认路径；漏掉发射处到第 1 面的光程时，这个案例差 346–1092 个波
+    system = OpticalSystem(_lens("sequential_opd"))
+    for field in _truth("sequential_opd")["opd"]:
+        rows = np.asarray(field["rows"], dtype=float)
+        opd, ok = psf.opd_rays(system, rows[:, 0], rows[:, 1], field["hx"], field["hy"])
+        assert ok.all()
+        assert opd / (system.wavelength * 1e-3) == pytest.approx(rows[:, 2], abs=1e-5, rel=0)
+
+
+def test_backend_wavefront_rms_matches_opticstudio_within_sampling():
+    # 真值是把 fields 里的数当视场单位（度）传给 ctx.wavefront_rms 录的，这里按同样的调用回放；
+    # OpticStudio 取 Zernike 分析的 RMS (to centroid)，取样不同，所以只到 0.5 %
+    record = _truth("sequential_opd")
+    backend = RtcBackend(CASES / "sequential.zmx", standalone=True)
+    got = backend.wavefront_rms(record["primary_wave"], [tuple(p) for p in record["fields"]])
+    assert got == pytest.approx(record["wavefront_rms"], rel=5e-3)
+    assert "WAVEFRONT_RMS" in backend.provenance()["operands_unverified"]
+
+
+def test_backend_wavefront_rms_refuses_mirrors_and_unknown_fields():
+    backend = RtcBackend(CASES / "reflective.zmx", standalone=True)
+    with pytest.raises(SaosError) as err:
+        backend.wavefront_rms(1, [1])
+    assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED
+    with pytest.raises(SaosError) as err:
+        RtcBackend(CASES / "sequential.zmx", standalone=True).wavefront_rms(1, [4])
+    assert err.value.code == ErrorCode.BAD_ARGS
 
 
 # ---------------------------------------------------------------- 覆盖自检
