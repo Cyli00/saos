@@ -112,7 +112,7 @@ after each reply (SAOS_LIVE_S).
 """,
     "daemon": 'Control the per-instance daemon holding rtc and a private standalone OpticStudio.\nJobs and daemon state use SAOS_INSTANCE (or SAOS_HOME).\n',
     "job": """Manage local job directories without the daemon.
-Jobs live in work/<instance>/jobs/<job>. show, cancel and verify read/write job
+Jobs live in work/<instance>/jobs/<job> (saos skill gives work/). show, cancel and verify read/write job
 files directly and remain available while the daemon is busy.
 """,
     "lens": """Inspect and edit lenses through the daemon.

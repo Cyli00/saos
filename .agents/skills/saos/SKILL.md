@@ -1,6 +1,6 @@
 ---
 name: saos
-description: Run the saos optical design workflow, taking a user's optical need through an agreed demand, an approved model and design rounds to a delivered lens with an OpticStudio-measured HTML report. Use for designing, simulating or debugging a sequential optical system in this repository (imaging lenses, relays, collimators, beam expanders, couplers, folded, decentred, reflective or multi-configuration forms), including a question about an existing lens (a number, a curve, two lenses compared), which runs as an analysis job without the design stages. Not for changing saos itself (src/, tests/, CLI, docs); use normal repository work for that.
+description: Run the saos optical design workflow, taking a user's optical need through an agreed demand, an approved model and design rounds to a delivered lens with an OpticStudio-measured HTML report. Use for designing, simulating or debugging a sequential optical system (imaging lenses, relays, collimators, beam expanders, couplers, folded, decentred, reflective or multi-configuration forms), including a question about an existing lens (a number, a curve, two lenses compared), which runs as an analysis job without the design stages. Not for changing saos itself (src/, tests/, CLI, docs); use normal repository work for that.
 ---
 
 # saos optical design workflow
