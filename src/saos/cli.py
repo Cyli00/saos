@@ -578,6 +578,14 @@ def build_parser() -> argparse.ArgumentParser:
     which.add_argument("--prescription", help="a saos lens build Prescription JSON file: which backend builds it, and why")
     p.add_argument("--job", help="read --lens from this job's lenses/ instead of a file path")
     p.set_defaults(func=cmd_backends)
+    p = sub.add_parser("measure")
+    p.add_argument("--lens", required=True, help="a .zmx file to measure on rtc in this process (no daemon, no licence)")
+    p.add_argument("--job", help="read --lens from this job's lenses/; needed for --demand")
+    p.add_argument("--check", action="append", default=[], metavar="JSON",
+                   help="one demand-style check as JSON, an operand or a metric (see the Results section); repeat for more")
+    p.add_argument("--demand", action="store_true", help="also measure the job's demand checks (every item entering G, or --only)")
+    p.add_argument("--only", help="comma-separated demand check ids for --demand")
+    p.set_defaults(func=cmd_measure)
 
     p = sub.add_parser("report")
     p.add_argument("--job", required=True)
@@ -642,6 +650,22 @@ def cmd_backends(args: argparse.Namespace) -> dict[str, Any]:
     if args.job:
         raise SaosError(ErrorCode.BAD_ARGS, "--job names where --lens is read from; give --lens too")
     return capability.table()
+
+
+def cmd_measure(args: argparse.Namespace) -> dict[str, Any]:
+    from saos import measure
+
+    checks = []
+    for text in args.check:
+        try:
+            checks.append(json.loads(text))
+        except ValueError as exc:
+            raise SaosError(ErrorCode.BAD_ARGS, f"--check is not JSON: {exc}", {"got": text}) from exc
+    if args.only and not args.demand:
+        raise SaosError(ErrorCode.BAD_ARGS, "--only selects demand checks; give --demand too")
+    lens, root = measure.resolve(args.lens, args.job)
+    ids = [i.strip() for i in args.only.split(",") if i.strip()] if args.only else None
+    return measure.run(lens, checks, job_root=root, demand_ids=ids, demand=args.demand)
 
 
 def _ensure_window(args: argparse.Namespace) -> dict[str, Any] | None:

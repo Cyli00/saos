@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import json
 
+import pytest
 import yaml
 
 from saos import demand, jobs, ledger, prescription
 from saos.backend.rtc import RtcBackend
 from saos.daemon import Daemon
+from saos.protocol import ErrorCode, SaosError
 
 # 模型玻璃单透镜，半口径全部固定、物在无穷远、不追光线瞄准：rtc 在它上面不经过任何未对账的路径
 # a model-glass singlet with every semi-diameter fixed, the object at infinity and no ray aiming: rtc takes no unreconciled path
@@ -108,3 +110,39 @@ def test_old_ledger_records_get_their_level_on_reading_and_the_file_stays(tmp_pa
     assert rounds[1]["trust"] == "measured" and rounds[1]["rtc"]["trust"] == "reconciled"
     assert rounds[2]["trust"] == "unreconciled" and rounds[3]["trust"] == "measured"
     assert path.read_text(encoding="utf-8") == text
+
+
+def _clean_file(tmp_path):
+    backend = RtcBackend(None, standalone=True)
+    backend.build(prescription.normalize(CLEAN))
+    path = tmp_path / "clean.zmx"
+    backend.save_as(path)
+    return path
+
+
+def test_measure_grades_each_item_in_its_own_process_without_the_daemon(tmp_path):
+    from saos import measure
+
+    out = measure.run(_clean_file(tmp_path), [{"operand": REAY}, {"operand": TOTR}, {"operand": {"type": "MTFT"}}])
+    ray, length, mtf = out["items"]
+    assert out["computed_by"]["unverified"] == [] and ray["trust"] == "reconciled"
+    assert length["trust"] == "unreconciled" and length["operands_unverified"] == ["TOTR"]
+    assert mtf["trust"] == "refused" and mtf["value"] is None and "MTFT" in mtf["error"]
+    with pytest.raises(SaosError) as err:
+        measure.run(_clean_file(tmp_path), [{"script": "checks/x.py"}])
+    assert err.value.code == ErrorCode.BAD_ARGS
+
+
+def test_measure_runs_a_jobs_demand_checks_item_by_item(saos_home, tmp_path):
+    from saos import measure
+
+    job = jobs.create_job("measure")
+    data = {"schema": 2, "constants": [], "objectives": [
+        {"id": "height", "description": "height", "check": {"operand": REAY}, "origin": "user", "must": {"max": 1e6}, "scale": 1.0, "source": "user"},
+        {"id": "length", "description": "length", "check": {"operand": TOTR}, "origin": "user", "must": {"max": 1e6}, "scale": 1.0, "source": "user"}],
+        "summary": "measure"}
+    (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
+    demand._PREPARED.clear()
+    rows = {r["id"]: r for r in measure.run(_clean_file(tmp_path), [], job_root=job.root, demand=True)["demand"]}
+    assert rows["height"]["trust"] == "reconciled" and rows["length"]["trust"] == "unreconciled"
+    assert rows["length"]["value"] == pytest.approx(52.0)

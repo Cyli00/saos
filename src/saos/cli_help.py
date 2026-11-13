@@ -19,12 +19,12 @@ Output protocol (help itself is plain text):
     compared with OpticStudio), unreconciled (rtc, through a path or operand that
     computed_by lists as unverified or operands_unverified) or refused (no number).
     lens operand, lens analysis, metrics get, opt merit/local/hammer/global and exec
-    give one per result with computed_by; check and round give one per item and one
-    for the whole evaluation.
+    give one per result with computed_by; check, round and measure give one per item,
+    check and round also one for the whole evaluation.
 
 Process model:
   Local: daemon control, job, demand, rule-out, stop, report, scan --show, api,
-    backends.
+    backends, measure (rtc in its own process: a lens file in, numbers out).
     ui runs a local service.
   Daemon: lens, opt, exec, check, round and scan execution. It holds both
     backends and the loaded lens; OpticStudio starts when a command first needs it.
@@ -306,6 +306,19 @@ COMMANDS = {
             "  paragraph of each docstring; a full path (saos.starts.patents.search) gives the\n"
             "  whole docstring, with methods for a class. ctx lists the ctx methods and ctx.<name>\n"
             "  gives one. Which to use when and what they cover: uv run saos exec --help.", "BAD_ARGS"),
+    "measure": ("Measure a lens file on rtc in this process: no daemon, no licence, no evidence; about 1 s cold.",
+                "--check takes one demand-style check as JSON and repeats:\n"
+                "  '{\"operand\": {\"type\": \"EFFL\", \"int2\": 1}}' or\n"
+                "  '{\"metric\": {\"id\": \"spot\", \"params\": {\"wave\": 1}, \"pick\": \"rms_radius\"}}'.\n"
+                "  Scripts run through exec, analyses through lens analysis. --demand with --job\n"
+                "  also measures the job's demand checks (every item entering G, or --only ids),\n"
+                "  each on its own, with the same definitions as check and round. --job also reads\n"
+                "  --lens from the job's lenses/. Returns items (and demand): value, trust,\n"
+                "  operands_unverified when used, error; an item rtc cannot compute has trust\n"
+                "  refused. computed_by gives the lens's unreconciled paths. The daemon's loaded\n"
+                "  lens and state are untouched, so measurements run in parallel with it and with\n"
+                "  each other. A lens rtc cannot read is BACKEND_UNSUPPORTED (see saos backends).",
+                "BAD_ARGS, BACKEND_UNSUPPORTED, FILE_NOT_FOUND, JOB_NOT_FOUND, PATH_OUTSIDE_JOB"),
     "backends": ("Say what rtc computes and which backend a lens lands on, before you build or measure; no daemon, no licence.",
                  "Without arguments: rtc's capability table. Each item of rtc.aperture, fields,\n"
                  "  ray_aiming, surface_type, surface_aperture, solve and lens (named as in lens build\n"

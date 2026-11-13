@@ -9,6 +9,7 @@ A loop of many evaluations (a scan of a few variables, multi-starts, a sensitivi
 - **On rtc** (every stage before delivery), run it on `ctx` itself, or on the worker pool for many points at once.
 - **On OpticStudio**, use [the rtc copy](#the-rtc-copy) when the objective is a ray quantity (ray positions and angles, spot statistics, chief ray angle, pass rate) and the copy builds for this lens. It costs no licence and no worker start.
 - **The worker pool** when the loop needs operands, analyses or the demand checks, or the copy refuses the lens. Prefer a `saos scan --plan` (grids, point lists, `minimize`, `probes`, `candidates`, `tolerance`) to a script: it measures every point with the demand checks, ranks by shortfall and keeps the best lenses. In a script, use `ctx.map` (`uv run saos exec --help parallel`). OpticStudio workers count against the licence ([session.md](session.md#preconditions)).
+- **Saved lens files, outside the daemon:** `uv run saos measure --lens <file> --check ...` (or `--job J --demand`) measures a `.zmx` on rtc in its own process, about 1 s per call, without touching the daemon's lens or holding a licence. Use it to compare saved candidates in parallel shells, while the daemon is busy with a long run, or from a helper agent that should not change the job's lens.
 
 ## Write scripts
 
