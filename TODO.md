@@ -20,7 +20,14 @@
 - `BICONICZ` 在 `rtc.RECONCILED_TYPES` 里（`.zmx` 读得了），`rtc_lens.TYPES` 没有它（处方建不出），所以 `saos backends` 整表的 `surface_type` 不列它；`--lens` 的判定是对的。
 - `capability.table()` 为取 `OPTICSTUDIO_ONLY`、`OPTICSTUDIO_SCANS`、`STAGE_BACKENDS` 三个常量导入了整个 `saos.daemon`。
 - 两处未上真机验证：（1）后台进程 `lens build` 的预检改成在临时 `RtcBackend` 上完整建一遍后，带 Even Asphere 反射镜的处方应留在 OpticStudio（`backend_switch.stayed`）而不是在 rtc 上报 `BACKEND_UNSUPPORTED`，`tests/test_zemax_rtc.py` 还没有这条用例；（2）`rtc_lens.unread_settings` 不知道非均匀切趾在 `.zmx` 文件头里写成哪一行（仓库 836 份 `.zmx` 没有一份带切趾），现在只能报成 `header line KEY`，要一份 OpticStudio 存盘的高斯切趾样本来定名。
-- 判定上收进度量目录（2026-11-13 统计 `work/` 里 16 个任务的 254 个脚本判定）：点列/PSF/包围能量 57 个（17 种 id），零件间隙与边厚 34 个，收集与 NA 31 个，畸变/视场 25 个，长度类 22 个，焦点/变焦/热 21 个，材料/质量 17 个，有效性 15 个，CRA/相对照度 7 个，MTF 6 个；95 个脚本没有 docstring。目录现有 11 项，`spot` 只算单波长、绕自身质心。最值得先收的是多色点列（参考点和波长权重要做成参数，各任务定义不一），其次是零件间隙/边厚和收集比例（`saos.micro` 已有原语）。按 `AGENTS.md`，上收前后同一批镜头的数值要逐项一致，需要把这些任务的镜头和脚本拿来对跑，还没做。
+- 判定上收进度量目录（2026-11-13 统计 `work/` 里 18 份需求单的 254 个脚本判定；其中 `20261015-205649-fiber-grin-no1b` 在 `fiber`、`fiber-no1b` 两个工作区各有一份，按任务去重是 17 个任务、237 个）。2026-11-14 按判定 id 逐个重新归类（括号里是 id 种数）：点列/PSF/包围能量/波前 57（17），零件间隙与边厚 35（11），收集与 NA 31（7），畸变/视场 25（4），材料与透过率 24（14），长度类 23（11），焦点/变焦/热/F 数 22（14），有效性 15（6），外形尺寸与质量 7（4），CRA/相对照度 7（4），MTF 6（4），另有 2 个未归类（`monotonic`、`stat_error`），合计 254。原来的十类合计 235，间隙、长度、焦点、材料四类的边界没记下来，无法复核；95 个脚本没有 docstring。目录现有 11 项，`spot` 只算单波长、绕自身质心。最值得先收的是多色点列（参考点和波长权重要做成参数，各任务定义不一），其次是零件间隙/边厚和收集比例（`saos.micro` 已有原语）。按 `AGENTS.md`，上收前后同一批镜头的数值要逐项一致，需要把这些任务的镜头和脚本拿来对跑，还没做。
+- 起型子 agent 实验（2026-11-13 暂缓，起型仍由主会话做）：当时的子 agent 草稿（只读检索、一阶/三阶估算、`opus` + `effort: high`）已按用户要求删除，重启时重写。评测方案已定：取 `work/` 里 ar-glasses-camera、lll-nightvision-obj、ar-glasses-telephoto、fiber-air 四份需求单复制成新任务，对照组主会话自己起型、实验组委托子 agent，之后同一优化预算、autonomous、只在 rtc 上跑，每格 3 次共 24 次；主量是最后一轮 `shortfall`（unreconciled 单列），另比 reach gate 是否通过、起型耗时与 token。重启前要先补工具隔离：frontmatter 的 `tools` 只能整件开关，按命令收窄要靠 frontmatter 的 `PreToolUse` hook；专利检索现在只能 `python -c` 调、hook 审查不了，需要一个只读的检索/缩放 CLI；草稿没给 Write 却要求写处方，`saos measure` 也不收处方。`effort` 会被环境变量 `CLAUDE_CODE_EFFORT_LEVEL` 覆盖。
+- 通用接口计划（2026-11-13）原定验收里没达成、本轮不做的：
+  - ctx 方法的 docstring 没有逐个写齐参数与单位、返回结构、后端差别、错误码四项（例：`ctx.op` 缺返回结构和单位）。
+  - `saos backends` 的能力表没有拿 `tests/rtc/omnibus.py` 的全覆盖案例核对；预测为 `refused` 的操作数只测了 MTFT 一个。
+  - 原要求技能里点名后端的行数明显下降，2026-11-13 计数反而由 57 增至 61。
+  - 没有用 `non_sequential`、`mixed`、`reflective` 三个案例逐节走查阶段 1–2 的文字。
+  - `saos measure` 只收操作数和度量目录项，追迹和点列没有无状态入口（脚本仍走 `exec`，分析走 `lens analysis`）。
 
 ## rtc 待办（2026-11-10 从已删除的计划文档并入；当时的细节用 `git show 3c488f0:docs/plans/<文件>` 查）
 
