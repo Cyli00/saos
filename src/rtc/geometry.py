@@ -1,6 +1,6 @@
 """面型：把 .zmx 的面参数换成内核的参数行，矢高和求交都在 rtc.kernel 里只有一份。
 
-参数编号按手册（见 docs/plans/rtc/SURFACE-PARAMS.md）。面型类只回答内核不管的事：顶点曲率、
+参数编号按手册（见 src/rtc/SURFACE-PARAMS.md）。面型类只回答内核不管的事：顶点曲率、
 是否对过账、OPD 能不能算。``vertex_curvature`` 可以吃 Dual，光瞳对设计变量的导数要用。
 """
 

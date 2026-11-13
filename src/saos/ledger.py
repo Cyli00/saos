@@ -1,5 +1,5 @@
-"""调试轮次记录与终止判断（DESIGN.md「终止规则」）。
-Round ledger and stop decision (DESIGN.md, "终止规则" / stop rule).
+"""调试轮次记录与终止判断。
+Round ledger and stop decision.
 
 每个设计任务一份 ledger.jsonl：第 0 轮是初始状态（tier 为 baseline），之后每轮一条，记录本轮使用的
 手段层级、各项的实测值和目标差距 G。
@@ -42,9 +42,9 @@ When the demand's compute-layer hash changes (values, ranges, checks, weights, u
 When the check code changes, saos round first re-measures the best earlier round with the new checks (tier "rebase")
 and later rounds compare with it: unchanged numbers keep the window, changed ones start a new window at that record.
 
-rtc 实例上记的轮次（backend 为 rtc，ADR-0017）交付前要在 OpticStudio 上复测（saos round --confirm，tier 为 confirm）：
+rtc 实例上记的轮次（backend 为 rtc）交付前要在 OpticStudio 上复测（saos round --confirm，tier 为 confirm）：
 复测记录不单独成轮，读 ledger 时（effective）用它的数值替换被复测那一轮的数值，判定、终止和报告都按 OpticStudio 的数。
-Rounds recorded on the rtc instance (backend rtc, ADR-0017) are re-measured on OpticStudio before delivery (saos round
+Rounds recorded on the rtc instance (backend rtc) are re-measured on OpticStudio before delivery (saos round
 --confirm, tier "confirm"). A confirmation is no round of its own: reading the ledger (effective) puts its numbers in
 place of the confirmed round's, so decisions, stops and the report use OpticStudio's numbers.
 """
@@ -170,7 +170,7 @@ def stop_for(root: Path, demand_sha: str, demand: dict[str, Any] | None = None) 
 
 def record_stop(root: Path, demand_sha: str, reason: str, quote: str, demand: dict[str, Any] | None = None, *, via: str = "cli") -> dict[str, Any]:
     """记录停止决定。停止等于接受达不到需求：参与任务里必须有用户原话；自主任务里 agent 可以自行停止（via="auto"），
-    理由带证据，报告标明未经用户确认（ADR-0021）。
+    理由带证据，报告标明未经用户确认。
     Record a decision to stop. Stopping accepts that the demand is not met: an interactive job needs the user's words;
     in an autonomous job the agent may stop by itself (via="auto") with the evidence, and the report says so."""
     reason, quote = str(reason or "").strip(), str(quote or "").strip()

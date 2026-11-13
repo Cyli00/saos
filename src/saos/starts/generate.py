@@ -133,9 +133,9 @@ def generate(job: jobs.Job, bindings: dict, *, short_seconds: float, prepare: st
     parent.mkdir(parents=True, exist_ok=True)
     folder = parent / f"{jobs.next_archive_number(parent):03d}"
     folder.mkdir()
-    # 先在 rtc 上建（不占许可，ADR-0020）；rtc 建不了的条目（反射镜、有限共轭的像方 F 数等）逐条改在 OpticStudio 上建，
+    # 先在 rtc 上建（不占许可）；rtc 建不了的条目（反射镜、有限共轭的像方 F 数等）逐条改在 OpticStudio 上建，
     # OpticStudio 只在第一次需要时启动
-    # build on rtc first (no licence, ADR-0020); entries rtc cannot build go to OpticStudio one by one, started on first need
+    # build on rtc first (no licence); entries rtc cannot build go to OpticStudio one by one, started on first need
     fallback_factory = None
     if backend_factory is None:
         from saos.backend import make_backend

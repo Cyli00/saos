@@ -1,4 +1,4 @@
-"""一个后台进程持有 rtc 与 OpticStudio 两个后端（ADR-0018）的离线回归。
+"""一个后台进程持有 rtc 与 OpticStudio 两个后端的离线回归。
 
 离线没有 OpticStudio：OpticStudio 的位置放第二个 rtc 实例，它的 describe_model(None) 与 trace_batch 和 ZOS 后端同字段，
 所以交接比对走的是真实代码路径；它与 rtc 读同一个文件，结论应当一致，人为改动它的描述才出现差异。
@@ -198,7 +198,7 @@ def test_a_pin_holds_within_its_stage_and_is_released_when_the_stage_changes(sao
 
 
 def test_a_prescription_rtc_cannot_build_is_built_on_opticstudio(saos_home):
-    # 建模归 rtc 后（ADR-0020），带倾斜等项的处方不能卡在 rtc 上 / once modelling is on rtc, such prescriptions must not stall there
+    # 建模归 rtc 后，带倾斜等项的处方不能卡在 rtc 上 / once modelling is on rtc, such prescriptions must not stall there
     daemon, _, started = _daemon()
     job = jobs.create_job("tilted")
     raw = json.loads((CASES / "sequential.json").read_text(encoding="utf-8"))

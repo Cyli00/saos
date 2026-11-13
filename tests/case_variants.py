@@ -1,6 +1,6 @@
 """iris、reflective 的变体定义，录真值的 tests/test_zemax_cases.py 和离线的 tests/rtc/test_case_truth.py 共用。
 
-每个变体是基础处方的副本加一处改动，服务 docs/plans/rtc-iris-mirror.md 第 2.3 节的某一项。
+每个变体是基础处方的副本加一处改动，各自要验证的项写在它的 serves 里。
 基础版的 .zmx 在 tests/fixtures/cases/，变体的 .zmx 和所有读数在 truth.json，一个变体一行。
 """
 

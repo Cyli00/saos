@@ -270,7 +270,7 @@ def get_job(job_id: str) -> Job:
     return Job(job_id, root)
 
 
-# 任务的两种流程（ADR-0021）：做题、测试用 autonomous，从头设计用 interactive / the two workflows of a job
+# 任务的两种流程：做题、测试用 autonomous，从头设计用 interactive / the two workflows of a job
 MODES = ("interactive", "autonomous")
 # 用户在窗口里对关卡提出的修改意见 / change requests the user made at a gate in the window
 REVISIONS_FILE = "revisions.jsonl"
@@ -292,7 +292,7 @@ def require_autonomous(root: Path, what: str) -> None:
 
 
 def make_interactive(job: Job) -> dict[str, Any]:
-    """自主任务改为参与：只能由用户在窗口里做，反过来不行，agent 不能为了过关卡把任务切成自主（ADR-0021）。
+    """自主任务改为参与：只能由用户在窗口里做，反过来不行，agent 不能为了过关卡把任务切成自主。
     Turn an autonomous job interactive: only the user does it, in the window; never the other way round."""
     if job.mode == "interactive":
         return {"mode": "interactive", "changed": False}

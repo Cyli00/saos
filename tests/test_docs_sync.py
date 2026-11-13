@@ -1,9 +1,9 @@
 """工作流写在技能、界面和流程图里，几处都会提到命令：这里自动核对其中能机械核对的部分，减少靠人记得同步。
 
-- 技能（SKILL.md 与 references）、DESIGN.md、各级命令帮助和 workflow.drawio 中出现的命令都存在于命令行；
+- 技能（SKILL.md 与 references）、各级命令帮助和 workflow.drawio 中出现的命令都存在于命令行；
   已删除的命令只能以历史说明出现。
 - 反向：使用 saos 的 agent 能调用的命令和 Python 接口都查得到：写在命令帮助或技能里，或能经 saos api 读到 docstring，
-  否则显式列为内部接口（INTERNAL、api_help.HIDDEN）。技能文档只放判断，接口说明放帮助（DESIGN.md）。
+  否则显式列为内部接口（INTERNAL、api_help.HIDDEN）。技能文档只放判断，接口说明放帮助（AGENTS.md）。
 - 技能里的链接和帮助主题都指向存在的东西。
 - workflow.drawio 能被 draw.io 官方查看器渲染（默认跳过，需要 Chrome 和网络：SAOS_RENDER_DRAWIO=1 uv run pytest tests/test_docs_sync.py -s，
   打印出 PNG 路径，供人看图核对）。
@@ -27,7 +27,7 @@ from saos import api_help, cli, cli_help, config
 from saos.protocol import SaosError
 
 ROOT = config.REPO_ROOT
-DOCS = ("DESIGN.md", *sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / ".agents" / "skills" / "saos").rglob("*.md")))
+DOCS = tuple(sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / ".agents" / "skills" / "saos").rglob("*.md")))
 DIAGRAM = ROOT / "docs" / "workflow.drawio"
 COMMAND_RE = re.compile(r"(?<!from )\bsaos ([a-z][a-z-]*)(?: ([a-z][a-z-]*))?(?: ([a-z][a-z-]*))?")
 # 已删除的命令：只能出现在“原……并入 / 已取消”这类历史说明里 / removed commands may only appear in historical notes

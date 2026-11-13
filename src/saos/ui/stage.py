@@ -22,7 +22,7 @@ def _daemon() -> dict[str, Any]:
     state = client.read_state()
     if state is None or not client.pid_alive(int(state.get("pid", 0))):
         return {"running": False, "backend": None}
-    # 当前在哪个后端上算、是否两个后端都有（ADR-0018）：窗口据此标明数值来源和 OpticStudio 是否占着许可
+    # 当前在哪个后端上算、是否两个后端都有：窗口据此标明数值来源和 OpticStudio 是否占着许可
     # which backend computes now and whether the daemon holds both: the window labels where numbers come from
     backends = state.get("backends") or {}
     backend = backends.get("active") or (state.get("opticstudio") or {}).get("backend") or "zos"
@@ -124,7 +124,7 @@ def rounds_of(job: jobs.Job) -> list[dict[str, Any]]:
         out.append({"round": r["round"], "tiers": ledger.tiers_of(r), "note": r.get("note", ""), "shortfall": finite(r["shortfall"]),
                     "achieved": bool(r.get("achieved")), "deliverable": ledger.deliverable(r), "time": r.get("time"),
                     "demand_sha": ledger.version(r)[0], "viz": bool(folder) and (job.root / folder / "viz.json").is_file(),
-                    # 谁算的这一轮；rtc 轮次复测后数值换成 OpticStudio 的（ADR-0017）/ who computed it; confirmed rtc rounds show OpticStudio's numbers
+                    # 谁算的这一轮；rtc 轮次复测后数值换成 OpticStudio 的/ who computed it; confirmed rtc rounds show OpticStudio's numbers
                     "backend": r.get("backend", "zos"),
                     **({"confirmed_by": r["confirmed_by"], "agrees": bool(r.get("agrees"))} if r.get("confirmed_by") is not None else {}),
                     "values": {k: finite(v) for k, v in (r.get("values") or {}).items()},

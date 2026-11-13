@@ -115,7 +115,7 @@ class OpticalSystem:
         # 调用方可以给自己的玻璃库（例如 OpticStudio 实际使用的 Glasscat 目录）；默认用进程内共享的那份
         self.glasses = glasses if glasses is not None else catalog()
         # 默认用文件保存时选中的结构（MNUM 第 2 个数）。codex-r017 保存时停在第 5 个结构，
-        # 拿结构 1 去比会差 2e-2 mm（docs/plans/rtc/SURFACE-PARAMS.md「其它实测事实」）。
+        # 拿结构 1 去比会差 2e-2 mm（src/rtc/SURFACE-PARAMS.md「其它实测事实」）。
         self.config = lens.current_config if config is None else config
         if glasses is not None and lens.glass_lookup is None:
             lens.glass_lookup = glasses.get
@@ -411,7 +411,13 @@ class OpticalSystem:
     def exit_pupil(self) -> tuple[float, float]:
         """出瞳：光阑被其后各面成像。返回 (相对像面的位置, 相对光阑半口径的放大率)。
 
-        这里是近轴定义。OpticStudio 用小视场实光线，面很强时才明显：差距和它的规则见 docs/plans/rtc-unify.md。
+        这里是近轴定义。OpticStudio 的 EXPP、EXPD 不是纯近轴量（2026-11-05 实测）：
+        - EXPP，瞄准关：一条 0.01° 的实主光线，发向主波长的近轴入瞳中心，取它在像方与光轴的交点；11 组真值里 10 组差 ≤ 1.7e-13 mm。
+          面很强时角度降到 0.001°、0.0001°，随曲率和光线高度变，确切规则未定。
+        - EXPD，瞄准关：从光阑面高度 1e-3·R 平行出发的实光线在出瞳面上的高度比，再乘 2R。
+        - 瞄准开：EXPP 随最大视场变（iris 上 0.1° 偏 7.8e-6，10° 偏 1.0e-4），规则未定，iris_real 的用例因此标 xfail。
+        近轴定义与它的差距：真值变体的 EXPP 相对差 ≤ 3.9e-8（iris_real 4.0e-6），面很强的样例到 0.4%；EXPD ≤ 8.3e-8，到 0.8%。
+        不改用实光线的原因：强面的情形要先定出角度规则，固定用 0.01° 反而偏 2.8e-3 mm，比近轴差两个量级。
         """
         if self.stop is None:
             return 0.0, 1.0

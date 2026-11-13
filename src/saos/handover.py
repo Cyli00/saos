@@ -1,8 +1,8 @@
-"""一个后台进程里 rtc 与 OpticStudio 交接同一份镜头时的逐值比对（ADR-0018）。
-Value-by-value comparison when rtc and OpticStudio hand the same lens over inside one daemon (ADR-0018).
+"""一个后台进程里 rtc 与 OpticStudio 交接同一份镜头时的逐值比对。
+Value-by-value comparison when rtc and OpticStudio hand the same lens over inside one daemon.
 
 两边各自加载同一个 .zmx 之后比较：OpticStudio 的 describe_model(None)（参数、各面各波长 INDX、环境、视场、波长）、
-半口径（两边都会自动重算），以及每个视场、每个波长的主光线和 5×5 光瞳光线，容差同 ctx.fast()（ADR-0014）。
+半口径（两边都会自动重算），以及每个视场、每个波长的主光线和 5×5 光瞳光线，容差同 ctx.fast()。
 不一致不拒绝交接：差异记在 rtc 镜头上，进入 provenance 的 unverified，由交付前的复测兜底（用户 2026-10-30 决定）。
 Both sides load the same .zmx, then compare OpticStudio's describe_model(None), the semi-diameters (both recompute
 automatic ones) and the chief ray plus a 5×5 pupil of every field and wavelength, with ctx.fast()'s tolerances.

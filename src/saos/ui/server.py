@@ -108,7 +108,7 @@ def gate_of(job: jobs.Job, current: str | None = None) -> dict[str, Any]:
 
 
 def confirm_of(job: jobs.Job, args: dict[str, Any]) -> dict[str, Any]:
-    """用户在窗口里按下确认：记录窗口确认（via=window），备注可空；sha 须是窗口显示的那一版（ADR-0020）。
+    """用户在窗口里按下确认：记录窗口确认（via=window），备注可空；sha 须是窗口显示的那一版。
     The user pressed confirm in the window: record a window confirmation with an optional note; sha must be the version shown."""
     from saos import demand, model_gate
 
@@ -126,7 +126,7 @@ def confirm_of(job: jobs.Job, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def revise_of(job: jobs.Job, args: dict[str, Any]) -> dict[str, Any]:
-    """用户在窗口里对关卡要求修改（只在参与任务里）：记下原话，关卡保持等待，agent 出新版后再确认（ADR-0021）。
+    """用户在窗口里对关卡要求修改（只在参与任务里）：记下原话，关卡保持等待，agent 出新版后再确认。
     The user asked for changes at a gate (interactive jobs): their words are kept and the gate keeps waiting."""
     if job.mode != "interactive":
         raise SaosError(ErrorCode.BAD_ARGS, "this job runs autonomously; switch it to interactive in the window first")

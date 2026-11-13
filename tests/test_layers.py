@@ -1,4 +1,4 @@
-"""模块分层（DESIGN.md「模块分层」）：下层不导入上层，函数内的延迟导入也算。
+"""模块分层：下层不导入上层，函数内的延迟导入也算。
 Module layers: a lower layer never imports a higher one, imports inside functions included.
 
 L0 基础约定（协议、参数键、几何、处方、文件）→ L1 计算后端 → L2 测量库（kit、指标目录、micro、rtc 副本、搜索、专家类）→ 其余

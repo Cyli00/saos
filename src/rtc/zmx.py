@@ -4,7 +4,7 @@
 - 只读。绝不写回 ``.zmx``（权威文件由 OpticStudio 保存）。
 - 未识别的关键字一律保留在 ``Surface.raw`` / ``Lens.raw`` 里，不静默丢弃，
   这样扫描脚本能如实报告"文件里存在但我没处理"的东西。
-- XDAT 表按 ``XDAT_i == 参数(12+i)`` 处理（见 docs/plans/rtc/SURFACE-PARAMS.md），
+- XDAT 表按 ``XDAT_i == 参数(12+i)`` 处理（见 src/rtc/SURFACE-PARAMS.md），
   这是从三件镜头里 BICONICZ / TOROIDAL 的取值反推出来的，仍需 SSAG 实测确认。
 """
 
@@ -121,7 +121,7 @@ class MCEOperand:
     config: int
     value: float
     #: 值单元格之后的求解数据列（原样保留，列语义只部分标定）。三件最终镜头的 THIC 都没有求解；
-    #: 中间轮次出现过 pickup（scale −1 / offset 0.1），见 docs/plans/rtc/SURFACE-PARAMS.md「其它实测事实」。
+    #: 中间轮次出现过 pickup（scale −1 / offset 0.1），见 src/rtc/SURFACE-PARAMS.md「其它实测事实」。
     solve: list[float] = field(default_factory=list)
     raw: str = ""
     #: pickup 的 (scale, offset)：值 = scale·源厚度 + offset。
@@ -192,7 +192,7 @@ class Lens:
     surfaces: list[Surface] = field(default_factory=list)
     num_configs: int = 1
     #: 保存文件时选中的结构（``MNUM`` 第 2 个数）。实测：piA 1 / piB 1 / codex 5，
-    #: 与 golden ``info.csv`` 的 ``current_config`` 逐位一致（见 docs/plans/rtc/SURFACE-PARAMS.md「其它实测事实」）。
+    #: 与 golden ``info.csv`` 的 ``current_config`` 逐位一致（见 src/rtc/SURFACE-PARAMS.md「其它实测事实」）。
     current_config: int = 1
     mce: list[MCEOperand] = field(default_factory=list)
     mfe: list[MFERow] = field(default_factory=list)
@@ -393,7 +393,7 @@ def parse_text(text: str, path: str = "") -> Lens:
             elif key == "PARM":
                 cur.params[int(parts[1])] = float(parts[2])
             elif key == "XDAT":
-                # XDAT 是"参数 12 以后"的原样存储（见 docs/plans/rtc/SURFACE-PARAMS.md）：
+                # XDAT 是"参数 12 以后"的原样存储（见 src/rtc/SURFACE-PARAMS.md）：
                 # 同时写进 params，面型代码只认 params，extra 留作原始记录。
                 n = int(parts[1])
                 v = float(parts[2])

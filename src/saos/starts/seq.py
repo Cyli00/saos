@@ -1,6 +1,6 @@
 """CODE V 序列文件（.seq）的受控解析：只认专利镜头库（library/patents）实际出现的命令，其余原样列出，不猜含义。
 
-parse 把文本读成结构；paraxial 用 nd 做近轴预筛（ADR-0013 的例外，同 starts.paraxial）；to_prescription 转成 lens build 的处方。
+parse 把文本读成结构；paraxial 用 nd 做近轴预筛（例外，同 starts.paraxial）；to_prescription 转成 lens build 的处方。
 转换不替换任何材料：玻璃代码 nnnnnn.vvvvvv 转成模型玻璃（nd = 1.nnnnnn，vd = vv.vvvv），REFL 转成 MIRROR，
 NAME_SCHOTT/HOYA/OHARA 转成该厂目录牌号；_SPECIAL 材料和 PRV 私有玻璃必须由调用方在 materials 里给出，否则拒绝。
 """

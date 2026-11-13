@@ -1,5 +1,5 @@
-"""目录规定（DESIGN.md「仓库目录」「任务目录」）的检查：仓库里的文件，以及本机 work/ 下的运行目录。
-Layout rules (DESIGN.md, repository and job directories): files in the repository and the local work/ tree.
+"""目录规定的检查，规定本身就写在这里：仓库里的文件，以及本机 work/ 下的运行目录。
+Layout rules, stated here and nowhere else: files in the repository and the local work/ tree.
 
 仓库部分检查已入库和未忽略的新文件（git ls-files -co --exclude-standard）；work/ 不入库，只在本机存在时检查。
 The repository part covers tracked and new non-ignored files; work/ is not versioned and is checked only when present.
@@ -18,7 +18,7 @@ from saos import jobs as jobs_mod
 
 ROOT = Path(__file__).resolve().parents[1]
 
-ROOT_FILES = {"README.md", "DESIGN.md", "TODO.md", "AGENTS.md", "pyproject.toml", "uv.lock", ".gitignore"}
+ROOT_FILES = {"README.md", "TODO.md", "AGENTS.md", "pyproject.toml", "uv.lock", ".gitignore"}
 ROOT_DIRS = {"src", "docs", "library", "tests", ".agents", ".claude"}
 JUNK = re.compile(r"\.(log|tmp|bak|orig|zda|pyc)$|(^|/)(~\$|\.~)|\.zmx$", re.I)
 
@@ -41,7 +41,7 @@ def repo_files() -> list[PurePosixPath]:
 
 def test_root_holds_only_the_listed_entries():
     stray = sorted({p.parts[0] for p in repo_files() if (p.parts[0] not in ROOT_DIRS if len(p.parts) > 1 else p.name not in ROOT_FILES)})
-    assert stray == [], f"not allowed at the repository root (DESIGN.md 仓库目录): {stray}"
+    assert stray == [], f"not allowed at the repository root: {stray}"
 
 
 def test_no_lens_files_logs_or_temp_files_outside_their_places():
@@ -56,11 +56,9 @@ def test_docs_are_cross_job():
         if p.parts[0] != "docs":
             continue
         rel = p.parts[1:]
-        ok = rel in (("workflow.drawio",),) or (rel[0] == "adr" and len(rel) == 2 and re.match(r"\d{4}-[a-z0-9-]+\.md$", rel[1])) \
-            or (rel[0] == "plans" and len(rel) >= 2 and rel[-1].endswith(".md"))
-        if not ok:
+        if rel != ("workflow.drawio",):
             bad.append(str(p))
-    assert bad == [], f"docs/ holds workflow.drawio, adr/NNNN-*.md and plans/**/*.md only: {bad}"
+    assert bad == [], f"docs/ holds workflow.drawio only; decisions live in code, tests, help and the skill, open work in TODO.md: {bad}"
 
 
 @pytest.mark.parametrize("top", ["library"])
@@ -93,7 +91,7 @@ def test_local_work_tree_follows_the_job_layout():
             # __pycache__ 是导入 explore 里的脚本时 Python 自动生成的，不是探索主题 / Python's import cache, not a topic
             if topic.is_dir() and topic.name != "__pycache__" and not (topic / "README.md").is_file():
                 bad.append(f"{instance.name}/jobs/{job.name}/explore/{topic.name} (no README.md)")
-    assert bad == [], "work/ layout (DESIGN.md 任务目录): instance = daemon/ + jobs/; job extras only notes/, checks/, explore/<topic>/ with README.md: " + ", ".join(bad)
+    assert bad == [], "work/ layout: instance = daemon/ + jobs/; job extras only notes/, checks/, explore/<topic>/ with README.md: " + ", ".join(bad)
 
 
 def test_relative_markdown_links_resolve():

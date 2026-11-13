@@ -1,4 +1,4 @@
-"""脚本里的 rtc 快速副本：ctx.fast() 把当前镜头交给 rtc，在内存里高频改参数、追迹（ADR-0014）。
+"""脚本里的 rtc 快速副本：ctx.fast() 把当前镜头交给 rtc，在内存里高频改参数、追迹。
 The rtc fast copy for scripts: ctx.fast() hands the current lens to rtc for high-rate changes and traces.
 
 副本带 kit 的同名方法（trace、spot、set、get、values、kept、configuration、cra、profile 类），数值定义与 ctx 上的
@@ -97,7 +97,7 @@ def from_context(ctx, freeze_solves: bool = False) -> FastLens:
     from saos.backend.rtc import RtcBackend
 
     if getattr(ctx, "in_check", False):
-        raise SaosError(ErrorCode.BAD_ARGS, "checks measure on the daemon's backend itself; the rtc copy is for exploration only (ADR-0014)")
+        raise SaosError(ErrorCode.BAD_ARGS, "checks measure on the daemon's backend itself; the rtc copy is for exploration only")
     if ctx.backend.identity().get("backend") == "rtc":
         raise SaosError(ErrorCode.BAD_ARGS, "this instance computes on rtc already; use ctx itself (ctx.trace, ctx.op, ctx.set) instead of ctx.fast")
     export = getattr(ctx.backend, "export_rtc", None)
@@ -122,7 +122,7 @@ def from_context(ctx, freeze_solves: bool = False) -> FastLens:
     return fast
 
 
-# 建立副本时追迹对照的容差：实际瞄准时 OpticStudio 自己的收敛误差约 6e-8 mm（ADR-0014），留一个数量级余量
+# 建立副本时追迹对照的容差：实际瞄准时 OpticStudio 自己的收敛误差约 6e-8 mm，留一个数量级余量
 # tolerances of the build-time comparison: OpticStudio's own real-aiming error is about 6e-8 mm, one decade of margin
 POSITION_TOL = 1e-6
 DIRECTION_TOL = 1e-7

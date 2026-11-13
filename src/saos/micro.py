@@ -7,7 +7,7 @@ objectives), independent of any layout; a check keeps only its layout convention
 - 只经 saos.kit 与 ctx 读写，不导入后端；同一次判定内反复用到的量经 once() 只算一次。
   Reads and writes through saos.kit and ctx only; quantities reused within one evaluation go through once().
 - 物理上不成立的状态（没有实焦点、光线到不了、面在口径内没有定义、零件伸进外壳）抛 DesignFailure，guarded() 把它变成 inf，
-  记为不达标而不是检查出错（DESIGN.md「判定只读且物理自洽」）。
+  记为不达标而不是检查出错。
   Physically invalid states raise DesignFailure; guarded() turns it into inf, a failed item rather than a check error.
 - 调用错误（采样数不是足够大的整数、面序号越界、没有后一面、空视场表）报 BAD_ARGS，guarded() 不拦截，检查本身出错。
   Caller errors (a sampling count too small or not an integer, a surface out of range, no following surface, no

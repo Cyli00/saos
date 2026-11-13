@@ -670,7 +670,7 @@ class ZosBackend(Backend):
             raise SaosError(ErrorCode.ZOS_SAVE_FAILED, f"file not found after saving: {path}")
 
     def export_rtc(self, path: Path) -> dict[str, Any]:
-        """把当前镜头（含未保存的修改）另存一份副本给 rtc 读取，当前系统的文件名和保存状态不变（ADR-0014）。
+        """把当前镜头（含未保存的修改）另存一份副本给 rtc 读取，当前系统的文件名和保存状态不变。
         返回同一镜头的 describe_model(None) 与 OpticStudio 实际使用的玻璃目录，用于逐项核对。
         Save a copy of the current lens, unsaved changes included, for rtc; the system's file name and saved state
         stay as they are. Returns describe_model(None) and the glass folder OpticStudio uses, for the item-by-item check."""

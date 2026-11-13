@@ -199,7 +199,7 @@ class GlassExpert:
             catalogs = [preferred] if preferred else self.ctx.backend.system_info()["material_catalogs"]
         folder = Path(self.directory) if self.directory else (
             self.ctx.backend._glass_dir() if hasattr(self.ctx.backend, "_glass_dir") else glasscat.DEFAULT_GLASSCAT_DIR)
-        # rtc 实例（ADR-0017）：目录加进 GCAT，全部牌号在 rtc 材料层算 / the rtc instance adds catalogs to GCAT and computes every glass on rtc
+        # rtc 实例：目录加进 GCAT，全部牌号在 rtc 材料层算 / the rtc instance adds catalogs to GCAT and computes every glass on rtc
         rtc_instance = getattr(self.ctx.backend, "standalone", False)
         # 目录设置随镜头事务保存；不永久安装或改写厂家目录。
         if rtc_instance:
@@ -223,7 +223,7 @@ class GlassExpert:
                 seen.add(g.name.upper())
                 source.append(g)
         database, rejected = [], []
-        # 已准入的色散路径在 rtc 材料层直接算（与 INDX 差 ≤ 1e-8，ADR-0015），不动镜头
+        # 已准入的色散路径在 rtc 材料层直接算（与 INDX 差 ≤ 1e-8），不动镜头
         from saos.backend.rtc import catalog_indices
 
         if rtc_instance:

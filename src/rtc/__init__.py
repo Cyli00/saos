@@ -11,7 +11,7 @@
 - :mod:`rtc.optimize`：最小二乘设计（残差和雅可比），带约束的生产优化器在 :mod:`saos.backend.rtc_optim`
 - :mod:`rtc.cli`：``uv run python -m rtc.cli sag|trace|psf`` 命令行
 
-实测事实与未定项见 ``docs/plans/rtc/SURFACE-PARAMS.md``。
+实测事实与未定项见 ``src/rtc/SURFACE-PARAMS.md``。
 """
 
 __version__ = "0.2.0"

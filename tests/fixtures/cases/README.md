@@ -12,7 +12,7 @@ saos 自身测试里的光学场景只用这五个案例，覆盖序列、非序
 
 每个案例有两份文件：`<案例>.json` 是 `saos lens build` 的处方，`<案例>.zmx` 是 saos 用它在 OpticStudio 24.1.0 里建出并保存的镜头。前三个案例的实测参考值在 `reference.json`。
 
-`iris`、`reflective` 有一批变体，定义在 `tests/case_variants.py`，服务 [rtc-iris-mirror.md](../../../docs/plans/rtc-iris-mirror.md) 第 2.3 节列的各项验证。变体的 `.zmx` 文本和所有读数在 `truth.json`（一个变体一行），由 `tests/test_zemax_cases.py` 录入（`SAOS_RUN_ZEMAX=1 SAOS_CASE_RECORD=1`）。改了处方或变体就要重录。
+`iris`、`reflective` 有一批变体，定义在 `tests/case_variants.py`，各自要验证的项写在变体的 `serves` 里。变体的 `.zmx` 文本和所有读数在 `truth.json`（一个变体一行），由 `tests/test_zemax_cases.py` 录入（`SAOS_RUN_ZEMAX=1 SAOS_CASE_RECORD=1`）。改了处方或变体就要重录。
 
 用法：
 

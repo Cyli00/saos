@@ -297,9 +297,9 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
     measured_by = evaluation.get("environment") or {}
     record = {
         "round": number,
-        # stage 只标明不是旧的双后端任务；算这一轮的后端记在 backend（rtc 轮次交付前要在 OpticStudio 上复测，ADR-0017）
+        # stage 只标明不是旧的双后端任务；算这一轮的后端记在 backend（rtc 轮次交付前要在 OpticStudio 上复测）
         # stage only marks a job that is not a legacy hybrid one; backend says who computed the round (rtc rounds are
-        # re-measured on OpticStudio before delivery, ADR-0017)
+        # re-measured on OpticStudio before delivery)
         "stage": "zos",
         "backend": measured_by.get("backend", "zos"),
         **({"provenance": measured_by["provenance"]} if measured_by.get("provenance") else {}),
@@ -365,7 +365,7 @@ CONFIRM_PURPOSE = "confirm"
 
 
 def confirm_round(ctx, of: int | None = None, viz: bool = True) -> dict[str, Any]:
-    """在 OpticStudio 上复测一个 rtc 轮次的归档镜头（ADR-0017），记一条 tier 为 confirm 的记录；读 ledger 时它的数值换进那一轮。
+    """在 OpticStudio 上复测一个 rtc 轮次的归档镜头，记一条 tier 为 confirm 的记录；读 ledger 时它的数值换进那一轮。
     不给 of 时复测报告要交付的那一轮。判定结论（达成、硬条件、可交付）与 rtc 不同时 agrees 为 False，回到设计阶段。
     换镜头前的未保存修改与复测后重载原镜头由 daemon.op_confirm 负责（同 lens load）。
     Re-measure the archived lens of an rtc round on OpticStudio and record a confirmation; reading the ledger puts its

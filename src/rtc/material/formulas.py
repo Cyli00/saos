@@ -1,6 +1,6 @@
 """AGF 公式编号 1–13 的色散式（手册 §8.1.2.6 的写法），统一使用 float64。
 
-极点与零值的回退行为由 ZOS-API 实测结果反推，见 docs/plans/rtc/MATERIAL.md。
+极点与零值的回退行为由 ZOS-API 实测结果反推。
 """
 
 from functools import partial

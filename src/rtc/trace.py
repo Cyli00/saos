@@ -164,7 +164,7 @@ def aim(system: OpticalSystem, x0, y0, z0, d, px, py):
     """实际光线瞄准（RAIM = 2）：让光线打在光阑面的 ``aim_target`` 上，返回新的 (x0, y0, z0, d)。
 
     方向模式沿光瞳坐标延拓，不会跳到圆柱面的反射分支（piB 光阑落在面 9 的圆柱面上，多值根，见
-    docs/plans/rtc/SURFACE-PARAMS.md「其它实测事实」）。与 OpticStudio 一致，不收敛时退回近轴发射方向并给警告（手册 §2.1.1.7）。
+    src/rtc/SURFACE-PARAMS.md「其它实测事实」）。与 OpticStudio 一致，不收敛时退回近轴发射方向并给警告（手册 §2.1.1.7）。
     """
     packed = system.packed()
     tx, ty = system.aim_target(px, py)

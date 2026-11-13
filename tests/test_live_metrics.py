@@ -1,5 +1,5 @@
-"""后台进程在回复之后自动刷新当前镜头视图和指标（ADR-0019）的离线回归。
-Offline regressions for the live view and metrics the daemon refreshes after replying (ADR-0019)."""
+"""后台进程在回复之后自动刷新当前镜头视图和指标的离线回归。
+Offline regressions for the live view and metrics the daemon refreshes after replying."""
 
 from __future__ import annotations
 

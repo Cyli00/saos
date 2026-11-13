@@ -155,7 +155,7 @@ LDE 半径列 = Y–Z 截面曲线的曲率半径，圆锥列 = 该曲线的圆�
 - 以上全部需要 oracle（`SSAG` / `INDX` / `RAGA` 等）实测后才允许标为已验证
 
 已经实现、但尚无 oracle 数值证据（可以算，不能当交付依据）：
-Fresnel（Binary 2 的相位项已有小样本实测，见 `docs/plans/rtc-unify.md`，生产仍拒绝）、模型玻璃（21 组表内）、MCE pickup、圆形以外的孔径与渐晕码、
+Fresnel（Binary 2 的相位项已有小样本实测，生产仍拒绝）、模型玻璃（21 组表内）、MCE pickup、圆形以外的孔径与渐晕码、
 Huygens PSF / STRH、DLS 的 AD 雅可比。
 
 ## 其它实测事实

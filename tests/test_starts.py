@@ -183,7 +183,7 @@ def test_generate_passes_normalized_prescriptions_without_a_shim(saos_home, tmp_
 
 
 def test_generate_builds_on_rtc_and_sends_only_what_rtc_refuses_to_opticstudio(saos_home, tmp_path, monkeypatch):
-    # 生成起点原先总是另开一个 OpticStudio（make_backend("zos")），建模归 rtc 后不该占许可（ADR-0020）
+    # 生成起点原先总是另开一个 OpticStudio（make_backend("zos")），建模归 rtc 后不该占许可
     import shutil
     import yaml
     from saos import backend as backends, jobs, starts, demand

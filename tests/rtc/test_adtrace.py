@@ -1,7 +1,7 @@
 """AD 雅可比与中心差分互相核对：trace_ad 对曲率、零值面形系数、厚度的切向，应与 Design.system_with 改参数后普通追迹的
 中心差分一致，值部分应与普通追迹逐位相同。只能抓实现错误，不替代 oracle 回归。
 
-saos 的 AsphereExpert(engine="rtc") 用它给非球面排名（saos ADR-0015），一次追迹一批光线、在零系数处求导。
+saos 的 AsphereExpert(engine="rtc") 用它给非球面排名，一次追迹一批光线、在零系数处求导。
 """
 
 from __future__ import annotations

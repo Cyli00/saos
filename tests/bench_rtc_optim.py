@@ -1,6 +1,6 @@
 """rtc DLS 一步的耗时拆分：求值（改参数与重算求解/自动半口径、评价函数）、其中内核追迹的份额、雅可比、一次迭代。
 
-给加速方案（docs/plans/rtc-design-stage.md）定基线，不是测试，不进 pytest：
+给局部优化的加速定基线（待办见 TODO.md），不是测试，不进 pytest：
     uv run python tests/bench_rtc_optim.py --case iris_no_apertures --asphere 6 --rings 4 --arms 8
     RTC_THREADS=1 uv run python tests/bench_rtc_optim.py ...   # 单线程内核，对比进程池的单核效率
     uv run python tests/bench_rtc_optim.py --hammer 20 --workers 1 4 8   # Hammer 进程池的系统吞吐

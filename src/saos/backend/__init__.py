@@ -7,7 +7,7 @@ from saos.protocol import ErrorCode, SaosError
 def make_backend(backend: str | None = None) -> Backend:
     backend = config.backend_name() if backend is None else backend
     if backend == "auto":
-        # auto 只对后台进程有意义（rtc 加按需启动的 OpticStudio，ADR-0018）；单独建一个后端时取 OpticStudio
+        # auto 只对后台进程有意义（rtc 加按需启动的 OpticStudio）；单独建一个后端时取 OpticStudio
         # auto means both backends for the daemon only; a backend made on its own is OpticStudio
         backend = "zos"
     if backend == "fake":

@@ -218,7 +218,7 @@ class AsphereExpert:
         return self._rank_rtc(session) if self.engine == "rtc" else self._rank_opticstudio(session)
 
     def _rank_rtc(self, session):
-        """在 rtc 副本上排名（ADR-0015）：残差是各视场、各波长光瞳光线相对主波长主光线的横向像差，
+        """在 rtc 副本上排名：残差是各视场、各波长光瞳光线相对主波长主光线的横向像差，
         按视场与波长权重加权；最后一面厚度作对焦补偿从残差和雅可比里投影掉。雅可比由一次 AD 追迹得到，不做差分。
         数值只用于排名；run() 是否接受仍看 OpticStudio 上按镜头 MFE 优化后的实测。"""
         from rtc.adtrace import Variable, trace_ad
@@ -230,7 +230,7 @@ class AsphereExpert:
         base = session.save()
         try:
             # 候选面先在 OpticStudio 上转成零系数的非球面（光学上不变），整份交给 rtc；副本建立时已与 OpticStudio 对照追迹。
-            # rtc 实例（ADR-0017）直接用它自己的镜头 / the rtc instance uses its own lens directly
+            # rtc 实例直接用它自己的镜头 / the rtc instance uses its own lens directly
             for surface in candidates:
                 self._convert(surface)
             if getattr(self.ctx.backend, "standalone", False):

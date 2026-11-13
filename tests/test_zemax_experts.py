@@ -1,6 +1,6 @@
 """SAOS_RUN_ZEMAX=1 时在真实 OpticStudio 上验证 ctx.AsphereExpert / ctx.GlassExpert，只用 tests/fixtures/cases 的三个案例：
 三个案例按处方重建后与 reference.json 一致；序列案例上测非球面排名与完整恢复（评价函数含边界操作数）、玻璃候选与两种部分色散、
-把专利起点那样的模型玻璃换成在产牌号；rtc 算的玻璃坐标与 INDX 一致、engine="rtc" 的排名跑通并恢复镜头（ADR-0015）；
+把专利起点那样的模型玻璃换成在产牌号；rtc 算的玻璃坐标与 INDX 一致、engine="rtc" 的排名跑通并恢复镜头；
 非序列与混合模式案例测两类 Expert 都拒绝。"""
 
 from __future__ import annotations
@@ -158,7 +158,7 @@ def test_rtc_catalog_indices_match_opticstudio_indx(session):
     for name in names:
         ctx.set({"1.material": name})
         measured = [abs(float(ctx.op("INDX", 1, i))) for i in range(1, len(waves)+1)]
-        # 准入路径的约定：与 INDX 差 ≤ 1e-8（ADR-0014、ADR-0015）
+        # 准入路径的约定：与 INDX 差 ≤ 1e-8
         assert np.allclose(computed[name], measured, rtol=0, atol=1e-8), (name, computed[name], measured)
 
     ctx = build(session, "sequential")

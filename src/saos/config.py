@@ -10,7 +10,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 DEFAULT_OPTICSTUDIO_DIR = r"C:\Program Files\Ansys Zemax OpticStudio 2024 R1.00"
-# DESIGN.md 锁定 OpticStudio 2024 R1.00
+# 锁定 OpticStudio 2024 R1.00
 EXPECTED_ZOS_VERSION = (24, 1, 0)
 # 许可证同时允许的 OpticStudio 实例数，用户手动打开的窗口也计在内（2026-10-15 实测）
 LICENSED_INSTANCES = 8

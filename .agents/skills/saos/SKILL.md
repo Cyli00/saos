@@ -23,7 +23,7 @@ Run commands from the repository root as `uv run saos ...`. Every command prints
 - `uv run saos <command> --help`: arguments, input formats, result fields, error codes. `exec`, `scan` and `lens build` list topics, read with `--help <topic>`.
 - `uv run saos api [module | ctx]`: the Python helpers scripts import.
 
-Terms: the table 核心术语对照 in `DESIGN.md`.
+Terms: [terms.md](references/terms.md), read when you are unsure what a saos term covers or how to name it in the user's language.
 
 ## Start a session
 

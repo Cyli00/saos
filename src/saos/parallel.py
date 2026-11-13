@@ -1,5 +1,5 @@
-"""并发评估：几个 standalone OpticStudio 实例同时调用 ZOS-API（ADR-0013）。
-Concurrent evaluation: several standalone OpticStudio instances call ZOS-API at the same time (ADR-0013).
+"""并发评估：几个 standalone OpticStudio 实例同时调用 ZOS-API。
+Concurrent evaluation: several standalone OpticStudio instances call ZOS-API at the same time.
 
 在 saos exec 脚本里 / in a saos exec script:
 
@@ -459,7 +459,7 @@ def dispatch(pool: Pool, job: jobs.Job, lens: Path | None, fn: str, script: Path
     main instance, so a detached scan can run it in a thread."""
     started = time.perf_counter()
     progress(f"parallel: starting {count} workers")
-    # worker 的后端跟着后台进程当前的后端走，由 daemon 切换时设定（ADR-0018）/ workers follow the daemon's active backend
+    # worker 的后端跟着后台进程当前的后端走，由 daemon 切换时设定/ workers follow the daemon's active backend
     jobs.require_zos_history(job.root)
     startup = pool.ensure(count)
     active = [w for w in pool.workers if w.alive][:count]

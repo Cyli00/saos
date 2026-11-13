@@ -164,7 +164,7 @@ def window_open(job_id: str) -> bool:
 
 
 def require_window_closed(job_id: str, what: str) -> None:
-    """确认关卡的降级入口（--quote）只在窗口用不了时可用：窗口开着就请用户在窗口里点确认（ADR-0020）。
+    """确认关卡的降级入口（--quote）只在窗口用不了时可用：窗口开着就请用户在窗口里点确认。
     The --quote fallback of a gate works only when the window cannot be used; with it open the user confirms there."""
     if window_open(job_id):
         raise SaosError(ErrorCode.BAD_ARGS, f"the workflow window is open: ask the user to press the {what} button there (a note is optional); "

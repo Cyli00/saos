@@ -25,7 +25,7 @@ Petzval、远摄的原始英寸尺寸按 25.4 转成 mm。远摄网页画廊与 
 
 ## 格式与用法
 
-沿用显微物镜库的 `entries/<id>/entry.json` 元数据与 `prescription.json` 处方布局。`metrics` 保存来源给出的标称量，`applicability` 保存选库范围，`source` 保存书目页码或专利号、URL 和转录说明，`notes` 保留假设。生成时先保留原处方几何并设置需求的波长、视场和 f/#（物在无穷远时用入瞳直径 = EFL/F#，与 image_f_number 同义），先在 rtc 上测参考 EFL，再缩放至需求焦距；rtc 建不了的条目逐条改在 OpticStudio 上做，候选的 `provenance.computed_by` 记下是哪一边（ADR-0020）；生成记录保存实测参考焦距、比例及条目/处方摘要。
+沿用显微物镜库的 `entries/<id>/entry.json` 元数据与 `prescription.json` 处方布局。`metrics` 保存来源给出的标称量，`applicability` 保存选库范围，`source` 保存书目页码或专利号、URL 和转录说明，`notes` 保留假设。生成时先保留原处方几何并设置需求的波长、视场和 f/#（物在无穷远时用入瞳直径 = EFL/F#，与 image_f_number 同义），先在 rtc 上测参考 EFL，再缩放至需求焦距；rtc 建不了的条目逐条改在 OpticStudio 上做，候选的 `provenance.computed_by` 记下是哪一边；生成记录保存实测参考焦距、比例及条目/处方摘要。
 
 从脚本调用库函数，不增加独立 CLI：
 
