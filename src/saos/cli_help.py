@@ -187,7 +187,8 @@ COMMANDS = {
         "  autonomous (the user, asking for the job, authorised the agent to pass the\n"
         "  gates): the agent passes them with --reason and may stop without --quote;\n"
         "  reports mark these decisions as not confirmed by the user. Only the user can\n"
-        "  later make an autonomous job interactive (in the window); never the reverse.\n"
+        "  later make an autonomous job interactive (window, or job make-interactive with\n"
+        "  their words); never the reverse.\n"
         "  --mode analyse (a question about existing lenses: an operand, a curve, two\n"
         "  lenses compared): workflow.current is analyse from the start, with no demand,\n"
         "  gates, rounds or report; it computes on rtc like the stages before delivery,\n"
@@ -225,6 +226,13 @@ COMMANDS = {
         "Works while the daemon is busy. Optimizers stop at their next check;\n"
         "  scan/map workers finish their current points; scripts must check progress()\n"
         "  or cancel_requested(). Completed results remain archived.", "JOB_NOT_FOUND"),
+    "job make-interactive": (
+        "Hand an autonomous job's gates back to the user, with their words; locally.",
+        "--quote is one user message verbatim (via: cli), with --asked their answer in\n"
+        "  your ask-user tool (via: ask); the window's button does the same (via: window).\n"
+        "  Returns mode and changed; job.json gets mode_changed_via and the quote goes\n"
+        "  into sources/interview.md. An interactive job returns changed: false and\n"
+        "  writes nothing. Never makes a job autonomous; an analysis job has no gates.", "BAD_ARGS, JOB_NOT_FOUND"),
     "lens import": (
         "Copy an external .zmx into the job's lenses/ without changing its source.",
         "SRC is an external path; --as chooses the destination name, default source\n"

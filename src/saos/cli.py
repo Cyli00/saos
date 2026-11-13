@@ -96,6 +96,8 @@ def cmd_job(args: argparse.Namespace) -> Any:
         }
     if args.action == "cancel":
         return jobs.get_job(args.job).request_cancel()
+    if args.action == "make-interactive":
+        return jobs.make_interactive(jobs.get_job(args.job), args.quote, via="ask" if args.asked else "cli")
     if args.action == "verify":
         job = jobs.get_job(args.job)
         problems = job.verify_seals()
@@ -406,6 +408,10 @@ def build_parser() -> argparse.ArgumentParser:
     verify.add_argument("job")
     cancel = jsub.add_parser("cancel")
     cancel.add_argument("job")
+    handback = jsub.add_parser("make-interactive")
+    handback.add_argument("job")
+    handback.add_argument("--quote", default=None, help="the user's own words asking to pass the gates themselves, verbatim; counts the same as the window's button")
+    handback.add_argument("--asked", action="store_true", help="the quote is the user's answer in your ask-user tool: the question, the options shown and the one chosen")
     job.set_defaults(func=cmd_job)
 
     lens = sub.add_parser("lens")

@@ -70,3 +70,47 @@ def test_list_jobs(saos_home):
     a = jobs.create_job("a")
     ids = [j["id"] for j in jobs.list_jobs()]
     assert ids == [a.id]
+
+
+def _cli(capsys, *argv):
+    from saos import cli
+
+    code = cli.main(list(argv))
+    return code, json.loads(capsys.readouterr().out)
+
+
+def test_the_user_hands_an_autonomous_job_back_in_their_own_words(saos_home, capsys):
+    job = jobs.create_job("exercise", "autonomous")
+    code, out = _cli(capsys, "job", "make-interactive", job.id)
+    assert code == 1 and out["error"]["code"] == ErrorCode.BAD_ARGS and "user's own words" in out["error"]["message"]
+    assert jobs.get_job(job.id).mode == "autonomous"
+
+    code, out = _cli(capsys, "job", "make-interactive", job.id, "--quote", "后面的关卡我自己来过")
+    assert code == 0 and out["result"] == {"mode": "interactive", "changed": True}
+    state = jobs.get_job(job.id).read_state()
+    assert state["mode"] == "interactive" and state["mode_changed_via"] == "cli"
+    interview = (job.root / "sources" / "interview.md").read_text(encoding="utf-8")
+    assert interview.count("后面的关卡我自己来过") == 1 and "在对话里" in interview
+    log = [json.loads(line) for line in job.log_file.read_text(encoding="utf-8").splitlines()]
+    assert log[-1]["args"] == {"mode": "interactive", "via": "cli"}
+
+    # 再调一次：不变，不重复写 / again: unchanged, nothing written twice
+    code, out = _cli(capsys, "job", "make-interactive", job.id, "--quote", "后面的关卡我自己来过", "--asked")
+    assert code == 0 and out["result"] == {"mode": "interactive", "changed": False}
+    assert (job.root / "sources" / "interview.md").read_text(encoding="utf-8") == interview
+    assert jobs.get_job(job.id).read_state()["mode_changed_via"] == "cli"
+
+
+def test_the_ask_channel_is_recorded_and_analysis_jobs_have_no_gates_to_hand_back(saos_home, capsys):
+    job = jobs.create_job("exercise", "autonomous")
+    code, out = _cli(capsys, "job", "make-interactive", job.id, "--quote", "问：要自己过关吗？选项：是/否。选：是", "--asked")
+    assert code == 0 and jobs.get_job(job.id).read_state()["mode_changed_via"] == "ask"
+    analysis = jobs.create_job("question", "analyse")
+    code, out = _cli(capsys, "job", "make-interactive", analysis.id, "--quote", "我自己来")
+    assert code == 1 and out["error"]["code"] == ErrorCode.BAD_ARGS
+    assert jobs.get_job(analysis.id).mode == "analyse"
+    # 窗口按钮不带原话也行，渠道记为 window / the window's button needs no quote and is recorded as window
+    other = jobs.create_job("drill", "autonomous")
+    assert jobs.make_interactive(other)["changed"] is True
+    assert jobs.get_job(other.id).read_state()["mode_changed_via"] == "window"
+    assert "窗口按钮" in (other.root / "sources" / "interview.md").read_text(encoding="utf-8")

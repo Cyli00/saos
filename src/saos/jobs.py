@@ -298,16 +298,35 @@ def require_autonomous(root: Path, what: str) -> None:
                         "(the workflow window's button, their words in the conversation with --quote, or their answer to your ask-user tool with --quote --asked)")
 
 
-def make_interactive(job: Job) -> dict[str, Any]:
-    """自主任务改为参与：只能由用户在窗口里做，反过来不行，agent 不能为了过关卡把任务切成自主。
-    Turn an autonomous job interactive: only the user does it, in the window; never the other way round."""
-    if job.mode == "interactive":
-        return {"mode": "interactive", "changed": False}
+MODE_VIA = ("window", "cli", "ask")
+
+
+def make_interactive(job: Job, quote: str = "", via: str = "window") -> dict[str, Any]:
+    """自主任务改为参与，只由用户决定，三个渠道地位相同：via="window" 是窗口按钮（quote 可空），"cli" 是用户在对话里
+    单条消息的原文，"ask" 是用户在询问工具里的回答。渠道记进 job.json 和日志，原话追加到 sources/interview.md。
+    反过来不行，agent 不能为了过关卡把任务切成自主。已经是参与任务时返回 changed=False，什么也不写。
+    Turn an autonomous job interactive; only the user decides, through any of three equal channels: via="window" (the
+    window's button, quote optional), "cli" (one user message verbatim) or "ask" (their answer in the ask-user tool).
+    The channel goes into job.json and the log, the quote into sources/interview.md. Never the other way round; an
+    interactive job returns changed=False and nothing is written."""
+    if via not in MODE_VIA:
+        raise SaosError(ErrorCode.BAD_ARGS, f"via must be one of {MODE_VIA}")
+    quote = str(quote or "").strip()
     if job.mode == "analyse":
         # 分析任务没有关卡可交给用户；要设计就另建任务 / an analysis job has no gates; a design gets its own job
         raise SaosError(ErrorCode.BAD_ARGS, "an analysis job has no gates to hand to the user; create an interactive job for a design")
-    job.update_state(mode="interactive", mode_changed_at=now_iso())
-    job.append_log({"op": "job.mode", "ok": True, "args": {"mode": "interactive"}})
+    if via in ("cli", "ask") and not quote:
+        raise SaosError(ErrorCode.BAD_ARGS, "--quote must hold the user's own words asking to take the gates back")
+    if job.mode == "interactive":
+        return {"mode": "interactive", "changed": False}
+    time = now_iso()
+    job.update_state(mode="interactive", mode_changed_at=time, mode_changed_via=via)
+    job.append_log({"op": "job.mode", "ok": True, "args": {"mode": "interactive", "via": via}})
+    channel = {"window": "在窗口里", "cli": "在对话里", "ask": "在询问工具里"}[via]
+    interview = job.root / "sources" / "interview.md"
+    interview.parent.mkdir(parents=True, exist_ok=True)
+    with interview.open("a", encoding="utf-8") as fh:
+        fh.write(f"\n## {time} 用户{channel}把任务改为参与（interactive）\n\n{quote[:4000] or '（窗口按钮，无原话）'}\n")
     return {"mode": "interactive", "changed": True}
 
 
