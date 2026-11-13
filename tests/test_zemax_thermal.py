@@ -180,7 +180,7 @@ def test_handover_agrees_in_every_configuration(zos, tmp_path, name):
 @pytest.mark.parametrize("name", ["seq_3", "iris_6"])
 def test_multi_configuration_merit_matches_opticstudio_row_by_row(zos, tmp_path, name):
     """rtc 写盘的多结构评价函数：OpticStudio 读进来行序相同，已对账的操作数逐行同值。
-    向导的 TRAC 行只比行序：rtc 的 TRAC 没和 OpticStudio 对账过，结构 1 的第 14 行就差 3.7e-5 mm（seq_3）、1.2e-3 mm（iris_6）。"""
+    向导的 TRAC 行只比行序：iris_6 上被孔径挡住的光线 rtc 不给值，与 OpticStudio 不同（TODO.md）；seq_3 已逐行一致。"""
     source = tmp_path / "source.zmx"
     source.write_bytes(rtc_lens.BOM + truth(name)["zmx"].encode("utf-16-le"))
     rtc = RtcBackend(None, standalone=True)

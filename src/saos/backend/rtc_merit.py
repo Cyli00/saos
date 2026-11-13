@@ -47,6 +47,10 @@ BINARY = {"SUMM": operator.add, "DIFF": operator.sub, "PROD": operator.mul, "DIV
 # 相对主光线（逐条有定义）与相对质心（按同组行求质心）的像差行 / aberrations about the chief ray and about the group centroid
 CHIEF_ABERRATIONS = frozenset({"TRAR", "TRAX", "TRAY", "OPDC"})
 GROUP_ABERRATIONS = frozenset({"TRAC", "TRCX", "TRCY", "OPDX", "OPDM"})
+# 质心参考的光斑行：OpticStudio 对同一视场的各波长用同一个复色质心（2026-11-14 真机，sequential 上 Spot Radius/X/Y
+# 三种向导：按波长各求质心差到 3.7e-4 mm，改为全部波长的行按行权重求一个质心后差 1e-14 mm）
+# spot rows about the centroid: OpticStudio uses one polychromatic centroid for all wavelengths of a field (2026-11-14)
+SPOT_GROUPS = frozenset({"TRAC", "TRCX", "TRCY"})
 ABERRATIONS = CHIEF_ABERRATIONS | GROUP_ABERRATIONS
 WAVEFRONT = frozenset({"OPDC", "OPDX", "OPDM"})
 # 向导：(数据类型, 参考) → 操作数。波前一行照 OpticStudio 24.1 向导实际写出的操作数（2026-11-10 真机逐项枚举）：
@@ -362,7 +366,7 @@ class Evaluator:
             dx, dy = entry["x"][i] - entry["cx"], entry["y"][i] - entry["cy"]
             return float({"TRAR": math.hypot(dx, dy), "TRAX": dx, "TRAY": dy}[r.type])
         group = groups[k]
-        ref = _group_reference(rows, group, entry, r.type)
+        ref = _group_reference(rows, group, entry, r.type, lambda m: traces[self._key(rows[m])])
         if r.type in ("TRAC", "TRCX", "TRCY"):
             dx, dy = entry["x"][i] - ref[0], entry["y"][i] - ref[1]
             return float({"TRAC": math.hypot(dx, dy), "TRCX": dx, "TRCY": dy}[r.type])
@@ -442,7 +446,8 @@ class Evaluator:
 
 
 def _groups(rows, lo, hi) -> dict[int, list[int]]:
-    """相对质心的行按连续出现、同一操作数、同一波长、同一视场分组。/ Centroid rows grouped by run, operand, wavelength, field."""
+    """相对质心的行按连续出现、同一操作数、同一视场分组；OPDX/OPDM 另按波长分，TRAC/TRCX/TRCY 的组跨波长（复色质心）。
+    Centroid rows grouped by run, operand and field; OPDX/OPDM also by wavelength, while spot groups span wavelengths."""
     out: dict[int, list[int]] = {}
     current: list[int] = []
     for k in range(lo, hi):
@@ -452,14 +457,14 @@ def _groups(rows, lo, hi) -> dict[int, list[int]]:
             continue
         if current:
             p = rows[current[0]]
-            if p.type != r.type or p.int2 != r.int2 or (p.data[0], p.data[1]) != (r.data[0], r.data[1]):
+            if p.type != r.type or (p.int2 != r.int2 and r.type not in SPOT_GROUPS) or (p.data[0], p.data[1]) != (r.data[0], r.data[1]):
                 current = []
         current.append(k)
         out[k] = current
     return out
 
 
-def _group_reference(rows, group: list[int], entry, kind: str):
+def _group_reference(rows, group: list[int], entry, kind: str, entry_of=None):
     """组内按行权重求的参考：TRAC/TRCX/TRCY 为质心 (x, y)；OPDX 为 piston 与倾斜 (a, bx, by)，OPDM 为均值 (a, 0, 0)。
     权重全为 0 时等权。
 
@@ -470,23 +475,30 @@ def _group_reference(rows, group: list[int], entry, kind: str):
     The weighted group reference: the centroid for spots, piston and tilt for OPDX, the mean for OPDM. A group whose rows
     cover half the pupil (px of one sign) at a field in the y-z plane is completed by mirror symmetry: the centroid's x
     and the wavefront's x tilt are zero, as OpticStudio has them."""
-    cache = entry.setdefault("refs", {})
+    # 跨波长的光斑组缓存在组首行的追迹上，整组只求一次 / a spot group spanning wavelengths is cached on its first row's trace
+    spans = kind in SPOT_GROUPS and entry_of is not None
+    cache = (entry_of(group[0]) if spans else entry).setdefault("refs", {})
     key = (kind, group[0])
     if key in cache:
         return cache[key]
-    idx = [entry["index"][(float(rows[k].data[2]), float(rows[k].data[3]))] for k in group]
     w = np.array([max(rows[k].weight, 0.0) for k in group], dtype=float)
     if not w.any():
         w = np.ones(len(group))
     px = np.array([rows[k].data[2] for k in group])
     py = np.array([rows[k].data[3] for k in group])
     mirrored = float(rows[group[0]].data[0]) == 0.0 and bool(px.any()) and bool((px >= 0).all() or (px <= 0).all())
-    if kind in ("TRAC", "TRCX", "TRCY"):
-        ok = entry["ok"][idx]
+    if kind in SPOT_GROUPS:
+        # 组跨波长：每行取它自己那个波长的追迹 / the group spans wavelengths: each row reads its own wavelength's trace
+        entries = [entry_of(k) if entry_of is not None else entry for k in group]
+        pick = [(e, e["index"][(float(rows[k].data[2]), float(rows[k].data[3]))]) for e, k in zip(entries, group)]
+        ok = np.array([bool(e["ok"][i]) for e, i in pick])
         if not ok.any():
             raise ValueError("no ray of this group reaches the image")
-        ref = (0.0 if mirrored else float(np.average(entry["x"][idx][ok], weights=w[ok])), float(np.average(entry["y"][idx][ok], weights=w[ok])))
+        x = np.array([float(e["x"][i]) for e, i in pick])
+        y = np.array([float(e["y"][i]) for e, i in pick])
+        ref = (0.0 if mirrored else float(np.average(x[ok], weights=w[ok])), float(np.average(y[ok], weights=w[ok])))
     else:
+        idx = [entry["index"][(float(rows[k].data[2]), float(rows[k].data[3]))] for k in group]
         ok = entry["opd_ok"][idx]
         if not ok.any():
             raise ValueError(entry.get("opd_error") or "no ray of this group reaches the image")

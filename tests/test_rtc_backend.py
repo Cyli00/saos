@@ -204,3 +204,15 @@ def test_huygens_waits_for_reconciliation_on_rtc_while_wavefront_and_apertures_r
     with pytest.raises(SaosError) as err:
         kit.aperture(fast, 9)
     assert err.value.code == ErrorCode.BAD_ARGS
+
+
+@pytest.mark.parametrize("data", ["SpotRadius", "SpotX", "SpotY"])
+def test_spot_rows_about_the_centroid_share_one_polychromatic_centroid_per_field(data):
+    # OpticStudio 向导写的 TRAC/TRCX/TRCY 行原样读入，逐行对 2026-11-14 真机读数：同一视场各波长共用一个复色质心。
+    # 按波长各求质心时差到 3.7e-4 mm
+    # the wizard's spot rows, read as OpticStudio saved them, against its row values: one centroid for all wavelengths
+    recorded = json.loads((FIXTURES / "sequential-wizard-centroid.json").read_text(encoding="utf-8"))[data]
+    rows = {r["row"]: r["value"] for r in RtcBackend(FIXTURES / f"sequential-wizard-{data}-centroid.zmx", standalone=True).merit_rows()}
+    assert len(recorded) >= 54
+    for row, value in recorded.items():
+        assert rows[int(row)] == pytest.approx(value, abs=1e-12), row
