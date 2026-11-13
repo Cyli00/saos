@@ -596,7 +596,9 @@ class Daemon:
         from saos.backend.rtc import RtcBackend
 
         try:
-            # Build it on a scratch instance: refusals such as an aspheric mirror or a material only show once the system
+            # 在一份临时实例上建一遍：非球面反射镜、材料这类拒绝要建出系统才查得到，只转处方会漏过去，
+            # 镜头就会在 rtc 上建到一半报错，而不是留在 OpticStudio 上建
+            # build it on a scratch instance: refusals such as an aspheric mirror or a material only show once the system
             # is built; converting the prescription alone lets them through, and the build then fails on rtc half way
             glasses = getattr(self.rtc, "glasses", None)
             RtcBackend(None, glass_dir=glasses.folder if glasses is not None else None, standalone=True).build(

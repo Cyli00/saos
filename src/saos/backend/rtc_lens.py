@@ -79,7 +79,7 @@ def from_prescription(p: dict[str, Any], *, experimental: bool = False):
     if field is None:
         problems.append(f"fields.type {p['fields']['type']} (rtc has angle and object_height)")
     for key in ("afocal", "apodization", "polarization", "coating_file", "ray_aiming_options"):
-        # Present at all counts: afocal: true normalises to {}, which a truthiness test lets through
+        # 写了就算：afocal: true 归一化成 {}，按真值判断会漏过去 / given at all counts: afocal: true normalises to {}
         if p.get(key) is not None:
             problems.append(f"{key} (not reproduced or written by rtc)")
     if p.get("telecentric_object"):
@@ -362,15 +362,18 @@ def carried_lines(text: str) -> dict[str, list[str]]:
     return {"header": header, "tail": tail}
 
 
-# The coating file an OpticStudio default save names; another name means coatings rtc does not apply
+# OpticStudio 缺省存盘写的膜层文件；换了名字就是 rtc 不应用的膜层 / the coating file a default save names
 DEFAULT_COATING_FILE = "COATING.DAT"
-# Header lines the .zmx reader does not list but OpticStudio writes in every save (EERA in 738 of the repo's 836 .zmx
-# files, NOTE for the notes text); neither changes a computed number
+# 读取器不认、但 OpticStudio 每次存盘都写的文件头行（EERA 见于仓库 836 份 .zmx 中的 738 份，NOTE 是备注），不影响任何计算
+# header lines the reader does not list but OpticStudio writes in every save; neither changes a computed number
 SAVED_INERT_HEADER = frozenset({"EERA", "NOTE"})
 
 
 def unread_settings(carried: dict[str, list[str]] | None) -> list[str]:
-    """Settings this lens sets away from OpticStudio's defaults that rtc carries over and never applies.
+    """这份镜头偏离 OpticStudio 缺省、rtc 原样带回却从不应用的设置。POLS 不是非偏振（缺省存盘第一个数为 1）报
+    polarization；COFN 行写的不是 COATING.DAT 报 coating_file；其余读取器和 SAVED_INERT_HEADER 都不认识的文件头行报
+    "header line KEY"：rtc 分不出它是哪项设置（非均匀切趾应落在这里，但还没有带切趾的 OpticStudio 存盘样本核对过）。
+    Settings this lens sets away from OpticStudio's defaults that rtc carries over and never applies.
 
     polarization when POLS is not unpolarized (first number 1 in a default save), coating_file when a COFN line names a
     file other than COATING.DAT. Any other carried header line whose keyword neither the .zmx reader nor

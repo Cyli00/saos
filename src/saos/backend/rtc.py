@@ -635,7 +635,8 @@ class RtcBackend(Backend):
         self._view = None
 
     def carried_unread(self) -> list[str]:
-        """Settings of the loaded .zmx that rtc carries over unread and that differ from OpticStudio's defaults
+        """读入的 .zmx 里偏离 OpticStudio 缺省、rtc 原样带回不应用的设置（rtc_lens.unread_settings）；处方建的镜头一项都不写，为空。
+        Settings of the loaded .zmx that rtc carries over unread and that differ from OpticStudio's defaults
         (rtc_lens.unread_settings); empty for a lens built from a prescription, which writes none of them."""
         from saos.backend import rtc_lens
 

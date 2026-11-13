@@ -1,4 +1,10 @@
-"""saos backends: what rtc computes and which backend a lens or prescription lands on. No status here is written by hand:
+"""saos backends：rtc 能算什么，一份镜头或处方会落在哪个后端。
+
+表里的状态不手写。镜头能带的东西（面型、孔径、视场、求解……）用最小探针镜头去问 rtc 后端本身：建不出来是 refused，
+建出来但 unverified() 列了它是 unreconciled，否则是 reconciled；操作数和测量按 provenance() 的同一条规则分。
+所以这张表和 lens build、lens load、computed_by 给出的结论不会分叉。
+
+saos backends: what rtc computes and which backend a lens or prescription lands on. No status here is written by hand:
 what a lens may hold is asked of the rtc backend itself with minimal probe lenses, and operands and measurements follow
 the rule provenance() uses, so the table cannot drift from what lens build, lens load and computed_by report.
 """
@@ -27,7 +33,8 @@ MODEL_GLASS = {"model": {"nd": 1.5168, "vd": 64.17, "dpgf": 0}}
 
 
 def _probe() -> dict[str, Any]:
-    """The probe's base: a model-glass singlet with fixed semi-diameters and no unreconciled path on rtc, which _table checks."""
+    """探针的底：一片模型玻璃单透镜，半口径都固定，rtc 上没有任何未对账路径（_table 会核对这一点）。
+    The probe's base: a model-glass singlet with fixed semi-diameters and no unreconciled path on rtc, which _table checks."""
     return {"aperture": {"type": "entrance_pupil_diameter", "value": 10},
             "fields": {"type": "angle", "y": [0, 3]},
             "wavelengths": {"um": [0.5876], "weights": [1], "primary": 1},
@@ -44,7 +51,7 @@ def _finite(p: dict[str, Any]) -> None:
 def _aperture(name: str) -> Callable[[dict[str, Any]], None]:
     def change(p):
         p["aperture"] = {"type": name} if name == "float_by_stop" else {"type": name, "value": 0.1 if name == "object_na" else 5}
-        # Object-side apertures need a finite object
+        # 物方孔径在物在无穷远时不成立（处方本身就拒绝）/ object-side apertures need a finite object
         if name in prescription.OBJECT_SIDE_APERTURES:
             _finite(p)
     return change
@@ -110,7 +117,8 @@ def _telecentric(p: dict[str, Any]) -> None:
     p["telecentric_object"] = True
 
 
-# The probes: group → item → the change to the base lens. Items are named as in prescriptions; other is any unlisted type.
+# 探针表：组 → 条目 → 对底镜头的改动。条目名取处方里的写法；other 是任何没列出的面型。
+# the probes: group → item → the change to the base lens. Items are named as in prescriptions; other is any unlisted type.
 def _probes() -> dict[str, dict[str, Callable[[dict[str, Any]], None]]]:
     from saos.backend import rtc_lens
 
@@ -176,7 +184,7 @@ def _ask(change: Callable[[dict[str, Any]], None]) -> dict[str, Any]:
 
 
 def _measured(backend, call: Callable[[Any], Any]) -> dict[str, Any]:
-    """Classify one call the way provenance() does."""
+    """一次测量调用按 provenance() 的规则归类：拒绝，或用到了未对账的项。/ Classify one call the way provenance() does."""
     backend.provenance()
     try:
         call(backend)
@@ -190,13 +198,14 @@ def _by_status(names, reconciled) -> dict[str, list[str]]:
 
 
 def table() -> dict[str, Any]:
-    """rtc's capability table. OpticStudio computes every item through the ZOS-API and its numbers are the reference."""
+    """rtc 的能力表。OpticStudio 经 ZOS-API 算下面的每一项，它的数是对账的真值，所以不逐项列。
+    rtc's capability table. OpticStudio computes every item through the ZOS-API and its numbers are the reference."""
     from saos import daemon
     from saos.backend import rtc, rtc_merit
 
     base = _built(_probe())
     if base.unverified():
-        # Every probe would inherit the base's paths
+        # 底镜头自己带了未对账路径时，每个探针都会被它染成 unreconciled / every probe would inherit the base's paths
         raise SaosError(ErrorCode.INTERNAL_ERROR, f"the capability probe lens is no longer fully reconciled on rtc: {base.unverified()}")
     with tempfile.TemporaryDirectory() as folder:
         analyses = {name: _measured(base, lambda b, n=name: b.analysis(n, {}, Path(folder) / "analysis.txt")) for name in base.analysis_types()}
@@ -240,7 +249,7 @@ def _verdict(source: dict[str, Any], load: Callable[[Any], None]) -> dict[str, A
         load(backend)
     except SaosError as exc:
         refused = _refusal(exc)
-        # An NSC object brings a dozen unknown lines each
+        # 非序列物体每个带十来行 rtc 不认的 .zmx 行，全列出来只会淹没第一条原因 / an NSC object brings a dozen unknown lines each
         more = len(refused) - REFUSED_SHOWN
         return {**source, "backend": "zos", "refused": refused[:REFUSED_SHOWN] + ([f"and {more} more"] if more > 0 else [])}
     known = rtc_merit.merit_operands()
@@ -249,7 +258,8 @@ def _verdict(source: dict[str, Any], load: Callable[[Any], None]) -> dict[str, A
 
 
 def lens(path: Path) -> dict[str, Any]:
-    """Which backend a .zmx computes on: rtc with its unreconciled paths and the merit operands rtc lacks, or zos with the reasons."""
+    """一份 .zmx 在哪个后端算：rtc 读得了就是 rtc，连同它走的未对账路径和评价函数里 rtc 不算的操作数；读不了就是 zos，连同原因。
+    Which backend a .zmx computes on: rtc with its unreconciled paths and the merit operands rtc lacks, or zos with the reasons."""
     path = Path(path)
     if not path.is_file():
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"lens file not found: {path}")
@@ -257,7 +267,7 @@ def lens(path: Path) -> dict[str, Any]:
 
 
 def from_prescription(path: Path) -> dict[str, Any]:
-    """As lens(), for a lens build prescription."""
+    """同 lens()，对象是 saos lens build 的处方；处方本身写错报 BAD_ARGS。/ As lens(), for a lens build prescription."""
     path = Path(path)
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
