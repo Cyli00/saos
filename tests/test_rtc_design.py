@@ -11,6 +11,7 @@ import json
 import math
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from saos import ledger, model_gate
@@ -464,3 +465,42 @@ def test_glass_coordinates_of_the_current_material_need_no_opticstudio_on_rtc():
     long, reference, short = backend.medium_indices(1, list(expert.spectral_waves))
     n, v, _ = expert._coordinates(1)
     assert n == pytest.approx(reference) and v == pytest.approx((reference - 1) / (short - long))
+
+
+@needs_glass
+def test_merit_jacobian_predicts_the_residual_change_and_leaves_the_lens_alone():
+    from saos.backend import rtc_optim
+
+    backend = _designed()
+    before = {key: backend.get_param(key) for key in backend.variables()}
+    dirty = backend.needs_save()
+    jac = backend.merit_jacobian()
+    assert jac["variables"] == list(before) and {key: backend.get_param(key) for key in before} == before
+    assert backend.needs_save() == dirty
+    J = np.asarray(jac["jacobian"])
+    assert J.shape == (len(jac["rows"]), len(before)) == (len(jac["residuals"]), 3)
+    rows = {row["row"]: row for row in backend.merit_rows()}
+    assert all(rows[n]["weight"] > 0 and rows[n]["type"] not in rtc_merit.BOUNDARY for n in jac["rows"])
+    G = np.asarray(jac["constraints"]["jacobian"])
+    assert G.shape == (len(jac["constraints"]["labels"]), 3) and len(jac["constraints"]["values"]) == G.shape[0]
+
+    # 沿一个混合方向走 20 个差分步长：残差的变化应当是 J·d（二阶项在千分之几以内）
+    problem = rtc_optim.Problem(backend, backend.merit, list(before))
+    x = problem.values()
+    d = 20.0 * np.asarray(jac["steps"]) * np.array([1.0, -0.7, 0.4])
+    moved = problem.measure(x + d)
+    problem.apply(x)
+    actual = moved.r - np.asarray(jac["residuals"])
+    assert np.linalg.norm(actual) > 0
+    assert np.linalg.norm(actual - J @ d) <= 5e-3 * np.linalg.norm(actual)
+    # 三个半径在双胶合上不简并：按列归一后最小奇异值不该是数值零
+    singular = np.linalg.svd(J / np.linalg.norm(J, axis=0), compute_uv=False)
+    assert singular[-1] > 1e-6 * singular[0]
+
+
+def test_merit_jacobian_is_refused_where_the_backend_has_none():
+    from saos.backend.fake import FakeBackend
+
+    with pytest.raises(SaosError) as err:
+        FakeBackend().merit_jacobian()
+    assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED

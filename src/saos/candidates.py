@@ -228,14 +228,6 @@ def add_reach(row: dict[str, Any], d: dict[str, Any]) -> None:
     row["stopped_by"] = (row.get("stages") or [{}])[-1].get("stopped_by")
 
 
-def add_reach(row: dict[str, Any], d: dict[str, Any]) -> None:
-    """候选离需求多远、最后一段是不是超时停下的：valid 只说明能追迹、不交叠，不说明能做到；超时的结果也不能互相比较。
-    How far a candidate is from the demand and whether its last stage timed out: valid only says it traces and fits; timed-out results do not compare."""
-    reach = demand.reach(d, row.get("values"))
-    row["reach_blocking"] = [{"id": i["id"], "multiple": i["multiple"]} for i in reach["items"] if i["blocking"]]
-    row["stopped_by"] = (row.get("stages") or [{}])[-1].get("stopped_by")
-
-
 def _verdict(row: dict[str, Any], state: dict[str, Any]) -> str:
     """材料和计算错误先单列，其余分为有效或预算内无效。"""
     if "material" in (state.get("error_kinds") or {}).values():
@@ -343,15 +335,14 @@ def _evaluate(w, item: dict[str, Any], row: dict[str, Any], temp: Path) -> None:
     if (plan.get("stages") or plan.get("require_merit")) and not merit_rows:
         raise SaosError(ErrorCode.BAD_ARGS, "候选没有评价函数；prepare 必须设置变量和评价函数", {"candidate_setup": True})
     row["setup"] = {"source": "prepare" if plan.get("prepare") else "candidate", "merit_rows": merit_rows}
-    if w.backend.identity().get("backend") == "zos":
-        from saos.starts.prediction import predict
+    from saos.starts.prediction import predict
 
-        try:
-            row["prediction"] = predict(w.backend, should_cancel=w.cancel_requested)
-        except Exception as exc:
-            if isinstance(exc, SaosError) and exc.code in (ErrorCode.CANCELLED, ErrorCode.ZOS_CONNECTION_LOST):
-                raise
-            row["prediction"] = {"errors": {"prediction": f"{type(exc).__name__}: {exc}"}}
+    try:
+        row["prediction"] = predict(w.backend, should_cancel=w.cancel_requested)
+    except Exception as exc:
+        if isinstance(exc, SaosError) and exc.code in (ErrorCode.CANCELLED, ErrorCode.ZOS_CONNECTION_LOST):
+            raise
+        row["prediction"] = {"errors": {"prediction": f"{type(exc).__name__}: {exc}"}}
     start = _state(w, plan)
     row["start"] = start
     stages = []
@@ -484,11 +475,6 @@ def page(job: jobs.Job, folder: Path, plan: dict[str, Any], rows: list[dict[str,
         if r.get("numeric_warnings"):
             nw = r["numeric_warnings"]
             verdict += f"<br><span class=\"muted\">{e(t('数值警告', 'numeric warnings'))} {nw['count']}: {e(nw['first'])}</span>"
-        if r.get("stopped_by") == "timeout":
-            verdict += f"<br><span class=\"muted\">{e(t('超时未收敛，不能据此比较', 'timed out before converging: not comparable'))}</span>"
-        if r.get("reach_blocking"):
-            far = ", ".join(f"{b['id']} ×{_num(b['multiple'])}" for b in r["reach_blocking"])
-            verdict += f"<br><span class=\"muted\">{e(t('差距过大', 'too far from the demand'))}: {e(far)}</span>"
         if r.get("stopped_by") == "timeout":
             verdict += f"<br><span class=\"muted\">{e(t('超时未收敛，不能据此比较', 'timed out before converging: not comparable'))}</span>"
         if r.get("reach_blocking"):

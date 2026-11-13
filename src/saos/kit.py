@@ -1,7 +1,7 @@
-"""测量库：经 Backend 协议调用计算后端的通用函数，省去每个任务重写同一批封装（ADR-0013：数值都由计算后端算，
+"""测量库：经 Backend 协议调用计算后端的通用函数，省去每个任务重写同一批封装（数值都由计算后端算，
 这里只做调用和统计）。本模块不导入任何具体后端；只有 OpticStudio 能做的功能由后端自己报 needs OpticStudio。
 The measurement library: reusable helpers that call the backend through the Backend protocol, so that jobs stop
-rewriting the same wrappers (ADR-0013: the backend computes every number; this module only calls it and does
+rewriting the same wrappers (the backend computes every number; this module only calls it and does
 bookkeeping and statistics on what it returns). It imports no concrete backend; OpticStudio-only features are refused
 by the backend itself.
 
@@ -488,6 +488,21 @@ def wavefront_rms(ctx, field: Any, wave: int | None = None) -> Any:
     return got if many else got[0]
 
 
+def seidel(ctx, wave: int | None = None) -> dict[str, Any]:
+    """逐面三阶像差（波数，默认主波长）：{"columns", "surfaces": [{"surface", "W040", "W131", "W222", "W220P", "W311"}], "totals"}，
+    依次是球差、彗差、像散、Petzval 场曲、畸变，即操作数 SPHA、COMA、ASTI、FCUR、DIST。rtc 另给初级色差 W020、W111
+    （最短与最长波长之间）和拉氏不变量 invariant，只做同轴的 Standard 与 Even Asphere 折射面。totals 是各面之和；
+    逐面 DIST 是 W311，而 DIST 的 Int1=0 在 OpticStudio 是最大视场的畸变百分比，不是这个和。
+    用来指认最大差距背后是哪一种像差、落在哪几面：Petzval 一列只随光焦度和折射率变，非球面改不了它。
+    Per-surface third-order aberrations in waves (primary wave by default): spherical, coma, astigmatism, Petzval curvature,
+    distortion, i.e. the operands SPHA, COMA, ASTI, FCUR, DIST. rtc adds the primary colour columns W020 and W111 (between
+    the shortest and longest wavelength) and the Lagrange invariant, and takes coaxial Standard and Even Asphere refracting
+    surfaces only. totals are the per-surface sums; a surface's DIST is W311, while DIST at surface 0 is the maximum-field
+    percentage distortion, not that sum. Use it to name the aberration behind the largest gap and the surfaces that carry
+    it: the Petzval column follows from powers and indices alone, so no asphere changes it."""
+    return ctx.backend.seidel(0 if wave is None else int(wave))
+
+
 # ---------- 光线 / rays ----------
 
 def trace(ctx, rays: Iterable[Iterable[float]], to: int | str | None = None) -> Rays:
@@ -830,6 +845,9 @@ class KitMethods:
 
     def wavefront_rms(self, field, wave=None):
         return wavefront_rms(self, field, wave)
+
+    def seidel(self, wave=None):
+        return seidel(self, wave)
 
     def aperture(self, ref):
         return aperture(self, ref)

@@ -258,6 +258,11 @@ class Backend(ABC):
         """清空评价函数的所有行。/ Delete all merit function rows."""
         raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} has no merit function")
 
+    def merit_jacobian(self) -> dict[str, Any]:
+        """当前镜头处评价函数残差对各变量的雅可比；只有 rtc 给。/ The Jacobian of the merit residuals; rtc only."""
+        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} gives no merit Jacobian; rtc does (the stages before "
+                        "delivery, or saos daemon use rtc)")
+
     def insert_surface(self, index: int, surface_type: str = "Standard") -> str:
         """在 index 处插入一个面（像面之前），返回面型。/ Insert a surface at index (before the image); returns its type."""
         raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} cannot insert surfaces")
@@ -295,6 +300,22 @@ class Backend(ABC):
     def zernike(self, *, wave: int, field: int, samp: int, max_term: int, terms: tuple[int, ...]) -> dict[int, float]:
         """一次拟合到 max_term 项（Zernike Standard，参考主光线），返回所需各项；负项号含义同 ZERN。"""
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support zernike")
+
+    def seidel(self, wave: int = 0) -> dict[str, Any]:
+        """逐面三阶像差（波数）：{"units": "waves", "wave", "columns", "surfaces": [{"surface", W040, W131, W222, W220P, W311}],
+        "totals"}。列对应操作数 SPHA、COMA、ASTI、FCUR、DIST，面号 1 到像面前一面；wave 为 0 取主波长。
+        totals 是逐面值之和；DIST(Int1=0) 在 OpticStudio 是最大视场的畸变百分比，不是 W311 之和，所以不采用它。
+        Per-surface third-order aberrations in waves; the columns are the operands SPHA, COMA, ASTI, FCUR, DIST for surfaces
+        1 to the one before the image. totals are the per-surface sums; DIST at surface 0 is a percentage distortion, not
+        this sum. wave 0 is the primary wavelength."""
+        wave = int(wave) or int(self.primary_wave())
+        names = {"W040": "SPHA", "W131": "COMA", "W222": "ASTI", "W220P": "FCUR", "W311": "DIST"}
+        last = len(self.surfaces()) - 1
+        surfaces = [{"surface": i, **{column: float(self.operand(op, i, wave, [])) for column, op in names.items()}}
+                    for i in range(1, last)]
+        return {"units": "waves", "wave": wave, "columns": list(names),
+                "surfaces": surfaces,
+                "totals": {column: float(sum(row[column] for row in surfaces)) for column in names}}
 
     def huygens(self, wave: int, pupil: int, image: int) -> Any:
         """Huygens PSF 会话：psf(field, delta_um) 返回 (ny×nx 的 numpy 强度数组, dx_um, dy_um) 或 None（分析没有数据），close() 结束。

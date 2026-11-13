@@ -1,4 +1,4 @@
-"""在后台进程内执行 agent 编写的脚本（ADR-0007）。
+"""在后台进程内执行 agent 编写的脚本。
 
 脚本定义 run(ctx)，返回可 JSON 化的结果。每次执行都把脚本副本和结果存进任务的 scripts/，
 编号递增：scripts/NNN-<name>.py 与 scripts/NNN-<name>.json。
@@ -47,7 +47,7 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
         self.cache: dict[Any, Any] = {} if cache is None else cache
         # 本次执行的脚本副本，ctx.map("fn", …) 在 worker 里从这里找函数 / the running script copy; ctx.map("fn", …) finds fn here
         self.script = script
-        # 判定用的上下文不给 rtc 副本（ADR-0014）/ check contexts get no rtc copy
+        # 判定用的上下文不给 rtc 副本/ check contexts get no rtc copy
         self.in_check = False
 
     def __getattr__(self, name: str) -> Any:
@@ -70,7 +70,7 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
         return ctx
 
     def fast(self, freeze_solves: bool = False):
-        """当前镜头（含未保存修改）的 rtc 内存副本，用于高频追迹的探索（saos.fast，ADR-0014）。
+        """当前镜头（含未保存修改）的 rtc 内存副本，用于高频追迹的探索（saos.fast）。
         An rtc in-memory copy of the current lens for high-rate exploratory tracing (saos.fast)."""
         from saos import fast
 
@@ -89,6 +89,18 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
         added = self.backend.merit_append(rows)
         self.mark_dirty()
         return added
+
+    def merit_jacobian(self) -> dict[str, Any]:
+        """当前镜头处评价函数对各变量的雅可比（rtc 上）：variables、rows（残差对应的评价函数行号）、residuals、
+        jacobian[行][变量]、constraints（边界类行的 labels、values、jacobian）、steps、merit。镜头不变。
+        用来在优化前后看结构：对 jacobian 按列归一后做奇异值分解，接近 0 的奇异值是变量之间的简并（放开再多也只算一个自由度），
+        某一行整行接近 0 表示没有变量管这个目标；constraints 里 values 接近 0 的行是当前顶住的边界。
+        The Jacobian of the merit function at the current lens (on rtc): variables, rows (the merit row of each residual),
+        residuals, jacobian[row][variable], constraints (labels, values, jacobian of boundary rows), steps, merit. The lens
+        is unchanged. Use it to see the structure of a problem: after normalising the columns, singular values near zero
+        are variables that act as one, a row near zero is a target no variable moves, and constraints with values near
+        zero are the bounds now holding the design."""
+        return self.backend.merit_jacobian()
 
     def merit_clear(self) -> None:
         """清空评价函数的所有行。/ Delete all merit function rows."""
@@ -157,7 +169,7 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
         system = getattr(self.backend, "system", None)
         if system is None:
             if self.backend.identity().get("backend") == "rtc":
-                # 检查与脚本经 ctx 读写才能在两个后端上跑（ADR-0020）/ checks and scripts run on both backends only through ctx
+                # 检查与脚本经 ctx 读写才能在两个后端上跑/ checks and scripts run on both backends only through ctx
                 raise SaosError(ErrorCode.BACKEND_UNSUPPORTED,
                                 "ctx.system is OpticStudio's object and rtc has none; read the lens through "
                                 "ctx.get (with <surface>.par<N> for a surface type's parameters), ctx.op (SSAG, INDX, ...), "

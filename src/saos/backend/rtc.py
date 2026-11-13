@@ -1,12 +1,12 @@
-"""rtc 后端：OpticStudio 镜头的内存副本（ctx.fast，ADR-0014），以及 rtc 实例（SAOS_BACKEND=rtc）自己持有的镜头。
-The rtc backend: an in-memory copy of an OpticStudio lens (ctx.fast, ADR-0014), and the lens an rtc instance owns.
+"""rtc 后端：OpticStudio 镜头的内存副本（ctx.fast），以及 rtc 实例（SAOS_BACKEND=rtc）自己持有的镜头。
+The rtc backend: an in-memory copy of an OpticStudio lens (ctx.fast), and the lens an rtc instance owns.
 
 数值来自 rtc（ray tracing core，float64 序列追迹，同仓库的 `src/rtc`）。副本只用于探索；rtc 实例在需求阶段做可行性
-核算（ADR-0016），在设计阶段做变量、评价函数、优化、判定和轮次（ADR-0017），交付前在 OpticStudio 上复测。副本建立时用
+核算，在设计阶段做变量、评价函数、优化、判定和轮次，交付前在 OpticStudio 上复测。副本建立时用
 OpticStudio 自己的描述（describe_model）逐项核对：面型、参数、各波长折射率（INDX）、视场、波长、孔径和瞄准方式；rtc 复现
 不了的设置一律报 BACKEND_UNSUPPORTED，不返回近似值。
-Numbers come from rtc. A copy is for exploration; the rtc instance checks need-stage feasibility (ADR-0016) and runs
-variables, merit functions, optimisation, checks and rounds in the design stage (ADR-0017), re-measured on OpticStudio
+Numbers come from rtc. A copy is for exploration; the rtc instance checks need-stage feasibility and runs
+variables, merit functions, optimisation, checks and rounds in the design stage, re-measured on OpticStudio
 before delivery. A copy is compared item by item with OpticStudio's own description; settings rtc cannot reproduce raise
 BACKEND_UNSUPPORTED.
 """
@@ -24,7 +24,7 @@ from typing import Any
 
 import numpy as np
 
-from saos.backend.base import DEFAULT_SUBSTITUTE_CATALOG, MATERIAL_MODES, Backend, check_size, parse_numeric
+from saos.backend.base import DEFAULT_SUBSTITUTE_CATALOG, MATERIAL_MODES, Backend, check_field, check_size, parse_numeric
 from saos.protocol import ErrorCode, SaosError
 
 # 求解类型里 rtc 当作普通数值的两种；其余求解（拾取、边缘光线高度、F 数…）改别的参数后 OpticStudio 会重算，rtc 不会
@@ -45,10 +45,19 @@ ADMITTED_FILE = Path(__file__).with_name("rtc_admitted.json")
 # operands rtc computes, with OpticStudio's merit-function argument conventions
 RAY_OPERANDS = frozenset({"REAX", "REAY", "REAZ", "REAR", "REAA", "REAB", "REAC", "RANG", "RAID",
                           "RAGX", "RAGY", "RAGZ", "RAGA", "RAGB", "RAGC"})
-SYSTEM_OPERANDS = frozenset({"EFFL", "WFNO", "ISFN", "TOTR", "TTHI", "EPDI", "ENPP", "EXPP", "EXPD", "PETZ", "INDX", "SSAG", "CONF"})
+# 三阶像差（波数，Int1 = 面，SPHA/COMA/ASTI/FCUR 的 0 为各面之和、DIST 的 0 为畸变百分比，Int2 = 波长）
+# 与近轴光线：rtc.seidel，同轴 Standard / Even Asphere 折射面
+# third-order aberrations in waves (Int1 surface; 0 is the sum for SPHA/COMA/ASTI/FCUR and the percentage distortion for DIST;
+# Int2 wave) and paraxial rays: rtc.seidel
+SEIDEL_OPERANDS = {"SPHA": "W040", "COMA": "W131", "ASTI": "W222", "FCUR": "W220P", "DIST": "W311"}
+PARAXIAL_OPERANDS = frozenset({*SEIDEL_OPERANDS, "PETC", "PARY", "PATY"})
+SYSTEM_OPERANDS = frozenset({"EFFL", "WFNO", "ISFN", "TOTR", "TTHI", "EPDI", "ENPP", "EXPP", "EXPD", "PETZ", "INDX", "SSAG", "CONF",
+                             *PARAXIAL_OPERANDS})
 # 其中已与 OpticStudio 批量追迹或操作数实测逐值对过账的（rtc.operands 的说明）；其余按手册定义实现
 # those reconciled value by value with OpticStudio (see rtc.operands); the rest follow the manual's definitions
 RECONCILED_OPERANDS = frozenset({"REAX", "REAY", "REAC", "INDX", "SSAG", "EXPP", "EXPD", "CONF"})
+# wavefront_rms 的光瞳取样（每边点数）/ pupil samples per side for wavefront_rms
+WAVEFRONT_GRID = 64
 IDENTITY = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
 # rtc 实例能解析的多重结构操作数（rtc.thermal.SUPPORTED_OPS）；CHZN 只有 0
 THERMAL_OPS = frozenset({"THIC", "CRVT", "CONN", "PRAM", "SDIA", "MCSD", "CHZN", "GLSS", "TEMP", "PRES", "MOFF"})
@@ -165,8 +174,8 @@ class RtcBackend(Backend):
         self.path = Path(path) if path is not None else None
         self.lens = None
         self.config = 1
-        # 设计阶段（ADR-0017）：评价函数行随镜头存盘；换料变量的 .zmx 写法没见过，只在内存里
-        # design stage (ADR-0017): merit rows are saved with the lens; material variables only live in memory
+        # 设计阶段：评价函数行随镜头存盘；换料变量的 .zmx 写法没见过，只在内存里
+        # design stage: merit rows are saved with the lens; material variables only live in memory
         self.merit: list = []
         self.material_vars: dict[int, dict[str, str]] = {}
         # 读入文件里 rtc 不建模、存盘时原样带过去的行（rtc_lens.carried_lines）/ lines carried over from the file read
@@ -293,7 +302,7 @@ class RtcBackend(Backend):
                 if row.solve_code not in (0, 1, 2, lens.thermal_code):
                     out.append(f"multi-configuration row {row.op} {row.surface} solve code {row.solve_code} (rtc knows fixed, variable, pickup and thermal)")
                     break
-        # 下面几条路径没有 OpticStudio 真值，对账前拒绝（docs/plans/rtc-iris-mirror.md）
+        # 下面几条路径没有 OpticStudio 真值，对账前拒绝
         # paths without OpticStudio truth yet are refused until reconciled
         mirrors = [s.index for s in lens.surfaces[1:] if s.mirror]
         for s in lens.surfaces[1:]:
@@ -1175,6 +1184,13 @@ class RtcBackend(Backend):
                 return float(Operands(primary).expd())
             if op == "PETZ":
                 return firstorder.petzval_radius(self._system(wave(int2)))
+            if op == "PETC":
+                radius = firstorder.petzval_radius(self._system(wave(int2)))
+                return 1.0 / radius if radius else 0.0
+            if op in SEIDEL_OPERANDS:
+                return self._seidel_operand(op, int(int1), wave(int2))
+            if op in ("PARY", "PATY"):
+                return self._paraxial_operand(op, int(int1), wave(int2), list(data))
             if op == "INDX":
                 if int(int1) == 0:
                     return 1.0
@@ -1194,6 +1210,94 @@ class RtcBackend(Backend):
         except (ValueError, ZeroDivisionError) as exc:
             raise SaosError(ErrorCode.BAD_ARGS, f"{op}: {exc}") from exc
         raise AssertionError(op)
+
+    def _seidel_table(self, wave: int):
+        """第 wave 个波长的逐面 Seidel 系数；有两个以上波长时用最短、最长波长填初级色差两列。"""
+        from rtc.seidel import seidel
+
+        lens = self._need_lens()
+        order = sorted(range(1, len(lens.active_wavelengths) + 1), key=lambda w: lens.active_wavelengths[w - 1][0])
+        ends = (self._system(order[0]), self._system(order[-1])) if len(order) > 1 else (None, None)
+        return seidel(self._system(wave), *ends)
+
+    def _seidel_operand(self, op: str, surf: int, wave: int) -> float:
+        table = self._seidel_table(wave)
+        column = table.waves()[SEIDEL_OPERANDS[op]]
+        if surf == 0:
+            if op == "DIST":
+                return self._total_distortion(wave)
+            return float(column.sum())
+        index = int(self._index(surf))
+        if index not in table.surfaces:
+            raise SaosError(ErrorCode.BAD_ARGS, f"{op}: surface {surf} out of range 1–{table.surfaces[-1]}")
+        return float(column[table.surfaces.index(index)])
+
+    def _total_distortion(self, wave: int) -> float:
+        """OpticStudio 的 DIST(Int1=0)：最大视场处实际主光线与近轴主光线在像面的高度差，按近轴像高的百分比给出；
+        Int1≥1 的逐面 DIST 是波数 W311，两者单位不同（2026-11-10 与 OpticStudio 实测：-0.020651123 对 0.153819723）。
+        OpticStudio's DIST(Int1=0): the real chief ray's image height minus the paraxial one, as a percentage of the
+        paraxial height; a surface's DIST is the wavefront W311 instead."""
+        from rtc.seidel import paraxial
+        from rtc.trace import trace
+
+        system = self._system(wave)
+        _, chief = paraxial(system, self._field_fraction(system, 1.0))
+        k = len(system.items) - 1
+        paraxial_height = float(chief[k][0])
+        if abs(paraxial_height) < 1e-15:
+            return 0.0
+        block = trace(system, [0.0], [0.0], 0.0, 1.0)
+        if int(block.error[0]) != 0 or int(block.vig[0]) != 0:
+            raise SaosError(ErrorCode.BAD_ARGS, "DIST: the chief ray at the maximum field does not reach the image")
+        return 100.0 * (float(block.y[0, k]) - paraxial_height) / paraxial_height
+
+    @staticmethod
+    def _field_fraction(system, hy: float) -> float:
+        """归一化视场 Hy 相当于最大径向视场的几分之几。径向归一化下就是 Hy；矩形归一化的 Hy 按 y 方向的最大视场计，
+        而 rtc.seidel 的近轴主光线按最大径向视场发射，两者要换算，否则与追迹用的 Hy 不是同一个视场。"""
+        from rtc.seidel import max_field
+
+        top = max_field(system)
+        return float(hy) * system._field_scale()[1] / top if top else 0.0
+
+    def _paraxial_operand(self, op: str, surf: int, wave: int, data: list[float]) -> float:
+        """PARY、PATY：近轴光线在面 surf 处的 y 高度、面后的 y 斜率。光线是 Py 份边缘光线加 Hy 份主光线（同轴系统的
+        y 分量与 Hx、Px 无关）。"""
+        from rtc.seidel import paraxial
+
+        system = self._system(wave)
+        _, hy, _, py = (list(data) + [0.0] * 4)[:4]
+        marginal, chief = paraxial(system, self._field_fraction(system, hy))
+        index = int(self._index(surf))
+        k = next((k for k, it in enumerate(system.items) if it.index == index), None)
+        if k is None:
+            raise SaosError(ErrorCode.BAD_ARGS, f"{op}: paraxial rays start at surface 1, got {surf}")
+        column = 0 if op == "PARY" else 2
+        return float(py * marginal[k][column] + chief[k][column])
+
+    def seidel(self, wave: int = 0) -> dict[str, Any]:
+        """逐面三阶像差（波数），形式同 Backend.seidel，另有初级色差两列 W020、W111（最短与最长波长之间，只有一个波长时
+        为 0）和拉氏不变量。按 Welford 的定义实现（rtc.seidel）；逐面数值与 OpticStudio 的 DIST/SPHA 等操作数一致
+        （2026-11-10 实测 1.3e-15），totals 是各面之和，不是 DIST(Int1=0) 的畸变百分比。
+        Per-surface third-order aberrations in waves, shaped like Backend.seidel, plus the primary colour columns W020 and W111
+        (between the shortest and longest wavelength) and the Lagrange invariant. Surface values match OpticStudio's
+        operands; totals are their sums, not DIST's percentage distortion."""
+        from rtc.seidel import WAVES
+
+        lens = self._need_lens()
+        wave = int(wave) or lens.primary_wave
+        if not 1 <= wave <= len(lens.active_wavelengths):
+            raise SaosError(ErrorCode.BAD_ARGS, f"wavelength {wave} out of range 1–{len(lens.active_wavelengths)}")
+        try:
+            table = self._seidel_table(wave)
+        except NotImplementedError as exc:
+            raise _unsupported(f"rtc: {exc}") from exc
+        self._used.add("SEIDEL")
+        columns = table.waves()
+        names = list(WAVES)
+        return {"units": "waves", "wave": wave, "columns": names, "invariant": table.invariant,
+                "surfaces": [{"surface": index, **{name: float(columns[name][k]) for name in names}} for k, index in enumerate(table.surfaces)],
+                "totals": {name: float(columns[name].sum()) for name in names}}
 
     def _ray_operand(self, op: str, surf: int, wave: int, data: list[float]) -> float:
         from rtc.trace import trace
@@ -1255,12 +1359,47 @@ class RtcBackend(Backend):
         return self._aperture_spec(surfaces[int(index)])
 
     def huygens(self, wave: int, pupil: int, image: int) -> Any:
-        # rtc.psf.psf_huygens 已有，但出瞳取法与 OpticStudio 未对账（变形面不一致），对账通过前不给数（ADR-0020）
+        # rtc.psf.psf_huygens 已有，但出瞳取法与 OpticStudio 未对账（变形面不一致），对账通过前不给数
         # rtc.psf.psf_huygens exists, but its exit pupil is not reconciled with OpticStudio (anamorphic surfaces differ)
-        raise _unsupported("rtc: the Huygens PSF is not reconciled with OpticStudio yet (ADR-0020); measure it on OpticStudio")
+        raise _unsupported("rtc: the Huygens PSF is not reconciled with OpticStudio yet; measure it on OpticStudio")
 
     def wavefront_rms(self, wave: int, fields: list[int | tuple[float, float]]) -> list[float | None]:
-        raise _unsupported("rtc: the RMS wavefront error is not reconciled with OpticStudio yet (ADR-0020); measure it on OpticStudio")
+        """各视场的 RMS 波前（波长，扣除平移与倾斜）：WAVEFRONT_GRID 方格光瞳上逐条光线的 OPD，只算到达像面的光线。
+        OPD 与 OpticStudio OPDC 逐条一致；RMS 与它的 Zernike 分析取样不同，真值案例上差 0.2 % 以内，所以记为未对账
+        （WAVEFRONT_RMS 进 operands_unverified）。主光线被挡或到达的光线不足 3 条时为 None；反射面拒绝。
+        RMS wavefront per field (waves, piston and tilt removed) from ray OPDs on a WAVEFRONT_GRID square pupil grid. The OPDs
+        match OpticStudio's OPDC ray by ray; the RMS samples differently from its Zernike analysis (within 0.2 % on the truth
+        cases), so it is listed as unreconciled. None when the chief ray is blocked or fewer than 3 rays arrive; mirrors refuse."""
+        from rtc.psf import opd_map
+
+        lens = self._need_lens()
+        if not 1 <= int(wave) <= len(lens.active_wavelengths):
+            raise SaosError(ErrorCode.BAD_ARGS, f"wavelength {wave} out of range 1–{len(lens.active_wavelengths)}")
+        system = self._system(int(wave))
+        sx, sy = self._system(lens.primary_wave)._field_scale()
+        self._used.add("WAVEFRONT_RMS")
+        out: list[float | None] = []
+        for field in fields:
+            field = check_field(field)
+            if isinstance(field, int):
+                if field > len(lens.fields):
+                    raise SaosError(ErrorCode.BAD_ARGS, f"field {field} out of range 1–{len(lens.fields)}")
+                fx, fy = lens.fields[field - 1][:2]
+            else:
+                fx, fy = field
+            if (fx and not sx) or (fy and not sy):
+                raise _unsupported(f"rtc: field ({fx}, {fy}) cannot be normalised because the lens's fields have no extent in that "
+                                   "direction; add the field to the lens")
+            try:
+                opd, mask, _, _ = opd_map(system, n=WAVEFRONT_GRID, hx=fx / sx if sx else 0.0, hy=fy / sy if sy else 0.0)
+            except NotImplementedError as exc:
+                raise _unsupported(f"rtc: {exc}") from exc
+            except ValueError:
+                out.append(None)
+                continue
+            waves = opd[mask]
+            out.append(float(np.sqrt(np.mean((waves - waves.mean()) ** 2))) if waves.size >= 3 else None)
+        return out
 
     def _vertex_z(self) -> dict[int, float]:
         return {it.index: it.vertex_z for it in self._system(self._need_lens().primary_wave).items}
@@ -1320,7 +1459,7 @@ class RtcBackend(Backend):
                 break
         return {"surface": index, "thickness_before": before, "thickness_after": lens.thickness(index, self.config), "backend": "rtc"}
 
-    # ---- 设计阶段：变量、评价函数与优化（ADR-0017）/ the design stage: variables, merit function, optimisation ----
+    # ---- 设计阶段：变量、评价函数与优化/ the design stage: variables, merit function, optimisation ----
 
     def _designing(self, what: str):
         if not self.standalone:
@@ -1640,6 +1779,31 @@ class RtcBackend(Backend):
         return [{"row": k + 1, "type": r.type, "target": r.target, "weight": r.weight, "value": result.values[k],
                  "contribution": result.contributions[k], **({"error": result.failed[k]} if k in result.failed else {})}
                 for k, r in enumerate(self.merit) if r.type != "BLNK"]
+
+    def merit_jacobian(self) -> dict[str, Any]:
+        """当前镜头处评价函数对各变量的雅可比，局部优化每一步用的就是它（前向差分，步长见 steps）。
+        residuals[i] = √权重·(值 − 目标)，对应 rows[i] 行；jacobian[i][j] = ∂residuals[i]/∂variables[j]。边界类行不进残差，
+        在 constraints 里：values ≥ 0 为满足，jacobian 同样按变量排列。镜头算完后回到原值。
+        The Jacobian of the merit function at the current lens, the one each local-optimisation step uses (forward
+        differences with the steps given). residuals[i] = sqrt(weight)·(value − target) of merit row rows[i];
+        jacobian[i][j] = d residuals[i] / d variables[j]. Boundary rows are constraints (values >= 0 when met) with their
+        own Jacobian. The lens is back at its values afterwards."""
+        from saos.backend import rtc_optim
+
+        problem = self._problem()
+        dirty = self._dirty
+        base = problem.measure(problem.values())
+        if base is None:
+            raise SaosError(ErrorCode.BAD_ARGS, "the merit function cannot be computed at the current lens (a row has no value, e.g. a ray "
+                            "misses or is totally internally reflected)", {"rows_failed": rtc_optim._failed_rows(problem)})
+        try:
+            jacobian, constraints = problem.jacobian(base)
+        finally:
+            self._dirty = dirty
+        return {"variables": list(problem.keys), "steps": [float(v) for v in problem.steps], "rows": problem.targets(),
+                "residuals": [float(v) for v in base.r], "jacobian": jacobian.tolist(), "merit": float(base.merit),
+                "constraints": {"labels": list(base.labels), "values": [float(v) for v in base.g], "jacobian": constraints.tolist()},
+                "evaluations": problem.evaluations, "backend": "rtc"}
 
     def _problem(self):
         from saos.backend import rtc_merit, rtc_optim

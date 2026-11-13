@@ -1,4 +1,4 @@
-"""rtc 实例的优化器：带精确约束的阻尼最小二乘，以及在它之上的 Hammer 与全局搜索（ADR-0017）。
+"""rtc 实例的优化器：带精确约束的阻尼最小二乘，以及在它之上的 Hammer 与全局搜索。
 Optimisers of the rtc instance: damped least squares with exact constraints, and Hammer and global search on top of it.
 
 局部优化（学 CODE V AUT 的做法）：评价函数里的目标行（非边界类、权重 > 0）组成残差 r = √W·(V − T)；边界类行
@@ -90,6 +90,12 @@ class Problem:
 
     def apply(self, x: np.ndarray) -> None:
         self.backend.apply_values(dict(zip(self.keys, (float(v) for v in x))))
+
+    def targets(self) -> list[int]:
+        """残差各分量对应的评价函数行号（从 1 起），顺序同 Point.r：有正权重、不是边界类的行。
+        The merit row (1-based) behind each residual component, in Point.r's order."""
+        return [k + 1 for k, row in enumerate(self.rows)
+                if row.type not in rtc_merit.INERT and row.type != "CONF" and row.weight > 0 and row.type not in rtc_merit.BOUNDARY]
 
     def measure(self, x: np.ndarray) -> Point | None:
         """在 x 处求值；有正权重的行算不出（光线追不过等）时返回 None。/ Evaluate at x; None when a weighted row fails."""

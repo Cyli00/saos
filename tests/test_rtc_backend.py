@@ -187,7 +187,7 @@ def test_a_check_reaching_for_ctx_system_on_rtc_is_filed_as_a_backend_gap():
     assert demand._error_kind(ValueError("bad geometry")) == "computation"
 
 
-def test_psf_and_wavefront_wait_for_reconciliation_on_rtc_while_apertures_read_as_recorded(fast, recorded):
+def test_huygens_waits_for_reconciliation_on_rtc_while_wavefront_and_apertures_read(fast, recorded):
     # rtc.psf.psf_huygens 已有，但没和 OpticStudio 对账前不给数，判定归为后端缺口 / no numbers before reconciliation
     from saos import demand, kit
 
@@ -195,9 +195,11 @@ def test_psf_and_wavefront_wait_for_reconciliation_on_rtc_while_apertures_read_a
         with kit.huygens(fast):
             pass
     assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED and demand._error_kind(err.value) == "backend"
-    with pytest.raises(SaosError) as err:
-        kit.wavefront_rms(fast, (0.0, 0.0))
-    assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED
+    # 波前 RMS 给数并记为未对账；按视场号和按坐标给同一个视场，结果相同 / the same field by number and by coordinates
+    fx, fy = fast.backend.lens.fields[-1][:2]
+    by_number, by_point = kit.wavefront_rms(fast, [len(fast.backend.lens.fields), (fx, fy)])
+    assert by_number > 0 and by_number == pytest.approx(by_point, rel=1e-12)
+    assert "WAVEFRONT_RMS" in fast.backend.provenance()["operands_unverified"]
     assert [kit.aperture(fast, s["index"]) for s in fast.backend.surfaces()] == [s["aperture"] for s in recorded["model"]["surfaces"]]
     with pytest.raises(SaosError) as err:
         kit.aperture(fast, 9)

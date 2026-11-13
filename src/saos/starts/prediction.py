@@ -1,4 +1,4 @@
-"""用 OpticStudio 的操作数和原生分析生成起点预判，不自建光学求解器。"""
+"""用当前后端的操作数生成起点预判（一阶量、Petzval、逐面三阶像差、入射角），OpticStudio 上另存原生 Seidel 表。"""
 from __future__ import annotations
 
 import math
@@ -11,9 +11,9 @@ from saos.protocol import ErrorCode, SaosError, jsonable
 
 COLUMNS = ("SPHA", "COMA", "ASTI", "FCUR", "DIST")
 CONVENTIONS = {
-    "length": "OpticStudio 当前镜头单位",
-    "third_order": "SPHA/COMA/ASTI/FCUR/DIST 原生操作数，单位 waves；不是未换算的 SI–SV",
-    "native_analysis": "完整三阶及色差表保存在 SeidelCoefficients 原生文本，保留 OpticStudio 的单位与表头",
+    "length": "当前镜头单位",
+    "third_order": "逐面 SPHA/COMA/ASTI/FCUR/DIST 操作数，单位 waves，totals 是各面之和；不是未换算的 SI–SV。DIST 在面号 0 上是最大视场的畸变百分比，单列为 distortion_percent",
+    "native_analysis": "OpticStudio 上把完整三阶及色差表存为 SeidelCoefficients 原生文本，保留它的单位与表头；rtc 上没有这一项",
     "incidence": "RAID，度；仅统计成功到达对应面的采样光线，不代表连续最大值",
     "pupils": "入瞳相对首面，出瞳相对像面；stop_z 是后端全局坐标，bfl 是末面近轴焦距",
 }
@@ -90,14 +90,17 @@ def predict(backend, *, rings: int = 3, arms: int = 8, should_cancel=None) -> di
     try:
         if not centered:
             raise ValueError("该面型或偏心系统不使用同轴球面/圆锥面三阶预判；请读原生分析")
-        # 逐面操作数与总和都由 OpticStudio 计算，不沿用另一后端的符号换算。
+        # 逐面操作数与总和都由同一个后端计算，不混用两个后端的数。
         values = [{"surface": i, **{name: op(name, i, primary) for name in COLUMNS}} for i in range(1, len(rows) - 1)]
         out["third_order"] = {"columns": list(COLUMNS), "units": "waves", "surfaces": values,
-                              "totals": {name: op(name, 0, primary) for name in COLUMNS}}
+                              "totals": {name: sum(row[name] for row in values) for name in COLUMNS},
+                              "distortion_percent": op("DIST", 0, primary)}
     except Exception as exc:
         failed("third_order", exc)
     try:
         checkpoint()
+        if backend.metric_support(analysis="SeidelCoefficients") == "unsupported":
+            raise LookupError
         with tempfile.TemporaryDirectory(prefix="saos-seidel-") as folder:
             path = Path(folder) / "seidel.txt"
             data = backend.analysis("SeidelCoefficients", {"Wavelength": primary}, path)
@@ -106,6 +109,8 @@ def predict(backend, *, rings: int = 3, arms: int = 8, should_cancel=None) -> di
             from saos.backend.zos import _read_text_export
             out["native_analysis"] = {"type": "SeidelCoefficients", "wavelength": primary,
                                       "text": _read_text_export(path), "messages": data.get("messages", [])}
+    except LookupError:
+        out["native_analysis"] = None
     except Exception as exc:
         failed("native_analysis", exc)
     pupil = [(0.0, 0.0)] + [(r / rings * math.cos(a * 2 * math.pi / arms), r / rings * math.sin(a * 2 * math.pi / arms))

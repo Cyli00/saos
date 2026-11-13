@@ -29,10 +29,10 @@ When you optimise outside the lens's merit function (your own `exec` loop), reco
 
 Two expert classes answer questions the optimisers never ask: which materials, and which surfaces earn an asphere. Run them in an `exec` script; options and how to keep the result: `uv run saos exec --help experts`. A stall alone is no reason to call one: name the mechanism behind the largest gap first ([diagnosis.md](diagnosis.md#which-variables-move-the-target)).
 
-`ctx.GlassExpert(surfaces)` is the `materials` tier done glass by glass: in-production neighbours by working-band n/V, anomalous-dispersion glasses first, each trial re-optimised. It is slow ([model.md](model.md#spherical-version-first-an-aspheric-version-to-compare)), so it is not a routine step. Its place is the last round before delivery, with `max_seconds` 120–180 on the surfaces that matter, and only when:
+`ctx.GlassExpert(surfaces)` is the `materials` tier done glass by glass: in-production neighbours by working-band n/V, anomalous-dispersion glasses first, each trial re-optimised. It is slow ([model.md](model.md#spherical-version-first-an-aspheric-version-to-compare)), so it is not a routine step. Run it on the surfaces that matter, starting with `max_seconds` 120–180 and extending while its per-candidate progress still gains more than the demand's `rel`. Model glass and discontinued glass wait for the last round before delivery; colour that is the largest gap is searched as soon as the diagnosis shows it, since the rest of the design is balanced against the glass. Use it only when:
 
 - a round still has model glass (a patent start always does, from its glass codes): pass the surfaces its `model_glass` lists;
-- axial or lateral colour or the secondary spectrum is the largest weighted gap and the demand lets the glasses change. The merit function must weigh that colour over several wavelengths, or the trials optimise something else;
+- axial or lateral colour or the secondary spectrum is the largest weighted gap (`ctx.seidel()` shows W020 and W111 by surface on rtc) and the demand lets the glasses change. The merit function must weigh that colour over several wavelengths, or the trials optimise something else;
 - a glass is discontinued, or misses a cost, transmission, weight or expansion limit the user gave: pass that limit as `feasible(ctx, surface)`, since saos holds no such data.
 
 Otherwise leave the glass alone, or try Hammer with substitution when you want a cheap look. Resins: [model.md](model.md#choose-resins).
@@ -61,7 +61,7 @@ Before a run you expect to take more than about ten minutes, or any `global` or 
 
 Accuracy follows reachability. Convergence and sampling audits earn their time once the design is close to its pass lines; while it misses by a multiple, sample just finely enough that the verdict cannot flip.
 
-The same goes for manufacturability. Once the design is close to its pass lines and the tolerances have sources, run a sensitivity-only scan (`"samples": 0`, format in `uv run saos scan --help tolerance`) before you polish further. A few items that break the design are a structure question, far cheaper to learn now than at delivery.
+The same goes for manufacturability. Once the design is close to its pass lines and the tolerances have sources, run a sensitivity-only scan (`"samples": 0`, format in `uv run saos scan --help tolerance`) before you polish further. A few items that break the design are a structure question, far cheaper to learn now than at delivery. That scan runs on OpticStudio. Earlier still, a `probes` scan ([diagnosis.md](diagnosis.md#which-variables-move-the-target)) with each radius and thickness moved by its tolerance ranks the same items on rtc; tilts and decentres need the OpticStudio scan.
 
 If the structure must change beyond the approved description, describe the new model and get it approved before recording rounds on it.
 
