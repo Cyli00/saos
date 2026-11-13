@@ -64,13 +64,16 @@ def surface(ctx, ref: int | str, _names: dict[str, int] | None = None) -> int:
 
 
 def info(ctx) -> dict[str, Any]:
-    """系统设置（saos lens info 结果里的 system）：孔径、视场、波长、在用的玻璃目录等。/ The system part of saos lens info."""
+    """系统设置（saos lens info 结果里的 system）：孔径、视场、波长、在用的玻璃目录等。
+    The system settings, the system part of saos lens info: aperture, fields, wavelengths and, on OpticStudio, the glass
+    catalogs in use."""
     return ctx.backend.system_info()
 
 
 def surface_params(ctx, ref: int | str) -> list[dict[str, Any]]:
     """该面型的参数列：列号、列标题、按单元格类型读出的值、是否只读，与 objects() 的 params 同形。数值列用 ctx.set({"<面>.par<N>": 值}) 写。
-    The surface type's parameter columns with number, header, value by cell type and read-only flag, shaped like objects()'s params."""
+    The surface type's parameter columns: par, name, value (read by cell type) and read_only, shaped like objects()'s
+    params. Write a numeric column with ctx.set({"<surface>.par<N>": value})."""
     return ctx.backend.surface_params(ref)
 
 
@@ -121,7 +124,10 @@ def configurations(ctx) -> int:
 
 def make_thermal(ctx, temperatures, housing_tce: float) -> dict[str, Any]:
     """工况：结构 1 是现在的镜头，其余结构是 temperatures 各温度下的热跟随；housing_tce 是镜筒膨胀系数（1e-6/K）。返回各行单元格。
-    Operating conditions: configuration 1 is the lens as it is, the others follow it thermally at temperatures."""
+    Operating conditions: configuration 1 is the lens as it is, and each of temperatures adds a configuration that
+    follows it thermally (OpticStudio's Make Thermal; rtc builds them without starting OpticStudio). housing_tce is the
+    housing's expansion coefficient in 1e-6/K. Returns the cells of each row. Scripts only: a check calling it is
+    refused with BAD_ARGS."""
     if getattr(ctx, "in_check", False):
         raise SaosError(ErrorCode.BAD_ARGS, "checks must leave the lens unchanged; declare operating conditions in a script")
     numbers = [t for t in temperatures if isinstance(t, (int, float)) and not isinstance(t, bool) and math.isfinite(t)]
@@ -174,7 +180,8 @@ def restored(ctx) -> Iterator[None]:
 
 def objects(ctx) -> list[dict[str, Any]]:
     """非序列物体表：序号、类型、注释、参考物体、Inside Of、位置、倾斜、材料、参数、体散射、各波长折射率、全局变换。
-    The non-sequential objects with type, comment, references, placement, material, parameters, volume physics and indices."""
+    The non-sequential objects: number, type, file, comment, references, Inside Of, placement, material, parameters,
+    volume scattering, faces, scatter_to, per-wavelength indices and global transform."""
     return ctx.backend.nsc_objects()
 
 
@@ -186,9 +193,12 @@ def nsc_trace(ctx, *, split: bool = True, scatter: bool = True, polarization: bo
     进度写进 ctx.progress，saos job cancel 时调用 OpticStudio 的 Cancel 并返回 stopped_by。返回值见 backend.nsc.trace：
     dead_ray_errors 是 OpticStudio 报的出错光线能量，段数上限截断光线时变大，判定应以它为前提条件。
     A non-sequential trace; ray counts come from each source's # Analysis Rays. Splitting, scattering and polarization
-    are on by default (Fresnel reflection and TIR need them) and 2 logical cores are left to the user; a fixed seed makes
-    the result reproducible, so checks should fix it. dead_ray_errors is the energy of rays OpticStudio reports as errors;
-    it grows when rays hit the segment limit, so checks should treat it as a precondition."""
+    are on by default (Fresnel reflection and total internal reflection need them) and default cores leave 2 logical
+    cores to the user; a fixed seed makes the result reproducible, so checks should fix it. Reports progress;
+    OpticStudio's Cancel follows saos job cancel or max_seconds. Returns seconds, succeeded, stopped_by, error,
+    dead_ray_errors, dead_ray_threshold, total_energy and cores. dead_ray_errors is the energy of rays OpticStudio
+    reports as errors; it grows when rays hit the segment limit, so checks should treat it as a precondition. save_rays
+    names a ZRD beside the lens; strong scattering can make it large, so use ray_filter to keep the rays you need."""
     if cores is None:
         cores = max(1, (os.cpu_count() or 4) - 2)
     report = getattr(ctx, "progress", None)
@@ -202,14 +212,22 @@ def nsc_trace(ctx, *, split: bool = True, scatter: bool = True, polarization: bo
 
 def detector(ctx, ref: int | str, grid: bool = False) -> dict[str, Any]:
     """探测器读数（上一次追迹留下的）：power（W）、hits、peak_pixel_power、pixels；grid 时另有逐像素功率和照度。
-    Detector readings left by the last trace: power (W), hits, peak_pixel_power, pixels; with grid also per-pixel power and irradiance."""
+    Detector readings left by the last trace: power (W; NSDD pixel 0), hits (NSDD pixel -3), peak_pixel_power and
+    pixels; grid adds per-pixel power and irradiance (W/cm^2) for rectangular and curved detectors. Polar and color
+    detectors read 0 through NSDD: power is the sum of their own data and hits is null; a polar grid is azimuth x radial
+    power and power per solid angle (W/sr), a color grid is power laid out by # X Pixels. Volume detectors sum voxels
+    and count a ray once per layer crossed (1 W through 2 layers reads 2 W); their grid is [z][y][x]. For angular
+    distributions use ctx.analysis("DetectorViewer", {"Detector": n, "DataType": "AngleSpace"})."""
     return ctx.backend.detector(ref, grid)
 
 
 def ray_hits(ctx, zrd: str, objects: Iterable[int | str], ray_filter: str = "", max_rays: int | None = None) -> dict[str, Any]:
     """读 nsc_trace(save_rays=...) 存下的光线数据库，取光线到达这些物体（序号或注释）的各段：x、y、z、l、m、n、intensity、
     wave（波长序号）、object、ray，均为 numpy 数组；rays_read 是读过的光线数。zrd 是文件名（在镜头文件旁边）或完整路径。
-    Read a ray database saved by nsc_trace(save_rays=...) and return the segments where rays reach these objects as numpy arrays."""
+    Read a ray database saved by nsc_trace(save_rays=...) and return the segments where rays reach these objects
+    (numbers or comments): numpy arrays x, y, z, l, m, n, intensity, wave (wavelength number), object and ray, and
+    rays_read, the rays read. zrd is a file name beside the lens or a full path. Filter (e.g. H9 for hits at object 9)
+    before reading a huge file."""
     raw = ctx.backend.ray_hits(str(zrd), list(objects), ray_filter, max_rays)
     rays_read = raw.pop("rays_read")[0]
     out: dict[str, Any] = {k: np.asarray(v, dtype=int if k in ("wave", "object", "ray") else float) for k, v in raw.items()}
@@ -221,13 +239,16 @@ def ray_hits(ctx, zrd: str, objects: Iterable[int | str], ray_filter: str = "", 
 
 def op(ctx, name: str, int1: int = 0, int2: int = 0, *data: float) -> float:
     """任意优化操作数的值，例如 op(ctx, "EFFL", 0, 1)、op(ctx, "SSAG", 3, 0, 0.0, 0.2)。
-    The value of any merit operand, e.g. op(ctx, "EFFL", 0, 1), op(ctx, "SSAG", 3, 0, 0.0, 0.2)."""
+    The value of any merit operand, e.g. ctx.op("EFFL", 0, 1), ctx.op("SSAG", 3, 0, 0.0, 0.2). rtc computes the operands
+    uv run saos backends lists under rtc.operands and raises BACKEND_UNSUPPORTED for the others."""
     return ctx.backend.operand(str(name), int(int1), int(int2), [float(x) for x in data])
 
 
 def analysis(ctx, name: str, settings: dict[str, Any] | None = None) -> dict[str, Any]:
     """运行一个分析并返回导出的数据（序列、网格、表头），不留文件；要存证据用 saos lens analysis。
-    Run an analysis and return its exported data (series, grids, header) without keeping files; use saos lens analysis for evidence."""
+    Run an analysis and return its exported numeric data (series, grids, header) without keeping files; use saos lens
+    analysis for evidence. status is ok, partial or empty, with problems and text_head when incomplete: read them before
+    rerunning, since they tell a model without a result from an interface limit."""
     folder = Path(tempfile.mkdtemp(prefix="saos-analysis-"))
     try:
         return ctx.backend.analysis(str(name), dict(settings or {}), folder / "out.txt")
@@ -238,7 +259,8 @@ def analysis(ctx, name: str, settings: dict[str, Any] | None = None) -> dict[str
 
 
 def quick_focus(ctx) -> dict[str, Any]:
-    """Quick focus on the current backend (rtc: smallest RMS spot). / 当前后端的快速调焦。"""
+    """当前后端的快速调焦。
+    Quick focus on the current backend; on rtc it is the smallest RMS spot over every field and wavelength."""
     return ctx.backend.quick_focus()
 
 
@@ -272,19 +294,24 @@ def aperture(ctx, ref: int | str) -> dict[str, Any]:
 
 def clearances(ctx, *, glass: bool | None = None) -> list[dict[str, Any]]:
     """相邻分界面采样到零件外缘的最小间隔（saos.geometry 定义，同 parts_clash）；glass=True 只取玻璃，False 只取空气。
-    Smallest gaps between consecutive boundaries out to the part edges (saos.geometry); glass=True glass only, False air only."""
+    Smallest glass thicknesses and air gaps between consecutive boundaries, sampled out to the part edges
+    (saos.geometry; the edges of the interference check that blocks rounds and delivery); glass=True glass only, False
+    air only, None both."""
     rows = ctx.backend.interference().get("clearances") or []
     return rows if glass is None else [r for r in rows if r["glass"] == glass]
 
 
 def part_radii(ctx) -> dict[int, float]:
     """各面零件外缘半径 {面序号: 半径}（saos.geometry.part_radii：机械半口径、崩边区，一片镜片一个外径）。
-    Part edge radius per surface (saos.geometry.part_radii)."""
+    Part edge radius per surface, {surface: radius} (saos.geometry.part_radii: mechanical semi-diameter, chip zone, one
+    outer diameter per element)."""
     return {int(k): float(v) for k, v in (ctx.backend.interference().get("part_radii") or {}).items()}
 
 
 def parts_clash(ctx) -> dict[str, Any] | None:
-    """当前镜头的零件交叠，见 saos.geometry.parts_clash；没有时为 None。/ The lens's part clashes, or None."""
+    """当前镜头的零件交叠，见 saos.geometry.parts_clash；没有时为 None。
+    The lens's part clashes as the interference check that blocks rounds and delivery finds them
+    (saos.geometry.parts_clash), or None."""
     from saos import geometry
 
     return geometry.parts_clash(ctx.backend)
@@ -338,9 +365,12 @@ class _PsfSession:
 def huygens(ctx, wave: int | None = None, pupil: int = 64, image: int = 128) -> Iterator[_PsfSession]:
     """Huygens PSF 会话（默认主波长，光瞳 64×64、像面 128×128 采样）。会话内换视场、像元间距或镜头参数（ctx.set、ctx.kept）后
     再调 psf() 就重新计算；按坐标给的视场在会话结束时从视场表删掉。离焦扫描、多视场都在一个会话里做。
-    A Huygens PSF session (primary wave, 64×64 pupil and 128×128 image sampling by default). Calling psf() again after
-    changing the field, pixel pitch or the lens (ctx.set, ctx.kept) recomputes; fields given as coordinates are removed
-    when the session ends. Do focus scans and field sweeps inside one session."""
+    A Huygens PSF session (primary wave, 64x64 pupil and 128x128 image sampling by default). h.psf(field, delta_um)
+    returns kit.Psf (values[y][x] unnormalised, dx and dy in um) or None; field is a field number or (x, y) in field
+    units, added for the session only and removed when it ends. Calling psf() again after changing the field, pixel
+    pitch or the lens (ctx.set, ctx.kept) recomputes. Keep focus scans and field sweeps in one session: each session
+    opens an analysis window on OpticStudio, and a few hundred crashed it. rtc raises BACKEND_UNSUPPORTED until its PSF
+    is reconciled with OpticStudio."""
     session = ctx.backend.huygens(primary_wave(ctx) if wave is None else int(wave), int(pupil), int(image))
     try:
         yield _PsfSession(session)
@@ -481,8 +511,8 @@ def wavefront_rms(ctx, field: Any, wave: int | None = None) -> Any:
     """光线积分的 RMS 波前误差（波长，参考质心：扣除平移与倾斜，默认主波长）；field 同 huygens 的 psf()，算不出时为 None。
     给一组视场（列表）时返回同样顺序的列表，OpticStudio 上只开一个分析窗口，多个视场要一起给。
     RMS wavefront error from ray integration (waves, to centroid: piston and tilt removed; primary wave by default);
-    field as in huygens' psf(), None when not computable. A list of fields gives a list in the same order and runs one
-    analysis on OpticStudio, so pass several fields together."""
+    field as in huygens' psf(); None where the chief ray is blocked or the value is not computable. A list of fields
+    gives a list in the same order and runs one analysis on OpticStudio, so pass several fields together."""
     many = isinstance(field, list)
     got = ctx.backend.wavefront_rms(primary_wave(ctx) if wave is None else int(wave), field if many else [field])
     return got if many else got[0]
@@ -494,12 +524,16 @@ def seidel(ctx, wave: int | None = None) -> dict[str, Any]:
     （最短与最长波长之间）和拉氏不变量 invariant，只做同轴的 Standard 与 Even Asphere 折射面。totals 是各面之和；
     逐面 DIST 是 W311，而 DIST 的 Int1=0 在 OpticStudio 是最大视场的畸变百分比，不是这个和。
     用来指认最大差距背后是哪一种像差、落在哪几面：Petzval 一列只随光焦度和折射率变，非球面改不了它。
-    Per-surface third-order aberrations in waves (primary wave by default): spherical, coma, astigmatism, Petzval curvature,
-    distortion, i.e. the operands SPHA, COMA, ASTI, FCUR, DIST. rtc adds the primary colour columns W020 and W111 (between
-    the shortest and longest wavelength) and the Lagrange invariant, and takes coaxial Standard and Even Asphere refracting
-    surfaces only. totals are the per-surface sums; a surface's DIST is W311, while DIST at surface 0 is the maximum-field
-    percentage distortion, not that sum. Use it to name the aberration behind the largest gap and the surfaces that carry
-    it: the Petzval column follows from powers and indices alone, so no asphere changes it."""
+    Per-surface third-order aberrations in waves (primary wave by default): {"columns", "surfaces": [{"surface", "W040",
+    "W131", "W222", "W220P", "W311"}], "totals"}, i.e. spherical, coma, astigmatism, Petzval curvature and distortion,
+    the operands SPHA, COMA, ASTI, FCUR, DIST. rtc adds the primary colour columns W020 (axial) and W111 (lateral)
+    between the shortest and longest wavelength and the Lagrange invariant, and takes coaxial Standard and Even Asphere
+    refracting surfaces only. totals are the per-surface sums; a surface's DIST is W311, while DIST at surface 0 is the
+    maximum-field percentage distortion, not that sum. W040 > 0 is an undercorrected lens; W020 > 0 means the short
+    wavelength focuses nearer the lens.
+
+    Use it to name the aberration behind the largest gap and the surfaces that carry it: the Petzval column follows from
+    powers and indices alone, so no asphere changes it."""
     return ctx.backend.seidel(0 if wave is None else int(wave))
 
 
@@ -507,7 +541,10 @@ def seidel(ctx, wave: int | None = None) -> dict[str, Any]:
 
 def trace(ctx, rays: Iterable[Iterable[float]], to: int | str | None = None) -> Rays:
     """归一化坐标的批量实际光线追迹。rays：(wave, hx, hy, px, py) 的序列；to：目标面，默认像面。
-    Batch real-ray trace in normalised coordinates. rays: (wave, hx, hy, px, py) rows; to: target surface, default the image."""
+    Batch real-ray trace in normalised coordinates. rays: (wave, hx, hy, px, py) rows; to: target surface, default the
+    image. Returns a Rays object with numpy-array attributes x, y, z, l, m, n, error, vignette, intensity and the mask
+    ok (t.x, t.ok). Coordinates are local to the target; kit.global_matrix(ctx, surface) gives the rotation and
+    translation to global."""
     arr = np.asarray(rays if isinstance(rays, (np.ndarray, list, tuple)) else list(rays), dtype=float).reshape(-1, 5)
     target = ctx.backend.surface_count() - 1 if to is None else surface(ctx, to)
     return ctx.backend.trace_batch(arr, target)
@@ -546,10 +583,12 @@ def spot(ctx, fields: Iterable[Iterable[float]] = ((0.0, 0.0),), wave: int | Ite
     """各视场（和波长）的点列统计，一次批量追迹完成。每行：field、wave、launched、arrived、pass_rate（%）、
     chief（主光线落点，到不了时 None）、centroid、rms_radius、geo_radius（相对质心，镜头单位）；refocus=True 时另给
     best_dz（见 best_focus）和该处的 rms_radius_best。到达光线少于 min_rays 的行 valid 为 False，统计量为 None。
-    Spot statistics per field (and wavelength) from one batch trace. Each row: field, wave, launched, arrived,
-    pass_rate (%), chief (None when it does not arrive), centroid, rms_radius, geo_radius (about the centroid, lens
-    units); with refocus=True also best_dz (see best_focus) and rms_radius_best there. Rows with fewer than min_rays
-    arriving rays have valid False and None statistics."""
+    Spot statistics per field (and wavelength) from one batch trace. Each row: field, wave, launched, arrived, pass_rate
+    (%), chief (None when it does not arrive), centroid, rms_radius, geo_radius (about the centroid, lens units).
+    refocus=True adds best_dz, the best shift along the target's local z (see best_focus), and rms_radius_best there,
+    extrapolating straight rays, so the medium beyond the target must be uniform. Rows with fewer than min_rays arriving
+    rays have valid False and None statistics. Afocal systems refuse an implicit image-plane target: use direction
+    cosines, afocal operands or analyses, or an explicit finite target."""
     try:
         afocal = bool(ctx.backend.system_info().get("aperture", {}).get("afocal_image"))
     except (SaosError, AttributeError, TypeError):
@@ -691,10 +730,10 @@ def cra(ctx, direction: Iterable[float] = (0.0, 1.0), wave: int | Iterable[int] 
     单位度。direction 是归一化视场坐标里的终点 (hx, hy)：径向归一化时 (0, 1) 是 +y 全视场；矩形归一化时对角是 (1, 1)。
     wave 默认全部波长。某个视场点有任一波长的主光线到不了，这一点记为读不出（coverage 会说明）。
     The chief ray angle along a field direction and its maximum: the angle between the real chief ray (px = py = 0) and
-    the local z axis of the target surface (default the image), the largest over the wavelengths measured, in degrees.
-    direction is the end point (hx, hy) in normalised field coordinates: (0, 1) is the +y full field with radial
-    normalisation; the diagonal is (1, 1) with rectangular normalisation. wave defaults to every wavelength. A field point
-    where any wavelength's chief ray fails counts as unreadable (coverage says so)."""
+    the local z axis of the target surface (default the image), the largest over the wavelengths measured, in degrees,
+    with per_wave_at_extreme. direction is the end point (hx, hy) in normalised field coordinates: (0, 1) is the +y full
+    field with radial normalisation; the diagonal is (1, 1) with rectangular normalisation. wave defaults to every
+    wavelength. A field point where any wavelength's chief ray fails counts as a missing sample (coverage says so)."""
     dx, dy = (float(v) for v in direction)
     waves = (list(range(1, ctx.backend.wavelength_count() + 1)) if wave is None
              else [int(wave)] if isinstance(wave, (int, np.integer)) else [int(w) for w in wave])
@@ -887,3 +926,17 @@ class KitMethods:
 
     def lib(self, name):
         return lib(self, name)
+
+
+def documented_like(methods: type, functions: dict[str, Any]) -> None:
+    """转调方法沿用被转调函数的说明和签名（functools.update_wrapper），saos api ctx 与 exec --help 都从函数读，说明只写一处。
+    Each forwarding method takes the docstring and signature of the function it calls, so they are written once."""
+    import functools
+    import inspect
+
+    for name, method in vars(methods).items():
+        if inspect.isfunction(method) and not name.startswith("_"):
+            functools.update_wrapper(method, functions[name], assigned=("__doc__",), updated=())
+
+
+documented_like(KitMethods, globals())

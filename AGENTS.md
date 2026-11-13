@@ -25,7 +25,7 @@
 # 技能文档（`.agents/skills/saos/`）
 - 技能只写判断：什么时候用、怎么选、出了什么结果该怎么办。接口写在环境里，改接口时改环境，技能不重复：
   - 命令的参数、格式、结果字段、错误码 → `src/saos/cli_help.py`（大的帮助页按 `TOPICS` 分主题）
-  - 脚本 import 的 Python 接口 → docstring，由 `saos api` 读出
+  - 脚本 import 的 Python 接口 → docstring，由 `saos api` 读出；ctx 方法的说明只写在 docstring（英文部分），`exec --help` 各主题里用一行 `<CTX 名字 …>` 从它生成，主题里只写跨方法的说明。ctx 上转调 kit 函数的方法沿用函数的 docstring（`kit.documented_like`）
   - rtc 能算什么这类清单从代码常量生成（`cli_help._operands`），不手写；镜头能带什么、各项是否对过账由 `saos backends` 现场用探针镜头问 rtc 后端（`src/saos/capability.py`），新增一类处方选项时在它的探针表里加一项
 - 改动 agent 的判断或流程时，写进内容所属的那一份：
   - 某阶段的做法 → 该阶段文件（`need.md`、`model.md`、`rounds.md`、`delivery.md`）；停滞与诊断 → `diagnosis.md`；评价函数（初筛和轮次共用）→ `merit.md`

@@ -36,7 +36,7 @@ HISTORY_MARKS = ("原", "并入", "取消", "旧", "removed", "folded", "former"
 SKILL_DOCS = tuple(name for name in DOCS if name.startswith(".agents/"))
 # agent 脚本里直接调用的 Python 包；包内新增的子模块自动纳入核对
 # 查不到说明但有意保留的接口：内部辅助。Python 包里的内部名字在 api_help.HIDDEN
-INTERNAL = {"ctx.child", "ctx.describe", "saos daemon run", "saos ui serve"} | api_help.HIDDEN
+INTERNAL = {"ctx.child", "saos daemon run", "saos ui serve"} | api_help.HIDDEN
 
 
 def _subcommands(parser) -> dict:
@@ -180,6 +180,39 @@ def test_the_rtc_operand_lists_in_help_come_from_the_code():
     assert "<RTC_" not in listed
     merit = _subcommands(_subcommands(cli.build_parser())["opt"])["merit"].format_help()
     assert all(name in merit for name in rtc_merit.merit_operands() - rtc_merit.INERT)
+
+
+def test_every_ctx_member_says_in_english_what_it_does():
+    # saos api ctx 是 ctx 接口说明的唯一来源；exec --help 从它的英文部分生成 / the one copy of the ctx interface
+    members = api_help._ctx_members()
+    missing = sorted(name for name, member in members.items() if not api_help.english(inspect.getdoc(member) or ""))
+    assert not missing, f"给这些 ctx 成员写 docstring（英文部分进 exec --help）：{missing}"
+
+
+def test_exec_help_takes_the_ctx_entries_from_the_docstrings():
+    whole = cli_help.topic_help("exec", "all")
+    assert "<CTX" not in whole
+    named = re.findall(r"(?m)^  <CTX ([^>]+)>$", cli_help.EXEC_HELP_EPILOG)
+    names = [name for line in named for name in line.split()]
+    assert len(names) == len(set(names)), "a ctx member is listed in two topics"
+    flat = " ".join(whole.split())
+    for name in names:
+        opening = ": " + " ".join(api_help.english(inspect.getdoc(api_help._ctx_members()[name])).split()[:6])
+        # 条目头（可能折行的签名）之后紧跟 docstring 的开头 / the entry head, its signature maybe wrapped, then the docstring
+        assert any(0 <= flat.find(opening, m.start()) - m.start() < 300 for m in re.finditer(rf"ctx\.{name}\b", flat)), name
+    # 每个成员都在帮助里，内部辅助除外；ctx.fast 由它自己的主题讲 / every member is in the help but internal ones
+    unlisted = set(api_help._ctx_members()) - set(names) - {key[4:] for key in INTERNAL if key.startswith("ctx.")}
+    assert unlisted == {"fast"} and "ctx.fast(" in cli_help.topic_help("exec", "fast")
+
+
+def test_the_english_part_of_a_docstring_is_what_help_shows():
+    assert api_help.english("""中文一行。
+        中文第二行
+        English first.
+        English second.""") == "English first.\nEnglish second."
+    assert api_help.english("中文。/ English.") == "English."
+    assert api_help.english("English first. / 后面是中文。") == "English first."
+    assert api_help.english("只有中文。") == ""
 
 
 def test_a_help_topic_prints_and_an_unknown_one_lists_the_choices(capsys):

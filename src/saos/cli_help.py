@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 
 
 OVERVIEW = """saos: optical design tools for agents. Two backends compute: rtc (in-house ray
@@ -517,24 +518,12 @@ EXEC_HELP_EPILOG = """Input: a Python script defining run(ctx)
   the review and the unsaved-lens bookkeeping.
 
 Context and file operations
-  ctx.backend: the backend computing now. On OpticStudio only: ctx.system
-    (PrimarySystem), ctx.zosapi (ZOSAPI namespace); on rtc they raise, see topic rtc.
-  ctx.info(): the system settings (on OpticStudio with the catalogs in use).
-  ctx.surface_params(surface): the surface type's parameter columns (par, name, value,
-    read_only).
-  ctx.job, ctx.args, ctx.lens (Path or None), ctx.dirty.
-  ctx.path(rel): path contained in the job; ctx.mark_dirty(): record edits.
-  ctx.load(name), ctx.save_as(name, overwrite=False): names relative to lenses/. load
-    replaces the current lens without an unsaved-changes prompt: save first.
-  ctx.show(): push geometry/Lens Data/interference to the workflow window now;
-    ctx.progress and the end of every command push it on their own.
-  ctx.progress(stage, **numbers): report progress and refresh the window's current
-    lens now and then; True means cancellation requested.
-  ctx.cancel_requested(): check cancellation without reporting. Long scripts must
-    stop at safe points and retain completed work after uv run saos job cancel J.
+  ctx.backend: the backend computing now; ctx.job and ctx.args: the job and the
+    script's arguments.
+  <CTX system zosapi info surface_params lens dirty describe mark_dirty path load save_as show progress cancel_requested>
 
 Parameters (also available on worker w)
-  ctx.get(key), ctx.values(keys), ctx.set({key: value}), ctx.surface(index_or_comment).
+  <CTX get values set surface>
   Surface keys: "3.radius", "lens dome.conic", "12.par1"; surface index or unique
     comment; negative indices count from image (-1 is image). Parameters: radius,
     curvature (1/R; 0 is flat), thickness, conic, semi_diameter,
@@ -557,82 +546,31 @@ Parameters (also available on worker w)
     omitted with a single group. File-based objects (CAD, polygon, ray file)
     are referenced by number or file name (e.g. block.STL); their comment is
     the file name and cannot be set. ctx.object_index(ref) resolves a reference.
-  with ctx.kept(keys): restores those values, including on error.
-  with ctx.restored(): restores the whole lens using a temporary saved copy
-    (about 0.1 s); useful for trials that add/remove surfaces. Afterwards opt
-    hammer/global wait for a lens save.
-  ctx.configurations(): configuration count; with ctx.configuration(n): temporarily
-    switches to configuration n and restores the original even on error. Include
-    n in memo keys for per-configuration checks. Checks must leave the lens unchanged.
-  ctx.make_thermal(temperatures, housing_tce): configuration 1 is the lens as it is,
-    each temperature adds one that follows it (OpticStudio's Make Thermal; on rtc
-    without starting it). housing_tce in 1e-6/K. Scripts only, not checks.
+  <CTX kept restored configurations configuration make_thermal>
 
 Sequential rays, analyses and focus
-  ctx.trace(rays, to=None): rays are (wave,hx,hy,px,py) tuples. Returns a Rays object
-    with numpy-array attributes x,y,z,l,m,n,error,vignette,intensity and mask ok (t.x, t.ok). Coordinates are target-local;
-    kit.global_matrix(ctx, surface) supplies rotation/translation to global.
-  ctx.spot(fields=((0,0),), wave=None, grid=21, to=None, refocus=False, min_rays=3):
-    per-field/per-wave pass rate, chief intercept, centroid, RMS and geometric
-    radius about centroid. refocus adds best shift along local target z and RMS,
-    extrapolating straight rays (requires uniform medium beyond target).
-    Afocal systems reject an implicit image-plane target: use direction cosines,
-    afocal operands/analyses or an explicit finite target instead.
-  ctx.op(name, int1=0, int2=0, *data): an optimization operand; rtc computes the ones
-    in topic rtc and raises BACKEND_UNSUPPORTED for others.
-  ctx.analysis(name, settings=None): exported numeric data without files; status
-    ok/partial/empty, problems and text_head when incomplete. Inspect these before
-    rerunning: they tell a model without a result from an interface limit.
-  ctx.quick_focus(): quick focus (rtc: smallest RMS spot over fields and wavelengths).
-  ctx.clearances(glass=True|False|None): smallest glass thicknesses and air gaps out to
-    the part edges; ctx.part_radii(): {surface: edge radius}; ctx.parts_clash(). They use
-    the part edges of the interference check that blocks rounds and delivery.
-  with ctx.huygens(wave=None, pupil=64, image=128) as h: h.psf(field, delta_um)
-    returns kit.Psf (values[y][x] unnormalised, dx/dy in um) or None; field is a
-    field number or (x, y) in field units, added for the session only. Keep focus
-    scans and field sweeps in one session (each session opens an analysis window on
-    OpticStudio, and a few hundred crashed it).
+  <CTX trace spot op analysis quick_focus clearances part_radii parts_clash huygens>
     kit.psf_widths(p, n_photon=1, ee=0.8): fwhm_x/fwhm_y through the peak and
     ee_diameter about the centroid. kit.psf_axial(peak_at, step_um, reaches=(15, 30),
     n_photon=1, scan="window"): peak_at(k) gives the peak k steps out of focus (move
     and restore the plane yourself); returns fwhm_um, peak_offset_um, reach, planes,
     curve or None. scan="outward" stops once both sides fall below half: far fewer
     planes, but a higher peak farther out is missed (a different definition).
-    ctx.wavefront_rms(field, wave=None): ray-integrated RMS to centroid, waves; a
-    list of fields gives a list from one analysis. None where the chief ray is
-    blocked.
-    ctx.aperture(surface): the surface aperture. rtc: huygens is BACKEND_UNSUPPORTED
-    until reconciled with OpticStudio.
-  ctx.seidel(wave=None): third-order aberrations surface by surface, in waves:
-    {"columns", "surfaces": [{"surface", "W040", "W131", "W222", "W220P", "W311"}],
-    "totals"}: spherical, coma, astigmatism, Petzval curvature, distortion, the
-    operands SPHA, COMA, ASTI, FCUR, DIST. rtc adds the primary colour columns W020
-    (axial) and W111 (lateral) between the shortest and longest wavelength, and
-    "invariant". totals are the per-surface sums. DIST on a surface is W311; DIST
-    with surface 0 is the percentage distortion at the maximum field, not that sum.
-    W040 > 0 is an undercorrected lens; W020 > 0 means the short wavelength focuses
-    nearer the lens.
+  <CTX wavefront_rms aperture seidel>
   from saos import kit: global_matrix, sag, pupil, best_focus, material_nd
     (model glass uses its solve's nd), profile, fwhm. Optical evaluations go through
     the current backend.
   from saos import micro: micro-optics measurements (focus depth in a medium,
     marginal NA, part gaps and housing clearance, collection, PSF widths, zoom
     travel); DesignFailure means inf through micro.guarded. Definitions are in
-    each function's docstring. ctx.spare_map(fn, items, keep_free=2) runs fn
-    ("saos.<module>:<function>") on the pool only when licences are free, else None.
+    each function's docstring.
+  <CTX spare_map>
   from saos import library: shared reference data. library.catalog() lists the
     libraries; library.find(name, text, **fields) returns entries with their
     sources; library.index(material_id, wavelength_nm) never extrapolates.
 
 Extrema and sampling coverage
-  ctx.cra(direction=(0,1), wave=None, n=33, refine=2, to=None): actual chief-ray
-    angle to local target z, degrees; maximum over wavelengths, with
-    per_wave_at_extreme. Missing chief rays count as missing samples.
-  ctx.field_profile(fn, direction=(0,1), n=17, find="max", refine=1,
-                    unit="", quantity=""): fn(ctx,hx,hy) must not change the lens.
-  ctx.wave_profile(fn, lo, hi, n=33, find="min", refine=2, wave=None): temporarily
-    sweeps a wavelength (default primary) in [lo,hi] micrometres; calls fn(ctx,wave),
-    then restores it. Finds troughs between discrete design wavelengths.
+  <CTX cra field_profile wave_profile>
   direction is the normalized-field endpoint; rectangular field diagonal is (1,1).
   kit.profile(evaluate,lo,hi,n=33,find="max",refine=2): evaluate gets a batch of x.
   Shared result: quantity/definition/unit, range/step, value/at, local extrema,
@@ -642,57 +580,23 @@ Extrema and sampling coverage
     do not assume a field edge or the design wavelengths contain the extreme.
 
 Demand checks and shared cache
-  ctx.measure(ids=None): same demand checks as check/round, without evidence files;
-    returns values, shortfall (measured items only), gaps, hard_failing, invalid,
-    errors. Use it as the objective rather than reimplementing the checks.
+  <CTX measure metric metrics>
   ctx.cache is shared across checks within one check/round/measure/scan point.
-  ctx.memo(key, compute) calculates once per cache; ctx.lib("fiberlib") loads
-    checks/fiberlib.py once per cache. After changing the lens in exec, call
-    ctx.cache.clear(). Cache keys must distinguish configurations and settings.
+    After changing the lens in exec, call ctx.cache.clear(). Cache keys must
+    distinguish configurations and settings.
+  <CTX memo lib>
 
 Non-sequential trace and detectors
-  ctx.nsc_trace(split=True, scatter=True, polarization=True, ignore_errors=True,
-    seed=None, cores=None, clear=True, save_rays=None,
-    zrd_format="CompressedFullData", ray_filter="", max_seconds=None): ray count
-    is each source's # Analysis Rays; default cores leave 2 logical cores free.
-    Fix seed for reproducible checks. Splitting/polarization include Fresnel
-    reflection and total internal reflection. Reports progress; Cancel follows
-    job cancel or max_seconds. Returns seconds,succeeded,stopped_by,error,
-    dead_ray_errors,dead_ray_threshold,total_energy,cores. Treat truncated/dead-ray
-    energy as a measurement precondition. save_rays names a ZRD beside the lens;
-    strong scattering can make it large: use ray_filter to retain needed rays.
-  ctx.detector(ref, grid=False): last-trace power (W; NSDD pixel 0), hits (NSDD
-    pixel -3), peak_pixel_power,pixels; grid adds per-pixel power and irradiance
-    (W/cm^2). Rectangular and curved detectors as above. Polar and color
-    detectors read 0 through NSDD: power is the sum of their own data, hits is
-    null; polar grid is azimuth x radial power and power per solid angle (W/sr),
-    color grid is power laid out by # X Pixels. Volume detectors sum voxels and
-    count a ray once per layer crossed (1 W through 2 layers reads 2 W); grid is
-    [z][y][x]. Angular distributions use ctx.analysis("DetectorViewer",
-    {"Detector": n, "DataType": "AngleSpace"}).
-  ctx.ray_hits(zrd, objects, ray_filter="", max_rays=None): read saved segments
-    reaching object numbers/comments; arrays x,y,z,l,m,n,intensity,wave,object,ray
-    and rays_read. Filter (e.g. H9 for hits at object 9) before reading a huge file.
-  ctx.objects(): type, file, placement, material, parameters, volume scattering,
-    faces, scatter_to, per-wavelength indices and global transform per object.
+  <CTX nsc_trace detector ray_hits objects object_index>
 
 Parallel work
-  ctx.map(fn, items, workers=None, reset=True, args=None): fn is a function name
-    in this script, "explore/x.py:fn" in the job, or "saos.scan:point". Workers call
-    fn(w,item) and must return JSON-compatible data. A saved current lens is copied
-    per call; reset reloads it before every item (about 0.08 s). Current lens stays
-    unchanged. w exposes the kit methods, measure,args,path,job,worker,reload,cache;
-    its cache is fresh per item.
+  <CTX map pool_close>
   Persistent pool on the backend the daemon computes on (closed when it switches):
-    workers are reused until idle for SAOS_POOL_IDLE_S (default 600);
-    ctx.pool_close() closes them at once. OpticStudio workers start in about
-    6-8 s/instance and each holds a licence.
+    workers are reused until idle for SAOS_POOL_IDLE_S (default 600). OpticStudio
+    workers start in about 6-8 s/instance and each holds a licence.
     Workers run below normal priority. workers defaults to 4, capped by available
     cores. Licence limit is 8 total including user windows and daemon; inspect
     uv run saos daemon status first. Refused sizes are not retried until pool closes.
-  Returns ordered results, per-item errors, worker counts/busy times and startup
-    (new workers/unavailability). All unavailable -> ZOS_ERROR. Plan, script copy
-    and results are sealed in parallel/NNN/. job cancel waits for current items.
     The pool serves one scan or map at a time (POOL_BUSY).
 
 Search control (from saos import search; evaluations still go through ctx)
@@ -720,12 +624,7 @@ Editing the lens from a script
   use the same calls; use ctx.system only for what they do not cover. A new surface or
   type changes the structure, which the round gate compares with the approved model.
   Check scripts cannot call these methods.
-  ctx.merit_add(rows): inserts in order before the first DMFS (at the end without one)
-    and returns row numbers. A row has type, params (or int1/int2/data), target, weight;
-    id and {"ref": id} refer to an earlier row of the batch. Loads as one merit file and
-    is read back: 1501 rows take about 65 ms instead of 9.8 s row by row, and a value
-    OpticStudio would silently change refuses the batch and leaves the merit function
-    as it was. Rows after the insertion point move down. ctx.merit_clear(): all rows.
+  <CTX merit_add merit_clear>
   saos.ctx.rows builds common constraints:
     thickness_bounds(s, minimum=, maximum=) (CTGT/CTLT);
     sag_gap(front, front + 1, [(x, y), ...], minimum=): front thickness + back sag -
@@ -740,12 +639,7 @@ Editing the lens from a script
     chief_ray_angle(image, wave, [hy, ...], maximum=) (RAID, degrees);
     ray_bend([surfaces], wave, [(hx, hy, px, py), ...], maximum=) (|RAID - RAED|, degrees).
     They constrain the sampled points only; the demand checks still judge.
-  ctx.solve("5.thickness", "marginal_ray_height", height=0, zone=0): one cell's solve,
-    returned read back: fixed, variable, pickup(surface, scale=1, offset=0),
-    marginal_ray_height on thicknesses, f_number(value) on radii. rtc: fixed, variable.
-  ctx.insert_surface(3, "EvenAspheric", radius=-40, thickness=2): before the image,
-    values set as ctx.set does. ctx.change_surface_type(3, "Standard"): OpticStudio
-    SurfaceType names, any case; rtc: Standard and EvenAspheric.
+  <CTX solve insert_surface change_surface_type>
   Example:
     from saos.ctx import rows
     def run(ctx):
@@ -766,21 +660,7 @@ Expert search classes (saos.ctx.experts)
   configuration the others follow, the merit function must cover every configuration
   (BAD_ARGS otherwise; the wizard's does) and a surface whose glass changes between
   configurations refuses. Algorithms and limits: uv run saos api saos.ctx.experts.
-  ctx.AsphereExpert([1, 3, 5], terms=4, max_seconds=60).rank() ranks surfaces and restores
-    the lens; .run(nas=2) converts and optimises the best, reranking after each, and
-    changes the structure. The residual comes from the merit rows (pass residual(ctx) when
-    positive-weight contributions do not add up to 100 %). engine="opticstudio" (the
-    default, named for the method: merit rows on the current backend) or engine="rtc"
-    (ranks by ray errors in an rtc copy; acceptance stays on the merit function). Other
-    surface types need an AsphereProfile, finite slope limits a
-    constraints(ctx, surface, limit_waves) provider.
-  ctx.GlassExpert([1, 3], catalogs=["SAOS_CDGM_INPROD"], neighbors=7, partial="working"|"gF",
-    max_seconds=120).run() searches glass by glass; surfaces="model" takes every
-    model-glass surface, including an approved environment medium modelled that way, so
-    before delivery pass the surfaces a round's model_glass lists instead.
-    .candidates(surface) lists candidates without changing the lens. Cost, transmission,
-    weight and expansion filters exist only through your feasible(ctx, surface);
-    candidate_filter narrows the list.
+  <CTX AsphereExpert GlassExpert>
   Neither saves the lens or records a round. Keep a result with ctx.save_as(name) or
   saos lens save, never system.Save(): their temporary snapshots move OpticStudio's
   SystemFile, and opt hammer/global refuse until the lens is saved.
@@ -808,11 +688,7 @@ The rtc instance
     differs slightly from the DIST operand, and DIST(Int1=0) is a percentage distortion.
     PARY and PATY interpret Hy as the actual field fraction before the tangent, so 0.6 Hy on
     a 5-degree field is 3 degrees.
-  ctx.merit_jacobian(): the Jacobian of the merit function at the current lens, the one
-    each opt local step uses: variables, rows (the merit row of each residual), residuals
-    (sqrt(weight) x (value - target)), jacobian[row][variable], steps, merit, and
-    constraints (labels, values >= 0 when met, jacobian) for the boundary rows. The lens
-    is unchanged. rtc only.
+  <CTX merit_jacobian>
   A check using a refused measurement is filed under backend_unsupported. So is one using
     ctx.system or ctx.zosapi: read the lens through ctx.get, ctx.op (SSAG, INDX, ...) and
     ctx.trace.
@@ -976,8 +852,20 @@ TOPICS = {
 }
 
 
+def _ctx_entries(text: str) -> str:
+    """把 “  <CTX 名字 …>” 一行换成这些 ctx 成员的条目，取自它们 docstring 的英文部分（api_help.ctx_help），说明只写在 docstring 里。
+    A line "  <CTX name ...>" becomes those ctx members' entries, made from their docstrings, which are the one copy."""
+    if "<CTX " not in text:
+        return text
+    from saos import api_help
+
+    return re.sub(r"(?m)^  <CTX ([^>]+)>$", lambda m: api_help.ctx_help(m.group(1).split()), text)
+
+
 def _operands(text: str) -> str:
-    """操作数表从 rtc 的常量生成，帮助不会和代码分叉。/ Operand lists come from rtc's constants, so help cannot drift from the code."""
+    """操作数表从 rtc 的常量生成，帮助不会和代码分叉；ctx 方法的条目从 docstring 生成（_ctx_entries）。
+    Operand lists come from rtc's constants and ctx entries from docstrings, so help cannot drift from the code."""
+    text = _ctx_entries(text)
     if "<RTC_" not in text:
         return text
     from saos.backend import rtc, rtc_merit

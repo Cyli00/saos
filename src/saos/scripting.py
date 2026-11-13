@@ -71,7 +71,8 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
 
     def fast(self, freeze_solves: bool = False):
         """当前镜头（含未保存修改）的 rtc 内存副本，用于高频追迹的探索（saos.fast）。
-        An rtc in-memory copy of the current lens for high-rate exploratory tracing (saos.fast)."""
+        An rtc in-memory copy of the current lens, unsaved changes included, for high-rate exploratory tracing
+        (saos.fast); w.fast() in a worker. What the copy does and refuses: uv run saos exec --help fast."""
         from saos import fast
 
         return fast.from_context(self, freeze_solves)
@@ -83,8 +84,12 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
     def merit_add(self, rows: list[dict[str, Any]]) -> list[int]:
         """按输入顺序把评价函数行插在第一个 DMFS 之前（没有时接在末尾），返回新行号。行写 type、params（或 int1/int2/data）、
         target、weight；id 与 {"ref": id} 引用同批前序行，行号在插入位置上解析。saos.ctx.rows 生成常用约束。
-        Insert merit rows, in order, before the first DMFS (at the end without one); returns their row numbers. id and
-        {"ref": id} refer to earlier rows of the same batch, resolved at the insertion point."""
+        Insert merit rows, in order, before the first DMFS (at the end without one) and return their row numbers. A row
+        has type, params (or int1/int2/data), target and weight; id and {"ref": id} refer to an earlier row of the same
+        batch, resolved at the insertion point. The batch loads as one merit file and is read back: 1501 rows take about
+        65 ms instead of 9.8 s row by row, and a value OpticStudio would silently change refuses the whole batch and
+        leaves the merit function as it was. Rows after the insertion point move down. saos.ctx.rows builds common
+        constraints."""
         self._editing("merit_add")
         added = self.backend.merit_append(rows)
         self.mark_dirty()
@@ -95,11 +100,13 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
         jacobian[行][变量]、constraints（边界类行的 labels、values、jacobian）、steps、merit。镜头不变。
         用来在优化前后看结构：对 jacobian 按列归一后做奇异值分解，接近 0 的奇异值是变量之间的简并（放开再多也只算一个自由度），
         某一行整行接近 0 表示没有变量管这个目标；constraints 里 values 接近 0 的行是当前顶住的边界。
-        The Jacobian of the merit function at the current lens (on rtc): variables, rows (the merit row of each residual),
-        residuals, jacobian[row][variable], constraints (labels, values, jacobian of boundary rows), steps, merit. The lens
-        is unchanged. Use it to see the structure of a problem: after normalising the columns, singular values near zero
-        are variables that act as one, a row near zero is a target no variable moves, and constraints with values near
-        zero are the bounds now holding the design."""
+        The Jacobian of the merit function at the current lens, the one each opt local step uses: variables, rows (the
+        merit row of each residual), residuals (sqrt(weight) x (value - target)), jacobian[row][variable], steps, merit,
+        and constraints (labels, values >= 0 when met, jacobian) for the boundary rows. The lens is unchanged. rtc only.
+
+        Use it to see the structure of a problem: after normalising the columns, singular values near zero are variables
+        that act as one, a row near zero is a target no variable moves, and constraints with values near zero are the
+        bounds now holding the design."""
         return self.backend.merit_jacobian()
 
     def merit_clear(self) -> None:
@@ -111,7 +118,9 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
     def solve(self, key: str, kind: str, **parameters: Any) -> dict[str, Any]:
         """设一个面参数单元格的求解：fixed、variable、pickup(surface, scale=1, offset=0)、
         marginal_ray_height(height=0, zone=0)（厚度）、f_number(value)（半径）。返回回读的求解。
-        Set the solve of one surface cell; returns the solve read back."""
+        Set the solve of one surface cell (<surface>.radius, thickness, conic, semi_diameter or par<N>) and return it
+        read back: fixed, variable, pickup(surface, scale=1, offset=0), marginal_ray_height(height=0, zone=0) on
+        thicknesses, f_number(value) on radii. rtc takes fixed and variable only."""
         from saos import kit
         from saos.lensdata import PAR_RE, parse_key
 
@@ -137,7 +146,8 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
 
     def insert_surface(self, index: int, surface_type: str = "Standard", **values: Any) -> dict[str, Any]:
         """在 index 处（像面之前）插入一个面，换成 surface_type，再按 ctx.set 写 values（radius=…、thickness=…、par2=…）。
-        Insert a surface at index (before the image), give it surface_type and set values as ctx.set would."""
+        Insert a surface at index (before the image), give it surface_type and set values as ctx.set would (radius=...,
+        thickness=..., par2=...); returns index and type."""
         self._editing("insert_surface")
         kind = self.backend.insert_surface(index, surface_type)
         self.mark_dirty()
@@ -146,7 +156,9 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
         return {"index": index, "type": kind}
 
     def change_surface_type(self, ref: int | str, surface_type: str) -> str:
-        """改面型（OpticStudio 的 SurfaceType 名，不分大小写，如 EvenAspheric）；返回改后的面型。"""
+        """改面型（OpticStudio 的 SurfaceType 名，不分大小写，如 EvenAspheric）；返回改后的面型。
+        Change a surface's type to an OpticStudio SurfaceType name (any case, e.g. EvenAspheric) and return the new
+        type; rtc takes Standard and EvenAspheric."""
         from saos import kit
 
         self._editing("change_surface_type")
@@ -157,15 +169,18 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
     def measure(self, ids: list[str] | None = None) -> dict[str, Any]:
         """按需求单的判定测当前镜头（与 check、round 同一套定义），不存证据、不记录；返回 values、shortfall（只含所测各项）、
         hard_failing、invalid、errors。改镜头—测量的循环用它，不必在脚本里重写判定。
-        Measure the current lens with the demand's checks (the same definitions as check and round) without evidence or a
-        record; returns values, shortfall (of the measured items only), hard_failing, invalid, errors."""
+        Measure the current lens with the demand's checks (the same definitions as check and round) without evidence or
+        a record; returns values, shortfall (of the measured items only), gaps, hard_failing, invalid and errors. Use it
+        as the objective of a change-and-measure loop rather than reimplementing the checks."""
         from saos import demand
 
         return demand.quick(self, ids)
 
     @property
     def system(self):
-        """OpticStudio 的 PrimarySystem（只有真实后端才有）。"""
+        """OpticStudio 的 PrimarySystem（只有真实后端才有）。
+        OpticStudio's PrimarySystem (the IOpticalSystem: LDE, MFE, SystemData). OpticStudio only: on rtc it raises
+        BACKEND_UNSUPPORTED, so read the lens through ctx.get, ctx.op and ctx.trace."""
         system = getattr(self.backend, "system", None)
         if system is None:
             if self.backend.identity().get("backend") == "rtc":
@@ -179,7 +194,8 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
 
     @property
     def zosapi(self):
-        """ZOSAPI 命名空间，例如 ctx.zosapi.Editors.LDE.SurfaceType。"""
+        """ZOSAPI 命名空间，例如 ctx.zosapi.Editors.LDE.SurfaceType。
+        The ZOSAPI namespace, e.g. ctx.zosapi.Editors.LDE.SurfaceType. OpticStudio only."""
         root = getattr(self.backend, "root", None)
         if root is None:
             raise SaosError(ErrorCode.BAD_ARGS, f"{type(self.backend).__name__} has no ZOS-API; ctx.zosapi exists only in the approved OpticStudio stage")
@@ -189,19 +205,24 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
 
     @property
     def lens(self) -> Path | None:
+        """The file of this job's loaded lens (a Path), or None when this job's lens is not loaded."""
         loaded = self._daemon.loaded
         return loaded.path if loaded is not None and loaded.job.id == self.job.id else None
 
     @property
     def dirty(self) -> bool:
+        """Whether this job's loaded lens has unsaved changes."""
         loaded = self._daemon.loaded
         return bool(loaded is not None and loaded.job.id == self.job.id and loaded.dirty)
 
     def describe(self) -> dict[str, Any]:
+        """The loaded lens's state: job, file (relative to lenses/) and dirty; file None when this job's lens is not
+        loaded."""
         loaded = self._daemon.loaded
         return loaded.describe() if loaded is not None and loaded.job.id == self.job.id else {"job": self.job.id, "file": None, "dirty": False}
 
     def mark_dirty(self) -> None:
+        """Record that this job's loaded lens has unsaved changes."""
         loaded = self._daemon.loaded
         if loaded is not None and loaded.job.id == self.job.id:
             loaded.dirty = True
@@ -220,7 +241,9 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
         return self._daemon.export_view()
 
     def load(self, name: str) -> str:
-        """加载本任务 lenses/ 下的文件；agent 自己的未保存修改由脚本负责。"""
+        """加载本任务 lenses / 下的文件；agent 自己的未保存修改由脚本负责。
+        Load a file under this job's lenses/ (name relative to it) as the current lens. It replaces the current lens
+        without an unsaved-changes prompt: save first."""
         from saos.daemon import Loaded
 
         path = self.job.resolve_lens(name, must_exist=True)
@@ -235,9 +258,10 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
         return self.job.relative_lens(path)
 
     def save_as(self, name: str, *, overwrite: bool = False, archive: bool = False) -> str:
-        """把当前系统存为本任务 lenses/ 下的文件，并把它记为当前加载的镜头。归档目录只有工具（archive=True）能写。
-        Save the system as a file under the job's lenses/ and make it the loaded lens. Only the tools (archive=True)
-        write into the archive folders lenses/rounds/ and lenses/captures/."""
+        """把当前系统存为本任务 lenses / 下的文件，并把它记为当前加载的镜头。归档目录只有工具（archive=True）能写。
+        Save the system as a file under the job's lenses/ (name relative to it) and make it the loaded lens; an existing
+        file needs overwrite=True (FILE_EXISTS otherwise). Only the tools (archive=True) write into the archive folders
+        lenses/rounds/ and lenses/captures/."""
         from saos.daemon import Loaded
 
         target = self.job.resolve_lens(name, must_exist=False)
@@ -256,8 +280,8 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
 
     def progress(self, stage: str, **data: Any) -> bool:
         """长脚本报告进度（写进任务的 progress.json，saos job show 可见），并隔一段时间刷新流程图窗口的当前镜头；返回是否收到了取消请求。
-        Report progress from a long script (job's progress.json, shown by saos job show) and now and then refresh the
-        workflow window's live view; returns whether a cancel was requested."""
+        Report progress from a long script (the job's progress.json, shown by saos job show) and now and then refresh
+        the workflow window's current lens; returns True when a cancel was requested."""
         self.job.write_progress(stage=str(stage), data=jsonable(data))
         self._daemon.view_tick(self.job)
         return self.job.cancel_requested()
@@ -265,8 +289,13 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
     def map(self, fn: str, items: list[Any], workers: int | None = None, reset: bool = True, args: dict[str, Any] | None = None) -> dict[str, Any]:
         """在常驻的 standalone 实例池里并发执行 fn(w, item)，按条目顺序返回结果（saos.parallel）。fn 是本脚本里的函数名、
         "explore/x.py:fn" 或 "saos.scan:point"；args 原样交给每个 w.args。
-        Run fn(w, item) over items on the daemon's pool of standalone instances, results in item order (saos.parallel).
-        fn is a function of this script, "explore/x.py:fn" or "saos.scan:point"; args reaches every w.args."""
+        Run fn(w, item) over items on the daemon's pool of standalone instances (saos.parallel). fn is a function of
+        this script, "explore/x.py:fn" in the job, or "saos.scan:point"; args reaches every w.args. Workers must return
+        JSON-compatible data. A saved current lens is copied per call and reset reloads it before every item (about 0.08
+        s); the current lens stays unchanged. w exposes the kit methods, measure, args, path, job, worker, reload and
+        cache; its cache is fresh per item. Returns ordered results, per-item errors, worker counts and busy times, and
+        startup (new workers, unavailability); every worker unavailable is ZOS_ERROR. Plan, script copy and results are
+        sealed in parallel/NNN/, and job cancel waits for the current items."""
         from saos import parallel
 
         return parallel.run_map(self, fn, items, workers, reset, args)
@@ -283,7 +312,8 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
 
     def pool_close(self) -> dict[str, Any]:
         """立即关闭 worker 池、释放许可证（否则空闲 SAOS_POOL_IDLE_S 秒后自动关闭）。
-        Close the worker pool and free the licences now (otherwise it closes after SAOS_POOL_IDLE_S idle seconds)."""
+        Close the worker pool and free the licences now (otherwise it closes after SAOS_POOL_IDLE_S idle seconds);
+        returns the pool status before closing."""
         pool = self._daemon.pool
         before = pool.status()
         if not pool.lock.acquire(timeout=2):
@@ -296,11 +326,13 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
 
     def cancel_requested(self) -> bool:
         """用户或 agent 执行了 saos job cancel；脚本应在下一个安全点结束并保存已有结果。
-        saos job cancel was run; the script should stop at the next safe point and keep what it has."""
+        Whether saos job cancel was run, without reporting progress. Long scripts must stop at the next safe point and
+        keep the work they completed."""
         return self.job.cancel_requested()
 
     def path(self, rel: str) -> Path:
-        """任务目录内的路径；越出任务目录时拒绝。"""
+        """任务目录内的路径；越出任务目录时拒绝。
+        A path inside the job directory; one that leaves it raises PATH_OUTSIDE_JOB."""
         return jobs.inside(self.job.root, rel)
 
 

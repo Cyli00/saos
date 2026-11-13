@@ -298,6 +298,10 @@ def validate(spec: Any, *, judging: bool = False) -> tuple[Metric, dict[str, Any
 
 
 def measure(ctx, metric_id: str, **params) -> dict[str, Any]:
+    """One catalog metric on the current lens (workers too): the catalog entry's id, name, unit, shape, description,
+    axes, params and scalar_units, with value and scalars. Numbers only, never evidence. Metrics in mm or 1/mm and mtf
+    need Millimeters lens units (BACKEND_UNSUPPORTED otherwise); a design failure gives value None with design_failure
+    and reason."""
     metric, args = validate({"id": metric_id, "params": params})
     if metric.unit in ("mm", "1/mm") or metric.id == "mtf":
         units = ctx.backend.system_info().get("lens_units")
@@ -331,6 +335,9 @@ def picked(spec: dict[str, Any]) -> dict[str, str]:
 
 
 def catalog(ctx) -> list[dict[str, Any]]:
+    """The metric catalog: each metric's id, name, unit, shape, description, scalars, axes, scalar_units, params and
+    availability on the current backend (the computation path exists, not that the lens is valid or the metric
+    reconciled with OpticStudio)."""
     support = getattr(ctx.backend, "metric_support", None)
     return [{"id": m.id, "name": m.name, "unit": m.unit, "shape": m.shape,
              "description": _description(m),
@@ -352,3 +359,6 @@ class MetricMethods:
 
     def metrics(self):
         return catalog(self)
+
+
+kit.documented_like(MetricMethods, {"metric": measure, "metrics": catalog})
