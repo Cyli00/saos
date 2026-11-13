@@ -53,7 +53,7 @@ The unoptimised pass only shows whether a start traces and fits together; choosi
 
 Shortfall ranks candidates against each other; it does not say any of them is good. Read each row's `reach_blocking` and `stopped_by` too. `verdict: valid` only means the candidate traces and fits. If every candidate is blocked after converging, the search failed: go back to the starting forms rather than taking the least bad. Before you blame a form, check the merit function weighs what the demand judges (rim rays, all fields, one dominant row).
 
-Read the Petzval sum and lateral colour of each candidate here. They follow from powers, indices and glass, so no optimiser or asphere removes them; a form locked on them needs a different power layout or material ([diagnosis.md](diagnosis.md#which-variables-move-the-target)). The night-vision job found this 18 minutes after its first round, when the same check on the screened candidates would have rejected the form.
+Read the Petzval sum and lateral colour of each candidate here: `prediction.third_order` in each scan row has the Petzval term (FCUR), and `ctx.seidel()` on a kept lens adds lateral colour (W111) on rtc. They follow from powers, indices and glass, so no optimiser or asphere removes them; a form locked on them needs a different power layout or material ([diagnosis.md](diagnosis.md#which-variables-move-the-target)). The night-vision job found this 18 minutes after its first round, when the same check on the screened candidates would have rejected the form.
 
 - The verdict per candidate is valid, invalid within budget, or not evaluated because of a material or computation failure; material failures stay distinct from connection and UI failures, which propagate.
 - Equal fingerprints count once. Keep budget-limited candidates and record `RuntimeWarning` counts; zero warnings does not establish validity, because check scripts can suppress them.
@@ -61,7 +61,7 @@ Read the Petzval sum and lateral colour of each candidate here. They follow from
 
 ## Spherical version first, an aspheric version to compare
 
-Optimise with every surface spherical to convergence and save that lens with `ctx.save_as`: it is the spherical version, and it stays on record whatever comes next. Aspheres cost money and can hide a form that is wrong: on the night-vision job, six aspheric surfaces took the spot from 358 to 280 µm against a 13 µm limit.
+Optimise with every surface spherical to convergence and save that lens with `ctx.save_as`: it is the spherical version, and it stays on record whatever comes next. Go straight to the aspheric version only when the user asked for aspheres, the feasibility record shows the element count and length exclude a spherical form, or every element is moulded so an asphere costs nothing extra; write which one in the model notes. Aspheres cost money and can hide a form that is wrong: on the night-vision job, six aspheric surfaces took the spot from 358 to 280 µm against a 13 µm limit.
 
 Then name the largest residual ([diagnosis.md](diagnosis.md#which-variables-move-the-target)) and take the matching step, converging again after each:
 
@@ -82,11 +82,11 @@ Put both versions in the model notes' `exploration`: the value of each `must`, t
 
 `lens describe` measures every `must` and records how far each is from its bound; `reach_blocking` in `scan` rows and round briefs uses the same rule. A `first_order` must that is not met, or any other `must` 5 times off or more, blocks.
 
-In an autonomous job `lens approve` refuses a blocked model, a `must` without a `class`, or a description that measured no `must`. Optimise to convergence, ramp, change the form, or add elements. When no structure passes within the budget, stop: write the best structure's gaps and what the demand would need to `explore/feasibility/README.md`, run `uv run saos stop --job J --reason "<the gaps, citing scans/NNN>"` and `uv run saos report --job J`, which works without rounds and names no lens, then `uv run saos ui notify` the result. Do not weaken the demand on your own or keep optimising a blocked form. A structure the demand prescribes is recorded and not refused, since nothing else may be tried.
+In an autonomous job `lens approve` refuses a blocked model, a `must` without a `class`, or a description that measured no `must`. Optimise to convergence, ramp, change the form, or add elements. A quality `must` between 5 and 10 times off also passes on evidence: when a diagnosis names the mechanism behind the gap and a step that removes it (an element to add, a surface `ctx.seidel()` shows carrying the aberration), write that with its expected gain in the notes' `reach_evidence`, citing the scan or `explore/` file, and describe again. Ten times off or more, and any `first_order` miss, stays refused. When no structure passes within the budget, stop: write the best structure's gaps and what the demand would need to `explore/feasibility/README.md`, run `uv run saos stop --job J --reason "<the gaps, citing scans/NNN>"` and `uv run saos report --job J`, which works without rounds and names no lens, then `uv run saos ui notify` the result. Do not weaken the demand on your own or keep optimising a blocked form. A structure the demand prescribes is recorded and not refused, since nothing else may be tried.
 
 In an interactive job the page and window show the gaps, and the user's approval overrules the gate.
 
-The 5 is a judgement, not a law. No published rule gives a number; in saos's own ledgers 2 of 5 samples between 5 and 10 times off later passed, and none of 6 above 10 times did.
+The 5 and the 10 are judgements, not laws. No published rule gives a number; in saos's own ledgers 2 of 5 samples between 5 and 10 times off later passed, and none of 6 above 10 times did.
 
 ## Choose resins
 

@@ -1,4 +1,4 @@
-"""常驻后台进程：持有 OpticStudio 连接，依次处理命令行发来的请求（ADR-0002）。
+"""常驻后台进程：持有 OpticStudio 连接，依次处理命令行发来的请求。
 
 同一时间只加载一个任务的一个镜头文件。所有镜头操作都必须带上任务编号，
 与当前加载的任务不一致时直接拒绝，保证不同设计任务的文件不会混用。
@@ -38,7 +38,7 @@ REQUEST_READ_TIMEOUT_S = 30
 # 可能跑很久的操作：开始和结束都写进 progress.json，开始前清掉旧的取消请求
 # operations that may run long: their start and end go to progress.json; a stale cancel request is cleared first
 LONG_OPS = frozenset({"opt.local", "opt.hammer", "opt.global", "script.exec", "round.record", "round.confirm", "demand.check", "scan.run"})
-# 不改镜头的操作；其余操作（含以后新加的）回复之后都重写 view.json 并测当前镜头的指标（ADR-0019）
+# 不改镜头的操作；其余操作（含以后新加的）回复之后都重写 view.json 并测当前镜头的指标
 # ops that leave the lens as it was; after any other op (new ones included) the daemon rewrites view.json and measures
 VIEW_KEEPS = frozenset({"ping", "shutdown", "daemon.use", "lens.import", "lens.info", "lens.surfaces", "lens.describe", "lens.approve",
                         "lens.save", "lens.operand", "lens.analysis", "demand.check", "scan.run",
@@ -64,8 +64,8 @@ COMPARED_TEXT_KEYS = ("type", "comment", "material", "is_stop", "solves")
 OPTICSTUDIO_ONLY = frozenset({"round.confirm"})
 # 公差分析属于交付，要在 OpticStudio 上做 / tolerancing belongs to delivery and runs on OpticStudio
 OPTICSTUDIO_SCANS = ("tolerance",)
-# 一个后台进程持有两个后端时（ADR-0018）按流程阶段（saos.ui.stage）选后端：交付阶段是 zemax 的最后优化与测量（ADR-0020）
-# with both backends, the workflow stage picks one: delivery is zemax's final optimisation and measurement (ADR-0020)
+# 一个后台进程持有两个后端时按流程阶段（saos.ui.stage）选后端：交付阶段是 zemax 的最后优化与测量
+# with both backends, the workflow stage picks one: delivery is zemax's final optimisation and measurement
 STAGE_BACKENDS = {"interview": "rtc", "demand_confirm": "rtc", "modeling": "rtc", "model_approve": "rtc", "design": "rtc", "deliver": "zos"}
 # 不切换后端的操作：只读当前状态，或是切换前的准备（保存）/ ops that never switch: they read the current state or prepare a switch
 UNROUTED = frozenset({"ping", "shutdown", "daemon.use", "lens.import", "lens.unload", "lens.info", "lens.surfaces", "lens.save",
@@ -106,8 +106,8 @@ UNCLOSED_RTC = ("this lens holds rtc results pushed with fast.push and no OpticS
 
 
 def _warn_unclosed(loaded: Loaded | None, out: dict[str, Any]) -> dict[str, Any]:
-    """判定和记录轮次照常进行，只在结果里提醒（DESIGN.md：不为防 Agent 规避流程加锁）。
-    Checks and rounds go ahead; the result only carries a reminder (DESIGN.md: no locks against skipping steps)."""
+    """判定和记录轮次照常进行，只在结果里提醒：不为防 agent 规避流程加锁（AGENTS.md）。
+    Checks and rounds go ahead; the result only carries a reminder: no locks against skipping steps (AGENTS.md)."""
     if loaded is not None and loaded.rtc_unclosed:
         out.setdefault("warnings", []).append(UNCLOSED_RTC)
     return out
@@ -145,9 +145,9 @@ def compare_surfaces(before: list[dict[str, Any]], after: list[dict[str, Any]]) 
 class Daemon:
     def __init__(self, backend: Backend, zos_info: dict[str, Any],
                  start_zos: Callable[[], tuple[Backend, dict[str, Any]]] | None = None):
-        """backend 是启动时的后端。它是 rtc 且给了 start_zos 时，一个进程持有两个后端（ADR-0018）：第一次需要 OpticStudio
+        """backend 是启动时的后端。它是 rtc 且给了 start_zos 时，一个进程持有两个后端：第一次需要 OpticStudio
         时调用 start_zos 启动它，之后一直开着；每个操作按流程阶段选后端，镜头随之交接。
-        backend is the backend started with. When it is rtc and start_zos is given, the daemon holds both (ADR-0018):
+        backend is the backend started with. When it is rtc and start_zos is given, the daemon holds both:
         start_zos starts OpticStudio the first time it is needed, and it stays up; each op picks a backend by the
         workflow stage and the lens is handed over."""
         on_rtc = backend.identity().get("backend") == "rtc"
@@ -409,10 +409,10 @@ class Daemon:
             self._after = {**pending, "args": args}
 
     def idle(self) -> None:
-        """回复之后、读下一个请求之前（serve 循环里）：刷新窗口、重写 view.json，再记下或测量当前镜头的指标（ADR-0019）。
+        """回复之后、读下一个请求之前（serve 循环里）：刷新窗口、重写 view.json，再记下或测量当前镜头的指标。
         出错只记日志，下一个请求照常处理。
         After the reply and before the next request (in the serve loop): refresh the windows, rewrite view.json, then
-        store or measure the live metrics (ADR-0019). Errors are only logged."""
+        store or measure the live metrics. Errors are only logged."""
         pending, self._after = self._after, None
         loaded = self.loaded
         if pending is None or loaded is None or self.stopping or pending["args"].get("job") != loaded.job.id:
@@ -1254,7 +1254,7 @@ class Daemon:
         return out
 
     def op_exec(self, args: dict[str, Any]) -> dict[str, Any]:
-        """执行 agent 编写的脚本（ADR-0007）。当前加载的是其他任务的镜头时拒绝。"""
+        """执行 agent 编写的脚本。当前加载的是其他任务的镜头时拒绝。"""
         job = self._job(args)
         if self.loaded is not None:
             self._require_loaded(job)
@@ -1293,7 +1293,7 @@ class Daemon:
                                                           only=_arg(args, "only", list, default=None)))
 
     def op_round(self, args: dict[str, Any]) -> dict[str, Any]:
-        """记录一个调试轮次并给出终止判断（DESIGN.md「终止规则」）。"""
+        """记录一个调试轮次并给出终止判断（规则见 saos.ledger）。"""
         job = self._job(args)
         self._require_loaded(job)
         ctx = scripting.ScriptContext(self, job, {})
@@ -1302,7 +1302,7 @@ class Daemon:
             merit=_arg(args, "merit", (int, float), default=None), viz=_arg(args, "viz", bool, default=True)))
 
     def op_confirm(self, args: dict[str, Any]) -> dict[str, Any]:
-        """在 OpticStudio 上复测 rtc 实例记下的一轮（ADR-0017）。不要求先加载镜头：复测加载归档镜头，结束后从文件重载原来的镜头，
+        """在 OpticStudio 上复测 rtc 实例记下的一轮。不要求先加载镜头：复测加载归档镜头，结束后从文件重载原来的镜头，
         后端的文件路径不变。换镜头前同 lens load：未保存修改要先保存或 discard。
         Re-measure an rtc round on OpticStudio. No lens needs to be loaded: the archive is loaded, then the previous lens is
         reloaded from its file. As with lens load, unsaved changes must be saved or discarded first."""
@@ -1360,7 +1360,7 @@ def serve(token: str = "") -> int:
     eager = None
     try:
         if name in ("auto", "zos"):
-            # 两个后端（ADR-0018）：rtc 立即可用，OpticStudio 第一次需要时启动；--backend zos 在启动时就连上
+            # 两个后端：rtc 立即可用，OpticStudio 第一次需要时启动；--backend zos 在启动时就连上
             # both backends: rtc at once, OpticStudio when first needed; --backend zos connects at start
             backend = make_backend("rtc")
             zos_info = backend.start()

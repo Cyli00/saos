@@ -130,8 +130,7 @@ uv run saos daemon stop --all    # 逐个停止它们，并清掉已退出进程
 |---|---|
 | [.agents/skills/saos/SKILL.md](.agents/skills/saos/SKILL.md) | agent 执行设计任务的工作流与各阶段细节（英文） |
 | [docs/workflow.drawio](docs/workflow.drawio) | 工作流全貌图 |
-| [DESIGN.md](DESIGN.md) | 架构原则、用户决定、目录规范与中英术语 |
-| [docs/adr/](docs/adr/) | 历史决策记录（已冻结，不再更新；与代码冲突时以代码为准） |
+| [.agents/skills/saos/references/terms.md](.agents/skills/saos/references/terms.md) | 中英术语对照 |
 | [TODO.md](TODO.md) | 暂缓和待查的事项 |
 | `library/<库>/README.md` | 跨任务共享的参考数据：材料、在产玻璃目录、热学与机械材料、膜层、初始结构、显微物镜结构库 |
 
@@ -150,7 +149,7 @@ uv run saos daemon stop --all    # 逐个停止它们，并清掉已退出进程
 
 ## 参与开发
 
-修改 saos 本身前先读 [AGENTS.md](AGENTS.md) 和 [DESIGN.md](DESIGN.md)。测试默认使用 `work/verify/`；测试夹具可以通过 `SAOS_HOME` 使用本轮独占的系统临时目录。`SAOS_HOME` 优先于 `SAOS_INSTANCE`，执行前确认实际目录没有指向用户实例。
+修改 saos 本身前先读 [AGENTS.md](AGENTS.md)。测试默认使用 `work/verify/`；测试夹具可以通过 `SAOS_HOME` 使用本轮独占的系统临时目录。`SAOS_HOME` 优先于 `SAOS_INSTANCE`，执行前确认实际目录没有指向用户实例。
 
 ```bash
 SAOS_INSTANCE=verify uv run pytest                     # 不启动 Zemax 的单元测试和假后端的生命周期测试
