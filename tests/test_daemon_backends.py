@@ -260,3 +260,19 @@ def test_make_thermal_from_a_script_context(saos_home):
     with pytest.raises(SaosError) as exc:
         kit.make_thermal(ctx, [65.0], 23.6)
     assert exc.value.code == ErrorCode.BACKEND_UNSUPPORTED
+
+
+def test_a_describe_refused_for_its_notes_leaves_no_model_folder(saos_home):
+    # notes 校验失败（检索记录缺 decision）时不留下 models/NNN-<镜头>/，下一份说明仍用同一个编号
+    # notes refused (a search without its decision) leave no models/NNN-<lens>/, and the next description takes that number
+    rtc = RtcBackend(None, standalone=True)
+    daemon = Daemon(rtc, rtc.identity())
+    job = jobs.create_job("refused-notes")
+    _built(daemon, job)
+    bad = {**NOTES, "exploration": {"searches": [{"library": "patents", "query": "doublet", "hits": 3}]}}
+    reply = call(daemon, "lens.describe", job=job.id, notes=bad)
+    assert reply["error"]["code"] == ErrorCode.BAD_ARGS and "decision" in reply["error"]["message"]
+    assert not any((job.root / "models").iterdir())
+    good = call(daemon, "lens.describe", job=job.id, notes=NOTES)
+    assert good["ok"], good
+    assert good["result"]["folder"].startswith("models/001-") and [p.name for p in (job.root / "models").iterdir()] == [good["result"]["folder"].split("/")[1]]

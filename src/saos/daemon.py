@@ -838,6 +838,17 @@ class Daemon:
         root = job.root / "models"
         root.mkdir(exist_ok=True)
         folder = root / f"{jobs.next_archive_number(root):03d}-{loaded.path.stem}"
+        try:
+            return self._describe_into(job, loaded, folder, notes, args)
+        except BaseException:
+            # 编号目录是这次新建的：失败（例如 notes 校验不过）时整份删掉，不留半成品，下一份说明沿用这个编号
+            # the numbered folder is new: on failure (notes refused, say) remove it whole, so the next description reuses the number
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
+
+    def _describe_into(self, job, loaded, folder: Path, notes: dict[str, Any] | None, args: dict[str, Any]) -> dict[str, Any]:
+        from saos import model_report
+
         if self.active == "rtc":
             # rtc 没有 OpticStudio 的布局导出：用流程图窗口同一份 viz 数据画剖面 / no OpticStudio layout export: draw the section from the viz data
             desc = self.backend.describe_model(None)
