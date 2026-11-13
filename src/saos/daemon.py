@@ -250,6 +250,10 @@ class Daemon:
             if op not in ("ping", "shutdown") and not self.backend.healthy():
                 raise self._connection_lost({"detected": "connection check before the operation"})
             self._progress_start(op, args)
+            # 操作数记录从这次请求开始算，前一个请求用过的不算进来 / count the operands of this request only
+            take_used = getattr(self.backend, "take_used", None)
+            if take_used is not None:
+                take_used()
             result = handler(args)
         except SaosError as exc:
             error = exc

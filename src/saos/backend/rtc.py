@@ -56,6 +56,7 @@ SYSTEM_OPERANDS = frozenset({"EFFL", "WFNO", "ISFN", "TOTR", "TTHI", "EPDI", "EN
 # 其中已与 OpticStudio 批量追迹或操作数实测逐值对过账的（rtc.operands 的说明）；其余按手册定义实现
 # those reconciled value by value with OpticStudio (see rtc.operands); the rest follow the manual's definitions
 RECONCILED_OPERANDS = frozenset({"REAX", "REAY", "REAC", "INDX", "SSAG", "EXPP", "EXPD", "CONF"})
+
 # wavefront_rms 的光瞳取样（每边点数）/ pupil samples per side for wavefront_rms
 WAVEFRONT_GRID = 64
 IDENTITY = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
@@ -133,6 +134,11 @@ def _same(a: float, b: float, tol: float = GEOMETRY_TOL) -> bool:
     if math.isinf(a) or math.isinf(b):
         return a == b
     return abs(a - b) <= tol * max(1.0, abs(a), abs(b))
+
+
+def unreconciled(used) -> list[str]:
+    """用到的名字里未与 OpticStudio 对账的那些，排好序。/ The names used that are not reconciled with OpticStudio, sorted."""
+    return sorted(op for op in used if op not in RECONCILED_OPERANDS)
 
 
 class RtcBackend(Backend):
@@ -685,9 +691,16 @@ class RtcBackend(Backend):
     def provenance(self) -> dict[str, Any]:
         """脚本结果的来源记录：后端身份、未对账的计算路径、用到的未对账操作数；取走后清空操作数记录。
         Provenance for a script result: backend identity, unreconciled paths, unreconciled operands used (then cleared)."""
-        used, self._used = sorted(self._used), set()
-        return {**self.identity(), "unverified": self.unverified(),
-                "operands_unverified": [op for op in used if op not in RECONCILED_OPERANDS]}
+        return {**self.identity(), "unverified": self.unverified(), "operands_unverified": unreconciled(self.take_used())}
+
+    def take_used(self) -> frozenset[str]:
+        """取走并清空自上次取走以来用到的操作数与测量名（含已对账的）。/ Take and clear the operands and measurements used since last taken."""
+        used, self._used = frozenset(self._used), set()
+        return used
+
+    def note_used(self, names) -> None:
+        """补记用到的操作数，给从缓存取回的结果用（kit.memo）。/ Record operands used, for results served from a cache (kit.memo)."""
+        self._used.update(names)
 
     def optical_system(self, wave: int):
         """第 wave 个波长的 rtc 光学系统（材料已过准入），给 rtc.adtrace 这类直接用内核的探索代码。
