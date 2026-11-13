@@ -183,14 +183,16 @@ COMMANDS = {
         "Returns job, path, state. Creates a timestamp-name id, job.json, lenses/ and\n"
         "  sources/.\n"
         "  --mode interactive (default, designing from scratch): the user passes the gates\n"
-        "  in the workflow window and may ask for changes there. --mode autonomous\n"
-        "  (exercises, tests): the agent passes them with --reason and may stop without\n"
-        "  --quote; reports mark these decisions. Only the user can later make an\n"
-        "  autonomous job interactive (in the window); never the reverse. --mode analyse\n"
-        "  (a question about existing lenses: an operand, a curve, two lenses compared):\n"
-        "  workflow.current is analyse from the start, with no demand, gates, rounds or\n"
-        "  report; it computes on rtc like the stages before delivery, and daemon use zos\n"
-        "  moves it to OpticStudio. Its mode never changes: a design gets a new job.", "BAD_ARGS, JOB_EXISTS"),
+        "  (window, conversation or ask-user tool) and may ask for changes. --mode\n"
+        "  autonomous (the user, asking for the job, authorised the agent to pass the\n"
+        "  gates): the agent passes them with --reason and may stop without --quote;\n"
+        "  reports mark these decisions as not confirmed by the user. Only the user can\n"
+        "  later make an autonomous job interactive (in the window); never the reverse.\n"
+        "  --mode analyse (a question about existing lenses: an operand, a curve, two\n"
+        "  lenses compared): workflow.current is analyse from the start, with no demand,\n"
+        "  gates, rounds or report; it computes on rtc like the stages before delivery,\n"
+        "  and daemon use zos moves it to OpticStudio. Its mode never changes: a design\n"
+        "  gets a new job.", "BAD_ARGS, JOB_EXISTS"),
     "job list": ("List this instance's jobs locally.", "Returns jobs with their recorded state; no optical files are changed.", "BAD_ARGS"),
     "job show": (
         "Read a job's state and running computation progress from local files.",

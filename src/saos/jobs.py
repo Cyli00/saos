@@ -272,7 +272,7 @@ def get_job(job_id: str) -> Job:
     return Job(job_id, root)
 
 
-# 任务的流程：从头设计用 interactive，做题、测试用 autonomous，关于现成镜头的问题（测量、对比）用 analyse，它没有关卡
+# 任务的流程：从头设计用 interactive，用户要任务时授权 agent 代为过关的用 autonomous（练习、测试属于这种），关于现成镜头的问题（测量、对比）用 analyse，它没有关卡
 # the workflows of a job: interactive and autonomous design, and analyse for questions about existing lenses (no gates)
 MODES = ("interactive", "autonomous", "analyse")
 # 用户在窗口里对关卡提出的修改意见 / change requests the user made at a gate in the window
