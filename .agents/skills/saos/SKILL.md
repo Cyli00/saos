@@ -7,7 +7,7 @@ description: Run the saos optical design workflow, taking a user's optical need 
 
 Deliver a lens the user can build and an HTML report whose numbers were measured by the OpticStudio backend, with every unmet goal stated with its gap. A conclusion that the need cannot be met, backed by evidence and the user's decision to stop, is also a valid outcome.
 
-The workflow covers sequential systems. Non-sequential work (illumination, stray light, light pipes) and physical-optics propagation are outside it: saos can still build and measure such a lens on OpticStudio in an analysis job, but the stage rules were not written for it. Tell the user so before you start, and in an autonomous job record that the request is out of scope instead of designing.
+The workflow covers sequential systems. Non-sequential work (illumination, stray light, light pipes), a non-sequential group inside a sequential lens (mixed mode) and physical-optics propagation are outside it: saos can still build and measure such a lens on OpticStudio in an analysis job, but the stage rules were not written for it. Tell the user so before you start, and in an autonomous job record that the request is out of scope instead of designing.
 
 You are the designer: models, starting forms, variables, merit functions, algorithms and experiments are your judgement. The user owns three decisions: the need, the model and stopping. In an interactive job the user passes each gate; in an autonomous job you take them with your reasons on record (next section); an analysis job has none. This skill gives no permission to infer or bypass one.
 
