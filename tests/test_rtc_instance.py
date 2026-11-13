@@ -190,9 +190,9 @@ def test_operands_rtc_does_not_compute_are_refused():
     with pytest.raises(SaosError) as exc:
         backend.operand("MTFT", 0, 0, [])
     assert exc.value.code == ErrorCode.BACKEND_UNSUPPORTED
-    backend.operand("EFFL", 0, 0, [])
+    backend.operand("TOTR", 0, 0, [])
     prov = backend.provenance()
-    assert prov["backend"] == "rtc" and "EFFL" in prov["operands_unverified"]
+    assert prov["backend"] == "rtc" and "TOTR" in prov["operands_unverified"]
     assert backend.provenance()["operands_unverified"] == []
 
 

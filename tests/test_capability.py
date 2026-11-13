@@ -81,8 +81,8 @@ def test_operand_statuses_follow_the_rule_computed_by_uses(table):
     backend.provenance()
     backend.operand("REAY", 2, 1, [0.0, 1.0, 0.0, 1.0])
     assert "REAY" in operands["reconciled"] and backend.provenance()["operands_unverified"] == []
-    backend.operand("EFFL", 0, 1, [])
-    assert "EFFL" in operands["unreconciled"] and backend.provenance()["operands_unverified"] == ["EFFL"]
+    backend.operand("TOTR", 0, 0, [])
+    assert "TOTR" in operands["unreconciled"] and backend.provenance()["operands_unverified"] == ["TOTR"]
     with pytest.raises(SaosError) as err:
         backend.operand("MTFT", 0, 1, [])
     assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED and "MTFT" not in operands["reconciled"] + operands["unreconciled"]

@@ -55,7 +55,11 @@ SYSTEM_OPERANDS = frozenset({"EFFL", "WFNO", "ISFN", "TOTR", "TTHI", "EPDI", "EN
                              *PARAXIAL_OPERANDS})
 # 其中已与 OpticStudio 批量追迹或操作数实测逐值对过账的（rtc.operands 的说明）；其余按手册定义实现
 # those reconciled value by value with OpticStudio (see rtc.operands); the rest follow the manual's definitions
-RECONCILED_OPERANDS = frozenset({"REAX", "REAY", "REAC", "INDX", "SSAG", "EXPP", "EXPD", "CONF"})
+# EFFL 对 tests/fixtures/cases/reference.json 的真值到 1e-9；SPHA、COMA、ASTI、FCUR 2026-11-10 真机逐面差 1.3e-15 波。
+# DIST 与 ctx.seidel 整表（SEIDEL）不在内：OpticStudio 的 Seidel 表 W311 与它自己的 DIST 操作数差 3e-3 波
+# EFFL matches reference.json to 1e-9; SPHA, COMA, ASTI, FCUR matched OpticStudio per surface to 1.3e-15 waves on
+# 2026-11-10. DIST and the whole ctx.seidel table (SEIDEL) stay out: OpticStudio's W311 differs from its DIST by 3e-3 waves
+RECONCILED_OPERANDS = frozenset({"REAX", "REAY", "REAC", "INDX", "SSAG", "EXPP", "EXPD", "CONF", "EFFL", "SPHA", "COMA", "ASTI", "FCUR"})
 
 # wavefront_rms 的光瞳取样（每边点数）/ pupil samples per side for wavefront_rms
 WAVEFRONT_GRID = 64

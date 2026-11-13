@@ -19,12 +19,12 @@ CLEAN = {"title": "clean singlet", "aperture": {"type": "entrance_pupil_diameter
          "surfaces": [{"radius": 50, "thickness": 5, "material": {"model": {"nd": 1.5168, "vd": 64.17}}, "stop": True, "semi_diameter": 6},
                       {"radius": -50, "thickness": 47, "semi_diameter": 6}],
          "image": {"semi_diameter": 5}}
-# REAY 已对账，EFFL 没有（rtc.RECONCILED_OPERANDS）/ REAY is reconciled, EFFL is not
+# REAY 已对账，TOTR 没有（rtc.RECONCILED_OPERANDS）/ REAY is reconciled, TOTR is not
 REAY = {"type": "REAY", "int1": 2, "int2": 1, "data": [0, 1, 0, 1]}
-EFFL = {"type": "EFFL", "int2": 1}
-# 两个脚本判定经 ctx.memo 共用同一次 EFFL：第二个从缓存取值，也要算用了 EFFL
-# two script checks share one EFFL through ctx.memo: the second reads it from the cache and must still count as using EFFL
-MEMO_SCRIPT = "def run(ctx):\n    return ctx.memo('focal', lambda: ctx.op('EFFL', 0, 1))\n"
+TOTR = {"type": "TOTR"}
+# 两个脚本判定经 ctx.memo 共用同一次 TOTR：第二个从缓存取值，也要算用了 TOTR
+# two script checks share one TOTR through ctx.memo: the second reads it from the cache and must still count as using TOTR
+MEMO_SCRIPT = "def run(ctx):\n    return ctx.memo('length', lambda: ctx.op('TOTR'))\n"
 
 
 def call(daemon, op, **args):
@@ -48,13 +48,13 @@ def test_a_command_result_says_how_far_its_number_can_be_trusted(saos_home):
     daemon, job = _rtc_job()
     ray = call(daemon, "lens.operand", job=job.id, **REAY)["result"]
     assert ray["trust"] == "reconciled" and ray["computed_by"]["operands_unverified"] == []
-    focal = call(daemon, "lens.operand", job=job.id, **EFFL)["result"]
-    assert focal["trust"] == "unreconciled" and focal["computed_by"]["operands_unverified"] == ["EFFL"]
+    focal = call(daemon, "lens.operand", job=job.id, **TOTR)["result"]
+    assert focal["trust"] == "unreconciled" and focal["computed_by"]["operands_unverified"] == ["TOTR"]
 
 
 def test_an_operand_used_by_one_request_does_not_mark_the_next(saos_home):
     daemon, job = _rtc_job()
-    assert call(daemon, "lens.operand", job=job.id, **EFFL)["ok"]
+    assert call(daemon, "lens.operand", job=job.id, **TOTR)["ok"]
     source = "def run(ctx):\n    return ctx.op('REAY', 2, 1, 0, 1, 0, 1)\n"
     out = call(daemon, "script.exec", job=job.id, name="ray", source=source)["result"]
     assert out["trust"] == "reconciled" and out["computed_by"]["operands_unverified"] == []
@@ -71,7 +71,7 @@ def test_each_check_item_is_graded_by_what_it_used(saos_home):
     daemon, job = _rtc_job()
     (job.root / "checks").mkdir(exist_ok=True)
     (job.root / "checks" / "focal.py").write_text(MEMO_SCRIPT, encoding="utf-8")
-    data = {"schema": 2, "constants": [_bounded("ray", {"operand": REAY}), _bounded("focal", {"operand": EFFL}),
+    data = {"schema": 2, "constants": [_bounded("ray", {"operand": REAY}), _bounded("focal", {"operand": TOTR}),
                                        _bounded("memo_a", {"script": "checks/focal.py"}), _bounded("memo_b", {"script": "checks/focal.py"}),
                                        _bounded("mtf", {"operand": {"type": "MTFT"}})],
             "objectives": [{"id": "height", "description": "height", "check": {"operand": REAY}, "origin": "user",
@@ -84,13 +84,13 @@ def test_each_check_item_is_graded_by_what_it_used(saos_home):
     result = reply["result"]
     items = {i["id"]: i for i in result["items"]}
     assert items["ray"]["trust"] == "reconciled" and "operands_unverified" not in items["ray"]
-    assert items["focal"]["trust"] == "unreconciled" and items["focal"]["operands_unverified"] == ["EFFL"]
+    assert items["focal"]["trust"] == "unreconciled" and items["focal"]["operands_unverified"] == ["TOTR"]
     assert items["memo_a"]["trust"] == items["memo_b"]["trust"] == "unreconciled"
-    assert items["memo_b"]["operands_unverified"] == ["EFFL"]
+    assert items["memo_b"]["operands_unverified"] == ["TOTR"]
     # rtc 算不了的项没有数 / an item rtc cannot compute has no number
     assert items["mtf"]["trust"] == "refused" and result["backend_unsupported"] == ["mtf"]
     assert result["trust"] == "unreconciled"
-    assert result["environment"]["provenance"] == {"unverified": [], "operands_unverified": ["EFFL"]}
+    assert result["environment"]["provenance"] == {"unverified": [], "operands_unverified": ["TOTR"]}
 
 
 def test_old_ledger_records_get_their_level_on_reading_and_the_file_stays(tmp_path):

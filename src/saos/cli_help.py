@@ -701,6 +701,8 @@ The rtc instance
     refuse. On 2026-11-10 the surface values matched OpticStudio's operands to 1.3e-15 and
     the sums to its OPD and real-ray transverse aberrations; the Seidel table's W311
     differs slightly from the DIST operand, and DIST(Int1=0) is a percentage distortion.
+    So SPHA, COMA, ASTI and FCUR count as reconciled; DIST and ctx.seidel (listed as
+    SEIDEL, since its table carries W311) do not.
     PARY and PATY interpret Hy as the actual field fraction before the tangent, so 0.6 Hy on
     a 5-degree field is 3 degrees.
   <CTX merit_jacobian>

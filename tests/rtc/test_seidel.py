@@ -178,7 +178,10 @@ def test_backend_operands_and_table_are_the_same_numbers():
     last = table["surfaces"][-1]["surface"]
     back_focus = -backend.operand("PARY", last, 0, [0, 0, 0, 1]) / backend.operand("PATY", last, 0, [0, 0, 0, 1])
     assert back_focus == pytest.approx(backend.lens.thickness(last, 1), rel=1e-9)
-    assert {"SEIDEL", "SPHA", "PARY", "PETC"} <= set(backend.provenance()["operands_unverified"])
+    # SPHA 等四个已准入；整表带 W311，DIST 与 OpticStudio 的 Seidel 表不一致，仍未对账
+    # the four Seidel operands are admitted; the whole table carries W311, so it and DIST stay unreconciled
+    unverified = set(backend.provenance()["operands_unverified"])
+    assert {"SEIDEL", "DIST", "PARY", "PETC"} <= unverified and not unverified & {"SPHA", "COMA", "ASTI", "FCUR"}
     with pytest.raises(SaosError) as err:
         backend.operand("SPHA", 9, 0, [])
     assert err.value.code == ErrorCode.BAD_ARGS
