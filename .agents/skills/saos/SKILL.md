@@ -1,11 +1,13 @@
 ---
 name: saos
-description: Run the saos optical design workflow, taking a user's optical need through an agreed demand, an approved model and design rounds to a delivered lens with an OpticStudio-measured HTML report. Use for designing, simulating or debugging an optical system in this repository, including a question about an existing lens (a number, a curve, two lenses compared), which runs as an analysis job without the design stages. Not for changing saos itself (src/, tests/, CLI, docs); use normal repository work for that.
+description: Run the saos optical design workflow, taking a user's optical need through an agreed demand, an approved model and design rounds to a delivered lens with an OpticStudio-measured HTML report. Use for designing, simulating or debugging a sequential optical system in this repository (imaging lenses, relays, collimators, beam expanders, couplers, folded, decentred, reflective or multi-configuration forms), including a question about an existing lens (a number, a curve, two lenses compared), which runs as an analysis job without the design stages. Not for changing saos itself (src/, tests/, CLI, docs); use normal repository work for that.
 ---
 
 # saos optical design workflow
 
 Deliver a lens the user can build and an HTML report whose numbers were measured by the OpticStudio backend, with every unmet goal stated with its gap. A conclusion that the need cannot be met, backed by evidence and the user's decision to stop, is also a valid outcome.
+
+The workflow covers sequential systems. Non-sequential work (illumination, stray light, light pipes) and physical-optics propagation are outside it: saos can still build and measure such a lens on OpticStudio in an analysis job, but the stage rules were not written for it. Tell the user so before you start, and in an autonomous job record that the request is out of scope instead of designing.
 
 You are the designer: models, starting forms, variables, merit functions, algorithms and experiments are your judgement. The user owns three decisions: the need, the model and stopping. In an interactive job the user passes each gate; in an autonomous job you take them with your reasons on record (next section); an analysis job has none. This skill gives no permission to infer or bypass one.
 
@@ -45,7 +47,6 @@ Read these when their condition first holds:
 
 - [scripting.md](references/scripting.md) before you write an `exec` script, any loop of many evaluations, or call `ctx.fast()`;
 - [merit.md](references/merit.md) before you write a merit function, including the one in a `prepare` script;
-- [micro.md](references/micro.md) when checks measure a fibre probe, endoscope, fibre-tip lens or miniature objective;
 - [diagnosis.md](references/diagnosis.md) when a round `brief` sets `review`, progress stalls, or a `must` misses by a multiple of its pass line;
 - [files.md](references/files.md) before you first write into the job directory.
 

@@ -65,8 +65,10 @@ ITEM_KEYS = {
 # 目标的来源和默认权重：user = 用户给出或明确认可的，agent = agent 补充、用户没有表态的
 # origin of an objective and its default weight: user = stated or explicitly accepted by the user, agent = filled in by the agent
 DEFAULT_WEIGHT = {"user": 1.0, "agent": 0.3}
-# must 的类别：first_order 由光焦度分配和约束直接决定，不达标就是模型没搭对；quality 是优化要压的像差类指标（2026-11-06 用户决定）
-# the class of a must: first_order follows from powers and constraints, so a miss means a wrong model; quality is what optimisation has to bring down
+# must 的类别：first_order 由结构的光焦度、间隔和守恒量决定，不达标就是模型没搭对；quality 是优化要压低的残差（像差、波前、
+# 耦合效率等，不限成像）（2026-11-06 用户决定，2026-11-13 改为与系统类别无关的定义）
+# the class of a must: first_order is fixed by the structure's powers, spacings and conserved quantities, so a miss means a
+# wrong model; quality is a residual optimisation brings down (aberrations, wavefront, coupling efficiency; not imaging only)
 CHECK_CLASSES = ("first_order", "quality")
 # quality 类差到这个倍数就不进入设计轮次：公开资料没有现成数字，历史账本里首轮差 10 倍以上的 6 个样本都没达标（2026-11-06 用户决定）
 # a quality must this many times off does not enter the rounds: no published number exists; 6 of 6 samples over 10x in the ledgers never passed
@@ -420,7 +422,8 @@ def validate(data: Any) -> dict[str, Any]:
                                "G counts the distance to it")
                 must = e.get("must")
                 if "class" in e and (e["class"] not in CHECK_CLASSES or must is None):
-                    raise _bad(f"{where}: class goes with must and is one of {CHECK_CLASSES}")
+                    raise _bad(f"{where}: class goes with must and is one of {CHECK_CLASSES}: first_order when powers, spacings and "
+                               "conserved quantities fix the value, quality when optimisation brings it down")
                 if must is not None and set(must) == {"max"} and float(must["max"]) == 0.0:
                     # “越小越好”写成 must ≤ 0 永远达不到，需求永远判不了达成 / "as small as possible" as must ≤ 0 can never pass
                     raise _bad(f"{where}: must {{max: 0}} is a pass line no design can meet, so the demand could never be achieved. "

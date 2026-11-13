@@ -29,7 +29,7 @@ When you optimise outside the lens's merit function (your own `exec` loop), reco
 
 Two expert classes answer questions the optimisers never ask: which materials, and which surfaces earn an asphere. Run them in an `exec` script; options and how to keep the result: `uv run saos exec --help experts`. A stall alone is no reason to call one: name the mechanism behind the largest gap first ([diagnosis.md](diagnosis.md#which-variables-move-the-target)).
 
-`ctx.GlassExpert(surfaces)` is the `materials` tier done glass by glass: in-production neighbours by working-band n/V, anomalous-dispersion glasses first, each trial re-optimised. It is slow ([model.md](model.md#spherical-version-first-an-aspheric-version-to-compare)), so it is not a routine step. Run it on the surfaces that matter, starting with `max_seconds` 120–180 and extending while its per-candidate progress still gains more than the demand's `rel`. Model glass and discontinued glass wait for the last round before delivery; colour that is the largest gap is searched as soon as the diagnosis shows it, since the rest of the design is balanced against the glass. Use it only when:
+`ctx.GlassExpert(surfaces)` is the `materials` tier done glass by glass: in-production neighbours by working-band n/V, anomalous-dispersion glasses first, each trial re-optimised. It is slow ([model.md](model.md#cheapest-process-first-costlier-versions-to-compare)), so it is not a routine step. Run it on the surfaces that matter, starting with `max_seconds` 120–180 and extending while its per-candidate progress still gains more than the demand's `rel`. Model glass and discontinued glass wait for the last round before delivery; colour that is the largest gap is searched as soon as the diagnosis shows it, since the rest of the design is balanced against the glass. Use it only when:
 
 - a round still has model glass (a patent start always does, from its glass codes): pass the surfaces its `model_glass` lists;
 - axial or lateral colour or the secondary spectrum is the largest weighted gap (`ctx.seidel()` shows W020 and W111 by surface on rtc) and the demand lets the glasses change. The merit function must weigh that colour over several wavelengths, or the trials optimise something else;
@@ -39,7 +39,7 @@ Otherwise leave the glass alone, or try Hammer with substitution when you want a
 
 `.candidates(surface)` lists what it would try and leaves the lens unchanged; show the list to the user when the material choice is theirs. Record the result as a `materials` round.
 
-`ctx.AsphereExpert` follows the rule in [model.md](model.md#spherical-version-first-an-aspheric-version-to-compare), in the rounds as in choosing the structure. `.run(nas)` changes the approved structure: show the ranking to the user, run, describe the model again and get `saos lens approve` before `saos round --tier structure`. A round brief with `reach_blocking` means the lens is still too far off for more of the same: read [the reach gate](model.md#the-reach-gate) before spending more compute.
+`ctx.AsphereExpert` follows the rule in [model.md](model.md#cheapest-process-first-costlier-versions-to-compare), in the rounds as in choosing the structure. `.run(nas)` changes the approved structure: show the ranking to the user, run, describe the model again and get `saos lens approve` before `saos round --tier structure`. A round brief with `reach_blocking` means the lens is still too far off for more of the same: read [the reach gate](model.md#the-reach-gate) before spending more compute.
 
 ## Record rounds
 

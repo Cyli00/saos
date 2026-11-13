@@ -29,7 +29,7 @@
   - rtc 能算什么这类清单从代码常量生成（`cli_help._operands`），不手写；镜头能带什么、各项是否对过账由 `saos backends` 现场用探针镜头问 rtc 后端（`src/saos/capability.py`），新增一类处方选项时在它的探针表里加一项
 - 改动 agent 的判断或流程时，写进内容所属的那一份：
   - 某阶段的做法 → 该阶段文件（`need.md`、`model.md`、`rounds.md`、`delivery.md`），分析任务 → `analyse.md`；停滞与诊断 → `diagnosis.md`；评价函数（初筛和轮次共用）→ `merit.md`
-  - 脚本和循环怎么选、rtc 数字怎么对待、rtc 副本 → `scripting.md`；微光学测量 → `micro.md`
+  - 脚本和循环怎么选、rtc 数字怎么对待、rtc 副本 → `scripting.md`；判定脚本该用哪些库测量 → `need.md`
   - 后端切换、许可证、长运行 → `session.md`
   - 任务目录里你写的文件和什么指挥你 → `files.md`
 - 帮助也按“都有后端 rtc 和 OpticStudio”来写：只对一个后端成立的说法要点名后端

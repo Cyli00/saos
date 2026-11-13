@@ -16,8 +16,10 @@
 # {metric: {id, params?, pick?}} (see saos metrics list) or {script: checks/<file>.py} defining run(ctx),
 # which returns inf when a precondition fails. "As small as possible" is minimize, never must: {max: 0}
 # (refused). An unknown real-world fact is an open_question, never a variable.
-# class goes with must: first_order (focal length, F-number, field, length, back focus: follows from powers and
-# constraints) or quality (spot, MTF, distortion and the like: what optimisation brings down). An autonomous job
+# class goes with must: first_order when the structure's powers, spacings and conserved quantities fix it, so a miss
+# means a wrong model (focal length, magnification, NA, field, length, back focus, étendue-bound throughput), or
+# quality when it is a residual that optimisation brings down (spot, wavefront, MTF, distortion, coupling efficiency,
+# beam quality). An autonomous job
 # cannot approve a model until every must has one. Changing a class needs a new confirmation; rounds stay comparable.
 
 schema: 2

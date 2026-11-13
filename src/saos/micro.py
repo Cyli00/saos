@@ -1,7 +1,10 @@
-"""微光学系统的测量原语（光纤探头、内窥镜、光纤端面打印透镜、微型物镜）：与具体布局无关，判定脚本只写自己的布局约定
-（面注释、折转、视场与波长），其余用这里的函数（2026-11-02 用户决定）。
-Measurement primitives for micro-optical systems (fibre probes, endoscopes, lenses printed on fibre tips, miniature
-objectives), independent of any layout; a check keeps only its layout conventions (comments, folds, fields, waves).
+"""与布局无关的测量原语：焦点与工作距、像前介质、零件间隙、收集、衍射、变焦行程。最早为微光学任务（光纤探头、内窥镜、
+光纤端面打印透镜、微型物镜）写成，对任何序列系统都适用；判定脚本只写自己的布局约定（面注释、折转、视场与波长），其余用
+这里的函数（2026-11-02 用户决定）。
+Layout-free measurement primitives: focus and working distance, the medium before the image, part clearances,
+collection, diffraction, zoom travel. Written first for micro-optics jobs (fibre probes, endoscopes, fibre-tip lenses,
+miniature objectives) and valid for any sequential system; a check keeps only its layout conventions (comments,
+folds, fields, waves).
 
 约定 / conventions:
 - 只经 saos.kit 与 ctx 读写，不导入后端；同一次判定内反复用到的量经 once() 只算一次。
