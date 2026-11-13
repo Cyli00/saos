@@ -219,6 +219,90 @@ def test_fast_copy_inside_the_daemon_and_on_a_worker(zos, saos_home, monkeypatch
         daemon.pool.close()
 
 
+def test_seidel_paraxial_and_distortion_operands_match_opticstudio(zos):
+    """逐面 Seidel、DIST 总畸变、PARY/PATY、PETC 与 OpticStudio 同值（2026-11-10 实测：
+    逐面 1.3e-15 波，PARY 在 0.6 Hy 处差 8.6e-3 mm 的旧口径已改为先取实际视场角）。"""
+    from saos.backend.rtc import RtcBackend
+
+    zos.load(CASES / "sequential.zmx")
+    rtc = RtcBackend(CASES / "sequential.zmx", standalone=True)
+    try:
+        for wave in (1, 2, 3):
+            mine, theirs = rtc.seidel(wave), zos.seidel(wave)
+            assert [r["surface"] for r in mine["surfaces"]] == [r["surface"] for r in theirs["surfaces"]]
+            for a, b in zip(mine["surfaces"], theirs["surfaces"]):
+                for column in ("W040", "W131", "W222", "W220P", "W311"):
+                    assert a[column] == pytest.approx(b[column], abs=1e-9), (wave, a["surface"], column)
+            for column in ("W040", "W131", "W222", "W220P", "W311"):
+                assert mine["totals"][column] == pytest.approx(theirs["totals"][column], abs=1e-9), (wave, column)
+        for surface in (1, 2, 3, 4):
+            for hy in (0.0, 0.6, 1.0):
+                for py in (-1.0, -0.8, 0.0, 0.8, 1.0):
+                    data = [0.0, hy, 0.0, py]
+                    for operand in ("PARY", "PATY"):
+                        assert rtc.operand(operand, surface, 2, data) == pytest.approx(
+                            zos.operand(operand, surface, 2, data), abs=1e-9), (operand, surface, hy, py)
+        for wave in (1, 2, 3):
+            assert rtc.operand("DIST", 0, wave, []) == pytest.approx(zos.operand("DIST", 0, wave, []), abs=1e-9)
+            assert rtc.operand("PETC", 0, wave, []) == pytest.approx(zos.operand("PETC", 0, wave, []), rel=1e-12)
+    finally:
+        rtc.close()
+
+
+def test_wizard_reference_writes_the_operand_opticstudio_does(zos):
+    """向导的 reference 标签与 OpticStudio 24.1 写出的操作数一致：Centroid→OPDX、Chief Ray→OPDM、
+    Unreferenced→OPDC；rtc 不再接受 OpticStudio 没有的 Mean。只比操作数种类，不比行数：原生向导对轴上视场
+    只写 3 个光瞳点，rtc 写 9 个，这个结构差异另记 TODO。"""
+    from saos.backend.rtc import RtcBackend
+    from saos.protocol import ErrorCode, SaosError
+
+    pairs = [("Wavefront", "Centroid", "OPDX"), ("Wavefront", "Chief Ray", "OPDM"), ("Wavefront", "Unreferenced", "OPDC"),
+             ("Spot Radius", "Centroid", "TRAC"), ("Spot Radius", "Chief Ray", "TRAR")]
+    zos.load(CASES / "sequential.zmx")
+    rtc = RtcBackend(CASES / "sequential.zmx", standalone=True)
+    try:
+        for data, reference, expected in pairs:
+            zos.merit_clear()
+            rtc.merit_clear()
+            settings = {"data": data, "reference": reference, "rings": 3, "arms": 6}
+            zos.merit_wizard(settings)
+            rtc.merit_wizard(settings)
+            assert {r["type"] for r in zos.merit_rows() if r["type"] not in ("DMFS", "BLNK")} == {expected}
+            assert {r.type for r in rtc.merit if r.type not in ("DMFS", "BLNK")} == {expected}
+        with pytest.raises(SaosError) as err:
+            rtc.merit_wizard({"data": "Wavefront", "reference": "Mean", "rings": 3, "arms": 6})
+        assert err.value.code == ErrorCode.BAD_ARGS
+    finally:
+        rtc.close()
+
+
+@pytest.mark.parametrize("data, reference", [("Wavefront", "Centroid"), ("Wavefront", "Chief Ray"), ("Wavefront", "Unreferenced"),
+                                             ("Spot Radius", "Centroid"), ("Spot Radius", "Chief Ray")])
+def test_opticstudio_wizard_rows_have_the_same_values_on_rtc(zos, tmp_path, data, reference):
+    """OpticStudio 向导写出的行原样交给 rtc 求值，逐行同值：主光线参考的行和 OPD 的参考球取主波长的主光线，
+    半光瞳的质心组按左右对称补全。行由 OpticStudio 存进 .zmx 再由 rtc 读入，所以比的是同一批行、同一组权重。"""
+    from saos.backend.rtc import RtcBackend
+
+    zos.load(CASES / "sequential.zmx")
+    zos.merit_clear()
+    zos.merit_wizard({"data": data, "reference": reference, "rings": 3, "arms": 6})
+    theirs = zos.merit_rows()
+    saved = tmp_path / "wizard.zmx"
+    zos.export_native(saved)
+    rtc = RtcBackend(saved, standalone=True)
+    try:
+        mine = rtc.merit_rows()
+        assert [(r["row"], r["type"]) for r in mine] == [(r["row"], r["type"]) for r in theirs]
+        kinds = {r["type"] for r in theirs} - {"DMFS"}
+        assert len(kinds) == 1
+        for a, b in zip(mine, theirs):
+            if a["type"] != "DMFS":
+                assert a["value"] == pytest.approx(b["value"], abs=1e-8), (a["row"], a["type"])
+        assert rtc.merit_value() == pytest.approx(zos.merit_value(), rel=1e-8)
+    finally:
+        rtc.close()
+
+
 def test_record_offline_fixture(zos):
     """SAOS_RTC_RECORD=1 时重写 tests/fixtures/rtc/ 的基准；否则跳过。/ Rewrite the offline fixture when asked."""
     if os.environ.get("SAOS_RTC_RECORD") != "1":

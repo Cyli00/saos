@@ -1,4 +1,4 @@
-"""rtc 实例的评价函数：OpticStudio 的操作数行格式、.zmx 读写、批量求值、优化向导（ADR-0017）。
+"""rtc 实例的评价函数：OpticStudio 的操作数行格式、.zmx 读写、批量求值、优化向导。
 The rtc instance's merit function: OpticStudio's operand rows, .zmx reading and writing, batched evaluation and the wizard.
 
 行与 OpticStudio 的评价函数编辑器同构：type、params（Int1、Int2、Data1…Data6）、target、weight。.zmx 里每行写成
@@ -49,9 +49,12 @@ CHIEF_ABERRATIONS = frozenset({"TRAR", "TRAX", "TRAY", "OPDC"})
 GROUP_ABERRATIONS = frozenset({"TRAC", "TRCX", "TRCY", "OPDX", "OPDM"})
 ABERRATIONS = CHIEF_ABERRATIONS | GROUP_ABERRATIONS
 WAVEFRONT = frozenset({"OPDC", "OPDX", "OPDM"})
-# 向导：(数据类型, 参考) → 操作数 / the wizard's (data, reference) → operands
+# 向导：(数据类型, 参考) → 操作数。波前一行照 OpticStudio 24.1 向导实际写出的操作数（2026-11-10 真机逐项枚举）：
+# Chief Ray 写出的是按均值参考的 OPDM，Unreferenced 才是按主光线参考的 OPDC；rtc 写出同一种操作数（轴上视场的行数还不同，见 TODO.md）。
+# the wizard's (data, reference) → operands. The wavefront row follows what OpticStudio 24.1's wizard writes: Chief Ray
+# gives OPDM (mean-referenced) and Unreferenced gives OPDC (chief-ray-referenced).
 WIZARD_OPERANDS = {
-    ("wavefront", "centroid"): ("OPDX",), ("wavefront", "chiefray"): ("OPDC",), ("wavefront", "mean"): ("OPDM",),
+    ("wavefront", "centroid"): ("OPDX",), ("wavefront", "chiefray"): ("OPDM",), ("wavefront", "unreferenced"): ("OPDC",),
     ("spotradius", "centroid"): ("TRAC",), ("spotradius", "chiefray"): ("TRAR",),
     ("spotx", "centroid"): ("TRCX",), ("spotx", "chiefray"): ("TRAX",),
     ("spoty", "centroid"): ("TRCY",), ("spoty", "chiefray"): ("TRAY",),
@@ -287,12 +290,30 @@ class Evaluator:
 
     def _traces(self, segment) -> dict[tuple, dict[str, Any]]:
         """(波长, Hx, Hy) → 这一视场所需全部光瞳点的追迹结果（像面坐标、OPD）。"""
-        from rtc.psf import opd_from_trace
+        from rtc.psf import opd_from_trace, reference_sphere
         from rtc.trace import trace
 
         out = {}
         backend = self.backend
         waves = len(backend.lens.active_wavelengths)
+        primary = backend.lens.primary_wave
+        chiefs: dict[tuple, Any] = {}
+
+        def primary_chief(hx: float, hy: float):
+            """主波长主光线在这一视场的 (像面 x, y, 参考球或它算不出的原因)。OpticStudio 的 TRAR/TRAX/TRAY 和 OPD 行在
+            非主波长上仍以它为参考（2026-11-10 真机；用本波长主光线时 TRAR 差 1.4e-4 mm、OPDC 差 1.2e-2 个波）。"""
+            if (hx, hy) not in chiefs:
+                system = backend._system(primary)
+                rays = segment.pupils.get((primary, hx, hy))
+                block = whole[primary].part(rays["rays"]) if rays is not None and primary in whole else trace(system, [0.0], [0.0], hx, hy)
+                image = len(system.items) - 1
+                try:
+                    sphere = reference_sphere(system, block, 0)
+                except ValueError as exc:
+                    sphere = str(exc)
+                chiefs[hx, hy] = (float(block.x[0, image]), float(block.y[0, image]), bool(block.error[0] == 0 and block.vig[0] == 0), sphere)
+            return chiefs[hx, hy]
+
         whole = {}
         for wave, batch in segment.batches.items():
             if not 1 <= wave <= waves:
@@ -307,11 +328,14 @@ class Evaluator:
             block = whole[key[0]].part(pupil["rays"])
             image = len(system.items) - 1
             ok = (block.error == 0) & (block.vig == 0)
+            cx, cy, chief_ok, sphere = primary_chief(key[1], key[2])
             entry = {"index": points, "block": block, "system": system, "x": block.x[:, image], "y": block.y[:, image], "ok": ok,
-                     "chief_ok": bool(ok[0])}
+                     "chief_ok": bool(ok[0]) and chief_ok, "cx": cx, "cy": cy}
             if key in segment.wavefront:
                 try:
-                    opd, good = opd_from_trace(system, block, chief_index=0)
+                    if isinstance(sphere, str):
+                        raise ValueError(sphere)
+                    opd, good = opd_from_trace(system, block, chief_index=0, hx=key[1], hy=key[2], reference=sphere)
                 except NotImplementedError as exc:
                     raise unsupported(f"rtc: {exc}") from exc
                 except ValueError as exc:
@@ -335,7 +359,7 @@ class Evaluator:
         if r.type == "OPDC":
             return float(entry["opd"][i])
         if r.type in CHIEF_ABERRATIONS:
-            dx, dy = entry["x"][i] - entry["x"][0], entry["y"][i] - entry["y"][0]
+            dx, dy = entry["x"][i] - entry["cx"], entry["y"][i] - entry["cy"]
             return float({"TRAR": math.hypot(dx, dy), "TRAX": dx, "TRAY": dy}[r.type])
         group = groups[k]
         ref = _group_reference(rows, group, entry, r.type)
@@ -437,7 +461,15 @@ def _groups(rows, lo, hi) -> dict[int, list[int]]:
 
 def _group_reference(rows, group: list[int], entry, kind: str):
     """组内按行权重求的参考：TRAC/TRCX/TRCY 为质心 (x, y)；OPDX 为 piston 与倾斜 (a, bx, by)，OPDM 为均值 (a, 0, 0)。
-    权重全为 0 时等权。/ The weighted group reference: the centroid for spots, piston and tilt for OPDX, the mean for OPDM."""
+    权重全为 0 时等权。
+
+    向导在假定轴对称时只写半个光瞳的行（px 同号）。视场在 y–z 平面内（Hx = 0）时系统关于这个平面左右对称，另一半光瞳
+    的光线是这一半的镜像：质心的 x 为 0，波前没有 x 方向的倾斜。只拿半边的行去求会把 x 方向求偏，所以这种组按对称补全。
+    2026-11-10 真机：不补全时 TRAC 与 OpticStudio 差 1.4e-2 mm、OPDX 差 0.45 个波，差值与补全带来的变化一致到 4 位。
+    Hx ≠ 0 的半光瞳组 OpticStudio 怎么取没有测过，仍按组内的行求。
+    The weighted group reference: the centroid for spots, piston and tilt for OPDX, the mean for OPDM. A group whose rows
+    cover half the pupil (px of one sign) at a field in the y-z plane is completed by mirror symmetry: the centroid's x
+    and the wavefront's x tilt are zero, as OpticStudio has them."""
     cache = entry.setdefault("refs", {})
     key = (kind, group[0])
     if key in cache:
@@ -448,11 +480,12 @@ def _group_reference(rows, group: list[int], entry, kind: str):
         w = np.ones(len(group))
     px = np.array([rows[k].data[2] for k in group])
     py = np.array([rows[k].data[3] for k in group])
+    mirrored = float(rows[group[0]].data[0]) == 0.0 and bool(px.any()) and bool((px >= 0).all() or (px <= 0).all())
     if kind in ("TRAC", "TRCX", "TRCY"):
         ok = entry["ok"][idx]
         if not ok.any():
             raise ValueError("no ray of this group reaches the image")
-        ref = (float(np.average(entry["x"][idx][ok], weights=w[ok])), float(np.average(entry["y"][idx][ok], weights=w[ok])))
+        ref = (0.0 if mirrored else float(np.average(entry["x"][idx][ok], weights=w[ok])), float(np.average(entry["y"][idx][ok], weights=w[ok])))
     else:
         ok = entry["opd_ok"][idx]
         if not ok.any():
@@ -460,6 +493,10 @@ def _group_reference(rows, group: list[int], entry, kind: str):
         opd = entry["opd"][idx][ok]
         if kind == "OPDM" or ok.sum() < 3:
             ref = (float(np.average(opd, weights=w[ok])), 0.0, 0.0)
+        elif mirrored:
+            A = np.stack([np.ones(int(ok.sum())), py[ok]], axis=1) * np.sqrt(w[ok])[:, None]
+            coef, *_ = np.linalg.lstsq(A, opd * np.sqrt(w[ok]), rcond=None)
+            ref = (float(coef[0]), 0.0, float(coef[1]))
         else:
             A = np.stack([np.ones(int(ok.sum())), px[ok], py[ok]], axis=1) * np.sqrt(w[ok])[:, None]
             coef, *_ = np.linalg.lstsq(A, opd * np.sqrt(w[ok]), rcond=None)
@@ -509,7 +546,7 @@ def wizard_rows(lens, settings: dict[str, Any]) -> list[Row]:
     operands = WIZARD_OPERANDS.get((data, reference))
     if operands is None:
         raise SaosError(ErrorCode.BAD_ARGS, f"optimization wizard data/reference {settings.get('data')!r}/{settings.get('reference')!r} unknown; "
-                        f"rtc has data Wavefront, Spot Radius, Spot X, Spot Y, Spot X+Y with reference Centroid or Chief Ray (Mean for Wavefront)")
+                        f"rtc has data Wavefront, Spot Radius, Spot X, Spot Y, Spot X+Y with reference Centroid or Chief Ray (also Unreferenced for Wavefront)")
 
     def integer(key: str, default: int) -> int:
         v = settings.get(key, default)

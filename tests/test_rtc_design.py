@@ -1,4 +1,4 @@
-"""rtc 实例上的设计轮次（ADR-0017）的离线回归，不开 OpticStudio：评价函数、带精确约束的局部优化、搜索、.zmx 往返、
+"""rtc 实例上的设计轮次的离线回归，不开 OpticStudio：评价函数、带精确约束的局部优化、搜索、.zmx 往返、
 结构指纹，以及复测记录在 ledger 里的折叠。
 
 镜头取 tests/fixtures/cases/sequential.zmx（OpticStudio 24.1.0 存盘的胶合双片）与 tests/fixtures/rtc/doublet.*（OpticStudio 存出的
@@ -367,18 +367,23 @@ def test_batched_ray_operands_match_individual_operands(monkeypatch):
 @needs_glass
 def test_wavefront_evaluation_uses_one_trace_per_wavelength(monkeypatch):
     from rtc import trace as trace_module
-    from rtc.psf import opd_rays
+    from rtc.psf import opd_from_trace, reference_sphere
 
     backend = _loaded()
-    rows = rtc_merit.wizard_rows(backend.lens, {"rings": 3, "arms": 6, "reference": "Chief Ray"})
+    rows = rtc_merit.wizard_rows(backend.lens, {"rings": 3, "arms": 6, "reference": "Unreferenced"})
     evaluator = rtc_merit.Evaluator(backend, rows)
+    trace = trace_module.trace
+    primary = backend._system(backend.lens.primary_wave)
     expected = []
     for row in rows:
         if row.type == "OPDC":
-            opd, ok = opd_rays(backend._system(row.int2), [row.data[2]], [row.data[3]], *row.data[:2])
-            assert ok[0]
-            expected.append(opd[0] / (backend.lens.active_wavelengths[row.int2 - 1][0] * 1e-3))
-    trace = trace_module.trace
+            hx, hy, px, py = row.data[:4]
+            system = backend._system(row.int2)
+            # 参考球取主波长主光线的，OPD 相对本波长的主光线
+            sphere = reference_sphere(primary, trace(primary, [0.0], [0.0], hx, hy))
+            opd, ok = opd_from_trace(system, trace(system, [0.0, px], [0.0, py], hx, hy), hx=hx, hy=hy, reference=sphere)
+            assert ok[1]
+            expected.append(opd[1] / (system.wavelength * 1e-3))
     calls = []
 
     def counted(*args, **kwargs):
@@ -504,3 +509,72 @@ def test_merit_jacobian_is_refused_where_the_backend_has_none():
     with pytest.raises(SaosError) as err:
         FakeBackend().merit_jacobian()
     assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED
+
+
+@needs_glass
+@pytest.mark.parametrize("settings, operand, shift", [
+    # 2026-11-10 真机：非主波长的行若按本波长主光线取参考，与 OpticStudio 差这么多（F 线、C 线）；按主波长取就对上
+    ({"reference": "Unreferenced"}, "OPDC", {1: 1.214e-2, 3: 1.155e-2}),
+    ({"reference": "Chief Ray", "data": "Spot Radius"}, "TRAR", {1: 1.408e-4, 3: 1.813e-4}),
+])
+def test_chief_referenced_rows_use_the_primary_wavelength_chief_ray(settings, operand, shift):
+    from rtc.psf import opd_rays
+    from rtc.trace import trace
+
+    backend = _loaded()
+    rows = rtc_merit.wizard_rows(backend.lens, {"rings": 3, "arms": 6, **settings})
+    values = rtc_merit.Evaluator(backend, rows).evaluate().values
+    worst = {1: 0.0, 2: 0.0, 3: 0.0}
+    for row, value in zip(rows, values):
+        if row.type != operand:
+            continue
+        hx, hy, px, py = row.data[:4]
+        system = backend._system(row.int2)
+        if operand == "OPDC":
+            opd, _ = opd_rays(system, [px], [py], hx, hy)
+            own = opd[0] / (system.wavelength * 1e-3)
+        else:
+            block = trace(system, [0.0, px], [0.0, py], hx, hy)
+            own = math.hypot(block.x[1, -1] - block.x[0, -1], block.y[1, -1] - block.y[0, -1])
+        worst[row.int2] = max(worst[row.int2], abs(value - own))
+    assert worst[2] == pytest.approx(0.0, abs=1e-12)
+    assert {w: worst[w] for w in shift} == pytest.approx(shift, rel=2e-3)
+
+
+@needs_glass
+@pytest.mark.parametrize("settings, operand, shift", [
+    # 2026-11-10 真机：向导的半光瞳组若只拿组内的行求质心或倾斜，与 OpticStudio 差这么多（F、d、C 三条线）
+    ({"data": "Spot Radius"}, "TRAC", {1: 1.357e-2, 2: 1.447e-2, 3: 1.322e-2}),
+    ({"data": "Wavefront"}, "OPDX", {1: 4.499e-1, 2: 4.067e-1, 3: 3.188e-1}),
+])
+def test_half_pupil_centroid_groups_are_completed_by_mirror_symmetry(settings, operand, shift):
+    backend = _loaded()
+    rows = rtc_merit.wizard_rows(backend.lens, {"rings": 3, "arms": 6, **settings})
+    assert all(row.data[2] >= 0 for row in rows if row.type == operand)
+    evaluator = rtc_merit.Evaluator(backend, rows)
+    values = evaluator.evaluate().values
+    traces = evaluator._traces(evaluator._compile(rows, 0, len(rows)))
+    groups: dict[tuple, list[int]] = {}
+    for k, row in enumerate(rows):
+        if row.type == operand:
+            groups.setdefault((row.int2, float(row.data[0]), float(row.data[1])), []).append(k)
+    worst = {1: 0.0, 2: 0.0, 3: 0.0}
+    for key, members in groups.items():
+        entry = traces[key]
+        index = [entry["index"][(float(rows[k].data[2]), float(rows[k].data[3]))] for k in members]
+        weights = np.array([rows[k].weight for k in members])
+        px, py = (np.array([rows[k].data[j] for k in members]) for j in (2, 3))
+        if operand == "TRAC":
+            x, y = entry["x"][index], entry["y"][index]
+            naive = np.hypot(x - np.average(x, weights=weights), y - np.average(y, weights=weights))
+            # 补全后质心在 y–z 平面内，轴上视场的点列关于光轴对称
+            assert key[2] != 0.0 or values[members[0]] == pytest.approx(float(np.hypot(x[0], y[0])), abs=1e-12)
+        else:
+            opd = entry["opd"][index]
+            basis = np.stack([np.ones(len(members)), px, py], axis=1) * np.sqrt(weights)[:, None]
+            fit, *_ = np.linalg.lstsq(basis, opd * np.sqrt(weights), rcond=None)
+            naive = opd - (fit[0] + fit[1] * px + fit[2] * py)
+        for k, value in zip(members, naive):
+            worst[key[0]] = max(worst[key[0]], abs(values[k] - value))
+    assert worst == pytest.approx(shift, rel=2e-3)
+

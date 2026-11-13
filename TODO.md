@@ -10,9 +10,13 @@
 - OpticStudio 上 `saos opt vary --param radius` 碰到被 CRVT 行盖住的格时不生效也不报错：`RadiusCell.MakeSolveVariable()` 之后存盘的 `CURV` 和 `CRVT` 仍是固定（2026-11-07 实测）。rtc 已改成设在单元格上，ZOS 后端没动。
 - `rtc.zmx` 把厚度拾取的 `solve[4]` 当源面号，而热结构文件实测这一列是源行号（`solve[3]` 是源结构）。旧 pickup 的两份样本按源面号对得上，没有动，等有新样本再核。
 - rtc 的 `TRAC` 与 OpticStudio 没对账：结构 1 的第 14 行差 3.7e-5 mm（sequential）、1.2e-3 mm（iris）。多结构优化的向导行用它，交付前的复测兜底。
-- rtc 的 `TRAR/TRAC/OPDC/OPDX` 按每个波长自己的主光线或质心参考（`rtc_merit`），所以横向色差不进向导行。OpticStudio 的参考是不是也按波长还没实测：要对账时在真机上比一个有明显横向色差的镜头。
+- 2026-11-10 改的两条参考规则只按真机报告的 4 位差值离线核对过，逐行对账的真机用例 `tests/test_zemax_rtc.py::test_opticstudio_wizard_rows_have_the_same_values_on_rtc` 写好了还没跑：（1）主光线参考的行（TRAR/TRAX/TRAY、OPDC）和所有 OPD 行的参考球，在非主波长上取主波长的主光线；（2）向导的半光瞳质心组（TRAC/TRCX/TRCY、OPDX）在 Hx = 0 的视场按左右对称补全。质心行的质心是按本波长还是主波长取，4 位数字分不出来（`sequential` 上两种取法只差 1e-6 mm 量级），rtc 现在按本波长；Hx ≠ 0 的半光瞳组怎么取参考没测过，rtc 仍按组内的行求。`ctx.wavefront_rms` 和 FFT MTF 在非主波长上仍用本波长的参考球。
 - `ZOS_ERROR` 这个错误码实际表示任一后端的操作失败；改名会破坏协议，暂时只在 `saos --help` 里说明。
 - rtc 上 `lens save` 出现过一次 `VERIFY_FAILED`（`sph2.zmx differs after reloading from the state before saving`，2026-11-07 评测任务 evalafter），原因没查。
+- `tests/test_zemax_cases.py` 录 `wavefront_rms` 时把归一化视场坐标当视场单位传给了 `ctx.wavefront_rms`，`truth.json` 里的值因此对应 0.6°、1.0° 这类视场而不是视场表的 3°、5°（2026-11-10 离线回放确认）。`tests/rtc/test_case_truth.py` 按录入时的调用回放，数值可用；下次重录时改成按视场单位传，并同步那条测试。
+- 2026-11-10 真机验证：`ctx.seidel` 的逐面 W040/W131/W222/W220P/W311 与 OpticStudio 的 SPHA/COMA/ASTI/FCUR/DIST 操作数一致（1.3e-15 波），合计也与它的 Seidel 表 TOT 一致；但 Seidel 表的 W311 逐面值与 DIST 操作数本身差到 3e-3 波（W040 等四列只差 6e-7）。DIST(Int1=0) 改为像面实际畸变百分比（-0.020651% 对 0.153820 波），与 Seidel 表 TOT 不是同一量。有限物距的 OPD 在物距 100 mm 的 sequential 上与 OpticStudio OPDC 差 ≤ 2.6e-8 波。
+- OPDX 还剩一处没查清：21 点整光瞳方格组（本来就左右对称，补全不改变它）上 rtc 与 OpticStudio 差到 6.97e-3 波，差几乎是一个线性函数（残差 1.8e-5 波），而向导的高斯求积组补全后离线复算与真机差值一致到 4 位。另外 `truth.json` 的 `opd` 行里 OPDX 一列与 OPDC 逐条相等：录入时用 `ctx.op` 单独求一行，质心参考要靠评价函数里的同组行才成立，这份真值验证不了 OPDX，重录时要把成组的 OPDX 行放进评价函数再读。
+- rtc 向导与 OpticStudio 原生向导的行结构不同：`rings=3, arms=6` 时 rtc 每个视场/波长写 9 个光瞳点，OpticStudio 对离轴视场写 9 个、对轴上视场只写 3 个（同一 `Ring=2` 采样），所以 rtc 81 行对 OpticStudio 63 行；glass/air 边界行也一边 6 行、一边 12 行。2026-11-10 真机实测，向导建出的评价函数值因此差约一倍（Centroid：rtc 0.323395 对 OpticStudio 0.165489）。原生 `Ring` 与 saos `rings` 的换算、轴上视场的臂数和边界组数都还没对账。
 
 ## rtc 待办（2026-11-10 从已删除的计划文档并入；当时的细节用 `git show 3c488f0:docs/plans/<文件>` 查）
 
