@@ -37,6 +37,7 @@ STATIC_TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=
                 ".svg": "image/svg+xml"}
 # 窗口每 1.5 s 轮询一次；这么久没有请求说明窗口已关，服务自行退出 / no request for this long means the window is closed
 IDLE_EXIT_S = 900
+MAX_BODY_BYTES = 1 << 16
 
 
 def state_file() -> Path:
@@ -183,6 +184,24 @@ class Handler(BaseHTTPRequestHandler):
         port = self.server.server_address[1]
         return self.headers.get("Host") in (f"127.0.0.1:{port}", f"localhost:{port}")
 
+    def _body(self) -> dict[str, Any]:
+        """POST 的 JSON 对象；长度不明、超过 MAX_BODY_BYTES、不是 JSON 对象时报 BAD_ARGS。
+        The POST body as a JSON object; BAD_ARGS when its length is unknown or over MAX_BODY_BYTES, or it is not an object."""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError as exc:
+            raise SaosError(ErrorCode.BAD_ARGS, "Content-Length is not a number") from exc
+        if not 0 <= length <= MAX_BODY_BYTES:
+            raise SaosError(ErrorCode.BAD_ARGS, f"the request body must be at most {MAX_BODY_BYTES} bytes (got {length})")
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            body = json.loads(raw)
+        except ValueError as exc:
+            raise SaosError(ErrorCode.BAD_ARGS, f"the request body is not JSON: {exc}") from exc
+        if not isinstance(body, dict):
+            raise SaosError(ErrorCode.BAD_ARGS, "the request body must be a JSON object")
+        return body
+
     def _api(self, method: str) -> None:
         if not self._allowed_host() or not secrets.compare_digest(self.headers.get("X-Saos-Token", ""), self.server.token):
             self._json(fail(SaosError(ErrorCode.BAD_ARGS, "forbidden")), 403)
@@ -192,11 +211,11 @@ class Handler(BaseHTTPRequestHandler):
         query = {k: v[-1] for k, v in parse_qs(url.query).items()}
         body: dict[str, Any] = {}
         if method == "POST":
-            length = min(int(self.headers.get("Content-Length") or 0), 1 << 16)
             try:
-                body = json.loads(self.rfile.read(length) or b"{}")
-            except ValueError:
-                body = {}
+                body = self._body()
+            except SaosError as exc:
+                self._json(fail(exc), 400)
+                return
         try:
             result = self._route(method, url.path, {**query, **body})
         except SaosError as exc:
