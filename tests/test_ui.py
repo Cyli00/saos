@@ -147,9 +147,10 @@ def get(srv, path, token=True, host=None, data=None):
         return exc.code, (json.loads(raw) if path.startswith("/api/") else raw.decode("utf-8"))
 
 
-def post_raw(srv, path, raw):
+def post_raw(srv, path, raw, length=None):
     port = srv.server_address[1]
-    req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=raw, headers={"X-Saos-Token": srv.token})
+    headers = {"X-Saos-Token": srv.token, **({"Content-Length": str(length)} if length is not None else {})}
+    req = urllib.request.Request(f"http://127.0.0.1:{port}{path}", data=raw, headers=headers)
     try:
         with DIRECT.open(req, timeout=5) as resp:
             return resp.status, json.loads(resp.read())
@@ -160,8 +161,8 @@ def post_raw(srv, path, raw):
 def test_a_post_body_that_is_not_a_json_object_is_refused(ui):
     (daemon, job), srv = ui
     path = f"/api/notice?job={job.id}"
-    for raw in (b"{not json", b"[1, 2]", b"x" * (server.MAX_BODY_BYTES + 1)):
-        code, msg = post_raw(srv, path, raw)
+    for raw, length in ((b"{not json", None), (b"[1, 2]", None), (b"{}", server.MAX_BODY_BYTES + 1), (b"{}", "two")):
+        code, msg = post_raw(srv, path, raw, length)
         assert code == 400 and msg["error"]["code"] == "BAD_ARGS"
     code, msg = post_raw(srv, path, json.dumps({"message": "look"}).encode())
     assert code == 200 and msg["ok"]
