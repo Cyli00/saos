@@ -7,23 +7,17 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from . import geometry, materials, zmx
-from .material import MaterialUnsupported, Medium, resolve
-from .material.model import model_index
+from . import geometry, zmx
+from .material import GlassCatalog, Medium, resolve
 
-_CATALOG: materials.Catalog | None = None
+_CATALOG: GlassCatalog | None = None
 
 
-def catalog() -> materials.Catalog:
+def catalog() -> GlassCatalog:
     global _CATALOG
     if _CATALOG is None:
-        _CATALOG = materials.Catalog()
+        _CATALOG = GlassCatalog()
     return _CATALOG
-
-
-def model_glass_index(nd: float, vd: float, wavelength_um: float, dpgf: float = 0.0) -> float:
-    """兼容旧入口；模型玻璃不再依赖有限查表。"""
-    return float(model_index(wavelength_um, nd, vd, dpgf))
 
 
 @dataclass
@@ -107,7 +101,7 @@ class OpticalSystem:
     """
 
     def __init__(self, lens: zmx.Lens, wavelength_um: float | None = None, config: int | None = None,
-                 aim_scale: tuple[float, float] | None = None, glasses: materials.Catalog | None = None,
+                 aim_scale: tuple[float, float] | None = None, glasses: GlassCatalog | None = None,
                  media: dict | None = None, primary: "OpticalSystem | None" = None, allow_unverified: bool = False):
         # 只按手册定义实现、尚未与 OpticStudio 逐条对账的路径（有限物距发射、物高视场、按实光线定的 OBNA 光阑半径）
         # 默认拒绝；调用方显式打开时照算，结果须标 unverified

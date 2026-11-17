@@ -1,7 +1,7 @@
 """rtc：浮点 64 位的序列光线追迹内核（复现 OpticStudio 复现范围内的功能）。
 
 模块地图：
-- :mod:`rtc.zmx` / :mod:`rtc.material`：输入与折射率（`rtc.materials` 保留兼容入口）
+- :mod:`rtc.zmx` / :mod:`rtc.material`：输入与折射率
 - :mod:`rtc.kernel`：numba 内核，矢高、求交、折射/反射/衍射、孔径、瞄准，带切向的单步只有这一份
 - :mod:`rtc.geometry`：把面参数排成内核的参数行，近轴曲率
 - :mod:`rtc.trace`：发射与瞄准约定、RayBlock、理想透镜相位

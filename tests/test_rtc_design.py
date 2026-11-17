@@ -25,7 +25,7 @@ WIZARD = {"rings": 3, "arms": 6, "glass": [1.0, 10.0, 1.0], "air": [0.5, 50.0, 0
 
 
 def _glasscat_ready() -> bool:
-    from rtc.materials import catalog_dir
+    from rtc.material import catalog_dir
 
     return any(p.stem.upper() == "SCHOTT" for p in catalog_dir().glob("*.[Aa][Gg][Ff]"))
 

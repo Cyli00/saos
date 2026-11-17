@@ -166,8 +166,8 @@ class RtcBackend(Backend):
 
     def __init__(self, path: Path | None, model: dict[str, Any] | None = None, *, glass_dir: Path | None = None,
                  freeze_solves: bool = False, standalone: bool = False):
-        from rtc import materials, zmx
-        from rtc.material import MaterialInvalid, MaterialUnsupported
+        from rtc import zmx
+        from rtc.material import GlassCatalog, MaterialInvalid, MaterialUnsupported
 
         # standalone：SAOS_BACKEND=rtc 的实例自己持有镜头（处方搭建、读写 .zmx），没有 OpticStudio 可对照；
         # 按手册定义实现、未对账的路径照算，用到的列进 unverified()
@@ -178,7 +178,7 @@ class RtcBackend(Backend):
         self._dirty = False
         # 本次脚本用到的操作数，provenance() 取走后清空 / operands used since provenance() was last taken
         self._used: set[str] = set()
-        self.glasses = materials.Catalog(glass_dir) if glass_dir else None
+        self.glasses = GlassCatalog(glass_dir) if glass_dir else None
         self.model = model
         self.freeze_solves = bool(freeze_solves)
         self._systems: dict[tuple[int, int], Any] = {}

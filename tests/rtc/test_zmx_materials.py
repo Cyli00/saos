@@ -15,29 +15,29 @@ import numpy as np
 import pytest
 
 from rtc import zmx
-from rtc.materials import Catalog
+from rtc.material import GlassCatalog
 
 FIX = Path(__file__).resolve().parent / "fixtures"
 
 
 def test_n_bk7_matches_measured_ray_trace_value():
-    glass = Catalog().get("N-BK7")
+    glass = GlassCatalog().get("N-BK7")
     assert glass.index(0.55) == pytest.approx(1.518522388, abs=5e-10)
 
 
 def test_water2_reproduces_catalog_nd():
-    glass = Catalog().get("WATER2")
+    glass = GlassCatalog().get("WATER2")
     assert glass.formula == 1
     assert glass.index(0.5875618) == pytest.approx(glass.nd, abs=1e-7)
 
 
 @pytest.mark.parametrize("wavelength,expected", [(0.55, 1.33432), (0.92, 1.32633)])
 def test_water2_hand_computed_points(wavelength, expected):
-    assert Catalog().get("WATER2").index(wavelength) == pytest.approx(expected, abs=2e-4)
+    assert GlassCatalog().get("WATER2").index(wavelength) == pytest.approx(expected, abs=2e-4)
 
 
 def test_unknown_dispersion_formula_is_rejected_not_approximated():
-    from rtc.materials import Glass
+    from rtc.material import Glass
 
     with pytest.raises(NotImplementedError):
         Glass(name="X", formula=14, nd=1.5, vd=50, coef=[1, 2, 3, 4, 5, 6]).index(0.55)

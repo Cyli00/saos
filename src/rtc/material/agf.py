@@ -56,7 +56,7 @@ class Glass:
         return self.ed[0]
 
     def index(self, wavelength_um):
-        """兼容旧 API：返回参考环境的相对目录值；系统温压由 CatalogGlass.index 处理。"""
+        """参考环境下的相对折射率（目录值）；系统温压由 CatalogGlass.index 处理。"""
         result = dispersion(wavelength_um, self.coef, self.formula, self.nd)
         return -result if self.negative_index else result
 

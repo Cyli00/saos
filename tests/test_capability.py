@@ -18,7 +18,7 @@ PROBED = ("aperture", "fields", "ray_aiming", "surface_type", "surface_aperture"
 
 
 def _glasscat_ready() -> bool:
-    from rtc.materials import catalog_dir
+    from rtc.material import catalog_dir
 
     return any(p.stem.upper() == "SCHOTT" for p in catalog_dir().glob("*.[Aa][Gg][Ff]"))
 
