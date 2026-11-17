@@ -29,7 +29,7 @@ def test_find_matches_text_anywhere_and_fields_exactly_and_brings_the_cited_sour
     glass = library.find("mechanics", "glass")
     assert glass["total"] == 2 and [i["id"] for i in glass["items"]] == ["b", "c"]
     assert glass["items"][0]["cited"] == {"s2": {"title": "two"}}
-    # 引用了库里没有的来源：不编造，cited 为空 / a source the library lacks is not invented
+    # 引用了库里没有的来源：不编造，cited 为空
     assert glass["items"][1]["cited"] == {}
     both = library.find("mechanics", "GLASS", category="mirror_substrate", limit=1)
     assert both["total"] == 2 and len(both["items"]) == 1
@@ -62,6 +62,6 @@ def test_a_missing_library_file_is_reported_not_raised_by_the_catalog(tiny):
 
 
 def test_every_library_in_the_repository_loads():
-    # 库文件改了结构而入口没跟上时在这里暴露 / catches a library whose layout changed under the entry point
+    # 库文件改了结构而入口没跟上时在这里暴露
     broken = {c["library"]: c.get("error") for c in library.catalog() if not c["entries"]}
     assert broken == {}

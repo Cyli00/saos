@@ -75,13 +75,13 @@ NSC_TOP_KEYS = {"mode", "title", "units", "wavelengths", "catalogs", "coating_fi
 OBJECT_KEYS = {"type", "comment", "ref", "inside_of", "position", "tilt", "material", "params", "volume_physics",
                "file", "file2", "faces", "scatter_to", "source", "type_options", "diffraction", "index_model"}
 VOLUME_MODELS = ("none", "angle", "dll", "photoluminescence")
-# 光致发光模型的字段：(类型, 可选项)；file 类按 OpticStudio 列出的文件名选 / photoluminescence fields: (kind, choices)
+# 光致发光模型的字段：(类型, 可选项)；file 类按 OpticStudio 列出的文件名选
 PL_SPECTRA = ("absorption", "emission", "excitation", "quantum_yield")
 PL_FIELDS = {"efficiency": ("quantum_yield", "excitation"), "pl_density": "number", "extinction_coefficient": "number",
              "extinction_wavelength": "number", "threshold": "number", "basic_algorithm": "flag", "consider_mie": "flag",
              "particle_index": "number", "particle_density": "number", "particle_radius": "number", "use_mie_density": "flag",
              "mie_mean_path": "number", "pl_mean_path": "number"}
-# 光源页 / the Sources tab
+# 光源页
 SOURCE_KEYS = {"polarization", "initial_phase", "coherence_length", "reverse_rays", "pre_propagation", "sampling", "bulk_scatter", "array", "color"}
 SAMPLING = ("random", "sobol")
 BULK_SCATTER = ("many", "once", "never")
@@ -92,7 +92,7 @@ COLOR_MODES = ("system_wavelengths", "uniform", "blackbody", "color_temperature"
                "cie1931_rgb", "cie1976")
 COLOR_FIELDS = {"temperature": "number", "from": "number", "to": "number", "count": "int", "file": "name", "x": "number", "y": "number",
                 "z": "number", "cx": "number", "cy": "number", "r": "number", "g": "number", "b": "number", "u": "number", "v": "number"}
-# Type 页 / the Type tab
+# Type 页
 TYPE_OPTIONS = {"rays_ignore": ("never", "always", "on_launch"), "consider": "objects", "ignore": "objects", "is_detector": "flag",
                 "pixel_interpolation": "flag", "global_xyz_rotation": "flag", "consider_ignore_when_splitting": "flag"}
 DIFFRACTION_SPLIT = ("none", "table", "dll")
@@ -102,7 +102,6 @@ ANALYSIS_UNITS = ("W/mm2", "W/cm2", "W/in2", "W/m2", "W/ft2")
 FACE_KEYS = {"is", "coating", "profile", "scatter"}
 FACE_IS = ("default", "reflective", "absorbing")
 # 各面散射模型收的字段（2024 R1 的 IOSS_* 接口实测）；rays 是该面的散射光线数，各模型都收
-# the fields each face scatter model takes (the IOSS_* interfaces in 2024 R1); rays is the face's scatter ray count
 SCATTER_FIELDS = {"none": {}, "lambertian": {"fraction": "number"}, "gaussian": {"fraction": "number", "sigma": "number"},
                   "abg": {"reflect": "name", "transmit": "name"}, "abg_file": {"reflect": "name", "transmit": "name"},
                   "bsdf": {"reflect": "name", "transmit": "name"}, "user": {"dll": "name", "fraction": "number", "file": "name", "params": "params"}}
@@ -365,7 +364,6 @@ def _surface(s: Any, name: str, image: bool = False) -> dict[str, Any]:
     item: dict[str, Any] = {"type": kind, "comment": str(s.get("comment", ""))}
     if not image:
         # 非序列组面没有厚度（2024 R1 回读为 inf，写入被忽略），出口位置由 Exit Loc X/Y/Z 决定
-        # an NSC group surface has no thickness (2024 R1 reads inf and ignores writes); Exit Loc X/Y/Z places the exit
         if kind.lower() == "nonsequential":
             if "thickness" in s:
                 raise _bad(f"{name}: a NonSequential surface has no thickness; place the exit with params Exit Loc X/Y/Z")
@@ -410,7 +408,6 @@ def _surface(s: Any, name: str, image: bool = False) -> dict[str, Any]:
         item["coating"] = s["coating"].strip()
     if "objects" in s:
         # 混合模式：NonSequential 面（非序列组）里的物体，写法同纯非序列处方，物体号在组内从 1 起
-        # mixed mode: the objects of a NonSequential surface (an NSC group), written as in a pure NSC prescription, numbered within the group
         if kind.lower() != "nonsequential":
             raise _bad(f"{name}: objects belong to a NonSequential surface")
         item["objects"] = _objects(s["objects"], f"{name}.objects")
@@ -629,9 +626,7 @@ def _volume_physics(value: Any, name: str) -> dict[str, Any]:
         return {"model": model}
     if model == "photoluminescence":
         # 光致发光：吸收、发射、量子产率等写法同 OpticStudio 的体物理页，字段逐项回读
-        # photoluminescence: absorption, emission, quantum yield … as on OpticStudio's volume physics tab, read back field by field
         # 2024 R1 实测：吸收、发射、激发、量子产率文件经 ZOS-API 写入被静默忽略（仍是 _sample_*），只能在 OpticStudio 界面里选
-        # measured in 2024 R1: the absorption, emission, excitation and quantum-yield files ignore ZOS-API writes; pick them in the GUI
         files = sorted(k for k in PL_SPECTRA if k in d)
         if files:
             raise _bad(f"{name}: {files} cannot be set through the ZOS-API (OpticStudio 2024 R1 ignores the write and keeps its sample files); "
@@ -698,7 +693,7 @@ def _face(value: Any, name: str) -> dict[str, Any]:
         out["is"] = _choice(d["is"], FACE_IS, f"{name}.is")
     if "coating" in d:
         out["coating"] = _name(d["coating"], f"{name}.coating")
-        # 2024 R1 实测：面设为反射或吸收时 OpticStudio 清掉膜层 / OpticStudio clears the coating of a reflective or absorbing face
+        # 2024 R1 实测：面设为反射或吸收时 OpticStudio 清掉膜层
         if out.get("is", "default") != "default":
             raise _bad(f"{name}: a face set to {out['is']} takes no coating (OpticStudio clears it)")
     if "scatter" in d:
@@ -852,21 +847,19 @@ def _object(o: Any, number: int) -> dict[str, Any]:
         raise _bad(f"{name}.type must be an OpticStudio object type name such as CylinderVolume, SourceVolumeCylindrical, DetectorRectangle")
     item: dict[str, Any] = {"type": kind, "comment": str(o.get("comment", ""))}
     for key in ("ref", "inside_of"):
-        # 只能引用排在前面的物体（OpticStudio 的规则）/ only objects listed before this one
+        # 只能引用排在前面的物体（OpticStudio 的规则）
         item[key] = _integer(o.get(key, 0), f"{name}.{key}", low=0)
         if item[key] >= number:
             raise _bad(f"{name}.{key} must name an object listed before it (1-{number - 1}) or 0, got {item[key]}")
     item["position"] = _triple(o.get("position"), f"{name}.position")
     item["tilt"] = _triple(o.get("tilt"), f"{name}.tilt")
     # 要文件的类型（CAD、多边形物体、光线文件光源、DLL 物体……）在 OpticStudio 的数据目录里按文件名选
-    # types that need a file (CAD, polygon objects, ray-file sources, DLL objects ...) pick it by name from OpticStudio's data folders
     for key in ("file", "file2"):
         if key in o:
             item[key] = _name(o[key], f"{name}.{key}")
     if "file2" in item and "file" not in item:
         raise _bad(f"{name}: file2 needs file")
     # 2024 R1 实测：这类物体的注释栏就是文件名，写注释会把文件改成 "<注释>.<扩展名>"，追迹时没有光线也不报错
-    # in 2024 R1 the comment column of these objects is the file name; writing a comment renames the file and the trace silently has no rays
     if "file" in item and item["comment"]:
         raise _bad(f"{name}: an object with a file keeps the file name in the comment column; leave comment out "
                    "(describe the object in the model notes, refer to it by number or by the file name)")
@@ -884,7 +877,7 @@ def _object(o: Any, number: int) -> dict[str, Any]:
         item["type_options"] = _typed_fields(o["type_options"], TYPE_OPTIONS, f"{name}.type_options")
     if o.get("diffraction") is not None:
         item["diffraction"] = _diffraction(o["diffraction"], f"{name}.diffraction")
-    # 折射率页叫 index_model：读回的物体里 index 是物体号 / the Index tab is index_model: index is the object number in read-backs
+    # 折射率页叫 index_model：读回的物体里 index 是物体号
     if o.get("index_model") is not None:
         if is_source or kind.startswith("Detector"):
             raise _bad(f"{name}: the index tab belongs to objects with a material")
@@ -913,7 +906,6 @@ def _nsc_settings(value: Any) -> dict[str, Any]:
         elif key.startswith("max_"):
             out[key] = _integer(v, f"nsc.{key}", low=1)
             # 2024 R1 实测：交点数上限最大 4000，写更大的值被悄悄改回 4000；段数上限可到 200 万
-            # measured in 2024 R1: the intersection limit tops out at 4000 (larger values silently become 4000)
             if key == "max_intersections" and out[key] > 4000:
                 raise _bad("nsc.max_intersections: OpticStudio allows at most 4000 intersections per ray; raise max_segments instead")
         else:
@@ -1042,8 +1034,6 @@ def normalize(p: dict[str, Any]) -> dict[str, Any]:
     image = _surface(p["image"], "image", image=True) if p.get("image") is not None else None
     # 非序列组后面一面是出口端口：OpticStudio 把它的半口径固定成自己算的值（2024 R1 实测 Automatic 设不上），
     # 端口外的光线被终止，所以端口尺寸必须由处方给出
-    # the surface after an NSC group is its exit port; OpticStudio fixes its semi-diameter to a value of its own
-    # (Automatic does not take in 2024 R1) and terminates rays outside it, so the prescription must size the port
     for k, s in enumerate(surfaces, start=1):
         if s["type"].lower() == "nonsequential":
             port, label = (surfaces[k], f"surfaces[{k + 1}]") if k < len(surfaces) else (image, "image")

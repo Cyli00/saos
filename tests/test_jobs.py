@@ -94,7 +94,7 @@ def test_the_user_hands_an_autonomous_job_back_in_their_own_words(saos_home, cap
     log = [json.loads(line) for line in job.log_file.read_text(encoding="utf-8").splitlines()]
     assert log[-1]["args"] == {"mode": "interactive", "via": "cli"}
 
-    # 再调一次：不变，不重复写 / again: unchanged, nothing written twice
+    # 再调一次：不变，不重复写
     code, out = _cli(capsys, "job", "make-interactive", job.id, "--quote", "后面的关卡我自己来过", "--asked")
     assert code == 0 and out["result"] == {"mode": "interactive", "changed": False}
     assert (job.root / "sources" / "interview.md").read_text(encoding="utf-8") == interview
@@ -109,7 +109,7 @@ def test_the_ask_channel_is_recorded_and_analysis_jobs_have_no_gates_to_hand_bac
     code, out = _cli(capsys, "job", "make-interactive", analysis.id, "--quote", "我自己来")
     assert code == 1 and out["error"]["code"] == ErrorCode.BAD_ARGS
     assert jobs.get_job(analysis.id).mode == "analyse"
-    # 窗口按钮不带原话也行，渠道记为 window / the window's button needs no quote and is recorded as window
+    # 窗口按钮不带原话也行，渠道记为 window
     other = jobs.create_job("drill", "autonomous")
     assert jobs.make_interactive(other)["changed"] is True
     assert jobs.get_job(other.id).read_state()["mode_changed_via"] == "window"

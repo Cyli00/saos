@@ -219,10 +219,9 @@ Common errors
   unreadable result.json.
 """
 # valley / peak：±delta 两侧都比基准差（或都好）超过 NONE_BELOW，基准正在这个变量的极值上，一阶斜率看不出
-# valley / peak: both sides above (or below) the base by more than NONE_BELOW; the base sits at an extremum the slope cannot show
 DIRECTIONS = ("up", "down", "none", "valley", "peak")
 MAX_PROBES = 6
-# 归一化变化（Δ/scale）小于这个值算"没有变化" / a normalised change below this counts as "none"
+# 归一化变化（Δ/scale）小于这个值算"没有变化"
 NONE_BELOW = 0.05
 
 
@@ -371,8 +370,6 @@ def _tolerance_items(ctx, plan: dict[str, Any]) -> list[dict[str, Any]]:
     if glass:
         # 写 nd、vd 会把目录玻璃换成模型玻璃，偏差为 0 时色散也略有不同（Cooke 样例实测 EFL 偏 +0.0005 mm）；
         # 这些项的灵敏度相对“换成模型玻璃的标称点”算，换玻璃本身的偏移另报
-        # writing nd or vd turns a catalog glass into a model glass whose dispersion differs a little even at zero deviation
-        # (+0.0005 mm EFL on the Cooke sample); their sensitivity is read against the model-glass nominal and the offset reported
         out.append({"i": 1, "set": {k: float(nominal[k]) for k in glass}, "probe": "nominal_model_glass"})
     if tol.get("sensitivity", True):
         for it in entries:
@@ -467,7 +464,7 @@ def _tolerance_result(plan: dict[str, Any], checked: dict[str, dict[str, Any]], 
                         **({f"p{int(q * 100)}": _percentile(vals, q) for q in (0.05, 0.5, 0.95)} if vals else {}),
                         "pass_rate": None if flags and flags[0] is None else sum(1 for f in flags if f) / len(samples)}
         mc.update(stats=stats, invalid=len(samples) - len(valid),
-                  # 良率：硬界限全部满足的样本比例，以及所测各项全部达标的样本比例 / yield: hard bounds met, and every measured goal met
+                  # 良率：硬界限全部满足的样本比例，以及所测各项全部达标的样本比例
                   yield_hard=sum(1 for r in samples if not r.get("invalid") and not r.get("error") and not r.get("hard_failing")) / len(samples),
                   yield_all=sum(1 for r in samples if all(passes(k, (r.get("values") or {}).get(k)) is not False for k in measure)
                                 and not r.get("invalid") and not r.get("error")) / len(samples))
@@ -545,7 +542,6 @@ def _probe_result(plan: dict[str, Any], scales: dict[str, float | None], rows: l
     base_values = baseline.get("values") or {}
     if finite(base_values.get(target)) is None:
         # 前提不成立（例如没有实焦点、零件交叠）时，扰动出的变化没有意义；先确认可行性
-        # without a valid baseline value (no real focus, overlapping parts) changes mean nothing: establish feasibility first
         return {"target": target, "baseline": baseline, "probes": [], "ranking": [],
                 "review": [f"{target} has no valid value on the base lens, so no perturbation can be read; "
                            "go through the feasibility ladder first (invariants, an on-axis point under all real constraints, then the full field)"]}
@@ -553,10 +549,10 @@ def _probe_result(plan: dict[str, Any], scales: dict[str, float | None], rows: l
     for p in plan["probes"]:
         row: dict[str, Any] = {"id": p["id"], "control": bool(p.get("control")), "prediction": p["prediction"], "delta": p["delta"],
                                "minus": by[(p["id"], "minus")], "plus": by[(p["id"], "plus")]}
-        # 斜率按 +delta 与 −delta 的差算，方向相对 +delta / the slope uses plus − minus; direction is for +delta
+        # 斜率按 +delta 与 −delta 的差算，方向相对 +delta
         observed, effect, one_sided = {}, {}, {}
         for k in plan["measure"]:
-            # inf、NaN 与缺失一样算没有有效值 / inf and NaN count as no valid value, like a missing one
+            # inf、NaN 与缺失一样算没有有效值
             lo, hi = (finite((row[side].get("values") or {}).get(k)) for side in ("minus", "plus"))
             b = finite(base_values.get(k))
             scale = scales.get(k) or (abs(b) if b else None) or 1.0
@@ -564,7 +560,6 @@ def _probe_result(plan: dict[str, Any], scales: dict[str, float | None], rows: l
                 change = (hi - lo) / 2
             elif b is not None and (lo is None) != (hi is None):
                 # 一侧没有有效值（例如越过全反射）时用另一侧对基准的差，不把整个扰动丢掉
-                # one side has no valid value (e.g. past TIR): use the other side against the base instead of dropping the probe
                 change = hi - b if hi is not None else b - lo
                 one_sided[k] = "plus" if hi is not None else "minus"
             else:
@@ -589,18 +584,17 @@ def _probe_result(plan: dict[str, Any], scales: dict[str, float | None], rows: l
     extrema = [r["id"] for r in results if not r["control"] and r["observed"].get(target) in ("valley", "peak")]
     unreadable = [r["id"] for r in results if not r["control"] and r["observed"].get(target) is None]
     if not movers and unreadable:
-        # 两侧都没有有效值时读不出任何效应，不能据此说结构到顶 / with no valid value on either side nothing is measured, so no structure verdict
+        # 两侧都没有有效值时读不出任何效应，不能据此说结构到顶
         review.append(f"probes {unreadable} gave no valid {target} at -delta or +delta, so their effect cannot be read; "
                       "use a smaller delta or fix the compensation before calling it a structure question")
     if not movers and extrema:
-        # 两侧都变差说明这些变量已在极值上，不说明结构到顶 / both sides worse means these variables are at an extremum, not that the structure is capped
+        # 两侧都变差说明这些变量已在极值上，不说明结构到顶
         review.append(f"no probed variable moves {target} at first order, but {extrema} sit at an extremum of it (both sides move the same way): "
                       "they are already optimal here, so optimising them gains nothing; probe other variables before calling it a structure question")
     elif not movers and not unreadable:
         review.append(f"no probed variable moves {target}; if the first-order reasoning agrees, this is a structure question: ask the user")
     if not any(r["control"] for r in results):
         # 阴性对照：原理上不该动目标的变量；没有它，排名里的小效应无法和测量噪声区分
-        # a negative control: a variable that in principle should not move the target; without one, small effects cannot be told from noise
         review.append(f"no control probe: small effects on {target} in the ranking have no null to compare with; add a control when the ranking decides what to optimise")
     if controls_moving:
         review.append(f"control probes {controls_moving} move {target}; recheck the model or the measurement before trusting the ranking")
@@ -610,7 +604,6 @@ def _probe_result(plan: dict[str, Any], scales: dict[str, float | None], rows: l
         comps = [r.get("compensation") or {} for r in rows]
         if all(c.get("thickness_after") == c.get("thickness_before") for c in comps):
             # 实测：fiber 起点镜头上 Quick Focus 从任何厚度出发都不动，Cooke 样例上正常；不能默认补偿生效
-            # measured: on the fiber start lens Quick Focus never moved, on the Cooke sample it worked; never assume the compensation acted
             review.append(f"quick_focus never moved surface {comps[0].get('surface')} in any point, so nothing was compensated; "
                           "write a compensate script for this system (for example re-solve the working distance) and probe again")
     ranking = sorted((r for r in results if not r["control"]), key=lambda r: -(r["normalised_effect"].get(target) or 0))
@@ -618,7 +611,7 @@ def _probe_result(plan: dict[str, Any], scales: dict[str, float | None], rows: l
             "ranking": [{"id": r["id"], "effect": r["normalised_effect"].get(target)} for r in ranking], "review": review}
 
 
-# ---------- worker 侧 / worker side ----------
+# ---------- worker 侧
 
 def _script_run(w, rel: str):
     def load():
@@ -677,7 +670,7 @@ def _measure(w, plan: dict[str, Any]) -> dict[str, Any]:
         for name, spec in plan["operands"].items():
             try:
                 row["operands"][name] = w.op(spec[0], *spec[1:])
-            except Exception as exc:  # noqa: BLE001 - 一个附加操作数出错不让整个点作废 / one extra operand failing does not void the point
+            except Exception as exc:  # noqa: BLE001 - 一个附加操作数出错不让整个点作废
                 row["operands"][name] = f"error: {exc}"
     return row
 
@@ -736,7 +729,7 @@ def descend(w, item: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
-# ---------- 后台进程侧 / daemon side ----------
+# ---------- 后台进程侧
 
 def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = False) -> dict[str, Any]:
     """准备（校验、目录、镜头快照）在本请求里完成；detach 时其余放进后台线程，立即返回，后台进程继续处理其他命令。
@@ -748,7 +741,7 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
     d = demand.load_job(ctx.job.root)
     plan = validate(plan, d, ctx.job.root)
     exploring = plan["mode"] == "candidates"
-    # 结构探索的候选是各自的文件，不用当前镜头 / exploration candidates are files of their own; the current lens is not used
+    # 结构探索的候选是各自的文件，不用当前镜头
     if not exploring and ctx.lens is None:
         raise SaosError(ErrorCode.NO_LENS_LOADED, f"job {ctx.job.id} has no lens loaded")
     if not exploring and ctx.dirty:
@@ -763,10 +756,10 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
         checked = {i["id"]: i for i in demand.checked(d)}
         post = lambda rows: _tolerance_result(plan, checked, rows)
     if plan["mode"] == "minimize":
-        # 与 opt local 同一判定：需求已确认、结构有资格、当前模型已认可 / the same rule as opt local
+        # 与 opt local 同一判定：需求已确认、结构有资格、当前模型已认可
         _, demand_sha = workflow.require_optimise(ctx.job, ctx.backend)
     elif plan["mode"] in ("candidates", "tolerance"):
-        # 结构探索和公差：公差按确认过的判定算，所以只要求需求已确认 / tolerancing judges by the confirmed checks, so the demand is enough
+        # 结构探索和公差：公差按确认过的判定算，所以只要求需求已确认
         _, demand_sha, _ = workflow.preflight(ctx.job.root)
     if plan["mode"] == "vars":
         items = [{"i": k, "set": p} for k, p in enumerate(search.grid(plan["vars"]))]
@@ -806,20 +799,20 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
                 prepare_sha = jobs.sha256_file(prepared)
                 input_files.append(prepared.relative_to(ctx.job.root).as_posix())
                 args["plan"] = {**plan, "prepare": prepared.relative_to(ctx.job.root).as_posix()}
-            # 每个候选自己加载或搭建，worker 不先加载公共镜头 / each candidate loads or builds its own; no shared lens first
+            # 每个候选自己加载或搭建，worker 不先加载公共镜头
             base = None
-            # 几个优化器同时跑时分掉可用核，不互相抢 / concurrent optimisers share the usable cores instead of fighting over them
+            # 几个优化器同时跑时分掉可用核，不互相抢
             args["cores"] = max(1, config.compute_cores() // count)
             # 版本用于页面显示已有证据的适用范围，不作为深度优化资格。
             write_json(folder / "plan.json", {**plan, "workers": count, "cores_per_worker": args["cores"],
                                               "input_files": input_files, "prepare_sha": prepare_sha,
                                               "budget_s": candidates.budget_s(plan, count), "demand_sha": demand_sha,
                                               "method_sha": demand.method_digest(demand.prepare_scripts(ctx.job.root, d))})
-            # 计划和候选副本在初筛开始前封存；结束时用 candidates.unchanged_since_start 核对 / sealed before screening, checked at the end
+            # 计划和候选副本在初筛开始前封存；结束时用 candidates.unchanged_since_start 核对
             ctx.job.seal(folder / "plan.json", *(ctx.job.root / p for p in input_files))
         else:
             write_json(folder / "plan.json", {**plan, "lens": ctx.job.relative_lens(ctx.lens), "workers": count})
-            # 镜头快照：分离运行期间改动或保存工作镜头不影响扫描 / a snapshot, so later edits of the working lens do not reach the scan
+            # 镜头快照：分离运行期间改动或保存工作镜头不影响扫描
             base = folder / f"base{ctx.lens.suffix}"
             from saos.lens_files import copy_lens
 
@@ -850,7 +843,7 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
             summary = _execute(job, folder, plan, items, pool, base, count, args, progress=lambda stage: report(stage=stage),
                                cancelled=lambda: job.cancel_requested() or (folder / jobs.CANCEL_FILE).is_file(), on_done=report, post=post)
             log.info("detached scan %s finished: %s valid of %s", folder.name, summary["valid"], summary["points"])
-        except Exception as exc:  # 后台线程不能让后台进程退出 / a background thread must not take the daemon down
+        except Exception as exc:  # 后台线程不能让后台进程退出
             log.exception("detached scan %s failed", folder.name)
             report(status="failed", error=f"{type(exc).__name__}: {exc}"[:1000])
         finally:
@@ -907,7 +900,7 @@ def _execute(job: jobs.Job, folder, plan: dict[str, Any], items: list[dict[str, 
     if post is not None and not out["cancelled"]:
         result.update(post(rows))
     if plan["mode"] == "candidates":
-        # 计划或候选副本在运行期间被改过，这次结果不是比较 / a changed plan or candidate copy during the run: not a comparison
+        # 计划或候选副本在运行期间被改过，这次结果不是比较
         if not candidates.unchanged_since_start(job, folder):
             raise SaosError(ErrorCode.EVIDENCE_TAMPERED, f"{folder.relative_to(job.root).as_posix()}: plan.json or a candidate copy changed during the scan; "
                             "the scan is not a comparison, run it again")
@@ -920,7 +913,6 @@ def _execute(job: jobs.Job, folder, plan: dict[str, Any], items: list[dict[str, 
             candidates.add_reach(row, d)
         result["page"] = candidates.page(job, folder, plan, ranked, plan.get("lang")).relative_to(job.root).as_posix()
     # 最好的那一点零件交叠时写在顶层（hard_failing 已由 demand.quick 计入）；其余各点的交叠留在各自的行里
-    # the best point's parts clash goes to the top level; other points keep theirs in their rows
     if (result["best"] or {}).get("parts_clash"):
         result.update(parts_clash=result["best"]["parts_clash"], hard_failing=result["best"]["hard_failing"])
     write_json(folder / "result.json", result)
@@ -945,7 +937,7 @@ def summarize(result: dict[str, Any]) -> dict[str, Any]:
     summary["top"] = [{**{k: r.get(k) for k in keys}, **({"parts_clash": r["parts_clash"]} if r.get("parts_clash") else {})}
                       for r in result["rows"][:10]]
     if summary["best"] is not None:
-        # 寻优历史和逐段记录只在 result.json 里 / search history and per-stage records stay in result.json
+        # 寻优历史和逐段记录只在 result.json 里
         summary["best"] = {k: v for k, v in summary["best"].items() if k not in ("history", "stages", "start")}
     summary["rows_in"] = f"{result['folder']}/result.json"
     return summary
@@ -957,10 +949,9 @@ def show(job: jobs.Job, scan: str | None = None) -> dict[str, Any]:
     names = sorted(p.name for p in root.iterdir() if p.is_dir()) if root.is_dir() else []
     if not names:
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"job {job.id} has no scans")
-    # 编号按字符串补零，不转 int：超长数字串会让 int() 抛 ValueError / pad as text: int() raises on very long digit strings
+    # 编号按字符串补零，不转 int：超长数字串会让 int() 抛 ValueError
     name = (str(scan).lstrip("0") or "0").zfill(3) if scan is not None and str(scan).isdigit() else (scan or names[-1])
     # 只认 scans/ 下已有的目录名：绝对路径或 .. 会让 pathlib 拼到 scans/ 之外
-    # only folder names under scans/: an absolute path or .. would make pathlib join outside scans/
     folder = root / str(name)
     if name not in names or not folder.is_dir():
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"no scan {str(name)[:64]}", {"scans": names})
@@ -973,13 +964,13 @@ def show(job: jobs.Job, scan: str | None = None) -> dict[str, Any]:
                 raise ValueError("unexpected structure")
             return {"finished": True, **summarize(result)}
         except (ValueError, RecursionError) as e:
-            # result.json 是封存的证据，读不出就是被改过或写坏了 / result.json is sealed evidence: unreadable means altered or damaged
+            # result.json 是封存的证据，读不出就是被改过或写坏了
             raise SaosError(ErrorCode.EVIDENCE_TAMPERED, f"{SCANS_DIR}/{name}/result.json is unreadable ({type(e).__name__}); "
                             f"uv run saos job verify {job.id} lists sealed-file problems") from e
     try:
         progress = json.loads((folder / jobs.PROGRESS_FILE).read_text(encoding="utf-8")) if (folder / jobs.PROGRESS_FILE).is_file() else None
     except (OSError, ValueError, RecursionError):
-        # 进度文件可能正被写入 / the progress file may be mid-write
+        # 进度文件可能正被写入
         progress = None
     if not isinstance(progress, dict):
         progress = None

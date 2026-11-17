@@ -12,7 +12,7 @@ import time
 from typing import Any, Callable
 
 _lock = threading.Lock()
-_totals: dict[str, list[float]] = {}  # 名称 -> [调用次数, 秒] / name -> [calls, seconds]
+_totals: dict[str, list[float]] = {}  # 名称 -> [调用次数, 秒]
 
 
 def add(name: str, seconds: float) -> None:

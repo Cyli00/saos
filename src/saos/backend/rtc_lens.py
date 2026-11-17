@@ -17,7 +17,7 @@ import numpy as np
 
 from saos.protocol import ErrorCode, SaosError
 
-# 处方面型（小写去分隔符）→ .zmx 的 TYPE / prescription surface type → .zmx TYPE
+# 处方面型（小写去分隔符）→ .zmx 的 TYPE
 TYPES = {"standard": "STANDARD", "paraxial": "PARAXIAL", "evenaspheric": "EVENASPH", "evenasphere": "EVENASPH",
          "biconic": "BICONICX", "toroidal": "TOROIDAL"}
 APERTURES = {"entrance_pupil_diameter": "EPD", "image_f_number": "FNO", "object_na": "OBNA", "float_by_stop": "FLOA"}
@@ -29,12 +29,12 @@ SURFACE_APERTURES = {"circular": ("CLAP", 1), "circular_obscuration": ("OBSC", 2
                      "elliptical": ("ELAP", 6), "elliptical_obscuration": ("ELOB", 7)}
 # 类型码 → .zmx 行名（写回用）
 APERTURE_LINES_BY_CODE = {code: line for line, code in SURFACE_APERTURES.values()} | {10: "FLAP"}
-# 自动半口径：每个视场、每个波长沿光瞳边缘取这么多条光线 / rim rays per field and wavelength for automatic semi-diameters
+# 自动半口径：每个视场、每个波长沿光瞳边缘取这么多条光线
 RIM_RAYS = 16
 NON_ROTATIONAL_TYPES = ("BICONIC", "BICONICX", "BICONICZ", "TOROIDAL")
 # 处方 configurations 里 rtc 接受的操作数；视场、波长等逐结构变化还没有接入内核
 PRESCRIPTION_ROWS = frozenset({"THIC", "CRVT", "CONN", "PRAM", "SDIA", "MCSD", "GLSS", "TEMP", "PRES"})
-# UTF-16LE 的字节序标记 / the UTF-16LE byte order mark
+# UTF-16LE 的字节序标记
 BOM = bytes((0xFF, 0xFE))
 
 
@@ -79,7 +79,7 @@ def from_prescription(p: dict[str, Any], *, experimental: bool = False):
     if field is None:
         problems.append(f"fields.type {p['fields']['type']} (rtc has angle and object_height)")
     for key in ("afocal", "apodization", "polarization", "coating_file", "ray_aiming_options"):
-        # 写了就算：afocal: true 归一化成 {}，按真值判断会漏过去 / given at all counts: afocal: true normalises to {}
+        # 写了就算：afocal: true 归一化成 {}，按真值判断会漏过去
         if p.get(key) is not None:
             problems.append(f"{key} (not reproduced or written by rtc)")
     if p.get("telecentric_object"):
@@ -210,7 +210,7 @@ def _surface(k: int, s: dict[str, Any]):
     return out
 
 
-# ---- OpticStudio 会重算的量 / what OpticStudio recomputes ----
+# ---- OpticStudio 会重算的量
 
 def marginal_height_solves(lens) -> list[tuple[int, float]]:
     """镜头里的边缘光线高度求解：[(面号, 目标高度)]，只认瞳带 0（近轴边缘光线）。"""
@@ -333,14 +333,12 @@ def _adaptive_semi_diameters(system, lens, waves: int, trace) -> dict[int, float
 # ---- .zmx ----
 
 # dump 自己生成的文件头行；其余文件头行（偏振 POLS、膜层文件 COFN、玻璃替换模板 GSTD…）rtc 不建模，从读入的文件原样带过去
-# header lines dump writes itself; the others (POLS polarization, COFN coating files, GSTD, …) are not modelled by rtc and
-# are carried over verbatim from the file that was read
 GENERATED_HEADER = frozenset({"VERS", "MODE", "NAME", "UNIT", "ENPD", "OBNA", "FLOA", "FNUM", "ENVD", "GCAT", "RAIM", "FTYP",
                               "XFLN", "YFLN", "FWGN", "VDXN", "VDYN", "VCXN", "VCYN", "VANN", "WAVM", "PWAV", "XFLD",
                               "YFLD"})
-# 面块里 rtc 不建模、但 OpticStudio 存盘总会写的显示类行：原样带过去 / display lines OpticStudio always saves: carried over
+# 面块里 rtc 不建模、但 OpticStudio 存盘总会写的显示类行：原样带过去
 SURFACE_PASSTHROUGH = ("TCED", "HIDE", "MIRR", "SLAB", "POPS", "FIMP", "SSID")
-# 面块里 rtc 建模并自己写出的行 / surface lines rtc models and writes itself
+# 面块里 rtc 建模并自己写出的行
 SURFACE_MODELLED = frozenset({"VDSZ", "VCON", "MAZH", "CLAP", "FLAP", "OBSC", "SQAP", "SQOB", "ELAP", "ELOB", "SPID", "OBDC"})
 
 
@@ -362,10 +360,9 @@ def carried_lines(text: str) -> dict[str, list[str]]:
     return {"header": header, "tail": tail}
 
 
-# OpticStudio 缺省存盘写的膜层文件；换了名字就是 rtc 不应用的膜层 / the coating file a default save names
+# OpticStudio 缺省存盘写的膜层文件；换了名字就是 rtc 不应用的膜层
 DEFAULT_COATING_FILE = "COATING.DAT"
 # 读取器不认、但 OpticStudio 每次存盘都写的文件头行（EERA 见于仓库 836 份 .zmx 中的 738 份，NOTE 是备注），不影响任何计算
-# header lines the reader does not list but OpticStudio writes in every save; neither changes a computed number
 SAVED_INERT_HEADER = frozenset({"EERA", "NOTE"})
 
 
@@ -460,7 +457,7 @@ def dump(lens, title: str | None = None, carried: dict[str, list[str]] | None = 
                 lines.append(f"  VPAR {n}")
         lines.append(f"  DISZ {_num(s.thickness)}")
         if "VDSZ" in s.raw:
-            # 厚度变量：OpticStudio 存盘写成单独的 VDSZ 行（rtc fixtures/rounds 里所见）/ a thickness variable, saved as its own VDSZ line
+            # 厚度变量：OpticStudio 存盘写成单独的 VDSZ 行（rtc fixtures/rounds 里所见）
             lines.append("  VDSZ 0 0")
         if "MAZH" in s.raw:
             lines.append(f"  {s.raw['MAZH']}")
@@ -487,9 +484,8 @@ def dump(lens, title: str | None = None, carried: dict[str, list[str]] | None = 
                 lines.append(f"  OBDC {s.ap_dx:.12E} {s.ap_dy:.12E}")
         lines.extend(f"  {s.raw[key]}" for key in SURFACE_PASSTHROUGH if key in s.raw)
     # 评价函数行在面之后、多重结构之前（OpticStudio 存盘的顺序；放在 MNUM 之后会被读成多重结构行）
-    # merit rows follow the surfaces and precede the multi-configuration block, as OpticStudio saves them
     lines.extend(row.raw for row in lens.mfe)
-    # 公差行在评价函数之后、MNUM 之前（同 OpticStudio 存盘的顺序）/ tolerance rows sit between the merit rows and MNUM
+    # 公差行在评价函数之后、MNUM 之前（同 OpticStudio 存盘的顺序）
     lines.extend((carried or {}).get("tail", []))
     if lens.mce:
         lines.append(f"MNUM {lens.num_configs} {lens.current_config}")
@@ -499,7 +495,7 @@ def dump(lens, title: str | None = None, carried: dict[str, list[str]] | None = 
             thermal.refresh(lens)
         for row in lens.mce:
             if row.raw and not row.edited:
-                # 没改过的行原样写回 / rows not changed are written back as they were
+                # 没改过的行原样写回
                 lines.append(row.raw)
             elif row.op == "MOFF":
                 raise unsupported("a MOFF row without its file line cannot be written by rtc")

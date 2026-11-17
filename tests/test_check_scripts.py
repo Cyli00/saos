@@ -43,5 +43,5 @@ def test_a_script_edited_after_confirmation_is_listed_not_refused(saos_home):
     (job.root / "checks" / "bare.py").write_text(BARE.replace("2.0", "3.0"), encoding="utf-8")
     demand._PREPARED.clear()
     shown = demand.show(job.root)
-    # 需求单没变，确认仍然有效；改过的脚本只列出来 / the demand is unchanged and still confirmed; the edit is only listed
+    # 需求单没变，确认仍然有效；改过的脚本只列出来
     assert shown["confirmed"] is not None and shown["checks_changed_since_confirm"] == ["bare"]

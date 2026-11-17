@@ -67,7 +67,7 @@ def _patents() -> tuple[list[dict[str, Any]], dict[str, Any]]:
     return read_jsonl(_file("patents", "index.jsonl")), {}
 
 
-# 每个库：读法、用途、按规格检索的函数（没有则 None）/ per library: loader, purpose, the specification search if any
+# 每个库：读法、用途、按规格检索的函数（没有则 None）
 LIBRARIES: dict[str, tuple[Callable[[], tuple[list[dict[str, Any]], dict[str, Any]]], str, str | None]] = {
     "materials": (_materials, "optical adhesives and printable resins: reported indices, dispersion, sources", "saos.library.index(id, wavelength_nm)"),
     "coatings": (_coatings, "coating layer materials (n, k tables for SAOS_COATING.DAT) and checked published designs", None),

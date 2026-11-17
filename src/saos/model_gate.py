@@ -56,7 +56,6 @@ APPROVAL_FILE = "approval.json"
 
 def _num(v: Any) -> Any:
     # 指纹里的数值统一舍入，避免浮点读回的最后几位造成误判
-    # round numbers so that the last bits of a float read back from OpticStudio do not count as a change
     if isinstance(v, float):
         return "inf" if math.isinf(v) else round(v, 9)
     return v
@@ -92,9 +91,9 @@ def _break_fingerprint(surface: dict[str, Any]) -> dict[str, Any]:
     return {str(n): columns.get(n, 0.0) for n in sorted(set(range(1, 7)) | set(columns))}
 
 
-# TEMP、PRES 的值是判定条件，不是设计变量 / TEMP and PRES values are conditions of the checks, not design variables
+# TEMP、PRES 的值是判定条件，不是设计变量
 CONDITION_OPERANDS = ("TEMP", "PRES")
-# 指纹里后来加的项：确认时的描述里没有就不比较 / items added to the fingerprint later: not compared when the approval lacks them
+# 指纹里后来加的项：确认时的描述里没有就不比较
 LATER_KEYS = ("configurations", "environment", "apodization", "polarization", "coating_file")
 
 
@@ -118,20 +117,20 @@ def _fingerprint_objects(objects: list[dict[str, Any]], given: set[int], all_giv
     for o in objects:
         locked = all_given or o["index"] in given
         item: dict[str, Any] = {"type": o["type"], "ref": o["ref"], "inside_of": o["inside_of"]}
-        # 文件换了就是另一个零件或光源 / another file is another part or source
+        # 文件换了就是另一个零件或光源
         item.update({k: str(o[k]).upper() for k in ("file", "file2") if o.get(k)})
         params = {p["name"]: _num(p["value"]) for p in o.get("params") or [] if str(p["name"]).strip().lower() not in SAMPLING_HEADERS}
         placement = {"position": [_num(v) for v in o["position"]], "tilt": [_num(v) for v in o["tilt"]]}
         vp = o.get("volume_physics")
         faces = o.get("faces") or []
         if o["kind"] != "object" or locked:
-            # 条件和环境：面属性、光源页、Type 页、衍射页、折射率页全记 / conditions and environment: every tab
+            # 条件和环境：面属性、光源页、Type 页、衍射页、折射率页全记
             item["faces"] = [{k: _deep(v) for k, v in f.items() if k != "name"} for f in faces]
             for key in ("scatter_to", "source", "type_options", "diffraction", "index_model"):
                 if o.get(key):
                     item[key] = _deep(o[key])
         else:
-            # 要设计的物体只记各面是否反射、吸收和散射模型，以及衍射、折射率的类型 / design objects: kinds only
+            # 要设计的物体只记各面是否反射、吸收和散射模型，以及衍射、折射率的类型
             item["faces"] = [[f.get("is"), (f.get("scatter") or {}).get("model")] for f in faces]
             item["diffraction"] = (o.get("diffraction") or {}).get("split")
             item["index_model"] = (o.get("index_model") or {}).get("type")
@@ -187,10 +186,9 @@ def fingerprint(desc: dict[str, Any], environment: Any = ()) -> dict[str, Any]:
             item.update(medium=medium_class(s), aperture={"type": aperture.get("type")}, tilted=_tilted(s))
             if "Fresnel" in str(s["type"]):
                 # 平基底和弯基底是两种零件（实测光纤任务中基底被优化弯后穿透了板厚）
-                # a flat and a curved substrate are different parts (in the fiber job an optimised substrate bent through the plate)
                 item["substrate_flat"] = math.isinf(float(s["radius"]))
         if s.get("objects") is not None:
-            # 混合模式：NonSequential 面的物体；面在环境里时整组锁定 / mixed mode: a NonSequential surface's objects
+            # 混合模式：NonSequential 面的物体；面在环境里时整组锁定
             item["objects"] = _fingerprint_objects(s["objects"], set(), all_given=s["index"] in given)
         surfaces.append(item)
     out = {
@@ -225,7 +223,7 @@ def _align(approved: dict[str, Any], current: dict[str, Any]) -> None:
         if key not in approved:
             current.pop(key, None)
     if "afocal_units" not in approved.get("aperture", {}):
-        # 不是无焦时两边都没有这项；确认时无焦而没记单位的是旧描述 / absent when not afocal, or an old description
+        # 不是无焦时两边都没有这项；确认时无焦而没记单位的是旧描述
         current.get("aperture", {}).pop("afocal_units", None)
     for a, b in zip(approved.get("surfaces") or [], current.get("surfaces") or []):
         if "coating" not in a:
@@ -246,8 +244,6 @@ def fingerprint_changes(approved: dict, current: dict, desc: dict | None = None)
         return ["mode"]
     _align(a, b)
     # rtc 实例读不出的系统设置（偏振、切趾、膜层文件）不比较：rtc 存盘原样带过去，交付前在 OpticStudio 上复测时核对
-    # settings the rtc instance cannot read are not compared: rtc carries them over on save and the OpticStudio
-    # re-measurement before delivery checks them
     for key in (desc or {}).get("unread") or ():
         a.pop(key, None)
         b.pop(key, None)
@@ -255,7 +251,7 @@ def fingerprint_changes(approved: dict, current: dict, desc: dict | None = None)
                      (lambda f: f["wavelengths"], lambda f, v: f.__setitem__("wavelengths", v))):
         try:
             old, new = get(a), get(b)
-        except KeyError:  # 非序列系统没有视场 / a non-sequential system has no fields
+        except KeyError:  # 非序列系统没有视场
             continue
         if len(new) > len(old) and new[:len(old)] == old:
             put(b, new[:len(old)])
@@ -276,7 +272,7 @@ def digest(fp: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(fp, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
-# 多重结构里给模型玻璃赋值的操作数（折射率、阿贝数、部分色散）/ multi-configuration operands that set model-glass data
+# 多重结构里给模型玻璃赋值的操作数（折射率、阿贝数、部分色散）
 MODEL_GLASS_OPERANDS = ("MIND", "MABB", "MDPG")
 
 
@@ -313,7 +309,7 @@ def materials(desc: dict[str, Any]) -> list[dict[str, Any]]:
 def model_glass_surfaces(desc: dict[str, Any]) -> list[int]:
     """用模型玻璃的面，含多重结构里设模型玻璃数据的面。/ Surfaces with a model glass, the multi-configuration ones included."""
     out = [s["index"] for s in desc["surfaces"] if medium_kind(s) == "model"]
-    # 非序列系统按物体号 / a non-sequential system by object number
+    # 非序列系统按物体号
     out += [o["index"] for o in desc.get("objects") or [] if str((o.get("material_source") or {}).get("kind")) == "model"]
     for op in (desc.get("configurations") or {}).get("operands") or []:
         if op["type"] in MODEL_GLASS_OPERANDS and op.get("params") and op["params"][0] not in out:
@@ -401,7 +397,7 @@ def approval_gate(job: jobs.Job) -> dict[str, Any] | None:
             "rebuild_required": _rebuild_needed(approvals(job), data),
             "rebuild_reason": str((data.get("notes") or {}).get("rebuild_reason") or "").strip() or None,
             "exploration_missing": (data.get("approval_schema") or 0) >= 3 and not data.get("exploration_recorded"),
-            # 用户可以破例确认，所以只显示、不禁用按钮 / the user may overrule this, so it is shown without disabling the button
+            # 用户可以破例确认，所以只显示、不禁用按钮
             "reach_blocking": reach_blocking(data)}
 
 
@@ -446,7 +442,6 @@ def approve(job: jobs.Job, model: str, quote: str, rebuild_reason: str = "", *, 
     if via == "auto":
         rebuild_reason = rebuild_reason or str((data.get("notes") or {}).get("rebuild_reason") or "")
     # 没有起型检索记录不拒绝确认：页面上有这条警告，确认记录里标出，自主任务的报告列出（2026-11-13 用户决定：只守昂贵的事）
-    # a missing starting-form search no longer refuses approval: the page warns, the record and an autonomous report say so
     exploration_missing = (data.get("approval_schema") or 0) >= 3 and not data.get("exploration_recorded")
     waived = _require_reachable(job, data) if via == "auto" else None
     if not isinstance(rebuild_reason, str):
@@ -460,14 +455,13 @@ def approve(job: jobs.Job, model: str, quote: str, rebuild_reason: str = "", *, 
               "via": via, "quote": quote.strip(), **({"reason": reason} if via == "auto" else {}),
               "time": jobs.now_iso(timespec="microseconds"), "approval_sequence": max((r.get("approval_sequence", 0) for r in previous), default=0) + 1,
               "fingerprint_sha": data["fingerprint_sha"],
-              # 用户确认时页面上仍有的自动检查结果，一并留档 / warnings still on the page when the user approved
+              # 用户确认时页面上仍有的自动检查结果，一并留档
               "warnings_acknowledged": data.get("warnings", []),
               **({"exploration_missing": True} if exploration_missing else {}),
-              # 自主任务凭证据放行的差距门禁项 / reach-gate items an autonomous job passed on evidence
+              # 自主任务凭证据放行的差距门禁项
               **({"reach_waived": waived} if waived else {})}
     if "shown_sha" in data:
         # 确认页四节（选型依据、需求逐项、计算有效性、下一阶段预算）的摘要，以及当时仍为“未知”的条目；旧描述没有这两项，不写
-        # digest of the four sections shown (structure choice, requirements, computation validity, next budget) and the items still unknown then; older descriptions lack them
         record["shown_sha"] = data["shown_sha"]
         record["unknowns_acknowledged"] = data.get("unknowns", [])
     write_json(folder / APPROVAL_FILE, record)

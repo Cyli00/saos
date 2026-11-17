@@ -129,7 +129,7 @@ def parse_agf(text: str, *, catalog: str = "") -> CatalogDocument:
                 continue
             try:
                 current = Glass(tokens[1].upper()[:32], int(float(tokens[2])), float(tokens[4]), float(tokens[5]), catalog=catalog,
-                                # 有的厂家（APEL）整行都写成 0.00000000E+00 / some makers write every field in scientific notation
+                                # 有的厂家（APEL）整行都写成 0.00000000E+00
                                 mil=_optional_number(tokens[3], 0.0), exclude=int(float(tokens[6])) if len(tokens) > 6 else 0,
                                 status=int(float(tokens[7])) if len(tokens) > 7 else 0,
                                 melt_frequency=int(float(tokens[8])) if len(tokens) > 8 else 0)

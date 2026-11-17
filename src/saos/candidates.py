@@ -18,9 +18,9 @@ MIN_CANDIDATES = 1
 MAX_CANDIDATES = 12
 STAGE_KINDS = ("local", "hammer", "global")
 CYCLES = ("auto", "1", "5", "10", "50")
-# 候选允许的附加字段：写在候选里，原样进入 plan 与结果 / extra candidate fields, kept verbatim in the plan and the result
+# 候选允许的附加字段：写在候选里，原样进入 plan 与结果
 EXTRA_FIELDS = ("form", "provenance", "prediction", "constraints")
-# 候选搭建后和优化后的结构描述，与 candidates/<id>/ 同目录 / the candidate's structure as built and at the end, in its folder
+# 候选搭建后和优化后的结构描述，与 candidates/<id>/ 同目录
 STRUCTURE_FILE = "structure.json"
 # 有效或预算内无效均保留在比较中，计算与材料错误单列。
 COUNTED = ("valid", "invalid")
@@ -93,7 +93,7 @@ def validate(root: Path, plan: dict[str, Any], items: dict[str, dict[str, Any]],
         if twin is not None:
             raise _bad(f"{c['id']}: identical to {twin}; a candidate must differ in structure, not only in its name")
         contents[c["id"]] = content
-    # stages 为空表示只做初筛：构建、有限追迹、一阶量和几何检查，不做任何优化 / empty stages: screening only, no optimisation
+    # stages 为空表示只做初筛：构建、有限追迹、一阶量和几何检查，不做任何优化
     stages = plan.get("stages", [])
     if not isinstance(stages, list):
         raise _bad(f'stages: a list such as [{{"local": {{"max_seconds": 60}}}}, {{"hammer": {{"max_seconds": 120}}}}], or [] to screen without optimising; kinds {STAGE_KINDS}')
@@ -177,7 +177,7 @@ def unchanged_since_start(job: jobs.Job, folder: Path) -> bool:
     return all(jobs.sealed(job.root, p.relative_to(job.root).as_posix()) for p in files)
 
 
-# ---------- worker 侧 / worker side ----------
+# ---------- worker 侧
 
 def _state(w, plan: dict[str, Any]) -> dict[str, Any]:
     w.cache.clear()
@@ -185,7 +185,7 @@ def _state(w, plan: dict[str, Any]) -> dict[str, Any]:
     out = {k: m[k] for k in ("values", "shortfall", "gaps", "hard_failing", "invalid", "errors")}
     if m.get("parts_clash"):
         out["parts_clash"] = m["parts_clash"]
-    # 出错的类别（material 或 computation），判定时据此归类 / each failure's kind, used to file the verdict
+    # 出错的类别（material 或 computation），判定时据此归类
     out["error_kinds"] = dict(m.get("error_kinds") or {})
     out["merit"] = merit_or_none(w.backend)
     try:
@@ -205,7 +205,7 @@ def _problems(state: dict[str, Any]) -> list[str]:
         out.append(f"interference check failed: {clash['error']}")
     if clash.get("crossings") or clash.get("overlaps") or state.get("parts_clash"):
         out.append("parts cross or interpenetrate")
-    # 交叠已在上一条报过，不在硬限里再报一次 / the clash is reported above, not again as a hard limit
+    # 交叠已在上一条报过，不在硬限里再报一次
     hard = [h for h in state.get("hard_failing") or [] if h != "parts_clash"]
     if hard:
         out.append(f"hard limits fail: {', '.join(hard)}")
@@ -305,7 +305,7 @@ def _evaluate(w, item: dict[str, Any], row: dict[str, Any], temp: Path) -> None:
     plan = w.args["plan"]
     if item.get("prescription"):
         w.backend.build(_read_prescription(w.path(item["prescription"]), item["id"]))
-        # 存成文件：Hammer 和全局搜索在镜头旁写中间文件，reload 也要它 / saved: Hammer and global search write next to it
+        # 存成文件：Hammer 和全局搜索在镜头旁写中间文件，reload 也要它
         w.base = temp / f"{item['id']}{jobs.LENS_SUFFIX}"
         w.backend.save_as(w.base)
     else:
@@ -315,7 +315,7 @@ def _evaluate(w, item: dict[str, Any], row: dict[str, Any], temp: Path) -> None:
                 shutil.copy2(p, temp / p.name)
         w.backend.load(temp / src.name)
         w.base = temp / src.name
-    # 结构描述放在候选自己的目录里，与结果一起封存 / the structure goes in the candidate's own folder, sealed with the result
+    # 结构描述放在候选自己的目录里，与结果一起封存
     folder = w.path(item.get("prescription") or item["lens"]).parent
     as_built = w.backend.describe_model(None)
     row["structure"] = {"as_built": _structure(as_built)}
@@ -369,7 +369,7 @@ def _evaluate(w, item: dict[str, Any], row: dict[str, Any], temp: Path) -> None:
     before = (stages[-2] if len(stages) > 1 else start)["shortfall"]
     after = final["shortfall"]
     rel = float(plan.get("rel", 0.01))
-    # 最后一段还在明显下降：短预算低估了它，排名靠后也保留 / still falling in the last stage: the short budget undersells it
+    # 最后一段还在明显下降：短预算低估了它，排名靠后也保留
     row["still_improving"] = bool(stages) and math.isfinite(after) and (
         not math.isfinite(before) or before - after > rel * max(abs(before), 1e-12))
     row["obsolete"] = _obsolete(w)
@@ -409,7 +409,7 @@ def candidate(w, item: dict[str, Any]) -> dict[str, Any]:
     recorded: a valid candidate stays valid, any other becomes computation."""
     row: dict[str, Any] = {k: item[k] for k in ("i", "id", "hypothesis", "source", *EXTRA_FIELDS) if k in item}
     temp = Path(tempfile.mkdtemp(prefix="saos-candidate-"))
-    # 原来的输出函数要在替换前取到 / the original output function is taken before it is replaced
+    # 原来的输出函数要在替换前取到
     numeric = _Numeric(warnings.showwarning)
     try:
         with warnings.catch_warnings():
@@ -431,7 +431,7 @@ def candidate(w, item: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
-# ---------- 后台进程侧 / daemon side ----------
+# ---------- 后台进程侧
 
 def rank(rows: list[dict[str, Any]], keep: int) -> tuple[list[dict[str, Any]], list[str]]:
     """先有效后无效，各自按目标差距；保留前 keep 个有效的和所有预算受限的。返回 (排序后的行, 保留的 id)。
@@ -441,7 +441,7 @@ def rank(rows: list[dict[str, Any]], keep: int) -> tuple[list[dict[str, Any]], l
         return (0 if r.get("valid") else 1, g if isinstance(g, (int, float)) and math.isfinite(g) else math.inf, r["i"])
 
     for r in rows:
-        # 没跑完的候选只有回退行，补上名字 / a candidate that did not finish has only a fallback row
+        # 没跑完的候选只有回退行，补上名字
         r.setdefault("id", str(r["i"]))
     ordered = sorted(rows, key=key)
     kept = [r["id"] for r in ordered if r.get("valid")][:max(0, keep)]

@@ -35,14 +35,12 @@ FACE_IS = {"default": "ObjectDefault", "reflective": "Reflective", "absorbing": 
 SCATTER_MODELS = {"none": "None", "lambertian": "Lambertian", "gaussian": "Gaussian", "abg": "ABg", "abg_file": "ABgFile",
                   "bsdf": "BSDF", "user": "User"}
 # 各模型的字段 → IOSS_<模型> 接口的属性；名字类字段另给列出可选名的方法（2024 R1 实测，ABgFile 与 BSDF 的方法名不同）
-# per-model fields → IOSS_<model> properties; name fields also give the method listing the choices (measured in 2024 R1)
 SCATTER_ATTRS = {"fraction": "ScatterFraction", "sigma": "Sigma", "dll": "DLLName", "file": "FileName"}
 SCATTER_NAME_ATTRS = {"abg": ("ReflectName", "TransmitName", "GetAvailableABgNames"),
                       "abg_file": ("ReflectFile", "TransmitFile", "GetAvailableFiles"),
                       "bsdf": ("ReflectFile", "TransmitFile", "GetAvailableFileNames")}
 SCATTER_LISTS = {"dll": "GetAvailableDLLNames", "file": "GetAvailableFileNames"}
 # 光致发光模型（IVMPS_PhotoluminscenceModel）：处方字段 → 属性，文件类另给列出可选文件的方法
-# the photoluminescence model: prescription field → property, plus the method listing the files for file fields
 PL_ATTRS = {"absorption": ("AbsorptionFile", "GetAvailableAbsorptionFiles"), "emission": ("EmissionFile", "GetAvailableEmissionFiles"),
             "excitation": ("ExcitationFile", "GetAvailableExcitationFiles"), "quantum_yield": ("QuantumYield", "GetAvailableQuantumYieldFiles"),
             "efficiency": ("EfficiencySpectrum", None), "pl_density": ("PLDensity", None), "extinction_coefficient": ("ExtinctionCoefficient", None),
@@ -51,7 +49,7 @@ PL_ATTRS = {"absorption": ("AbsorptionFile", "GetAvailableAbsorptionFiles"), "em
             "particle_radius": ("ParticleRadius", None), "use_mie_density": ("UseMieDensity", None), "mie_mean_path": ("MieMeanPath", None),
             "pl_mean_path": ("PLMeanPath", None)}
 PL_EFFICIENCY = {"quantum_yield": "QuantumYield", "excitation": "Excitation"}
-# 光源页 / Sources tab
+# 光源页
 SOURCE_ATTRS = {"initial_phase": "InitialPhaseDeg", "coherence_length": "CoherenceLength", "reverse_rays": "ReverseRays",
                 "pre_propagation": "PrePropagation"}
 SOURCE_ENUMS = {"sampling": ("SamplingMethod", {"random": "Random", "sobol": "Sobol"}),
@@ -64,7 +62,7 @@ COLOR_MODES = {"system_wavelengths": "SystemWavelengths", "uniform": "UniformPow
                "cie1931_xy": "CIE1931Chromaticity", "cie1931_rgb": "CIE1931RGB", "cie1976": "CIE1976"}
 COLOR_ATTRS = {"temperature": "TemperatureK", "from": "WavelengthFrom", "to": "WavelengthTo", "count": "SpectrumCount", "file": "SpectrumFile",
                "x": "X", "y": "Y", "z": "Z", "cx": "cx", "cy": "cy", "r": "R", "g": "G", "b": "B", "u": "u", "v": "v"}
-# Type 页 / Type tab
+# Type 页
 TYPE_ATTRS = {"rays_ignore": "RaysIgnoreObject", "consider": "ConsiderObjects", "ignore": "IgnoreObjects", "is_detector": "ObjectIsADetector",
               "pixel_interpolation": "UsePixelInterpolation", "global_xyz_rotation": "UseGlobalXYZRotationOrder",
               "consider_ignore_when_splitting": "UseConsiderIgnoreWhenSplitting"}
@@ -73,7 +71,7 @@ DIFFRACTION_SPLIT = {"none": "DontSplitByOrder", "table": "SplitByTable", "dll":
 INDEX_TYPES = {"isotropic": "Isotropic", "birefringent": "Birefringent", "grin": "GRIN"}
 SOURCE_UNITS = {"watts": "Watts", "lumens": "Lumens", "joules": "Joules"}
 ANALYSIS_UNITS = {"W/mm2": "WattsPerMMSq", "W/cm2": "WattsPerCMSq", "W/in2": "WattsPerinSq", "W/m2": "WattsPerMSq", "W/ft2": "WattsPerftSq"}
-# 采样数不是结构：改光线数不算改模型 / sampling is not structure
+# 采样数不是结构：改光线数不算改模型
 SAMPLING_HEADERS = ("# layout rays", "# analysis rays")
 MODEL_RE = re.compile(r"^\s*(-?\d+(?:\.\d*)?(?:[eE][-+]?\d+)?)\s*,\s*(-?\d+(?:\.\d*)?(?:[eE][-+]?\d+)?)")
 
@@ -87,7 +85,7 @@ def kind_of(type_name: str) -> str:
     return "source" if type_name.startswith("Source") else "detector" if type_name.startswith("Detector") else "object"
 
 
-# ---------- 单元格 / cells ----------
+# ---------- 单元格
 
 def _cell(zosapi, obj, n: int):
     col = getattr(zosapi.Editors.NCE.ObjectColumn, f"Par{n}", None)
@@ -95,9 +93,9 @@ def _cell(zosapi, obj, n: int):
         return None
     try:
         cell = obj.GetObjectCell(col)
-    except Exception:  # noqa: BLE001 - 超出该类型的列 / beyond this type's columns
+    except Exception:  # noqa: BLE001 - 超出该类型的列
         return None
-    # 没有标题的列读出来是 None（实测圆柱体的 Par4）/ a column without a header reads as None (Par4 of a cylinder)
+    # 没有标题的列读出来是 None（实测圆柱体的 Par4）
     header = str(cell.Header) if cell is not None and cell.Header is not None else ""
     return cell if header and header != "None" and "unused" not in header.lower() else None
 
@@ -135,7 +133,7 @@ def param_cell(zosapi, obj, label: str, key: str, cells: dict[int, Any] | None =
                     {"parameters": {f"par{n}": str(c.Header) for n, c in cells.items()}})
 
 
-# ---------- 读取 / reading ----------
+# ---------- 读取
 
 def volume_physics(obj) -> dict[str, Any] | None:
     """体散射设置：模型、DLL、平均自由程、角度和 DLL 参数；该物体没有体散射页时为 None。"""
@@ -280,7 +278,7 @@ def read_diffraction(obj) -> dict[str, Any] | None:
     if split == "dll":
         out["dll"] = str(dd.DLL)
         n = int(dd.NumberOfParameters)
-        # ZOS-API 的方法名就拼作 GetTransmitParamaterName / the ZOS-API method really is spelled GetTransmitParamaterName
+        # ZOS-API 的方法名就拼作 GetTransmitParamaterName
         out["reflect"] = {str(dd.GetReflectParameterName(i)): float(dd.GetReflectParameterValue(i)) for i in range(n)}
         out["transmit"] = {str(dd.GetTransmitParamaterName(i)): float(dd.GetTransmitParameterValue(i)) for i in range(n)}
     return out
@@ -322,7 +320,7 @@ def indices(system, number: int, waves: int) -> list[float] | None:
     try:
         if int(system.NCE.GetIndex(number, waves, arr)) == 0:
             return None
-    except Exception:  # noqa: BLE001 - 光源、探测器没有材料 / sources and detectors have none
+    except Exception:  # noqa: BLE001 - 光源、探测器没有材料
         return None
     return [float(v) for v in arr]
 
@@ -362,7 +360,7 @@ def read_object(zosapi, system, number: int, waves: int) -> dict[str, Any]:
     item["type_options"] = read_type_options(o)
     for key, reader in (("diffraction", read_diffraction), ("index_model", read_index)):
         value = reader(o)
-        # 默认（不分级次、各向同性）不列 / defaults (no order split, isotropic) are left out
+        # 默认（不分级次、各向同性）不列
         if value and value.get("split", value.get("type")) not in ("none", "isotropic"):
             item[key] = value
     tf = matrix(system, number)
@@ -411,7 +409,7 @@ def model_material(name: str) -> dict[str, float] | None:
     return {"nd": float(m.group(1)), "vd": float(m.group(2))} if m else None
 
 
-# ---------- 搭建 / building ----------
+# ---------- 搭建
 
 def apply_settings(system, values: dict[str, Any]) -> None:
     nd = system.SystemData.NonSequentialData
@@ -473,7 +471,7 @@ def check_back(label: str, expect: Any, got: Any, path: str = "") -> None:
             for k, v in e.items():
                 gv = g.get(k) if isinstance(g, dict) else None
                 if gv is None and isinstance(g, dict):
-                    # 名字类的键（DLL 参数名）不分大小写 / name-like keys (DLL parameters) are case-insensitive
+                    # 名字类的键（DLL 参数名）不分大小写
                     gv = next((x for n, x in g.items() if str(n).strip().lower() == str(k).strip().lower()), None)
                 walk(v, gv, f"{p}.{k}" if p else str(k))
         elif isinstance(e, list):
@@ -740,7 +738,7 @@ def set_scatter_to(obj, spec: dict[str, Any], label: str) -> None:
     with _named(label):
         if "objects" in spec:
             st.ScatterToMethod = enum_member(type(st.ScatterToMethod), "ScatterToList", "ScatterToList", label)
-            # 2024 R1 实测：逗号分隔的 "2, 3" 只留下 3，所以用空格分隔并回读 / "2, 3" kept only 3, so separate by spaces and read back
+            # 2024 R1 实测：逗号分隔的 "2, 3" 只留下 3，所以用空格分隔并回读
             st.ScatterToList = " ".join(str(n) for n in spec["objects"])
         else:
             st.ScatterToMethod = enum_member(type(st.ScatterToMethod), "ScatterToList", "ImportanceSampling", label)
@@ -777,7 +775,7 @@ def build_object(backend, zosapi, system, number: int, spec: dict[str, Any], pre
         if key in spec and files.get(key, "").upper() != spec[key].upper():
             raise SaosError(ErrorCode.BAD_ARGS, f"{label}.{key} did not take {spec[key]!r} (now {files.get(key)!r})")
     if not files:
-        # 要文件的类型注释栏就是文件名，不能写 / the comment column of a file-based type is its file name
+        # 要文件的类型注释栏就是文件名，不能写
         o.Comment = spec["comment"]
     for attr, key in (("RefObject", "ref"), ("InsideOf", "inside_of")):
         with _named(f"{label}.{key}"):
@@ -811,7 +809,6 @@ def build_object(backend, zosapi, system, number: int, spec: dict[str, Any], pre
     if spec.get("volume_physics") is not None:
         set_volume_physics(zosapi, o, spec["volume_physics"], f"{label}.volume_physics")
     # 面属性放在参数之后：CAD 等物体的面数随参数和文件变
-    # faces after the parameters: the face count of CAD and similar objects follows the parameters and file
     if spec.get("faces"):
         set_faces(zosapi, o, spec["faces"], f"{label}.faces")
     if spec.get("scatter_to"):
@@ -833,7 +830,7 @@ def check_model_index(system, number: int, spec: dict[str, Any], primary_um: flo
         raise SaosError(ErrorCode.BAD_ARGS, f"{prefix}objects[{number}].material: the model glass nd {nd} reads back as index {n}")
 
 
-# ---------- 轮廓 / outlines ----------
+# ---------- 轮廓
 
 def drawing(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """界面用的物体轮廓（全局坐标）。/ Object outlines for the window, in global coordinates."""
@@ -849,7 +846,7 @@ def drawing(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
             if "point" in shape:
                 entry["point"] = geometry.to_global([shape["point"]], item["global"])[0]
         elif item.get("mesh_edges"):
-            # 网格轮廓已在系统坐标里 / mesh outlines are already in system coordinates
+            # 网格轮廓已在系统坐标里
             entry.update(edges=item["mesh_edges"], section=item["mesh_section"], closed=True, mesh=True)
         else:
             entry["undrawn"] = True
@@ -857,7 +854,7 @@ def drawing(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-# ---------- 追迹与探测器 / tracing and detectors ----------
+# ---------- 追迹与探测器
 
 def trace(system, *, split: bool = True, scatter: bool = True, polarization: bool = True, ignore_errors: bool = True,
           seed: int | None = None, cores: int | None = None, clear: bool = True, save_rays: str | None = None,
@@ -1011,11 +1008,11 @@ def detector(zosapi, system, number: int, grid: bool = False) -> dict[str, Any]:
         vx, vy, vz = (int(_param(zosapi, o, h)) for h in ("# X Pixels", "# Y Pixels", "# Z Pixels"))
         flat = nce.GetAllDetectorDataSafe(number, 0)
         values = [float(flat[i, 0]) for i in range(flat.GetLength(0))]
-        # NSDD 对体探测器的命中数和最大像素读出 0（实测），最大体素取数据 / NSDD reads 0 hits and peak for a volume detector
+        # NSDD 对体探测器的命中数和最大像素读出 0（实测），最大体素取数据
         out.update(pixels=[vx, vy, vz], hits=None, peak_pixel_power=max(values) if values else 0.0,
                    note="the total counts a ray once per voxel layer it crosses")
         if grid:
-            # 体素序号 = ix + nx·iy + nx·ny·iz（实测）/ voxel index = ix + nx·iy + nx·ny·iz (measured)
+            # 体素序号 = ix + nx·iy + nx·ny·iz（实测）
             out["power_grid"] = [[values[vx * vy * z + vx * y:vx * vy * z + vx * (y + 1)] for y in range(vy)] for z in range(vz)]
         return out
     if grid:
@@ -1024,10 +1021,9 @@ def detector(zosapi, system, number: int, grid: bool = False) -> dict[str, Any]:
     return out
 
 
-# ---------- 三角网格（ExportCAD 导出 STL）/ meshes exported as STL ----------
+# ---------- 三角网格（ExportCAD 导出 STL）
 
 # 2024 R1 实测：GetFacetedObjectData 对 Standard Lens 和 STL 物体都返回 None；ExportCAD 能把单个物体导出成 STL
-# measured in 2024 R1: GetFacetedObjectData returns None even for STL objects; ExportCAD exports a single object to STL
 _MESH_CACHE: dict[str, Any] = {}
 MESH_CACHE_SIZE = 64
 MAX_EDGES = 3000

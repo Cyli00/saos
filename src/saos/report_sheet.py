@@ -179,7 +179,7 @@ def load_viz(job: jobs.Job, deliver: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _wave_inks(waves: list[dict[str, Any]]) -> list[str]:
-    # 按波长从短到长取蓝灰、绿、红（三谱线惯例），多于三个时按序插值 / short to long: blue-grey, green, red
+    # 按波长从短到长取蓝灰、绿、红（三谱线惯例），多于三个时按序插值
     order = sorted(range(len(waves)), key=lambda i: waves[i]["um"])
     base = ["#5a6f8f", "#3f7a57", "#b5432d"]
     out = [""] * len(waves)
@@ -254,7 +254,7 @@ def lens_svg(viz: dict[str, Any], width: int = 560, height: int = 300) -> str | 
     image = surfaces[-1] if surfaces else None
     if image:
         out.append(f'<path class="img" d="{path(image["profile_y"])}"/>')
-    # 比例尺 / a scale bar
+    # 比例尺
     bar = _nice(80 / scale)
     out.append(f'<path class="ax" d="M{pad},{height - 8}h{bar * scale:.1f}"/><text x="{pad}" y="{height - 12}">{_num(bar, 3)} mm</text>')
     return f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="xMidYMid meet">{"".join(out)}</svg>'
@@ -417,7 +417,7 @@ def render_sheet(job: jobs.Job, data: dict[str, Any], lang: str, *, status_text:
     viz = data.get("viz")
     system = (viz or {}).get("system") or {}
     now = jobs.now_iso()
-    # 标题行：孔径、视场、波长、材料，全部取自导出与交付轮的材料记录 / the lede, from the export and the delivered materials
+    # 标题行：孔径、视场、波长、材料，全部取自导出与交付轮的材料记录
     lede = []
     ap = system.get("aperture") or {}
     if ap.get("type"):
@@ -432,7 +432,7 @@ def render_sheet(job: jobs.Job, data: dict[str, Any], lang: str, *, status_text:
     mats = sorted({m.get("name") for m in deliver.get("materials") or [] if m.get("name")})
     if mats:
         lede.append(t("lede.materials", items=_e(" / ".join(mats))))
-    # 签署栏 / the sign-offs
+    # 签署栏
     confirmed = data.get("confirmed") or {}
     approval = data.get("approval") or {}
     via = lambda r: t("via." + (r.get("via") or "cli")) if r else t("via.none")
@@ -451,7 +451,7 @@ def render_sheet(job: jobs.Job, data: dict[str, Any], lang: str, *, status_text:
     g = deliver.get("shortfall")
     stamp_cls = "" if decision["status"] == "achieved" and not data.get("blocked") else "mid" if decision["status"] == "continue" else "no"
     stamp = f'<div class="stamp {stamp_cls}">{_e(status_text)}<small>G = {_num(g, 3)}</small></div>'
-    # 图 / figures
+    # 图
     lens = lens_svg(viz) if viz else None
     spot = spot_svg(viz, t) if viz else None
     mtf = mtf_svg(viz) if viz else None

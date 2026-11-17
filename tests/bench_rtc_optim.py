@@ -66,7 +66,7 @@ def build(case: str, asphere: int, rings: int, arms: int) -> RtcBackend:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    # iris 的面孔径有意挡光，向导光线追不过去，用去掉孔径的变体 / iris clips the wizard rays by design
+    # iris 的面孔径有意挡光，向导光线追不过去，用去掉孔径的变体
     parser.add_argument("--case", default="iris_no_apertures", choices=("sequential", "iris_no_apertures", "reflective"))
     parser.add_argument("--asphere", type=int, default=0, help="前 N 个光学面换成偶次非球面并放开 par2–par5")
     parser.add_argument("--rings", type=int, default=3)

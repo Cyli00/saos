@@ -230,7 +230,7 @@ class AsphereExpert:
         base = session.save()
         try:
             # 候选面先在 OpticStudio 上转成零系数的非球面（光学上不变），整份交给 rtc；副本建立时已与 OpticStudio 对照追迹。
-            # rtc 实例直接用它自己的镜头 / the rtc instance uses its own lens directly
+            # rtc 实例直接用它自己的镜头
             for surface in candidates:
                 self._convert(surface)
             if getattr(self.ctx.backend, "standalone", False):
@@ -246,7 +246,7 @@ class AsphereExpert:
             values, rows, focus, blocks = [], [], [], []
             configurations = engine.configuration_count()
             start = engine.current_configuration()
-            # 各结构的残差叠在一起，对焦列见 _focus_column / residuals of all configurations are stacked; focus columns as in _focus_column
+            # 各结构的残差叠在一起，对焦列见 _focus_column
             for config in range(1, configurations + 1):
                 engine.select_configuration(config)
                 primary = engine.optical_system(lens.primary_wave)

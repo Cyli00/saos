@@ -44,7 +44,7 @@ def operand_values(zos):
     mfe = zos.system.MFE
     mfe.CalculateMeritFunction()
     values = [(str(mfe.GetOperandAt(i).Type), float(mfe.GetOperandAt(i).Value)) for i in range(1, mfe.NumberOfOperands + 1)]
-    # 空行 BLNK 的值是 NaN，换成 None 才能比较 / an empty BLNK row has the value NaN; None compares
+    # 空行 BLNK 的值是 NaN，换成 None 才能比较
     return [(t, None if math.isnan(v) else v) for t, v in values]
 
 
@@ -59,7 +59,7 @@ def test_batch_keeps_order_before_dmfs_and_resolves_references(singlet):
     assert values[dmfs - 1][0] == "EFFL" and values[dmfs][0] == "OPGT" and values[dmfs + 1][0] == "DMFS"
     row = zos.system.MFE.GetOperandAt(dmfs + 1)
     assert int(row.GetOperandCell(_load_zosapi(zos.root).Editors.MFE.MeritColumn.Param1).IntegerValue) == dmfs
-    # 向导从 DMFS 起重建后，DMFS 之前的两行仍在 / rebuilding from DMFS keeps the rows above it
+    # 向导从 DMFS 起重建后，DMFS 之前的两行仍在
     zos.merit_wizard({"rings": 3, "arms": 6, "start_at": dmfs + 2})
     assert [t for t, _ in operand_values(zos)][dmfs - 1:dmfs + 2] == ["EFFL", "OPGT", "DMFS"]
 
@@ -68,7 +68,7 @@ def test_a_value_opticstudio_would_change_refuses_the_whole_batch(singlet):
     zos = singlet
     zos.merit_append([{"type": "TTHI", "params": [1, 1]}])
     before = operand_values(zos)
-    # 系统只有 1 个波长：EFFL 的波长号 2 会被 OpticStudio 改成 1 / one wavelength: OpticStudio turns wave 2 into 1
+    # 系统只有 1 个波长：EFFL 的波长号 2 会被 OpticStudio 改成 1
     with pytest.raises(SaosError) as err:
         zos.merit_append([{"type": "TTHI", "params": [1, 2]}, {"type": "EFFL", "params": [0, 2]}])
     assert err.value.code == "BAD_ARGS" and "EFFL" in err.value.message
@@ -149,7 +149,7 @@ def test_deeplens_style_constraints_measure_what_they_claim(singlet):
         mfe.CalculateMeritFunction()
         return [(str(mfe.GetOperandAt(r).Type), float(mfe.GetOperandAt(r).Value)) for r in added]
 
-    # 中心厚度 5、边缘 4.45：满足的界限取目标值，越界的取实际值 / a met bound reads its target, a violated one the actual value
+    # 中心厚度 5、边缘 4.45：满足的界限取目标值，越界的取实际值
     got = rows_values(rows.clearances(1, 1, glass_center=(6, 8), glass_edge=(1, None)))
     assert got == [("MNCG", pytest.approx(5.0)), ("MXCG", pytest.approx(8.0)), ("MNEG", pytest.approx(1.0))]
     assert rows_values(rows.clearances(1, 1, glass_edge=(10, None)))[0][1] == pytest.approx(zos.operand("ETVA", 1, 0, []), abs=1e-12)

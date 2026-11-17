@@ -29,11 +29,11 @@ from saos.backend import rtc_merit
 from saos.budget import Budget, Stop, checkpoint_interval, stalled
 from saos.protocol import ErrorCode, SaosError
 
-# 约束违背在这个相对量以内算满足 / a constraint violated by less than this (relative) counts as met
+# 约束违背在这个相对量以内算满足
 FEASIBLE_TOL = 1e-9
-# 模型玻璃变量的取值范围（玻璃图的宽边界，不是某家目录的边界）/ bounds of model-glass variables (a wide glass-map box)
+# 模型玻璃变量的取值范围（玻璃图的宽边界，不是某家目录的边界）
 MODEL_BOUNDS = {"nd": (1.35, 2.2), "vd": (15.0, 100.0)}
-# 每次迭代里阻尼最多加大的次数 / at most this many damping increases per iteration
+# 每次迭代里阻尼最多加大的次数
 DAMPING_TRIES = 12
 SEARCH_KEEP = 10
 
@@ -229,12 +229,12 @@ def _kkt_step(H: np.ndarray, grad: np.ndarray, G: np.ndarray, g: np.ndarray, sca
         rhs = np.concatenate([-grad, target])
         sol, *_ = np.linalg.lstsq(K, rhs, rcond=None)
         d, lam = sol[:n], sol[n:]
-        # 满足且乘子为负的约束不该再顶着：去掉最负的一个 / a met constraint with a negative multiplier is released
+        # 满足且乘子为负的约束不该再顶着：去掉最负的一个
         release = [(lam[i], c) for i, c in enumerate(idx) if lam[i] < -1e-12 and g[c] > -tol * scale[c]]
         if release:
             active.discard(min(release)[1])
             continue
-        # 线性化后会被违背的约束加进来：加违背最多的一个 / a constraint the linear step would break joins the active set
+        # 线性化后会被违背的约束加进来：加违背最多的一个
         lin = (g + G @ d) / scale
         candidates = [(lin[c], c) for c in range(p) if c not in active and lin[c] < -tol]
         if candidates:
@@ -280,7 +280,6 @@ def local(problem: Problem, *, iterations: int | None = None, deadline: float | 
             accepted = None
             for _ in range(DAMPING_TRIES):
                 # 违反约束的起点：恢复量随阻尼收缩，否则恢复部分不受阻尼影响、整步越过非线性区后被拒（ar-glasses 复盘）
-                # from a violated start the restoration shrinks with the damping; a forced full jump was rejected every time
                 restore = 1.0 if point.feasible else 1.0 / (1.0 + mu)
                 d, active_try, _ = _kkt_step(H + mu * D, grad, G, point.g, point.scale, active, restore)
                 trial = problem.measure(point.x + d)
@@ -290,7 +289,7 @@ def local(problem: Problem, *, iterations: int | None = None, deadline: float | 
                     break
                 mu *= 10.0
             if accepted is None:
-                # 加大阻尼也找不到更好的点：在当前点收敛 / no better point even with heavy damping: converged here
+                # 加大阻尼也找不到更好的点：在当前点收敛
                 converged = point.feasible
                 break
             gain = (point.phi - accepted.phi) / max(point.phi, 1e-300)
@@ -348,7 +347,7 @@ def summary(run: dict[str, Any], problem: Problem) -> dict[str, Any]:
     }
 
 
-# ---- Hammer 与全局搜索 / Hammer and global search ----
+# ---- Hammer 与全局搜索
 
 @dataclass
 class Candidate:
@@ -388,7 +387,7 @@ def _worker_init(blob: bytes) -> None:
 
 
 def _worker_task(x0: np.ndarray, glasses: dict[int, str], iterations: int, seconds: float) -> dict[str, Any] | None:
-    # SaosError 的构造参数跨进程 pickle 不回来，换成文字由主进程再抛 / SaosError travels back as text
+    # SaosError 的构造参数跨进程 pickle 不回来，换成文字由主进程再抛
     try:
         return _local_task(_WORKER, x0, glasses, iterations, seconds)
     except SaosError as exc:
@@ -502,10 +501,10 @@ def search(problem: Problem, kind: str, *, max_seconds: float, substitutes: dict
                 stopped_by = take(run, glasses)
     finally:
         if pool is not None:
-            # worker 只在内存里计算、不写文件：直接终止，取消后不再占核 / workers only compute in memory: terminate them
+            # worker 只在内存里计算、不写文件：直接终止，取消后不再占核
             pool.terminate()
             pool.join()
-        # 后端停在最好解；一个可行解都没有时回到起点 / the backend ends on the best solution, or on the start without any
+        # 后端停在最好解；一个可行解都没有时回到起点
         final = best if math.isfinite(best.merit) else Candidate(math.inf, start_x, dict(start_glass))
         for s, name in final.glasses.items():
             backend.set_param(f"{s}.material", name)

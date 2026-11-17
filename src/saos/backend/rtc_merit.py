@@ -25,9 +25,9 @@ import numpy as np
 
 from saos.protocol import ErrorCode, SaosError
 
-# 不参与评价函数值的行 / rows that never enter the merit value
+# 不参与评价函数值的行
 INERT = frozenset({"BLNK", "DMFS"})
-# 边界类：(实际值的取法, 方向)；方向 ">" 为下限、"<" 为上限 / boundary operands: (how the actual value is read, direction)
+# 边界类：(实际值的取法, 方向)；方向 ">" 为下限、"<" 为上限
 BOUNDARY = {
     "CTGT": ("CTVA", ">"), "CTLT": ("CTVA", "<"),
     "CVGT": ("CVVA", ">"), "CVLT": ("CVVA", "<"),
@@ -44,19 +44,16 @@ BOUNDARY = {
 LENS_DATA = frozenset({"CTVA", "CVVA", "COVA", "PMVA"})
 ARITHMETIC = frozenset({"OPVA", "SUMM", "DIFF", "PROD", "DIVI", "ABSO", "SQRT", "CONS"})
 BINARY = {"SUMM": operator.add, "DIFF": operator.sub, "PROD": operator.mul, "DIVI": operator.truediv}
-# 相对主光线（逐条有定义）与相对质心（按同组行求质心）的像差行 / aberrations about the chief ray and about the group centroid
+# 相对主光线（逐条有定义）与相对质心（按同组行求质心）的像差行
 CHIEF_ABERRATIONS = frozenset({"TRAR", "TRAX", "TRAY", "OPDC"})
 GROUP_ABERRATIONS = frozenset({"TRAC", "TRCX", "TRCY", "OPDX", "OPDM"})
 # 质心参考的光斑行：OpticStudio 对同一视场的各波长用同一个复色质心（2026-11-14 真机，sequential 上 Spot Radius/X/Y
 # 三种向导：按波长各求质心差到 3.7e-4 mm，改为全部波长的行按行权重求一个质心后差 1e-14 mm）
-# spot rows about the centroid: OpticStudio uses one polychromatic centroid for all wavelengths of a field (2026-11-14)
 SPOT_GROUPS = frozenset({"TRAC", "TRCX", "TRCY"})
 ABERRATIONS = CHIEF_ABERRATIONS | GROUP_ABERRATIONS
 WAVEFRONT = frozenset({"OPDC", "OPDX", "OPDM"})
 # 向导：(数据类型, 参考) → 操作数。波前一行照 OpticStudio 24.1 向导实际写出的操作数（2026-11-10 真机逐项枚举）：
 # Chief Ray 写出的是按均值参考的 OPDM，Unreferenced 才是按主光线参考的 OPDC；rtc 写出同一种操作数（轴上视场的行数还不同，见 TODO.md）。
-# the wizard's (data, reference) → operands. The wavefront row follows what OpticStudio 24.1's wizard writes: Chief Ray
-# gives OPDM (mean-referenced) and Unreferenced gives OPDC (chief-ray-referenced).
 WIZARD_OPERANDS = {
     ("wavefront", "centroid"): ("OPDX",), ("wavefront", "chiefray"): ("OPDM",), ("wavefront", "unreferenced"): ("OPDC",),
     ("spotradius", "centroid"): ("TRAC",), ("spotradius", "chiefray"): ("TRAR",),
@@ -69,7 +66,7 @@ WIZARD_OPERANDS = {
 @dataclass
 class Row:
     type: str
-    # Int1、Int2、Data1…Data6 / Int1, Int2, Data1–Data6
+    # Int1、Int2、Data1…Data6
     params: list[float] = field(default_factory=lambda: [0.0] * 8)
     target: float = 0.0
     weight: float = 0.0
@@ -142,7 +139,7 @@ def unsupported(message: str, rows: list[int] | None = None) -> SaosError:
     return SaosError(ErrorCode.BACKEND_UNSUPPORTED, message, {"rows": rows} if rows else None)
 
 
-# ---- 求值 / evaluation ----
+# ---- 求值
 
 @dataclass
 class Result:
@@ -163,7 +160,7 @@ class Segment:
     groups: dict[int, list[int]]
     pupils: dict[tuple, dict]
     wavefront: set[tuple]
-    # 波长 → 这一波长所有视场拼成的一批 (px, py, hx, hy) / wave → one batch of all its fields
+    # 波长 → 这一波长所有视场拼成的一批 (px, py, hx, hy)
     batches: dict[int, tuple[np.ndarray, ...]]
 
 
@@ -208,7 +205,7 @@ class Evaluator:
         pupils = {key: {"index": points, "rays": spans[key]} for key, points in wanted.items()}
         return Segment(lo, hi, _groups(rows, lo, hi), pupils, wavefront, batches)
 
-    # 每次求值前检查一遍能不能算，免得优化跑到一半才发现 / checked once before evaluating, not mid-optimisation
+    # 每次求值前检查一遍能不能算，免得优化跑到一半才发现
     @staticmethod
     def check(rows: list[Row]) -> None:
         known = merit_operands()
@@ -290,7 +287,7 @@ class Evaluator:
                 failed[k] = f"{r.type} is not finite"
                 values[k] = None
 
-    # ---- 光线 / rays ----
+    # ---- 光线
 
     def _traces(self, segment) -> dict[tuple, dict[str, Any]]:
         """(波长, Hx, Hy) → 这一视场所需全部光瞳点的追迹结果（像面坐标、OPD）。"""
@@ -370,11 +367,11 @@ class Evaluator:
         if r.type in ("TRAC", "TRCX", "TRCY"):
             dx, dy = entry["x"][i] - ref[0], entry["y"][i] - ref[1]
             return float({"TRAC": math.hypot(dx, dy), "TRCX": dx, "TRCY": dy}[r.type])
-        # OPDX：去掉组内加权的 piston 与倾斜；OPDM：只去均值 / OPDX removes weighted piston and tilt; OPDM the mean only
+        # OPDX：去掉组内加权的 piston 与倾斜；OPDM：只去均值
         a, bx, by = ref
         return float(entry["opd"][i] - (a + bx * r.data[2] + by * r.data[3]))
 
-    # ---- 镜头数据 / lens data ----
+    # ---- 镜头数据
 
     def _lens_data(self, kind: str, r: Row) -> float:
         backend = self.backend
@@ -475,7 +472,7 @@ def _group_reference(rows, group: list[int], entry, kind: str, entry_of=None):
     The weighted group reference: the centroid for spots, piston and tilt for OPDX, the mean for OPDM. A group whose rows
     cover half the pupil (px of one sign) at a field in the y-z plane is completed by mirror symmetry: the centroid's x
     and the wavefront's x tilt are zero, as OpticStudio has them."""
-    # 跨波长的光斑组缓存在组首行的追迹上，整组只求一次 / a spot group spanning wavelengths is cached on its first row's trace
+    # 跨波长的光斑组缓存在组首行的追迹上，整组只求一次
     spans = kind in SPOT_GROUPS and entry_of is not None
     cache = (entry_of(group[0]) if spans else entry).setdefault("refs", {})
     key = (kind, group[0])
@@ -488,7 +485,7 @@ def _group_reference(rows, group: list[int], entry, kind: str, entry_of=None):
     py = np.array([rows[k].data[3] for k in group])
     mirrored = float(rows[group[0]].data[0]) == 0.0 and bool(px.any()) and bool((px >= 0).all() or (px <= 0).all())
     if kind in SPOT_GROUPS:
-        # 组跨波长：每行取它自己那个波长的追迹 / the group spans wavelengths: each row reads its own wavelength's trace
+        # 组跨波长：每行取它自己那个波长的追迹
         entries = [entry_of(k) if entry_of is not None else entry for k in group]
         pick = [(e, e["index"][(float(rows[k].data[2]), float(rows[k].data[3]))]) for e, k in zip(entries, group)]
         ok = np.array([bool(e["ok"][i]) for e, i in pick])
@@ -537,7 +534,7 @@ def merit_value(rows: list[Row], values: list[float | None]) -> tuple[float, lis
     return math.sqrt(total / total_w), contributions
 
 
-# ---- 优化向导 / the optimisation wizard ----
+# ---- 优化向导
 
 def wizard_rows(lens, settings: dict[str, Any]) -> list[Row]:
     """rtc 的序列优化向导：高斯求积光瞳采样（rings 个环，环半径 √((1+x)/2)、x 为 Gauss–Legendre 节点；每环 arms 条臂，
@@ -594,7 +591,6 @@ def wizard_rows(lens, settings: dict[str, Any]) -> list[Row]:
                                               f"{settings.get('reference', 'Centroid')} GQ {rings} rings {arms} arms")]
     image = len(lens.surfaces) - 1
     # 多结构时每个结构一组（边界加光线），每组以 CONF 开头；DMFS 之前还有一行 CONF 1，OpticStudio 读文件时不补时行号会错开，所以同它存盘的行序
-    # with several configurations each gets its own group after a CONF row, with a CONF 1 before DMFS as well, in the row order OpticStudio saves
     configurations = max(1, lens.num_configs)
     if configurations > 1:
         rows.insert(0, Row("CONF", _padded([1])))
@@ -614,7 +610,7 @@ def wizard_rows(lens, settings: dict[str, Any]) -> list[Row]:
             rows.append(Row("BLNK", comment=f"Operands for field {f}."))
             for w, (_, ww) in enumerate(lens.active_wavelengths, 1):
                 for op in operands:
-                    # 先臂后环，同 OpticStudio 存盘的行序 / arm by arm, ring by ring within, as OpticStudio saves them
+                    # 先臂后环，同 OpticStudio 存盘的行序
                     for th in angles:
                         for rho, a in zip(radii, ring_w):
                             weight = float(fw) * float(ww) * float(a) / count

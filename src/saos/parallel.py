@@ -68,7 +68,6 @@ def backend_for(job: jobs.Job) -> str:
 
 
 # worker 的协议行带前缀，和 OpticStudio 自己打到标准输出的文字区分开（实测会打印 "*** FRU__delta_init() …"）
-# protocol lines carry a prefix, apart from what OpticStudio itself prints to stdout (e.g. "*** FRU__delta_init() …")
 PREFIX = "@@saos "
 BELOW_NORMAL = 0x00004000  # Windows BELOW_NORMAL_PRIORITY_CLASS
 
@@ -200,7 +199,7 @@ def worker_main(index: int) -> int:
     try:
         backend = make_backend(os.environ.get("SAOS_WORKER_BACKEND"))
         backend.start()
-    except Exception as exc:  # noqa: BLE001 - 启动失败（如许可证）只让这个 worker 不可用 / a failed start makes only this worker unavailable
+    except Exception as exc:  # noqa: BLE001 - 启动失败（如许可证）只让这个 worker 不可用
         _emit({"ready": False, "error": f"{type(exc).__name__}: {exc}"[:500]})
         return 1
     _emit({"ready": True, "start_s": round(time.perf_counter() - started, 2)})
@@ -220,13 +219,13 @@ def worker_main(index: int) -> int:
                 base = msg["base"]
                 wctx = WorkerContext(backend, Path(msg["job"]), Path(base) if base else None, index, msg.get("args") or {})
                 if not base:
-                    loaded_base = None  # fn 自己加载或搭建，之后不能当作已加载 / fn loads or builds its own
+                    loaded_base = None  # fn 自己加载或搭建，之后不能当作已加载
                 elif msg.get("reset", True) or base != loaded_base:
                     backend.load(Path(base))
                     loaded_base = base
                 result = functions[key](wctx, msg["item"])
                 _emit({"i": msg["i"], "ok": True, "result": result, "s": round(time.perf_counter() - t0, 3)})
-            except Exception as exc:  # noqa: BLE001 - 单个条目出错不影响其余条目 / one failing item does not stop the others
+            except Exception as exc:  # noqa: BLE001 - 单个条目出错不影响其余条目
                 _emit({"i": msg["i"], "ok": False, "error": "".join(traceback.format_exception_only(type(exc), exc)).strip()[:1000],
                        "traceback": traceback.format_exc()[-1500:]})
     finally:
@@ -334,7 +333,7 @@ class Pool:
     def __init__(self) -> None:
         self.workers: list[_Worker] = []
         self.refused: list[str] = []
-        self.cap: int | None = None  # 许可证拒绝过之后不再超过的规模 / the size not exceeded again after a licence refusal
+        self.cap: int | None = None  # 许可证拒绝过之后不再超过的规模
         self.lock = threading.Lock()
         self.timer: threading.Timer | None = None
         self.next_index = 0
@@ -434,12 +433,11 @@ def spare_map(ctx, fn: str, items: list[Any], *, keep_free: int = 2, min_workers
     folder: Path | None = None
     try:
         # 取得锁之后的每一步都在 try 里，出任何错都会释放锁，池不会一直被占着
-        # everything after taking the lock sits in the try, so any failure releases it and the pool is never left held
         folder = Path(tempfile.mkdtemp(prefix="saos-spare-"))
         snapshot = folder / "lens.zmx"
         try:
             export(snapshot)
-        except Exception:  # noqa: BLE001 - 存不出副本就让调用方串行 / no copy: the caller measures serially
+        except Exception:  # noqa: BLE001 - 存不出副本就让调用方串行
             return None
         if not snapshot.is_file():
             return None
@@ -475,7 +473,7 @@ def run_map(ctx, fn: str, items: list[Any], workers: int | None = None, reset: b
     if script is not None and not script.is_file():
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"cannot read {script}")
     if script is not None:
-        resolve(fn, script)  # 先在本进程里确认函数存在，免得每个 worker 各报一次 / check once here instead of once per worker
+        resolve(fn, script)  # 先在本进程里确认函数存在，免得每个 worker 各报一次
     jobs.require_zos_history(ctx.job.root)
     backend = backend_for(ctx.job)
     count = min(len(items), int(workers or default_workers(backend)), config.compute_cores())
@@ -520,7 +518,7 @@ def dispatch(pool: Pool, job: jobs.Job, lens: Path | None, fn: str, script: Path
     main instance, so a detached scan can run it in a thread."""
     started = time.perf_counter()
     progress(f"parallel: starting {count} workers")
-    # worker 的后端跟着后台进程当前的后端走，由 daemon 切换时设定/ workers follow the daemon's active backend
+    # worker 的后端跟着后台进程当前的后端走，由 daemon 切换时设定
     jobs.require_zos_history(job.root)
     startup = pool.ensure(count)
     active = [w for w in pool.workers if w.alive][:count]

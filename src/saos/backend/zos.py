@@ -46,7 +46,7 @@ from saos.protocol import ErrorCode, MaterialError, SaosError
 
 log = logging.getLogger("saos.backend.zos")
 _ZOSAPI = None
-# 分析没有完整读出时，结果里附上文本导出的开头这么多字符，给诊断用 / text export head attached when an analysis was not fully read
+# 分析没有完整读出时，结果里附上文本导出的开头这么多字符，给诊断用
 TEXT_HEAD_CHARS = 3000
 
 
@@ -124,7 +124,7 @@ def par_cell(zosapi, row, index: int, param: str):
     if col is not None:
         try:
             cell = row.GetSurfaceCell(col)
-        except Exception:  # noqa: BLE001 - 超出该面型的列 / beyond this surface type's columns
+        except Exception:  # noqa: BLE001 - 超出该面型的列
             cell = None
     header = str(cell.Header) if cell is not None else ""
     if cell is None or not header or "unused" in header.lower() or str(cell.DataType) != "Double":
@@ -146,7 +146,7 @@ def enum_member(enum, sample: str, wanted: str, label: str):
 def _usable_cell(zosapi, row, n: int):
     try:
         cell = row.GetSurfaceCell(getattr(zosapi.Editors.LDE.SurfaceColumn, f"Par{n}"))
-    except Exception:  # noqa: BLE001 - 超出该面型的列 / beyond this surface type's columns
+    except Exception:  # noqa: BLE001 - 超出该面型的列
         return None
     header = str(cell.Header) if cell is not None else ""
     return cell if header and "unused" not in header.lower() else None
@@ -161,9 +161,6 @@ def param_cells(zosapi, row) -> dict[int, Any]:
 # 评价函数文件（.MF；2024 R1 写出 VERS 231205，UTF-16）每行：类型 Int1 Int2 Param3–Param8 Target Weight，最后一列是上次计算的
 # 当前值（没算过为 0，载入后清零），核对时不比较。
 # 按 17 位有效数字写入时载入后数值不变；SaveMeritFunction 只写 13 位，所以回读按相对 1e-12 比较。
-# A .MF row: type Int1 Int2 Param3–Param8 Target Weight and the last computed value (0 until computed, cleared on load,
-# never compared). Values written with 17 significant
-# digits load unchanged; SaveMeritFunction writes 13, so the read-back compares to a relative 1e-12.
 MF_FIELDS = ("int1", "int2", "param3", "param4", "param5", "param6", "param7", "param8", "target", "weight")
 
 
@@ -260,7 +257,7 @@ def exact_double(cell, value: float, actual: float) -> float:
         return actual
     try:
         solve = str(cell.GetSolveData().Type)
-    except Exception:  # noqa: BLE001 - 没有求解数据的单元格不补写 / a cell without solve data is left as written
+    except Exception:  # noqa: BLE001 - 没有求解数据的单元格不补写
         return actual
     if solve not in ("Fixed", "Variable"):
         return actual
@@ -268,11 +265,11 @@ def exact_double(cell, value: float, actual: float) -> float:
         try:
             cell.Value = text
             ok = float(cell.DoubleValue) == value and str(cell.GetSolveData().Type) == solve
-        except Exception:  # noqa: BLE001 - 字符串写入不被接受时退回数值写入 / fall back to the numeric write
+        except Exception:  # noqa: BLE001 - 字符串写入不被接受时退回数值写入
             ok = False
         if ok:
             return value
-    # 退回数值写入，并恢复求解类型（字符串写入可能改了它）/ back to the numeric write, solve type restored
+    # 退回数值写入，并恢复求解类型（字符串写入可能改了它）
     if str(cell.GetSolveData().Type) != solve:
         cell.MakeSolveVariable() if solve == "Variable" else cell.MakeSolveFixed()
     cell.DoubleValue = value
@@ -286,7 +283,7 @@ def set_cell(cell, value: Any, label: str) -> None:
     kind = str(cell.DataType)
     if kind in ("Double", "Integer") and (isinstance(value, bool) or not isinstance(value, (int, float))):
         raise SaosError(ErrorCode.BAD_ARGS, f"{label} needs a number, got {value!r}")
-    # NaN 写进去会被 OpticStudio 存成 inf（2026-10-20 验证实测），所以写之前拒绝 / OpticStudio stores NaN as inf, so refuse before writing
+    # NaN 写进去会被 OpticStudio 存成 inf（2026-10-20 验证实测），所以写之前拒绝
     if kind in ("Double", "Integer") and (math.isnan(value) or (kind == "Integer" and not math.isfinite(value))):
         raise SaosError(ErrorCode.BAD_ARGS, f"{label} needs a {'finite integer' if kind == 'Integer' else 'number, not NaN'}, got {value!r}")
     before = cell_value(cell)
@@ -306,10 +303,10 @@ def set_cell(cell, value: Any, label: str) -> None:
         applied = actual == str(value)
     if not applied:
         try:
-            # 没写进去的值不留在镜头里 / a value that did not take is not left in the lens
+            # 没写进去的值不留在镜头里
             set_value = {"Double": "DoubleValue", "Integer": "IntegerValue"}.get(kind, "Value")
             setattr(cell, set_value, before)
-        except Exception:  # 写回失败时仍报原错误 / the original error is reported either way
+        except Exception:  # 写回失败时仍报原错误
             log.warning("could not write %r back to %s", before, label, exc_info=True)
         raise SaosError(ErrorCode.BAD_ARGS, f"{label} did not take {value!r} (now {actual!r}; the previous value {before!r} was written back)")
 
@@ -352,7 +349,7 @@ def catalog_constants(system, name: str) -> tuple[float, float] | None:
     None when no catalog in use has it. Shared with zos_params."""
     catalogs = system.SystemData.MaterialCatalogs
     for catalog in catalogs.GetCatalogsInUse():
-        # 在用目录列表里可能有空名，它的牌号表是 None（实测 ["SCHOTT", ""]）/ the list may hold an empty name whose material list is None
+        # 在用目录列表里可能有空名，它的牌号表是 None（实测 ["SCHOTT", ""]）
         if not str(catalog):
             continue
         names = {str(m).upper(): str(m) for m in catalogs.GetMaterialsInCatalog(catalog) or []}
@@ -452,7 +449,7 @@ class ZosBackend(Backend):
         zos_params.put(self, key, value)
 
     def surface_count(self) -> int:
-        # 直接读 LDE：surfaces() 每面要读约 20 个属性，纯非序列系统还返回空 / LDE directly: surfaces() is slow and empty for NSC
+        # 直接读 LDE：surfaces() 每面要读约 20 个属性，纯非序列系统还返回空
         return int(self.system.LDE.NumberOfSurfaces)
 
     def surface_comments(self) -> dict[str, int]:
@@ -553,7 +550,7 @@ class ZosBackend(Backend):
         self.root = config.opticstudio_dir()
         self.app = None
         self._material_cache: dict[tuple[str, ...], set[str]] = {}
-        # 目录 → {牌号: 状态}，取自 AGF 文件 / catalog → {name: status}, read from the AGF files
+        # 目录 → {牌号: 状态}，取自 AGF 文件
         self._glass_status: dict[str, dict[str, str]] = {}
 
     # ---- 连接 ----
@@ -589,7 +586,7 @@ class ZosBackend(Backend):
         if app is not None:
             try:
                 app.CloseApplication()
-            except Exception:  # 关闭时 OpticStudio 可能已经退出 / OpticStudio may already be gone
+            except Exception:  # 关闭时 OpticStudio 可能已经退出
                 log.warning("closing OpticStudio failed", exc_info=True)
 
     def healthy(self) -> bool:
@@ -633,7 +630,6 @@ class ZosBackend(Backend):
                                 {"kind": "no_results", "message": str(message) if message else None,
                                  "settings": analysis.describe_settings(impl)})
             # 文本导出先写：数值提取出问题时它仍是 OpticStudio 自己给出的完整依据
-            # the text export comes first: when extracting numbers fails it is still OpticStudio's own full record
             text_path.parent.mkdir(parents=True, exist_ok=True)
             try:
                 text_file = bool(results.GetTextFile(str(text_path)))
@@ -649,7 +645,7 @@ class ZosBackend(Backend):
                 out["text_head"] = _read_text_export(text_path)[:TEXT_HEAD_CHARS]
             return out
         finally:
-            # 一律关闭，避免分析对象越积越多 / always close, so analyses do not pile up
+            # 一律关闭，避免分析对象越积越多
             run.Close()
 
     # ---- 文件 ----
@@ -701,7 +697,7 @@ class ZosBackend(Backend):
         waves = sd.Wavelengths
         lde = system.LDE
         if nsc.is_nsc(system):
-            # 非序列系统没有孔径、视场和面；物体按序号列出 / no aperture, fields or surfaces; objects listed instead
+            # 非序列系统没有孔径、视场和面；物体按序号列出
             return {"mode": "non_sequential", "backend": "zos", "version": self.identity()["version"],
                     "file": str(system.SystemFile), "title": str(sd.TitleNotes.Title),
                     "lens_units": str(sd.Units.LensUnits),
@@ -823,7 +819,7 @@ class ZosBackend(Backend):
         mc = sd.MaterialCatalogs
         members = {c: {str(m).upper() for m in mc.GetMaterialsInCatalog(c)} for c in catalogs}
         for op in info["configurations"]["operands"]:
-            # 多重结构换进的玻璃同样要有来源、查停产状态 / glasses swapped in by GLSS need a source and a status check too
+            # 多重结构换进的玻璃同样要有来源、查停产状态
             if op["type"] == "GLSS":
                 op["sources"] = [self._name_source(str(v).upper(), members) for v in op["values"]]
         columns = zosapi.Editors.LDE.SurfaceColumn
@@ -877,7 +873,7 @@ class ZosBackend(Backend):
         sd = system.SystemData
         catalogs = self.catalogs_in_use()
         members = {c: {str(m).upper() for m in sd.MaterialCatalogs.GetMaterialsInCatalog(c)} for c in catalogs}
-        # 交叠和探测器检查由 interference()（后台进程随后调用）给出 / overlaps and detector checks come from interference()
+        # 交叠和探测器检查由 interference()（后台进程随后调用）给出
         items = self._described_objects(zosapi, members)
         return {
             "mode": "non_sequential", "file": str(system.SystemFile), "title": str(sd.TitleNotes.Title),
@@ -1015,7 +1011,7 @@ class ZosBackend(Backend):
                 folder = self._glass_dir()
                 try:
                     self._glass_status[key] = {g.name.upper(): g.status for g in glasscat.load_catalogs([catalog], folder)}
-                except (OSError, ValueError):  # describe 每次都走到这里，坏文件不能让它失败 / describe always passes here
+                except (OSError, ValueError):  # describe 每次都走到这里，坏文件不能让它失败
                     self._glass_status[key] = {}
             if name.upper() in self._glass_status[key]:
                 return self._glass_status[key][name.upper()]
@@ -1041,7 +1037,7 @@ class ZosBackend(Backend):
         is no glass of the catalogs in use (a model glass)."""
         if not catalog or not name or name.upper() not in self._names_in_use():
             return None
-        self.glass_status(name, [catalog])  # 读入并缓存该目录 / loads and caches the catalog
+        self.glass_status(name, [catalog])  # 读入并缓存该目录
         table = self._glass_status.get(catalog.upper())
         return None if not table else name.upper() in table
 
@@ -1063,7 +1059,7 @@ class ZosBackend(Backend):
         out: dict[str, Any] = {}
         try:
             td = row.TiltDecenterData
-        except Exception:  # noqa: BLE001 - 该面型没有这一项 / not available for this surface type
+        except Exception:  # noqa: BLE001 - 该面型没有这一项
             return out
         for side in ("Before", "After"):
             for key in ("DecenterX", "DecenterY", "TiltX", "TiltY", "TiltZ"):
@@ -1073,7 +1069,7 @@ class ZosBackend(Backend):
                     continue
                 if v:
                     out[f"{side.lower()}_{key}"] = v
-        # 后置倾斜偏心的模式（显式/拾取/反向）和坐标返回同样决定布局 / the after-surface mode and coordinate return also fix the layout
+        # 后置倾斜偏心的模式（显式/拾取/反向）和坐标返回同样决定布局
         for key, attr, default in (("after_mode", "AfterSurfaceMode", "Explicit"), ("coordinate_return", "CoordinateReturn", "None")):
             try:
                 value = str(getattr(td, attr))
@@ -1293,8 +1289,6 @@ class ZosBackend(Backend):
             return
         # 2024 R1 实测：非序列系统上 New(False) 之后仍是非序列模式；MakeSequential 又会把原系统转成带一个 NonSequential 面的
         # 序列镜头，所以切回序列后再新建一次，得到干净的序列系统
-        # measured in 2024 R1: New(False) on a non-sequential system stays non-sequential, and MakeSequential turns it into a
-        # sequential lens holding a NonSequential surface; so switch back and start a new system once more
         if nsc.is_nsc(system):
             system.MakeSequential()
             system.New(False)
@@ -1375,7 +1369,6 @@ class ZosBackend(Backend):
         if aperture_type == "FloatByStopSize":
             sd.Aperture.ApertureType = zosapi.SystemData.ZemaxApertureType.FloatByStopSize
         # 混合模式：每个 NonSequential 面一组物体，NCE.SetActiveSurface 选组（2024 R1 实测：组内物体号从 1 起，保存后保留）
-        # mixed mode: one object group per NonSequential surface, selected with NCE.SetActiveSurface (numbered from 1 within the group)
         for k, s in enumerate(surfaces, start=1):
             if s.get("objects"):
                 self._build_nsc_group(zosapi, k, s["objects"], f"surface {k}")
@@ -1412,7 +1405,6 @@ class ZosBackend(Backend):
                "environment.temperature": (float(sd.Environment.Temperature), env["temperature"]),
                "environment.pressure": (float(sd.Environment.Pressure), env["pressure"])}
         # 偏振和光线瞄准选项彼此有默认联动（非偏振盖掉琼斯矢量、自动光瞳偏移盖掉手动值），逐项回读
-        # polarization and ray-aiming options override each other by default, so each given item is read back
         pol = sd.Polarization
         for key, attr in (("unpolarized", "Unpolarized"), ("jx", "Jx"), ("jy", "Jy"), ("x_phase", "XPhase"), ("y_phase", "YPhase"),
                           ("convert_thin_film_phase", "ConvertThinFilmPhaseToRayEquivalent")):
@@ -1448,7 +1440,7 @@ class ZosBackend(Backend):
         if missing:
             raise MaterialError(ErrorCode.BAD_ARGS, f"cannot load glass catalogs {missing}")
         if p["coating_file"]:
-            # 面的膜层名在这个文件里查，所以先于各面设定 / surface coatings are looked up in this file, so it goes first
+            # 面的膜层名在这个文件里查，所以先于各面设定
             sd.Files.CoatingFile = pick_name([str(c) for c in sd.Files.GetCoatingFiles()], p["coating_file"], "coating_file")
         waves = sd.Wavelengths
         while waves.NumberOfWavelengths > 1:
@@ -1510,7 +1502,6 @@ class ZosBackend(Backend):
             if s.get("material"):
                 self._set_material(row, s["material"], label)
             # 面型不用的列会静默丢掉写入（如非序列组面的厚度回读为 inf），逐项回读
-            # a column the surface type does not use drops the write silently (an NSC group's thickness reads inf), so read back
             for key, attr in (("radius", "Radius"), ("conic", "Conic"), ("thickness", "Thickness")):
                 if key in s:
                     setattr(row, attr, s[key])
@@ -1525,7 +1516,7 @@ class ZosBackend(Backend):
                 cell = type_param_cell(zosapi, row, label, key, cells)
                 set_cell(cell, value, f"{label} {key}")
                 if str(cell.DataType) == "Integer":
-                    cells = None  # 项数一类的整数列会增减后面的列 / a term count adds or removes later columns
+                    cells = None  # 项数一类的整数列会增减后面的列
             if s.get("decenter_tilt"):
                 self._set_decenter_tilt(zosapi, row, s["decenter_tilt"], label)
             if "semi_diameter" in s:
@@ -1668,7 +1659,7 @@ class ZosBackend(Backend):
             type_name = str(row.TypeName)
             item: dict[str, Any] = {
                 "index": i,
-                # 其他面型用 ZOS-API 的枚举名，处方按它重建 / other types by their ZOS-API enum name, which a prescription rebuilds
+                # 其他面型用 ZOS-API 的枚举名，处方按它重建
                 "type": type_name.lower() if type_name in ("Standard", "Paraxial") else str(row.Type),
                 "thickness": float(row.Thickness),
                 "comment": str(row.Comment),
@@ -1683,7 +1674,7 @@ class ZosBackend(Backend):
                 item["radius"] = float(row.Radius)
                 item["conic"] = float(row.Conic)
                 if type_name != "Standard":
-                    # 按列序给出全部可写的参数列（项数一类的整数列在系数之前）/ every writable parameter column in column order
+                    # 按列序给出全部可写的参数列（项数一类的整数列在系数之前）
                     item["params"] = {f"par{n}": cell_value(c) for n, c in param_cells(zosapi, row).items() if not c.IsReadOnly}
             solve = row.MaterialCell.GetSolveData()
             if str(solve.Type) == "MaterialModel":
@@ -1707,7 +1698,7 @@ class ZosBackend(Backend):
         texts = []
         try:
             impl = analysis.settings_of(run)
-            # 读完就删；OpticStudio 偶尔还占着文件时不让清理失败打断测量 / a file OpticStudio still holds must not fail the measurement
+            # 读完就删；OpticStudio 偶尔还占着文件时不让清理失败打断测量
             with tempfile.TemporaryDirectory(prefix="saos-text-", ignore_cleanup_errors=True) as folder:
                 path = Path(folder) / "export.txt"
                 for values in settings:
@@ -1718,18 +1709,18 @@ class ZosBackend(Backend):
                         raise SaosError(ErrorCode.ZOS_ERROR, f"{name} returned no results",
                                         {"kind": "no_results", "message": str(message) if message else None,
                                          "settings": analysis.describe_settings(impl)})
-                    # 上一组的文件不能冒充这一组的导出 / the previous group's file must not pass for this export
+                    # 上一组的文件不能冒充这一组的导出
                     path.unlink(missing_ok=True)
                     try:
                         exported = bool(results.GetTextFile(str(path)))
-                    except Exception:  # noqa: BLE001 - 同 analysis()：导出失败记为没有文本 / as analysis(): no text
+                    except Exception:  # noqa: BLE001 - 同 analysis()：导出失败记为没有文本
                         exported = False
                     texts.append(_read_text_export(path) if exported else "")
         finally:
             run.Close()
         return texts
 
-    # ---- 衍射 PSF 与波前 / diffraction PSF and wavefront ----
+    # ---- 衍射 PSF 与波前
 
     @contextmanager
     def _added_fields(self):
@@ -1750,7 +1741,7 @@ class ZosBackend(Backend):
 
         fields = [check_field(f) for f in fields]
         with self._added_fields() as add:
-            # 先把按坐标给的视场都加上，再开分析：一个 Zernike 分析依次测各视场 / add every coordinate field first, then one analysis
+            # 先把按坐标给的视场都加上，再开分析：一个 Zernike 分析依次测各视场
             numbers = [f if isinstance(f, int) else add(*f) for f in fields]
             texts = self._analysis_texts("ZernikeStandardCoefficients", [{"Field": n, "Wavelength": int(wave)} for n in numbers])
         out: list[float | None] = []
@@ -1786,7 +1777,7 @@ class ZosBackend(Backend):
         name = str(row.Material).upper()
         if not on:
             if is_model:
-                # 模型玻璃保留当前 nd、νd，只是不再变化 / a model glass keeps its nd and Vd, they just stop varying
+                # 模型玻璃保留当前 nd、νd，只是不再变化
                 solve._S_MaterialModel.VaryIndex = False
                 solve._S_MaterialModel.VaryAbbe = False
                 cell.SetSolveData(solve)
@@ -1804,12 +1795,11 @@ class ZosBackend(Backend):
             m.IndexNd, m.AbbeVd, m.VaryIndex, m.VaryAbbe = nd, vd, True, True
         else:
             # 面已经过校验才加目录，校验失败不会留下目录改动；之后的异常由后台进程把镜头标为未保存
-            # the catalog is added only after the surface passed its checks; the daemon marks the lens unsaved on a later error
-            # catalog 已由 substitute_catalog 解析（空串为全部在用目录），这里不再重选默认目录 / already resolved; no second pick of the default
+            # catalog 已由 substitute_catalog 解析（空串为全部在用目录），这里不再重选默认目录
             name = (catalog or "").upper()
             self._use_catalog(name)
             new = cell.CreateSolveType(zosapi.Editors.SolveType.MaterialSubstitute)
-            # 空目录名表示在当前使用的全部目录中替换 / an empty catalog substitutes within every catalog in use
+            # 空目录名表示在当前使用的全部目录中替换
             new._S_MaterialSubstitute.Catalog = name
         cell.SetSolveData(new)
         return str(cell.GetSolveData().Type)
@@ -1880,7 +1870,7 @@ class ZosBackend(Backend):
         if air:
             wiz.AirMin, wiz.AirMax, wiz.AirEdge = float(air[0]), float(air[1]), float(air[2])
         wiz.StartAt = start_at
-        # 折转、双圆锥、柱面等非旋转对称系统必须关掉，否则向导只追半个光瞳 / must be off for systems that are not rotationally symmetric
+        # 折转、双圆锥、柱面等非旋转对称系统必须关掉，否则向导只追半个光瞳
         wiz.IsAssumeAxialSymmetryUsed = symmetric
         wiz.Apply()
         return int(self.system.MFE.NumberOfOperands)
@@ -1922,7 +1912,6 @@ class ZosBackend(Backend):
                 check = Path(folder) / "check.MF"
                 mfe.SaveMeritFunction(str(check))
                 # 每种操作数实际用到哪些参数列（列标题非空）；没用到的列 OpticStudio 存盘时可能写别的值（ABSO 的 Int2 写成 1）
-                # the parameter columns each operand type uses (non-empty header); unused ones may be saved as anything
                 columns = [getattr(zosapi.Editors.MFE.MeritColumn, f"Param{n}") for n in range(1, 9)]
                 used = {}
                 for k, s in enumerate(specs):
@@ -1967,7 +1956,6 @@ class ZosBackend(Backend):
         if cycles not in names:
             raise SaosError(ErrorCode.BAD_ARGS, f"cycles must be one of {list(names)}")
         # 非序列系统的探测器评价函数有统计噪声，阻尼最小二乘的差分导数不可靠，默认用正交下降（OpticStudio 对非序列的建议）
-        # a non-sequential detector merit is noisy and spoils DLS's finite differences: default to orthogonal descent there
         algorithm = ("od" if nsc.is_nsc(self.system) else "dls") if algorithm in (None, "auto") else algorithm
         if algorithm not in ("dls", "od"):
             raise SaosError(ErrorCode.BAD_ARGS, f"algorithm must be dls or od, got {algorithm!r}")
@@ -2027,7 +2015,7 @@ class ZosBackend(Backend):
             names = [str(getattr(w, getter)(i)) for i in range(int(getattr(w, count_attr)))]
             text = str(wanted).replace(" ", "").lower()
             for i, n in enumerate(names):
-                # 探测器、光源列成 "3: Rectangle"，可以只写编号 / detectors and sources read "3: Rectangle"; the number alone is enough
+                # 探测器、光源列成 "3: Rectangle"，可以只写编号
                 if n.replace(" ", "").lower() == text or n.split(":")[0].strip() == str(wanted).strip():
                     return i
             raise SaosError(ErrorCode.BAD_ARGS, f"NSC optimization wizard {name} must be one of {names}, got {wanted!r}")
@@ -2093,7 +2081,7 @@ class ZosBackend(Backend):
             else:
                 tool.NumberToSave = opt.OptimizationSaveCount.Save_10
                 best = lambda: float(tool.CurrentMeritFunction(1))
-            # rel：每个检查点比较最好的 merit，增益不足时借取消停下 / rel: compare the best merit per checkpoint, stop via Cancel
+            # rel：每个检查点比较最好的 merit，增益不足时借取消停下
             from saos.budget import checkpoint_interval, stalled
             checkpoint = {"at": time.monotonic(), "merit": None, "stalled": False}
 
@@ -2128,7 +2116,7 @@ class ZosBackend(Backend):
                 out["best_merits"] = [float(tool.CurrentMeritFunction(k)) for k in range(1, 11)]
         finally:
             tool.Close()
-        # 玻璃替换常换成停产牌号（Cooke 上 3 次 Hammer、1 次全局搜索共 12 个替换，9 个是 Obsolete），把状态一并报出 / substitution often picks obsolete glasses
+        # 玻璃替换常换成停产牌号（Cooke 上 3 次 Hammer、1 次全局搜索共 12 个替换，9 个是 Obsolete），把状态一并报出
         catalogs = self.catalogs_in_use()
         out["materials_changed"] = [{"surface": i, "before": a, "after": b, "status": self.glass_status(b, catalogs)}
                                     for i, (a, b) in enumerate(zip(before, materials())) if a.upper() != b.upper()]
@@ -2156,7 +2144,7 @@ class ZosBackend(Backend):
                 if on_progress is not None:
                     try:
                         on_progress({"progress": int(tool.Progress), **reading(), "elapsed_s": round(elapsed, 1)})
-                    except Exception as exc:  # noqa: BLE001 - 进度只是显示 / progress is display only
+                    except Exception as exc:  # noqa: BLE001 - 进度只是显示
                         if progress_error is None:
                             progress_error = f"{type(exc).__name__}: {exc}"
                             log.warning("optimiser progress callback failed, the run goes on: %s", progress_error)
@@ -2183,7 +2171,7 @@ class ZosBackend(Backend):
                 time.sleep(0.2)
             if not tool.IsRunning:
                 tool.WaitForCompletion()
-        except Exception:  # 已经在处理另一个异常 / already handling another error
+        except Exception:  # 已经在处理另一个异常
             log.exception("could not stop the optimisation tool")
 
     def quick_focus(self) -> dict[str, Any]:
@@ -2264,10 +2252,10 @@ class ZosBackend(Backend):
                 thickness = float(row.Thickness)
                 try:
                     row.ThicknessCell.MakeSolveFixed()
-                except Exception:  # noqa: BLE001, S110 - 没有求解时无需处理 / nothing to fix
+                except Exception:  # noqa: BLE001, S110 - 没有求解时无需处理
                     pass
                 main = self._global(g)
-                # 从 GRIN 前表面最凸处切起：更薄的切片落在光线入射点之前 / start beyond the front face's sag
+                # 从 GRIN 前表面最凸处切起：更薄的切片落在光线入射点之前
                 sd = float(lde.GetSurfaceAt(g).SemiDiameter)
                 sags = [v for v in (self._sag(g, 0.0, y) for y in (-sd, -sd / 2, sd / 2, sd)) if v is not None]
                 lo = (max([0.0, *sags]) if thickness > 0 else min([0.0, *sags])) if sags else 0.0
@@ -2283,7 +2271,7 @@ class ZosBackend(Backend):
                         if not err:
                             points[k].append(apply(main, _to_local(frame, apply(tf, xyz_lmn[:3]))))
                 out[g] = points
-        except Exception as exc:  # noqa: BLE001 - 退回直线画法 / fall back to straight segments
+        except Exception as exc:  # noqa: BLE001 - 退回直线画法
             errors["grin"] = f"GRIN ray paths unavailable ({type(exc).__name__}: {exc}); drawn straight"[:300]
         finally:
             copy.Close(False)
@@ -2350,7 +2338,7 @@ class ZosBackend(Backend):
         for read in (lambda: float(row.MechanicalSemiDiameter), lambda: clear + float(row.ChipZone)):
             try:
                 value = read()
-            except Exception:  # noqa: BLE001, S112 - 某些面型没有这些列 / some surface types lack these columns
+            except Exception:  # noqa: BLE001, S112 - 某些面型没有这些列
                 continue
             if math.isfinite(value):
                 edge = max(edge, value)
@@ -2409,7 +2397,6 @@ class ZosBackend(Backend):
             if tf is not None and sd > 0 and "Coordinate" not in item["type"]:
                 item["vertex"] = tf[1]
                 # 子午、弧矢两条截线和边缘一圈按面孔径取（矩形孔径的棱镜面画成方的），局部点 (x, y, sag) 变换到全局
-                # sections and rim follow the surface aperture (a prism face with a rectangular aperture is drawn square)
                 ap = geometry.aperture(self._aperture_dict(row), sd)
                 if ap["explicit"]:
                     item["aperture"] = {k: ap[k] for k in ("shape", "hx", "hy", "dx", "dy")}
@@ -2455,7 +2442,6 @@ class ZosBackend(Backend):
                 here = apply(transforms[j], xyz_lmn[:3])
                 if pending:
                     # 只留两端交点之间的点：弯的 GRIN 前表面上，厚度切得比矢高还薄时交点在入射点之前（虚延长）
-                    # keep points between the two intercepts: a slice thinner than a curved front face's sag lands before the entry
                     points.extend(q for q in pending if _between(points[-1], q, here))
                 points.append(here)
                 if first_dir is None:
@@ -2533,9 +2519,7 @@ class ZosBackend(Backend):
         mtf_keep = ("MaximumFrequency", "SampleSize", "Type", "ShowDiffractionLimit")
         mtf = run("FftMtf", {"ShowDiffractionLimit": True}, mtf_keep)
         if mtf is not None and not mtf["series"] and len(fields) > 1:
-            # 全部视场一起算时，只要一个视场的主光线追不出，FFT MTF 整个不给数据（2026-10-20 在 fiber-printed 第 0 轮复现：
-            # 第 3、5 视场失败，其余单独算都正常）；逐个视场算，失败的视场写进 errors
-            # with all fields at once, one field whose chief ray fails empties the whole FFT MTF; compute field by field
+            # 全部视场一起算时，只要一个视场的主光线追不出，FFT MTF 整个不给数据；逐个视场算，失败的视场写进 errors
             whole = errors.pop("FftMtf", "no data")
             series, missing = [], []
             for f in range(1, len(fields) + 1):
@@ -2544,7 +2528,7 @@ class ZosBackend(Backend):
                 if one is None or not one["series"]:
                     missing.append(f"field {f}: {reason or 'no data'}")
                     continue
-                # 衍射极限每次都附带一条，只留第一条 / each run carries the diffraction limit; keep the first
+                # 衍射极限每次都附带一条，只留第一条
                 series += [s for s in one["series"] if not (series and "diff" in s["description"].lower())]
                 mtf["settings"] = one["settings"]
             mtf["series"] = series

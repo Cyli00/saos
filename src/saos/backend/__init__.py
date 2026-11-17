@@ -8,7 +8,6 @@ def make_backend(backend: str | None = None) -> Backend:
     backend = config.backend_name() if backend is None else backend
     if backend == "auto":
         # auto 只对后台进程有意义（rtc 加按需启动的 OpticStudio）；单独建一个后端时取 OpticStudio
-        # auto means both backends for the daemon only; a backend made on its own is OpticStudio
         backend = "zos"
     if backend == "fake":
         from saos.backend.fake import FakeBackend
@@ -17,7 +16,7 @@ def make_backend(backend: str | None = None) -> Backend:
         from saos.backend.zos import ZosBackend
         return ZosBackend()
     if backend == "rtc":
-        # 需求阶段的可行性核算：不启动 OpticStudio，镜头由 rtc 持有 / need-stage feasibility without OpticStudio
+        # 需求阶段的可行性核算：不启动 OpticStudio，镜头由 rtc 持有
         from saos.backend.rtc import RtcBackend
         return RtcBackend(None, glass_dir=config.glass_dir(), standalone=True)
     raise SaosError(ErrorCode.BAD_ARGS, f"unsupported backend: {backend}; use zos (default), rtc (need-stage feasibility) or fake (tests only)")

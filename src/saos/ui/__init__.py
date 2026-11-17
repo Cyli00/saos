@@ -21,27 +21,24 @@ from saos import client, config, jobs
 from saos.protocol import ErrorCode, SaosError, write_json
 
 START_TIMEOUT_S = 15.0
-# 窗口每 1.5 s 轮询一次；这么久没来过就当它没开着 / the window polls every 1.5 s; silent this long means it is not open
+# 窗口每 1.5 s 轮询一次；这么久没来过就当它没开着
 SEEN_WITHIN_S = 6.0
 # 最小化的窗口：浏览器把定时器放慢到最多约 1 分钟一次（Chrome 的 intensive throttling），留出余量
-# a minimised window: browsers slow its timers to about once a minute (Chrome's intensive throttling); with a margin
 HIDDEN_SEEN_WITHIN_S = 90.0
-# UI 专用的 Chrome 配置不放慢后台窗口 / the UI's own Chrome profile keeps background windows at full speed
+# UI 专用的 Chrome 配置不放慢后台窗口
 CHROME_FLAGS = ("--disable-background-timer-throttling", "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows")
 # 守焦点的后台进程最多等这么久：Chrome 冷启动后 4.5 s 才弹出窗口抢焦点（2026-10-19 实测）
-# how long the background focus guard waits: a cold Chrome took the focus 4.5 s after the start (measured 2026-10-19)
 FOREGROUND_WAIT_S = 15.0
-# 刚打开的窗口还没来得及轮询，这段时间内不再开第二个 / a window just opened has not polled yet; do not open a second one meanwhile
+# 刚打开的窗口还没来得及轮询，这段时间内不再开第二个
 OPENING_S = 20.0
 # 服务重启后，开着的窗口在原地址重连（端口和令牌沿用）；等这么久再决定要不要开新窗口
-# after a restart open windows reconnect at the same address; wait this long before opening another one
 RECONNECT_WAIT_S = 4.0
 OPENED_FILE = "ui-opened.json"
 WINDOW_SIZE = (1600, 900)
 CHROME_SUBPATH = Path("Google") / "Chrome" / "Application" / "chrome.exe"
 
 
-# 不经 HTTP_PROXY 之类的代理设置直连本机 / talk to 127.0.0.1 directly, ignoring HTTP_PROXY and similar settings
+# 不经 HTTP_PROXY 之类的代理设置直连本机
 _DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
@@ -64,7 +61,7 @@ def ensure_server() -> dict[str, Any]:
     config.daemon_dir().mkdir(parents=True, exist_ok=True)
     log_fh = (config.daemon_dir() / "ui.log").open("ab")
     try:
-        # 与后台进程同样的无窗口、脱离作业对象的启动方式（saos.client._spawn）/ same detached, windowless start as the daemon
+        # 与后台进程同样的无窗口、脱离作业对象的启动方式（saos.client._spawn）
         flags = client._CREATE_NO_WINDOW | client._CREATE_NEW_PROCESS_GROUP
         kwargs = dict(stdin=subprocess.DEVNULL, stdout=log_fh, stderr=log_fh, cwd=str(config.saos_home()), close_fds=True,
                       env={**os.environ, "SAOS_HOME": str(config.saos_home())})
@@ -90,7 +87,7 @@ def _chrome() -> str | None:
     found = shutil.which("chrome")
     if found:
         return found
-    # 系统级安装在 Program Files，按用户安装在 LOCALAPPDATA / machine-wide installs live in Program Files, per-user ones in LOCALAPPDATA
+    # 系统级安装在 Program Files，按用户安装在 LOCALAPPDATA
     roots = [os.environ.get(k) for k in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")]
     return next((str(Path(r) / CHROME_SUBPATH) for r in roots if r and (Path(r) / CHROME_SUBPATH).is_file()), None)
 
@@ -119,7 +116,7 @@ def ensure_window(job_id: str, *, gate: bool = False) -> dict[str, Any] | None:
         return None
     if not gate and job_id in server.closed_jobs():
         return None
-    # 自主任务没有人在关卡等着看：不自动打开，saos ui open 照样能开 / an autonomous job has nobody waiting at the gates
+    # 自主任务没有人在关卡等着看：不自动打开，saos ui open 照样能开
     if jobs.mode_of(config.jobs_dir() / job_id) == "autonomous":
         return None
     state = server.read_state()
@@ -127,10 +124,10 @@ def ensure_window(job_id: str, *, gate: bool = False) -> dict[str, Any] | None:
     if polled is not None:
         seen, hidden = polled
         if seen.get(job_id, math.inf) <= (HIDDEN_SEEN_WITHIN_S if job_id in hidden else SEEN_WITHIN_S):
-            # 开着的窗口在需要用户看的时候恢复（最小化时）并放到最上层 / at a gate an open window is restored and raised
+            # 开着的窗口在需要用户看的时候恢复（最小化时）并放到最上层
             return {"window": "raised" if _raise_window(job_id) else "open"} if gate else None
     elif job_id in _opened() and job_id not in server.closed_jobs():
-        # 服务不在了，但这个任务的窗口可能还开着：先起服务，给窗口一个重连的机会 / the window may still be open: let it reconnect
+        # 服务不在了，但这个任务的窗口可能还开着：先起服务，给窗口一个重连的机会
         state = ensure_server()
         deadline = time.monotonic() + RECONNECT_WAIT_S
         while time.monotonic() < deadline:
@@ -139,10 +136,9 @@ def ensure_window(job_id: str, *, gate: bool = False) -> dict[str, Any] | None:
                 return None
             time.sleep(0.3)
     # 刚打开的窗口还没来轮询时不再开第二个；用户已经关掉的窗口肯定不在了，不受这条限制
-    # no second window while one just opened has not polled yet; a window the user closed is certainly gone
     if job_id not in server.closed_jobs() and time.time() - float(_opened().get(job_id, 0)) < OPENING_S:
         return None
-    # 自动重开不抢焦点：用户可能正在别的窗口里打字 / an automatic reopen keeps the focus where the user is typing
+    # 自动重开不抢焦点：用户可能正在别的窗口里打字
     return open_window(job_id, activate=False)
 
 
@@ -184,13 +180,12 @@ def _raise_window(job_id: str) -> bool:
             buf = ctypes.create_unicode_buffer(length + 1)
             user32.GetWindowTextW(hwnd, buf, length + 1)
             # 整个标题相同，或其后是空格（浏览器追加的后缀）；任务号 abc 不会匹配到 abc-2 的窗口
-            # the whole title, or it followed by a space (a browser's suffix); job abc never matches the window of abc-2
             if buf.value == title or buf.value.startswith(title + " "):
                 found.append(hwnd)
         return True
 
     user32.EnumWindows(visit, 0)
-    # SW_SHOWNOACTIVATE；先置为 TOPMOST 再取消，窗口留在最上层而不激活 / topmost then not: on top, not activated
+    # SW_SHOWNOACTIVATE；先置为 TOPMOST 再取消，窗口留在最上层而不激活
     flags = 0x0001 | 0x0002 | 0x0010  # SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE
     for hwnd in found:
         if user32.IsIconic(hwnd):
@@ -255,9 +250,7 @@ def _keep_focus(before: int, wait: float = FOREGROUND_WAIT_S) -> bool:
             if int(user32.GetForegroundWindow() or 0) != before:
                 # 后台进程（agent 调用命令时就是）不许设前台窗口，上面这招失败：把新窗口最小化，激活自然回到原来的窗口，
                 # 再“显示但不激活”恢复它（2026-10-19 实测有效）
-                # a background process may not set the foreground window: minimise the new window so activation returns
-                # to the previous one, then restore it without activating (measured 2026-10-19)
-                user32.ShowWindow(now, 6)  # SW_MINIMIZE：激活 Z 序里的下一个窗口 / activates the next window in Z order
+                user32.ShowWindow(now, 6)  # SW_MINIMIZE：激活 Z 序里的下一个窗口
                 time.sleep(0.3)
                 user32.ShowWindow(now, 4)  # SW_SHOWNOACTIVATE
             return int(user32.GetForegroundWindow() or 0) == before
@@ -276,7 +269,7 @@ def _guard_focus(before: int) -> None:
         subprocess.Popen(cmd, creationflags=flags, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
 
 
-# 窗口上方可选的标签页 / tabs the window can show
+# 窗口上方可选的标签页
 TABS = ("layout", "spot", "fan", "field", "mtf", "detectors", "metrics", "rounds", "starts")
 
 
@@ -320,7 +313,7 @@ def configure(job: jobs.Job, *, tabs: str | None = None, metrics: str | None = N
         ui["tabs"] = chosen_tabs
     if chosen_metrics is not None:
         ui["metrics"] = chosen_metrics
-        # 给了指标而标签页里没有“指标”页，就放在轮次页之前 / metrics given without the tab: put it before rounds
+        # 给了指标而标签页里没有“指标”页，就放在轮次页之前
         tabs_now = ui.get("tabs")
         if tabs_now is not None and "metrics" not in tabs_now:
             at = tabs_now.index("rounds") if "rounds" in tabs_now else len(tabs_now)
@@ -339,7 +332,7 @@ def open_window(job_id: str, *, window: bool = True, activate: bool = True, tab:
     if window:
         chrome = _chrome()
         if chrome:
-            # 单独的配置目录让窗口大小生效，也不打扰用户自己的 Chrome / a separate profile makes the size stick and leaves the user's Chrome alone
+            # 单独的配置目录让窗口大小生效，也不打扰用户自己的 Chrome
             profile = config.daemon_dir() / "ui-chrome"
             before = 0 if activate else _foreground()
             subprocess.Popen([chrome, f"--app={url}", f"--window-size={WINDOW_SIZE[0]},{WINDOW_SIZE[1]}", f"--user-data-dir={profile}",

@@ -17,7 +17,6 @@ from typing import Any, Callable, Iterable, Sequence
 import numpy as np
 
 # 无效点在寻优中的取值：比任何有效值都差，但仍是有限数，单纯形不会因 inf 失去方向
-# the value of an invalid point during minimisation: worse than any valid value but finite, so the simplex keeps its bearings
 INVALID = 1e30
 
 

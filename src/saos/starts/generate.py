@@ -135,7 +135,6 @@ def generate(job: jobs.Job, bindings: dict, *, short_seconds: float, prepare: st
     folder.mkdir()
     # 先在 rtc 上建（不占许可）；rtc 建不了的条目（反射镜、有限共轭的像方 F 数等）逐条改在 OpticStudio 上建，
     # OpticStudio 只在第一次需要时启动
-    # build on rtc first (no licence); entries rtc cannot build go to OpticStudio one by one, started on first need
     fallback_factory = None
     if backend_factory is None:
         from saos.backend import make_backend
@@ -165,8 +164,6 @@ def generate(job: jobs.Job, bindings: dict, *, short_seconds: float, prepare: st
                 reference = copy.deepcopy(data)
                 # 物在无穷远时像方 F 数 = EFL/EPD：参考处方用入瞳直径占位（近轴焦距与它无关），缩放后按 EFL/F# 定入瞳，
                 # 与 OpticStudio 的 image_f_number 同义且 rtc 能建；有限共轭仍用 image_f_number（工作 F 数，rtc 没有）
-                # at infinity the image F-number is EFL/EPD: the reference takes a placeholder EPD (the paraxial EFL ignores it)
-                # and the scaled lens EPD = EFL/F#, equivalent to OpticStudio's image_f_number and buildable on rtc
                 reference["aperture"] = ({"type": "entrance_pupil_diameter", "value": 1.0} if infinite
                                          else {"type": "image_f_number", "value": targets["f_number"]})
                 field = targets["half_field_deg"]

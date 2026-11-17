@@ -56,15 +56,15 @@ def test_kit_matches_operands_and_scan_runs_on_workers(daemon):
     spots = ctx.spot([(0, 0), (0, 0.7), (0, 1)], wave=2, grid=81)
     for row, hy in zip(spots, (0, 0.7, 1)):
         assert row["pass_rate"] == 100.0 and row["rms_radius"] == pytest.approx(ctx.op("RSCE", 10, 2, 0, hy), rel=0.01)
-    # 最后一面半径由求解锁住 F 数：写不进去时报错，不静默留下别的值 / the last radius holds the F-number by a solve
+    # 最后一面半径由求解锁住 F 数：写不进去时报错，不静默留下别的值
     with pytest.raises(Exception, match="did not take"):
         ctx.set({"6.radius": -20.0})
     r5 = ctx.get("5.radius")
     with ctx.kept(["5.radius"]):
         ctx.set({"5.curvature": 1 / (r5 * 1.1)})
         assert ctx.get("5.radius") == pytest.approx(r5 * 1.1)
-    assert ctx.get("5.radius") == pytest.approx(r5, rel=1e-14)  # 内部按曲率存，末位可能变 / stored as curvature, last bit may change
-    daemon.loaded.dirty = False  # kept 写回的是原值 / kept wrote the original values back
+    assert ctx.get("5.radius") == pytest.approx(r5, rel=1e-14)  # 内部按曲率存，末位可能变
+    daemon.loaded.dirty = False  # kept 写回的是原值
 
     (job.root / "checks").mkdir(exist_ok=True)
     (job.root / "checks" / "spot.py").write_text(SPOT_CHECK, encoding="utf-8")
@@ -140,7 +140,7 @@ def test_parameter_writes_and_kept_restore_every_bit(daemon):
     key = f"{free[0]}.thickness"
     solve = str(lde.GetSurfaceAt(free[0]).ThicknessCell.GetSolveData().Type)
     x = kit.get(ctx, key)
-    while float(f"{x:.15g}") == x:          # 一个 15 位表示不了的值 / a value 15 digits cannot hold
+    while float(f"{x:.15g}") == x:          # 一个 15 位表示不了的值
         x = math.nextafter(x, math.inf)
     kit.set(ctx, {key: x})
     assert kit.get(ctx, key) == x
@@ -148,7 +148,7 @@ def test_parameter_writes_and_kept_restore_every_bit(daemon):
         kit.set(ctx, {key: x * 1.01})
     assert kit.get(ctx, key) == x
     assert str(lde.GetSurfaceAt(free[0]).ThicknessCell.GetSolveData().Type) == solve
-    # -inf 会被读回成 +inf：报错，且原值逐位留在镜头里 / -inf reads back as +inf: refused, the old value kept
+    # -inf 会被读回成 +inf：报错，且原值逐位留在镜头里
     with pytest.raises(Exception, match="did not take"):
         kit.set(ctx, {key: -math.inf})
     assert kit.get(ctx, key) == x

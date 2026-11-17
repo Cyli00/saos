@@ -82,7 +82,7 @@ def test_obsolete_catalog_glass_is_flagged_and_its_status_shown():
     assert [c for c, _ in found] == ["obsolete_material"] and dict(found)["obsolete_material"] == {"s": 1, "name": "SK16"}
     text, _ = model_report._source_text(sk16, model_report.Tr("en"))
     assert text == "catalog SCHOTT, Obsolete"
-    assert codes(d, {**ALL, "environment": [1]}) == []  # 外购件已经存在，不提示 / a bought-in part already exists
+    assert codes(d, {**ALL, "environment": [1]}) == []  # 外购件已经存在，不提示
 
 
 def test_telecentric_rule_needs_object_aperture_and_off_axis_field():
@@ -144,7 +144,7 @@ def test_material_record_warnings_and_validation(saos_home):
     (job.root / materials_record.FILE).write_text(yaml.safe_dump(record), encoding="utf-8")
     assert materials_record.recorded_names(job) == {"N-BK7", "GLUE1"}
     for broken in ({**record, "schema": 2},
-                   {**record, "materials": [{"id": "x", "zemax": {"name": "X"}}]},                       # 没有来源 / no source
+                   {**record, "materials": [{"id": "x", "zemax": {"name": "X"}}]},                       # 没有来源
                    {**record, "materials": [{"id": "x", "zemax": {"name": "X"}, "source_ids": ["nope"]}]}):  # 来源不存在
         (job.root / materials_record.FILE).write_text(yaml.safe_dump(broken), encoding="utf-8")
         with pytest.raises(SaosError):
@@ -169,19 +169,19 @@ def test_fingerprint_keeps_part_kinds_and_the_environment():
         mutate(x)
         return model_gate.structure_changes(d, x, environment)
 
-    assert not changed(lambda x: x["surfaces"][1]["params"][0].update(value=44.0))   # 折转角是设计变量 / a fold angle is a variable
+    assert not changed(lambda x: x["surfaces"][1]["params"][0].update(value=44.0))   # 折转角是设计变量
     assert not changed(lambda x: x["surfaces"][1].update(thickness=0.2))
     assert changed(lambda x: x["surfaces"][2].update(radius=0.02)) == ["surfaces[2].substrate_flat"]
     assert changed(lambda x: x["surfaces"][3].update(tilt_decenter={"before_DecenterY": 0.01})) == ["surfaces[3].tilted"]
-    assert changed(lambda x: x["surfaces"][1]["params"][0].update(value=0.0)) == ["surfaces[1].tilted"]   # 去掉折转 / the fold removed
+    assert changed(lambda x: x["surfaces"][1]["params"][0].update(value=0.0)) == ["surfaces[1].tilted"]   # 去掉折转
     assert not changed(lambda x: x["surfaces"][3].update(radius=25.0))
     assert not changed(lambda x: x["surfaces"][3]["material_source"].update(name="SF2"))
     assert not changed(lambda x: x["surfaces"][3].update(material_source={"kind": "model", "nd": 1.6, "vd": 50.0}))
     assert changed(lambda x: x["surfaces"][3].update(material_source={"kind": "mirror"})) == ["surfaces[3].medium"]
-    # 外购的折转棱镜声明为环境：折转角和材料都锁定 / a bought-in fold declared as environment: angle and material are locked
+    # 外购的折转棱镜声明为环境：折转角和材料都锁定
     assert changed(lambda x: x["surfaces"][1]["params"][0].update(value=44.0), environment=[1]) == ["surfaces[1].break.Tilt About Y"]
     assert changed(lambda x: x["surfaces"][3].update(material="SF2", radius=25.0), environment=[3]) == ["surfaces[3].material", "surfaces[3].radius"]
-    # 视场、波长只能在末尾追加 / fields and wavelengths only gain points at the end
+    # 视场、波长只能在末尾追加
     assert not changed(lambda x: x["fields"]["items"].append({"x": 0.0, "y": 0.5, "weight": 1.0}))
     assert changed(lambda x: x["fields"]["items"][0].update(y=0.1)) == ["fields.items[0][1]"]
     assert not changed(lambda x: x["wavelengths"].append({"um": 0.65, "weight": 1.0, "primary": False}))
@@ -256,7 +256,7 @@ def test_four_sections_appear_in_both_languages():
                  "at most 900 s", "Hammer", "Confirming does not vouch for it", "Source found", "Data complete", "Backend supports",
                  "Actually loaded"):
         assert text in en, text
-    # 没有数据时四节仍然出现，只是处于空状态 / without the data the four sections still appear, in their empty state
+    # 没有数据时四节仍然出现，只是处于空状态
     bare = model_report.render(d, ALL, meta, "zh")
     assert "选型依据" in bare and "需求逐项" in bare and "计算有效性（系统核对）" in bare and "下一阶段预算" in bare
 
@@ -274,12 +274,12 @@ def test_material_levels_say_unknown_when_the_code_cannot_tell(saos_home):
     assert bk7["loaded"]["state"] == "yes"
     model = next(r for r in rows.values() if r["kind"] == "model")["levels"]
     assert {model[k]["state"] for k in ("found", "complete", "backend")} == {"na"}
-    # 记录读不出：资料找到未知，数据完整也未知 / an unreadable record: source found and data complete are unknown
+    # 记录读不出：资料找到未知，数据完整也未知
     (job.root / materials_record.FILE).write_text("schema: [", encoding="utf-8")
     bk7 = next(r for r in model_report.material_rows(job, d, "zos") if r["name"] == "N-BK7")["levels"]
     assert bk7["found"]["state"] == "unknown" and bk7["found"]["note"]["code"] == "record_unreadable"
     assert bk7["complete"]["state"] == "unknown"
-    # 有记录，色散的有效范围覆盖工作波长 / the record's valid range covers the working wavelengths
+    # 有记录，色散的有效范围覆盖工作波长
     record = {"schema": 1, "sources": {"tds": {"url": "https://example.org/tds.pdf"}},
               "materials": [{"id": "prism", "zemax": {"catalog": "SCHOTT", "name": "N-BK7"}, "source_ids": ["tds"],
                              "dispersion": {"formula": "cauchy_nm", "coefficients": [1.5, 4000, 0], "valid_range_nm": [400, 700]}}]}
@@ -287,16 +287,16 @@ def test_material_levels_say_unknown_when_the_code_cannot_tell(saos_home):
     covered = next(r for r in model_report.material_rows(job, d, "zos") if r["name"] == "N-BK7")["levels"]
     assert covered["found"]["state"] == "yes" and covered["found"]["note"]["source"] == {"kind": "sources", "ids": ["tds"]}
     assert covered["complete"]["state"] == "yes" and covered["backend"]["state"] == "yes"
-    # 工作波长 800 nm 超出有效范围 / a working wavelength of 800 nm is outside the valid range
+    # 工作波长 800 nm 超出有效范围
     wide = copy.deepcopy(d)
     wide["wavelengths"][0]["um"] = 0.8
     gap = next(r for r in model_report.material_rows(job, wide, "zos") if r["name"] == "N-BK7")["levels"]["complete"]
     assert gap["state"] == "no" and gap["note"]["missing"] == [800.0]
-    # OpticStudio 的在用目录里没有这个牌号 / the glass is not in the catalogues OpticStudio uses
+    # OpticStudio 的在用目录里没有这个牌号
     no_cat = copy.deepcopy(d)
     no_cat["surfaces"][0]["material_source"] = {"kind": "catalog", "name": "XYZ", "catalogs": []}
     assert next(r for r in model_report.material_rows(job, no_cat, "zos") if r["name"] == "XYZ")["levels"]["backend"]["state"] == "no"
-    # 没有实测折射率：实际加载未知 / no measured index: actually loaded is unknown
+    # 没有实测折射率：实际加载未知
     no_n = copy.deepcopy(d)
     no_n["surfaces"][0]["n"] = None
     assert next(r for r in model_report.material_rows(job, no_n, "zos") if r["name"] == "N-BK7")["levels"]["loaded"]["state"] == "unknown"
@@ -324,10 +324,10 @@ def test_requirement_status_has_met_unmet_and_unknown():
     assert rows["radius"]["assumed"] is True
     assert rows["lens"]["status"] == "no_bound" and rows["lens"]["reason"] == "no_check" and rows["lens"]["bound"] == {"fixed": "a.zmx"}
     assert rows["cost"]["status"] == "pursuit" and rows["cost"]["bound"] == {"direction": "min", "ideal": 0.0}
-    # 测量没有完成：全部未知 / measurement did not run: every checked item is unknown
+    # 测量没有完成：全部未知
     none = {r["id"]: r for r in model_report.requirement_rows(doc, None)}
     assert none["spot"]["status"] == "unknown" and none["spot"]["reason"] == "not_measured"
-    # 没有有效值：未知 / no valid value: unknown
+    # 没有有效值：未知
     dead = {r["id"]: r for r in model_report.requirement_rows(doc, {**measured, "values": {**measured["values"], "spot": None}, "errors": {}})}
     assert dead["spot"]["status"] == "unknown" and dead["spot"]["reason"] == "no_valid_value"
 
@@ -359,12 +359,12 @@ def test_describe_measures_requirements_and_records_digest_and_unknowns(saos_hom
     assert any("No screening record" in w for w in out["warnings"])
     assert model["shown"]["budget"] == BUDGET and not any("next_budget" in w for w in out["warnings"])
     assert model["shown_sha"] == model_gate.digest(model["shown"]) and out["shown_sha"] == model["shown_sha"]
-    # 需求都测了，未知只来自材料（假后端的后端不明、没有材料记录）/ every requirement was measured; the unknowns come from the materials only (fake backend, no record)
+    # 需求都测了，未知只来自材料（假后端的后端不明、没有材料记录）
     assert not any(u["section"] == "requirements" for u in model["unknowns"])
     assert {u["level"] for u in model["unknowns"] if u["section"] == "materials"} == {"found", "complete", "backend"}
     text = (job.root / out["folder"] / "index.html").read_text(encoding="utf-8")
     assert "需求逐项" in text and "样品单片镜" in text
-    # 摘要与页面语言无关：英文页面的 shown_sha 相同 / the digest does not depend on the page language
+    # 摘要与页面语言无关：英文页面的 shown_sha 相同
     assert _describe(daemon, job, notes, lang="en")["shown_sha"] == out["shown_sha"]
 
 
@@ -378,7 +378,7 @@ def test_approval_records_the_digest_and_the_unknowns_shown(saos_home, fake_lens
     assert record["unknowns_acknowledged"], "no demand: the requirements are unknown and must be recorded"
     saved = json.loads((job.root / out["folder"] / model_gate.APPROVAL_FILE).read_text(encoding="utf-8"))
     assert saved["shown_sha"] == model["shown_sha"]
-    # 旧格式：没有四节的 model.json 照样能确认，确认后的结构照样被接受 / an older model.json without the four sections is approved and accepted
+    # 旧格式：没有四节的 model.json 照样能确认，确认后的结构照样被接受
     old = {k: v for k, v in model.items() if k not in ("shown", "shown_sha", "unknowns", "approval_schema", "evidence_context")}
     (job.root / out["folder"] / "model.json").write_text(json.dumps(old, ensure_ascii=False), encoding="utf-8")
     (job.root / out["folder"] / model_gate.APPROVAL_FILE).unlink()
@@ -390,7 +390,6 @@ def test_approval_records_the_digest_and_the_unknowns_shown(saos_home, fake_lens
 
 def test_a_description_without_a_search_record_is_approved_with_the_warning_on_record(saos_home, fake_lens_file):
     # 10-30 的任务写一句“未进行结构搜索”就过了关：现在不拒绝，页面警告，确认记录标出
-    # on 2026-10-30 one line saying "no structure search" passed: not refused now, but warned on the page and marked in the record
     backend, daemon, job = _started_daemon(fake_lens_file, "search-record")
     base = {"surfaces": {"0": "object"}, "first_order": ["f"], "next_budget": BUDGET}
     text = _describe(daemon, job, {**base, "exploration": "按用户指定结构，未进行结构搜索"})
@@ -400,7 +399,7 @@ def test_a_description_without_a_search_record_is_approved_with_the_warning_on_r
     assert record["exploration_missing"] and any("No starting-form search record" in w for w in record["warnings_acknowledged"])
     assert "旧格式的文字记录" in (job.root / text["folder"] / "index.html").read_text(encoding="utf-8")
 
-    # 零命中也是记录 / a search with no hits is a record too
+    # 零命中也是记录
     searched = {"searches": [{"library": "patents", "query": {"conjugate": "finite", "wavelengths_um": [0.92]}, "hits": 0,
                               "decision": "no finite-conjugate probe forms; synthesised paraxially"}]}
     out = _describe(daemon, job, {**base, "exploration": searched})
@@ -444,7 +443,6 @@ def test_prescribed_structure_shows_the_users_reason_and_needs_no_selection(saos
     model = json.loads((folder / "model.json").read_text(encoding="utf-8"))
     assert model["shown"]["selection"] == {"mode": "prescribed", "reason": "样品孔径固定，用户已定光路"}
     # 结构由用户指定：不要求候选比较，也不出现选型的警告（no_exploration 另有规则，与此无关）
-    # fixed by the user: no candidate comparison is asked for; the selection warnings do not appear (no_exploration is a separate rule)
     assert not any("not fixed by the user" in w or "saos scan select" in w for w in out["warnings"])
     assert "样品孔径固定，用户已定光路" in (folder / "index.html").read_text(encoding="utf-8")
 

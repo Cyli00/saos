@@ -67,7 +67,7 @@ def test_kit_reads_writes_and_restores_by_comment_or_index(fake_lens_file):
     kit.set(ctx, {"1.curvature": 0})
     assert math.isinf(kit.get(ctx, "1.radius")) and kit.get(ctx, "1.curvature") == 0.0
     with pytest.raises(SaosError) as exc:
-        kit.set(ctx, {"2.thickness": 1.0})  # 被求解占着 / held by a solve
+        kit.set(ctx, {"2.thickness": 1.0})  # 被求解占着
     assert exc.value.code == ErrorCode.VALUE_NOT_APPLIED
     for bad in ("nowhere.radius", "1.colour", "radius"):
         with pytest.raises(SaosError):
@@ -82,7 +82,7 @@ def test_kit_reads_writes_and_restores_by_comment_or_index(fake_lens_file):
 def test_root_brackets_skips_invalid_points_and_reports_failure():
     res = search.root(lambda x: x * x, 0.0, 3.0, target=2.0, xtol=1e-10)
     assert res["ok"] and res["x"] == pytest.approx(math.sqrt(2), abs=1e-9) and res["evals"] < 25
-    res = search.root(lambda x: None if x < 1.2 else x - 2.0, 0.0, 3.0)  # 左半段无效 / the left part is invalid
+    res = search.root(lambda x: None if x < 1.2 else x - 2.0, 0.0, 3.0)  # 左半段无效
     assert res["ok"] and res["x"] == pytest.approx(2.0)
     res = search.root(lambda x: x + 5.0, 0.0, 3.0)
     assert not res["ok"] and res["x"] == 0.0 and "no sign change" in res["reason"]
@@ -101,7 +101,7 @@ def test_minimize_with_bounds_budget_and_invalid_points():
     assert search.axis({"from": 0, "to": 1, "step": 0.25}) == [0.0, 0.25, 0.5, 0.75, 1.0]
 
 
-# ---------- PSF 宽度 / PSF widths ----------
+# ---------- PSF 宽度
 
 def _gaussian_psf(sigma_um: float, dx: float, dy: float, n: int = 129) -> kit.Psf:
     c = (n - 1) // 2
@@ -109,7 +109,7 @@ def _gaussian_psf(sigma_um: float, dx: float, dy: float, n: int = 129) -> kit.Ps
 
 
 def test_psf_widths_of_a_sampled_gaussian_and_its_two_photon_narrowing():
-    # 高斯：FWHM = 2√(2ln2)σ，80% 包围能量直径 = 2σ√(2ln5)；双光子 I² 的 σ 缩小 √2 / Gaussian widths, I² narrows σ by √2
+    # 高斯：FWHM = 2√(2ln2)σ，80% 包围能量直径 = 2σ√(2ln5)；双光子 I² 的 σ 缩小 √2
     sigma = 0.5
     p = _gaussian_psf(sigma, 0.05, 0.1)
     one, two = kit.psf_widths(p), kit.psf_widths(p, n_photon=2)
@@ -118,7 +118,7 @@ def test_psf_widths_of_a_sampled_gaussian_and_its_two_photon_narrowing():
     assert one["ee_diameter"] == pytest.approx(2 * sigma * math.sqrt(2 * math.log(5)), rel=3e-2)
     assert two["fwhm_x"] == pytest.approx(fwhm / math.sqrt(2), rel=1e-2) and two["fwhm_y"] == pytest.approx(fwhm / math.sqrt(2), rel=1e-2)
     assert p.peak(2) == pytest.approx(1.0)
-    # 半高落在窗口外、没有正峰值：没有宽度 / no width when the half maximum is outside the window or there is no positive peak
+    # 半高落在窗口外、没有正峰值：没有宽度
     assert kit.psf_widths(_gaussian_psf(5.0, 0.05, 0.05, n=33))["fwhm_x"] is None
     assert kit.fwhm([0.0, 0.0, 0.0], 1.0) is None and kit.fwhm([], 1.0) is None
     with pytest.raises(SaosError):
@@ -135,11 +135,11 @@ def test_psf_axial_widens_once_reusing_planes_and_reports_the_peak_offset():
             return math.exp(-((k - 3) ** 2) / (2 * sigma_steps ** 2))
         return f
 
-    # σ = 12 步：右侧半高在 +17.1 步，±15 步窗口不够，扩到 ±30 步 / the right half maximum is at +17.1 steps: widen to ±30
+    # σ = 12 步：右侧半高在 +17.1 步，±15 步窗口不够，扩到 ±30 步
     got = kit.psf_axial(peak_at(12), step, (15, 30))
     assert got["reach"] == 30 and got["peak_offset_um"] == 3 * step
     assert got["fwhm_um"] == pytest.approx(2 * math.sqrt(2 * math.log(2)) * 12 * step, rel=1e-2)
-    assert sorted(calls) == list(range(-30, 31))   # 每个离焦面只算一次 / every plane once
+    assert sorted(calls) == list(range(-30, 31))   # 每个离焦面只算一次
     calls.clear()
     two = kit.psf_axial(peak_at(12), step, (15, 30), n_photon=2)
     assert two["reach"] == 15 and two["fwhm_um"] == pytest.approx(got["fwhm_um"] / math.sqrt(2), rel=1e-2) and len(calls) == 31
@@ -151,7 +151,7 @@ def test_the_outward_axial_scan_matches_a_single_peak_with_far_fewer_planes_but_
     window, outward = kit.psf_axial(single, 4.0, (15, 30)), kit.psf_axial(single, 4.0, (15, 30), scan="outward")
     assert outward["fwhm_um"] == pytest.approx(window["fwhm_um"], rel=1e-12) and outward["peak_offset_um"] == window["peak_offset_um"]
     assert window["planes"] == 31 and outward["planes"] < 12
-    # 窗口里远处还有更高的峰：整窗看得到，外扩在主峰两侧降到半高就停了——这是两种定义 / two definitions
+    # 窗口里远处还有更高的峰：整窗看得到，外扩在主峰两侧降到半高就停了——这是两种定义
     twin = lambda k: single(k) + 1.5 * math.exp(-(k - 12) ** 2 / 2)
     assert kit.psf_axial(twin, 4.0, (15, 30))["peak_offset_um"] == 48.0
     assert kit.psf_axial(twin, 4.0, (15, 30), scan="outward")["peak_offset_um"] == 8.0
@@ -159,7 +159,7 @@ def test_the_outward_axial_scan_matches_a_single_peak_with_far_fewer_planes_but_
         kit.psf_axial(single, 4.0, (15, 30), scan="fast")
 
 
-# ---------- ctx.measure 与判定共享 cache / ctx.measure and the shared check cache ----------
+# ---------- ctx.measure 与判定共享 cache
 
 def test_checks_share_one_cache_and_measure_matches_check(setup):
     daemon, job = setup
@@ -179,7 +179,7 @@ def test_checks_share_one_cache_and_measure_matches_check(setup):
     write_demand(job, {**DEMAND, "objectives": [LENGTH, *items]})
     check = call(daemon, "demand.check", job=job.id)["result"]
     assert [i["value"] for i in check["items"]] == [100.0, 100.0, 100.0]
-    assert (job.root / "explore" / "calls.txt").read_text() == "x"  # 两个判定只算一次 / two checks, one computation
+    assert (job.root / "explore" / "calls.txt").read_text() == "x"  # 两个判定只算一次
     out = exec_script(daemon, job, "def run(ctx):\n    return ctx.measure()\n")["result"]["result"]
     assert out["values"] == {"length": 100.0, "len_a": 100.0, "len_b": 100.0}, (out["errors"], out["invalid"])
     assert out["shortfall"] == pytest.approx(3.0) and out["invalid"] == [] and out["hard_failing"] == []
@@ -187,7 +187,7 @@ def test_checks_share_one_cache_and_measure_matches_check(setup):
     assert bad["error"]["code"] == ErrorCode.BAD_ARGS
 
 
-# ---------- worker 池 / the worker pool ----------
+# ---------- worker 池
 
 MAP_SCRIPT = '''
 def run(ctx):
@@ -211,11 +211,11 @@ def test_map_runs_script_functions_on_a_reused_pool(setup):
     res = out["result"]["result"]
     assert res["errors"] == {} and [r["len"] for r in res["a"]] == [96.0, 97.0, 98.0] and res["a"][0]["k"] == 7
     assert res["b"][0] == {"t": 4.0, "len": 99.0, "k": None}
-    assert res["a_started"] == 2 and res["b_started"] == 0  # 第二次调用复用池 / the second call reuses the pool
+    assert res["a_started"] == 2 and res["b_started"] == 0  # 第二次调用复用池
     assert daemon.pool.status()["workers"] == 2
     folder = job.root / res["folder"]
     assert (folder / "work.py").is_file() and json.loads((folder / "plan.json").read_text(encoding="utf-8"))["fn"] == "point"
-    # 当前镜头不受 worker 影响 / workers do not touch the current lens
+    # 当前镜头不受 worker 影响
     assert daemon.backend.surfaces()[1]["thickness"] == 5.0
     closed = exec_script(daemon, job, "def run(ctx):\n    return ctx.pool_close()\n")["result"]["result"]
     assert closed["workers"] == 2 and daemon.pool.status()["workers"] == 0
@@ -285,14 +285,14 @@ def test_scan_solves_one_variable_per_point(setup):
     res = call(daemon, "scan.run", job=job.id, plan=plan)["result"]
     assert all(r["solve"]["ok"] and r["solve"]["x"] == pytest.approx(8.0) for r in res["top"])
     assert all(r["values"]["length"] == pytest.approx(103.0) for r in res["top"]) and res["kept_lenses"] == []
-    plan["solve"]["value"] = 500.0  # 区间内够不着 / out of reach in the bracket
+    plan["solve"]["value"] = 500.0  # 区间内够不着
     res = call(daemon, "scan.run", job=job.id, plan=plan)["result"]
     assert res["valid"] == 0 and all("no sign change" in r["invalid"] for r in res["top"])
 
 
 def test_scan_minimize_needs_a_confirmed_demand_and_descends(setup):
     daemon, job = setup
-    # 与 opt local 同一判定：需求确认；确认过模型后，当前结构要与之一致 / the same rule as opt local
+    # 与 opt local 同一判定：需求确认；确认过模型后，当前结构要与之一致
     write_demand(job, {**DEMAND, "structure": {"mode": "prescribed", "reason": "测试样品的结构由用户指定"}})
     plan = {"minimize": {"vars": {"1.thickness": {"step": 1.0, "min": -3.0, "max": 10.0}}, "max_evals": 40}, "measure": ["length"]}
     assert call(daemon, "scan.run", job=job.id, plan=plan)["error"]["code"] == ErrorCode.DEMAND_NOT_CONFIRMED
@@ -330,7 +330,7 @@ R1 = {"id": "r1", "key": "1.radius", "delta": 1.0, "control": True, "prediction"
 
 def test_probes_rank_variables_compare_predictions_and_leave_the_lens(setup):
     daemon, job = setup
-    write_demand(job)  # 诊断不需要确认 / diagnosis needs no confirmation
+    write_demand(job)  # 诊断不需要确认
     before = json.dumps(daemon.backend.surfaces(), sort_keys=True)
     wrong = {**T1, "id": "wrong", "delta": 1.0, "expect": {"length": "down"}}
     out = call(daemon, "scan.run", job=job.id, plan=probe_plan(T1, R1, wrong))
@@ -343,7 +343,7 @@ def test_probes_rank_variables_compare_predictions_and_leave_the_lens(setup):
     assert rows["r1"]["observed"]["length"] == "none"
     assert rows["wrong"]["mismatch"] == {"length": {"expected": "down", "observed": "up"}}
     assert rows["t1"]["plus"]["values"]["length"] == pytest.approx(102.0) and rows["t1"]["plus"]["compensation"]["surface"] == 2
-    # 假后端的 quick_focus 不动，提醒补偿没起作用 / the fake quick_focus never moves, so the review says nothing was compensated
+    # 假后端的 quick_focus 不动，提醒补偿没起作用
     assert len(result["review"]) == 2 and "wrong" in result["review"][0] and "nothing was compensated" in result["review"][1]
     assert json.dumps(daemon.backend.surfaces(), sort_keys=True) == before
     folder = job.root / result["folder"]
@@ -383,16 +383,16 @@ def test_probes_stop_at_a_target_without_a_valid_base_value(setup):
 
 
 @pytest.mark.parametrize("plan", [
-    probe_plan({**T1, "prediction": ""}, R1),                        # 没有预测 / no prediction
+    probe_plan({**T1, "prediction": ""}, R1),                        # 没有预测
     probe_plan(T1, R1, target="nothing"),
     probe_plan(T1, R1, mechanism=" "),
     probe_plan({**T1, "key": "1.material"}, R1),
     probe_plan({**T1, "key": "1.colour"}, R1),
-    probe_plan({**T1, "key": "1.par4"}, R1),                         # 这一面没有这一列 / no such column on this surface
+    probe_plan({**T1, "key": "1.par4"}, R1),                         # 这一面没有这一列
     probe_plan({**T1, "delta": 0}, R1),
-    probe_plan({**T1, "script": "explore/x.py"}, R1),                # key 和 script 只能给一个 / key or script
+    probe_plan({**T1, "script": "explore/x.py"}, R1),                # key 和 script 只能给一个
     probe_plan(T1, R1, compensate="refocus"),
-    probe_plan(*({**T1, "id": f"p{k}"} for k in range(6)), R1),      # 最多 6 个 / at most 6
+    probe_plan(*({**T1, "id": f"p{k}"} for k in range(6)), R1),      # 最多 6 个
 ])
 def test_probe_plan_is_checked(setup, plan):
     daemon, job = setup
@@ -415,7 +415,7 @@ def test_detached_scan_runs_while_the_daemon_serves_other_commands(setup):
     plan = {"vars": {"1.thickness": [0.0, 1.0, 2.0, 3.0, 4.0]}, "compensate": {"script": "explore/slow.py"}, "measure": ["length"], "workers": 1}
     started = call(daemon, "scan.run", job=job.id, plan=plan, detach=True)["result"]
     assert started["detached"] and started["folder"] == "scans/001"
-    # 扫描在后台跑，后台进程照常处理其他命令 / the daemon keeps serving while the scan runs
+    # 扫描在后台跑，后台进程照常处理其他命令
     assert call(daemon, "lens.info", job=job.id)["ok"]
     assert call(daemon, "scan.run", job=job.id, plan=plan)["error"]["code"] == ErrorCode.POOL_BUSY
     assert call(daemon, "shutdown")["error"]["code"] == ErrorCode.BUSY

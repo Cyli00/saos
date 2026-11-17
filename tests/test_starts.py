@@ -177,7 +177,7 @@ def test_generate_passes_normalized_prescriptions_without_a_shim(saos_home, tmp_
     assert out["count"] == 1 and out["not_evaluated"] == [] and len(built) == 2
     saved = json.loads((job.root / out["folder"] / "cooke.json").read_text(encoding="utf-8"))
     assert saved["fields"]["x"] == [0,0,0] and saved["wavelengths"]["weights"] == [1,1,1]
-    # 物在无穷远：缩放后入瞳 = EFL/F#，与 image_f_number 同义 / at infinity the scaled EPD is EFL/F#
+    # 物在无穷远：缩放后入瞳 = EFL/F#，与 image_f_number 同义
     assert built[0]["aperture"]["type"] == "entrance_pupil_diameter"
     assert saved["aperture"] == {"type": "entrance_pupil_diameter", "value": 50 / 8}
 
@@ -221,7 +221,7 @@ def test_generate_builds_on_rtc_and_sends_only_what_rtc_refuses_to_opticstudio(s
     by_id = {c["id"]: c for c in plan["candidates"]}
     assert by_id["cooke"]["provenance"]["computed_by"] == by_id["cooke"]["prediction"]["on"] == "rtc"
     assert by_id["petzval"]["provenance"]["computed_by"] == by_id["petzval"]["prediction"]["on"] == "zos"
-    # OpticStudio 只在有条目需要时启动一次，结束时关闭 / OpticStudio starts once, only when an entry needs it, and closes
+    # OpticStudio 只在有条目需要时启动一次，结束时关闭
     assert events.count(("start", "zos")) == events.count(("close", "zos")) == 1
 
 

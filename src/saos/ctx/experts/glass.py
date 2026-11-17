@@ -169,7 +169,6 @@ class GlassExpert:
                 raise Rejected("coordinates(ctx, surface) must return finite n, V, partial dispersion")
             return values
         # rtc 实例没有 OpticStudio 的波长编辑器（_band 要 ctx.system）：在材料层直接算，和候选库同一条路径
-        # the rtc instance has no OpticStudio wavelength editor: compute in the material layer, as the database does
         if getattr(self.ctx.backend, "standalone", False):
             return self._from_indices(self.ctx.backend.medium_indices(surface, self._band_waves()))
         with self._band() as count:
@@ -199,7 +198,7 @@ class GlassExpert:
             catalogs = [preferred] if preferred else self.ctx.backend.system_info()["material_catalogs"]
         folder = Path(self.directory) if self.directory else (
             self.ctx.backend._glass_dir() if hasattr(self.ctx.backend, "_glass_dir") else glasscat.DEFAULT_GLASSCAT_DIR)
-        # rtc 实例：目录加进 GCAT，全部牌号在 rtc 材料层算 / the rtc instance adds catalogs to GCAT and computes every glass on rtc
+        # rtc 实例：目录加进 GCAT，全部牌号在 rtc 材料层算
         rtc_instance = getattr(self.ctx.backend, "standalone", False)
         # 目录设置随镜头事务保存；不永久安装或改写厂家目录。
         if rtc_instance:
@@ -238,7 +237,7 @@ class GlassExpert:
         for g in source:
             if g.name not in computed:
                 if rtc_instance:
-                    # rtc 实例上没有 OpticStudio 可以补测 / no OpticStudio to measure the rest on the rtc instance
+                    # rtc 实例上没有 OpticStudio 可以补测
                     rejected.append({"glass": g.name, "reason": left.get(g.name, "rtc cannot compute this glass")})
                 else:
                     rest.append(g)

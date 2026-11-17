@@ -317,7 +317,7 @@ HEADER_KEYS = {
 #   OBDC dx dy 是孔径偏心行
 # 读入不等于放行：saos 的准入检查按类型码拒绝未对账的类型。
 APERTURE_LINES = {"OBSC": 2, "SPID": 3, "SQAP": 4, "SQOB": 5, "ELAP": 6, "ELOB": 7}
-# 渐晕因子在文件头按视场逐列排开 / vignetting factors, one column per field
+# 渐晕因子在文件头按视场逐列排开
 VIGNETTING_KEYS = ("VDXN", "VDYN", "VCXN", "VCYN", "VANN")
 
 
@@ -508,7 +508,6 @@ def parse_text(text: str, path: str = "") -> Lens:
                 cur.is_stop = True
         elif key == "BLNK" and seen_surface and not in_mce:
             # 面之后的 BLNK 是评价函数的空行或注释行：要占一个行号，OPGT、DIFF 等按行号引用
-            # a BLNK after the surfaces is a merit row (blank or comment); it holds a row number that OPGT, DIFF, … refer to
             lens.mfe.append(MFERow(op=key, numbers=[], raw=raw_line.strip()))
         elif key in HEADER_KEYS:
             lens.raw[key] = raw_line.strip()

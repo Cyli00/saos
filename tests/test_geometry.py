@@ -33,20 +33,20 @@ def test_separate_lenses_and_a_cemented_doublet_are_clean():
 
 
 def test_a_biconvex_lens_with_negative_edge_thickness_crosses_itself():
-    # 两面矢高各约 0.64 mm（R 20、半口径 5），中心厚 1 mm 时边缘厚约 −0.28 mm / sag ≈ 0.64 mm each: edge ≈ −0.28 mm at 1 mm centre
+    # 两面矢高各约 0.64 mm（R 20、半口径 5），中心厚 1 mm 时边缘厚约 −0.28 mm
     out = geometry.interference(lens(1, 0.0, 1.0))
     assert [c["surfaces"] for c in out["crossings"]] == [[1, 2]] and out["crossings"][0]["depth"] > 0.1
 
 
 def test_a_negative_air_gap_that_buries_a_lens_inside_another_is_an_overlap():
-    thin = [surface(3, 1.5, 200.0, 2.0, "N-BK7"), surface(4, 2.0, -200.0, 2.0)]  # 整片在第一片玻璃里 / wholly inside the first lens
+    thin = [surface(3, 1.5, 200.0, 2.0, "N-BK7"), surface(4, 2.0, -200.0, 2.0)]  # 整片在第一片玻璃里
     out = geometry.interference([*lens(1, 0.0, 4.0), *thin])
     assert out["crossings"] == [] and [o["lenses"] for o in out["overlaps"]] == [[[1, 2], [3, 4]]]
 
 
 def test_a_tilted_wall_through_a_lens_is_a_crossing_and_coordinate_breaks_keep_the_medium():
     c, s = math.cos(math.radians(30)), math.sin(math.radians(30))
-    tilted = [1.0, 0.0, 0.0, 0.0, c, -s, 0.0, s, c]  # 绕 x 轴转 30° / 30° about x
+    tilted = [1.0, 0.0, 0.0, 0.0, c, -s, 0.0, s, c]  # 绕 x 轴转 30°
     wall = [surface(3, 2.0, sd=8.0, material="SILICA", rot=tilted, comment="tube inner wall"),
             {"index": 4, "type": "Coordinate Break", "material": "", "sd": 0.0},
             surface(5, 3.0, sd=8.0, rot=tilted, comment="tube outer wall")]
@@ -54,7 +54,7 @@ def test_a_tilted_wall_through_a_lens_is_a_crossing_and_coordinate_breaks_keep_t
     pairs = [c["surfaces"] for c in out["crossings"]]
     assert [1, 3] in pairs or [2, 3] in pairs
     assert all(4 not in p for p in pairs) and out["crossings"][0]["comments"][1] in ("tube inner wall", "tube outer wall")
-    # 坐标断点之后仍在 SILICA 里，外壁是分界面 / still in SILICA after the break, so the outer wall is a boundary
+    # 坐标断点之后仍在 SILICA 里，外壁是分界面
     assert wall[2]["boundary"] and not wall[1]["boundary"]
 
 
@@ -68,7 +68,7 @@ def test_prism_faces_and_dummy_surfaces_do_not_raise_false_alarms():
     out = geometry.interference(prism)
     assert out["crossings"] == [] and out["overlaps"] == [] and out["tolerance"] == geometry.TOL
     assert prism[1]["in_glass_mirror"] and not prism[2]["boundary"]
-    # 空气里的反射镜照常检查 / a mirror in air is still checked
+    # 空气里的反射镜照常检查
     fold = surface(3, 2.0, sd=8.0, material="MIRROR", rot=hyp)
     assert [c["surfaces"] for c in geometry.interference([*lens(1, 0.0, 4.0), fold])["crossings"]]
 
@@ -76,7 +76,7 @@ def test_prism_faces_and_dummy_surfaces_do_not_raise_false_alarms():
 def with_aperture(s, spec):
     """按面孔径重取网格（与 ZosBackend._geometry_items 相同的做法）。/ Re-sample on the aperture grid as the backend does."""
     ap = geometry.aperture(spec, s["sd"])
-    s = {k: v for k, v in s.items() if k != "global"}  # 上一次检查缓存的采样点 / sample points cached by an earlier check
+    s = {k: v for k, v in s.items() if k != "global"}  # 上一次检查缓存的采样点
     return {**s, "ap": ap, "sd": geometry.extent(ap), "sags": [0.0] * len(geometry.polar_points(geometry.extent(ap)))}
 
 
@@ -88,7 +88,7 @@ def test_square_prism_faces_are_checked_by_their_rectangular_apertures():
     is checked."""
     c = math.cos(math.radians(45))
     hyp = [1.0, 0.0, 0.0, 0.0, c, -c, 0.0, c, c]
-    down = [1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0]  # 出射面法线沿 -y / exit face normal along -y
+    down = [1.0, 0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0]  # 出射面法线沿 -y
     square = {"type": "SurfaceApertureTypes.RectangularAperture", "XHalfWidth": 0.2, "YHalfWidth": 0.2}
     entrance = surface(1, 0.0, sd=0.26, material="N-BK7", comment="prism entrance")
     mirror = surface(2, 0.2, sd=0.85, material="MIRROR", rot=hyp, comment="hypotenuse")
@@ -98,7 +98,7 @@ def test_square_prism_faces_are_checked_by_their_rectangular_apertures():
     squared = [with_aperture(entrance, square), with_aperture(mirror, {**square, "XHalfWidth": 0.2, "YHalfWidth": 0.2 * math.sqrt(2)}),
                with_aperture(exit_, square)]
     assert geometry.interference(squared)["crossings"] == []
-    # 斜面沿光轴错开 0.1 mm 就穿过入射面 / a hypotenuse shifted 0.1 mm along the axis passes through the entrance face
+    # 斜面沿光轴错开 0.1 mm 就穿过入射面
     shifted = with_aperture(surface(2, 0.1, sd=0.85, material="MIRROR", rot=hyp), {**square, "YHalfWidth": 0.2 * math.sqrt(2)})
     assert [c["surfaces"] for c in geometry.interference([squared[0], shifted, squared[2]])["crossings"]] == [[1, 2]]
 

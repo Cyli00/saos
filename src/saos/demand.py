@@ -48,13 +48,13 @@ DEMAND_FILE = "sources/demand.yaml"
 LEGACY_FILE = "sources/harness.yaml"
 CONFIRMATIONS_FILE = "confirmations.jsonl"
 SECTIONS = ("constants", "variables", "objectives")
-# 每类条目在判定结果里的 kind / the kind of each section's items in a judgement
+# 每类条目在判定结果里的 kind
 KIND = {"constants": "constant", "variables": "variable", "objectives": "objective"}
 HARD_KINDS = ("constant", "variable")
-# 总结的最后一句（用户指定原文）/ the summary's last sentence (wording fixed by the user)
+# 总结的最后一句（用户指定原文）
 QUESTION_LINE = {"zh": "发现任何这个demand可能存在的问题，要大胆质疑和询问。",
                  "en": "If you find any possible problem with this demand, question it boldly and ask."}
-# notes：不影响设计和判定的背景（来源文件的位置、做过的决定），不进版本 / notes: context that changes neither design nor judgement, not versioned
+# notes：不影响设计和判定的背景（来源文件的位置、做过的决定），不进版本
 TOP_KEYS = {"schema", *SECTIONS, "open_questions", "summary", "notes", "lang", "stop", "structure"}
 # structure: {mode: free|prescribed, reason}；prescribed 时 reason 必须写明用户为什么指定这个结构
 STRUCTURE_MODES = ("free", "prescribed")
@@ -64,30 +64,24 @@ ITEM_KEYS = {
     "objectives": {"id", "description", "unit", "check", "origin", "must", "minimize", "maximize", "ideal", "wish", "weight", "scale", "source", "class"},
 }
 # 目标的来源和默认权重：user = 用户给出或明确认可的，agent = agent 补充、用户没有表态的
-# origin of an objective and its default weight: user = stated or explicitly accepted by the user, agent = filled in by the agent
 DEFAULT_WEIGHT = {"user": 1.0, "agent": 0.3}
 # must 的类别：first_order 由结构的光焦度、间隔和守恒量决定，不达标就是模型没搭对；quality 是优化要压低的残差（像差、波前、
 # 耦合效率等，不限成像）（2026-11-06 用户决定，2026-11-13 改为与系统类别无关的定义）
-# the class of a must: first_order is fixed by the structure's powers, spacings and conserved quantities, so a miss means a
-# wrong model; quality is a residual optimisation brings down (aberrations, wavefront, coupling efficiency; not imaging only)
 CHECK_CLASSES = ("first_order", "quality")
 # quality 类差到这个倍数就不进入设计轮次：公开资料没有现成数字，历史账本里首轮差 10 倍以上的 6 个样本都没达标（2026-11-06 用户决定）
-# a quality must this many times off does not enter the rounds: no published number exists; 6 of 6 samples over 10x in the ledgers never passed
 REACH_MULTIPLE = 5.0
 # 差到这个倍数自主任务一律不能批准；REACH_MULTIPLE 到这里之间凭证据放行：账本里 5–10 倍的 5 个样本有 2 个后来达标（2026-11-10 用户决定）
-# at this multiple an autonomous job can never approve; between REACH_MULTIPLE and here it may with evidence: 2 of 5 ledger samples in that band later passed
 REACH_HARD_MULTIPLE = 10.0
-# 手段层级，从低到高；含义见 ledger.py / strategy tiers, low to high; see ledger.py
+# 手段层级，从低到高；含义见 ledger.py
 TIERS = ("local", "variables", "materials", "global", "structure")
 DEFAULT_STOP = {"rel": 0.01, "max_rounds": 30, "tiers": list(TIERS)}
 ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,47}$")
 PATH_RE = re.compile(r"\['[^']*'\]|\[\d+\]|[A-Za-z_][A-Za-z0-9_ ]*")
 # 比较界限时的相对容差：超出量不到尺度的这个比例就算达标，避免 9.999999999999954 µm 被判为没达到 10 µm
-# relative tolerance at a bound: an excess below this fraction of the scale counts as met (9.999999999999954 µm meets ≥ 10 µm)
 BOUND_TOLERANCE = 1e-9
 CHECKS_DIR = "checks"
 SUPPORT_KEY = "_checks_tree"
-# 判定用到的 saos 代码（kit、指标目录）：改了它，数值可能变，判定版本也要变 / saos code the checks use (kit, metrics)
+# 判定用到的 saos 代码（kit、指标目录）：改了它，数值可能变，判定版本也要变
 CODE_KEY = "_saos_code"
 _KIT_RE = re.compile(r"saos\.kit|from\s+saos\s+import\s+[^\n]*\bkit\b|\bctx\.(spot|trace|op|get|values|memo|lib|analysis|kept|restored|quick_focus|surface)\(")
 
@@ -129,15 +123,13 @@ def _body(demand: dict[str, Any], drop: frozenset[str]) -> dict[str, Any]:
     body: dict[str, Any] = {"schema": demand.get("schema"), "stop": demand.get("stop")}
     for section in SECTIONS:
         body[section] = [{k: v for k, v in e.items() if k not in drop} for e in demand.get(section) or []]
-    # 结构要求只在声明时参与哈希 / the structure rule is hashed only when declared
+    # 结构要求只在声明时参与哈希
     if "structure" in demand:
         body["structure"] = demand["structure"]
     return body
 
 
 # 两层哈希：确认层决定要不要用户重新确认，计算层决定数值证据（G 的可比性、结构比较、轮次版本、stop、rule-out）是否仍有效。
-# Two layers: the confirmation layer decides whether the user must confirm again; the compute layer decides whether the
-# numerical evidence (comparability of G, structure comparisons, round versions, stops, rule-outs) still holds.
 LAYERS = ("confirm", "compute")
 
 
@@ -152,7 +144,7 @@ def digest(demand: dict[str, Any]) -> str:
 def compute_digest(demand: dict[str, Any]) -> str:
     """计算层：确认层去掉 source。只改依据不改计算时，数值证据仍有效。
     Compute layer: the confirmation layer without source. Changing only the basis leaves the numbers' evidence valid."""
-    # class 只决定门禁，不改任何数值 / class only decides the gate, it changes no number
+    # class 只决定门禁，不改任何数值
     body = _body(demand, frozenset({"description", "source", "class"}))
     if "structure" in body:
         body["structure"] = {k: v for k, v in body["structure"].items() if k != "reason"}
@@ -237,7 +229,7 @@ def checked(demand: dict[str, Any]) -> list[dict[str, Any]]:
     return items
 
 
-# 来源写成 "agent assumption: …" 表示没有外部依据 / a source starting with "agent assumption" has no outside basis
+# 来源写成 "agent assumption: …" 表示没有外部依据
 ASSUMPTION_RE = re.compile(r"^\s*agent\s+assumption", re.I)
 
 
@@ -296,7 +288,7 @@ def prepare_scripts(root: Path, demand: dict[str, Any]) -> dict[str, dict[str, A
         if root.resolve() not in path.parents:
             raise SaosError(ErrorCode.PATH_OUTSIDE_JOB, f"path escapes the job directory: {rel}")
         if (root / CHECKS_DIR).resolve() not in path.parents:
-            # 判定脚本及其依赖都放在 checks/ 下，才能整体留档和复现 / scripts and what they use live in checks/, archived as a whole
+            # 判定脚本及其依赖都放在 checks/ 下，才能整体留档和复现
             raise SaosError(ErrorCode.BAD_ARGS, f"{item['id']}: check scripts live under {CHECKS_DIR}/ (got {rel})")
         try:
             source = path.read_text(encoding="utf-8")
@@ -304,7 +296,6 @@ def prepare_scripts(root: Path, demand: dict[str, Any]) -> dict[str, dict[str, A
         except (OSError, UnicodeError) as exc:
             scripts[item["id"]] = {"source": None, "sha256": None, "error": f"{type(exc).__name__}: {exc}"}
     # 辅助文件整体算进判定方法的版本：改了辅助模块或数据，比较窗口也重新开始
-    # supporting files count towards the method version: editing a helper or a data file starts a new window
     files = support_files(root)
     scripts[SUPPORT_KEY] = {"source": None, "sha256": hashlib.sha256(json.dumps(files, sort_keys=True).encode()).hexdigest(), "files": files}
     code = code_files(root)
@@ -314,7 +305,7 @@ def prepare_scripts(root: Path, demand: dict[str, Any]) -> dict[str, dict[str, A
         for name in ("metrics.py", "kit.py", "micro.py"):
             code[f"src/saos/{name}"] = jobs.sha256_file(config.code_path(f"src/saos/{name}"))
     if code:
-        # 只在判定确实用到 saos 代码时才加这一项，旧任务的判定版本不变 / added only when used, so older jobs keep their version
+        # 只在判定确实用到 saos 代码时才加这一项，旧任务的判定版本不变
         scripts[CODE_KEY] = {"source": None, "sha256": hashlib.sha256(json.dumps(code, sort_keys=True).encode()).hexdigest(), "files": code}
     return scripts
 
@@ -333,7 +324,6 @@ def code_files(root: Path) -> dict[str, str]:
     if names or _KIT_RE.search(text):
         names.append("kit.py")
     # 标签仍写 src/saos/<文件>，旧任务的判定版本不变；装成包时文件在包目录里
-    # labels stay src/saos/<file> so older check versions keep their hash; the files are read from the package
     return {f"src/saos/{name}": jobs.sha256_file(config.code_path(f"src/saos/{name}")) for name in names}
 
 
@@ -370,7 +360,7 @@ def validate(data: Any) -> dict[str, Any]:
         raise _bad("must be a mapping with schema: 2")
     unknown = set(data) - TOP_KEYS
     if unknown:
-        # 只收需求本身；文献细节、过程指令放在 sources/ 的其他文件里引用 / the demand only; literature and process notes live elsewhere in sources/
+        # 只收需求本身；文献细节、过程指令放在 sources/ 的其他文件里引用
         raise _bad(f"unknown fields {sorted(unknown)}; allowed: {sorted(TOP_KEYS)}")
     if "structure" in data:
         rule = data["structure"]
@@ -426,7 +416,7 @@ def validate(data: Any) -> dict[str, Any]:
                     raise _bad(f"{where}: class goes with must and is one of {CHECK_CLASSES}: first_order when powers, spacings and "
                                "conserved quantities fix the value, quality when optimisation brings it down")
                 if must is not None and set(must) == {"max"} and float(must["max"]) == 0.0:
-                    # “越小越好”写成 must ≤ 0 永远达不到，需求永远判不了达成 / "as small as possible" as must ≤ 0 can never pass
+                    # “越小越好”写成 must ≤ 0 永远达不到，需求永远判不了达成
                     raise _bad(f"{where}: must {{max: 0}} is a pass line no design can meet, so the demand could never be achieved. "
                                "For 'as small as possible' write minimize: true with a scale, and keep must for the pass line the user "
                                "actually gave (ask for one if there is none)")
@@ -447,7 +437,7 @@ def validate(data: Any) -> dict[str, Any]:
     user = [weight(o) for o in counted if o["origin"] == "user"]
     over = [o["id"] for o in counted if o["origin"] == "agent" and user and weight(o) > min(user)]
     if over:
-        # agent 补充的目标不能比用户的目标更重 / an objective you added never outweighs one the user gave
+        # agent 补充的目标不能比用户的目标更重
         raise _bad(f"agent objectives {over} weigh more than the lightest user objective ({min(user)})")
     questions = data.get("open_questions") or []
     if not isinstance(questions, list) or any(not isinstance(q, dict) or not str(q.get("question", "")).strip()
@@ -522,7 +512,7 @@ def reach(demand: dict[str, Any], values: dict[str, Any] | None) -> dict[str, An
         if check_class is None:
             unclassified.append(entry["id"])
         value = (values or {}).get(entry["id"])
-        # 判定失败写成 "inf"（jsonable）/ an invalid value arrives as "inf"
+        # 判定失败写成 "inf"（jsonable）
         if value in ("inf", "-inf"):
             value = math.inf
         if not isinstance(value, (int, float)) or isinstance(value, bool):
@@ -563,7 +553,7 @@ def shortfall(item: dict[str, Any], value: float | None) -> float:
     return 0.0 if over <= BOUND_TOLERANCE * scale else over / scale
 
 
-# ---------- 确认记录 / confirmations ----------
+# ---------- 确认记录
 
 def confirmations(root: Path) -> list[dict[str, Any]]:
     return read_jsonl(root / CONFIRMATIONS_FILE)
@@ -580,8 +570,6 @@ def confirmation_for(root: Path, sha: str, demand: dict[str, Any] | None = None)
 
 # window：用户在窗口里点；cli：用户在对话里的原话；ask：用户在 agent 的询问工具里的回答（问题、选项与所选）；auto：自主任务里
 # agent 带理由自行通过。前三种地位相同，记录只写明渠道（2026-11-13 用户决定）
-# window: the button; cli: the user's words in the conversation; ask: their answer in the agent's ask-user tool; auto: an
-# autonomous job's agent. The first three count the same; records only name the channel
 CONFIRM_VIA = ("window", "cli", "ask", "auto")
 
 
@@ -644,10 +632,8 @@ def confirm(root: Path, quote: str, *, via: str = "cli", shown_sha: str | None =
         raise SaosError(ErrorCode.BAD_ARGS, f"every limit needs a source (the user, a datasheet, a paper, a textbook table, or 'agent assumption: <why>'); missing for {missing}",
                         {"missing_source": missing})
     # 存下用户确认时看到的全文（含总结和待确认问题），之后改写总结也能追溯
-    # keep the full text the user saw (summary and open questions included), so later rewording stays traceable
-    # weak_basis：确认时依据只是 agent 假设的界限，应当已经逐条摆给用户 / limits resting on an agent assumption, which the user should have seen one by one
+    # weak_basis：确认时依据只是 agent 假设的界限，应当已经逐条摆给用户
     # 确认时各判定脚本的哈希：脚本之后改了，demand show 会列出来（不拒绝，改了覆盖范围算需求变更由 agent 判断）
-    # each check script's hash at confirmation: demand show lists the scripts changed since (no refusal)
     scripts = {s["id"]: s["sha256"] for s in check_scripts(root, d)}
     record = {"demand_sha": sha, "via": via, "quote": quote, "time": jobs.now_iso(), "weak_basis": weak, "check_scripts": scripts,
               "content": path.read_text(encoding="utf-8")}
@@ -688,18 +674,18 @@ def show(root: Path) -> dict[str, Any]:
     scripts = check_scripts(root, d)
     changed = _changed_since(confirmed, scripts)
     return {"demand_sha": sha, "confirmed": confirmed, "blocking_questions": blocking_questions(d),
-            # 脚本判定的说明（docstring 第一段）与没写说明的脚本 / what each script check measures, and the scripts without a docstring
+            # 脚本判定的说明（docstring 第一段）与没写说明的脚本
             "check_scripts": [{k: s[k] for k in ("id", "script", "doc")} for s in scripts],
             "undocumented_checks": [s["id"] for s in scripts if s["doc"] is None],
             **({"checks_changed_since_confirm": changed} if changed else {}),
             "open_questions": [q["question"] for q in d.get("open_questions") or [] if not q.get("blocking")],
             "counts": {s: len(d.get(s) or []) for s in SECTIONS}, "checks": [i["id"] for i in checked(d)],
             "summary": d["summary"], "notes": d.get("notes") or [],
-            # 确认前逐条告诉用户这些界限依据薄弱 / tell the user, item by item, that these limits rest on a weak basis before confirming
+            # 确认前逐条告诉用户这些界限依据薄弱
             "weak_basis": weak_basis(d)}
 
 
-# ---------- 取值与判定 / measuring and judging ----------
+# ---------- 取值与判定
 
 def pick(data: Any, path: str) -> Any:
     """按 a.b[0].c 形式的路径取值，用于从分析导出结果中挑出一个数；键里有点号时写成 ['0.48']。
@@ -775,18 +761,15 @@ def measure(ctx: ScriptContext, item: dict[str, Any], folder: Path, scripts: dic
             namespace: dict[str, Any] = {"__name__": f"saos_check_{item['id']}", "__file__": str(ctx.path(str(spec)))}
             exec(compile(script["source"], str(copy), "exec"), namespace)
             # 同一次判定的各脚本共享 ctx.cache（kit.memo、ctx.lib），镜头在判定期间不变
-            # the scripts of one evaluation share ctx.cache (kit.memo, ctx.lib); the lens does not change meanwhile
             value = namespace["run"](ctx.child({"target": item["id"]}))
         value = float(value)
-    except Exception as exc:  # 见下 / see below
+    except Exception as exc:  # 见下
         # 判定失败是可报告的结果，连接中断和阻塞仍交给后台进程处理。
-        # a failed measurement is a reportable result; a lost connection or a blocked window still goes to the daemon
         if not ctx.backend.healthy() or (isinstance(exc, SaosError) and exc.code == ErrorCode.ZOS_CONNECTION_LOST):
             raise
         return {"value": None, "error": f"{type(exc).__name__}: {exc}", "error_kind": error_kind(exc), "evidence": evidence}
     if not math.isfinite(value):
         # 判定正常执行、但这个设计给不出有效数值（例如光线到不了像面）：是设计结果，不是测量失败
-        # the check ran but this design has no valid value (e.g. no ray reaches the image): a design result, not a failed measurement
         return {"value": None, "design_failure": True, "evidence": evidence}
     return {"value": value, "evidence": evidence}
 
@@ -812,7 +795,7 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
     root.mkdir(exist_ok=True)
     folder = root / f"{jobs.next_archive_number(root):03d}"
     folder.mkdir()
-    # 判定所依赖的 checks/ 整体存一份副本，历史结果可以复现 / keep a copy of checks/ so that results can be reproduced
+    # 判定所依赖的 checks/ 整体存一份副本，历史结果可以复现
     support = scripts.get(SUPPORT_KEY, {}).get("files") or {}
     for rel in support:
         target_file = folder / "support" / rel
@@ -829,11 +812,9 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
     total = 0.0
     shared = ctx.child(ctx.args, cache={})
     # 版本只取实际执行本次测量的后端实例，不回退到 daemon 启动时的后端（那可能是另一个版本）
-    # the version comes from the backend that measured this round only, never the daemon's start backend (another version)
     identity = ctx.backend.identity()
     backend_name = identity["backend"]
     # rtc 实例上按项记用到的未对账操作数；本镜头经过的未对账路径对每一项都算
-    # on the rtc instance each item records the unreconciled operands it used; the lens's unreconciled paths count for all
     take_used = getattr(ctx.backend, "take_used", None) if getattr(ctx.backend, "standalone", False) else None
     paths = None
     if take_used is not None:
@@ -856,7 +837,6 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
             item["operands_unverified"] = used
         provenance = {"unverified": paths, "operands_unverified": used} if take_used is not None else None
         # 操作数判定的依赖已知，只按它实际依赖的路径分档；脚本、分析和度量目录项按整份镜头
-        # an operand check depends on known things and is graded by those paths only; scripts, analyses, metrics by the lens
         if provenance is not None and "operand" in spec["check"]:
             provenance["unverified_affecting"] = ctx.backend.affected_by(raw)
             item["unverified_affecting"] = provenance["unverified_affecting"]
@@ -878,27 +858,24 @@ def evaluate(ctx: ScriptContext, demand: dict[str, Any], scripts: dict[str, dict
     judged = [i for i in items if i["goal"] is not None]
     daemon = getattr(ctx, "_daemon", None)
     # rtc 实例上的判定：记下用到的、未与 OpticStudio 对账的计算路径和操作数（各项之和）
-    # checks on the rtc instance record the calculation paths and operands not reconciled with OpticStudio (all items')
     provenance = {"unverified": paths, "operands_unverified": sorted(operands)} if take_used is not None else None
     from saos import geometry
 
     clash = geometry.parts_clash(ctx.backend)
     hard_failing = [i["id"] for i in judged if i["kind"] in HARD_KINDS and not i["passed"]] + (["parts_clash"] if clash else [])
     result = {"shortfall": total,
-              # 没有任何带界限的条目时不能宣布达成 / nothing with a pass line means nothing can be declared achieved
+              # 没有任何带界限的条目时不能宣布达成
               "achieved": only is None and bool(judged) and all(i["passed"] for i in judged) and clash is None, "items": items,
               "partial": only is not None,
-              # 有越小/越大越好的目标：达标后还要继续改进 / objectives to minimise or maximise: keep improving after the pass lines
+              # 有越小/越大越好的目标：达标后还要继续改进
               "pursuing": any("direction" in i for i in items),
               "hard_failing": hard_failing,
               **({"parts_clash": clash} if clash else {}),
               # 执行出错的判定（脚本异常、读不到文件）：这一轮的结论不可信，不能当作设计不达标
-              # checks that failed to run: the round says nothing about the design and must not count as a shortfall result
               "measurement_errors": [i["id"] for i in items if i.get("error")],
               # 当前后端算不了的条目（rtc 上没有的分析或 ctx.system）：改写检查或换到能算的后端，不能当作设计不达标
-              # items the current backend cannot compute: rewrite the check or use a backend that can; never a design result
               "backend_unsupported": [i["id"] for i in items if i.get("error_kind") == "backend"],
-              # 整次判定的可信等级：按各项合起来用到的路径和操作数分档 / graded by the paths and operands all items used together
+              # 整次判定的可信等级：按各项合起来用到的路径和操作数分档
               "trust": trust(backend_name, provenance),
               "demand": demand, "demand_sha": compute_digest(demand), "method_sha": method_digest(scripts),
               "support_files": support, **({"saos_code_files": code} if code else {}),
@@ -946,7 +923,7 @@ def quick(ctx, ids: list[str] | None = None, *, deadline: float | None = None) -
 
     d, scripts = _prepared(ctx.job.root)
     specs = {s["id"]: s for s in checked(d)}
-    # 重复的 id 只测一次 / a repeated id is measured once
+    # 重复的 id 只测一次
     wanted = list(dict.fromkeys(ids)) if ids is not None else [i for i, s in specs.items() if s["goal"] is not None or "direction" in s]
     unknown = [i for i in wanted if i not in specs]
     if unknown:
@@ -989,7 +966,7 @@ def quick(ctx, ids: list[str] | None = None, *, deadline: float | None = None) -
         shutil.rmtree(folder, ignore_errors=True)
     from saos import geometry
 
-    # 零件交叠只在 evaluate 与 quick 两处计入 hard_failing，下游一律透传 / counted here and in evaluate only; callers pass it on
+    # 零件交叠只在 evaluate 与 quick 两处计入 hard_failing，下游一律透传
     clash = geometry.parts_clash(ctx.backend)
     hard_failing = [i for i, g in gaps.items() if specs[i]["kind"] in HARD_KINDS and g > 0]
     return {"values": values, "shortfall": total, "gaps": gaps, "pursuit": pursued,

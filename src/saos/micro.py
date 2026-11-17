@@ -33,10 +33,9 @@ from saos import geometry, kit
 from saos.protocol import ErrorCode, SaosError
 
 GRID = 21
-PSF_PUPIL = 64    # Huygens 光瞳采样 64×64 / pupil sampling
-PSF_IMAGE = 128   # 像面采样 128×128 / image sampling
+PSF_PUPIL = 64    # Huygens 光瞳采样 64×64
+PSF_IMAGE = 128   # 像面采样 128×128
 # 自动开池时给用户留下的许可证数（他们自己的窗口、别的实例）；凑不出这么多个 worker 就不并行
-# licences left free for the user (their windows, other instances) when the pool starts itself; fewer workers: serial
 POOL_KEEP_FREE = 2
 POOL_MIN_WORKERS = 2
 
@@ -54,7 +53,7 @@ class DesignFailure(ValueError):
     The design has no valid value here (invalid geometry, no real focus, no ray reaching the sample); the check gives inf."""
 
 
-# ---- 判定基础 / evaluation basics ----
+# ---- 判定基础
 
 def once(ctx, key: tuple, compute: Callable[[], Any]) -> Any:
     """同一次判定内只算一次（ctx.memo）；DesignFailure 也记住，后面的判定直接得到同样的失败。key 由调用方带上自己的命名空间。
@@ -82,7 +81,7 @@ def guarded(fn: Callable[[Any], float]) -> Callable[[Any], float]:
     return run
 
 
-# ---- 光线 / rays ----
+# ---- 光线
 
 def trace(ctx, rays, surface=None) -> list[tuple[float, ...] | None]:
     """批量追迹实际光线到 surface（默认像面）。rays: (wave, hx, hy, px, py)。失败或渐晕为 None，否则 (x, y, z, l, m, n)。
@@ -119,9 +118,9 @@ def ray_arrays(hits, extrapolate: bool):
     x, y and slopes l/n, m/n of the arriving rays; for extrapolation along z rays with |n| <= 1e-12 are dropped, as in kit.spot."""
     bad = TypeError("hits must be (x, y, z, l, m, n) rows: a sequence of 6-number tuples")
     try:
-        if len(hits) == 0:   # 没有光线：交给调用方判为 DesignFailure / no rays: the callers turn this into DesignFailure
+        if len(hits) == 0:   # 没有光线：交给调用方判为 DesignFailure
             return (np.empty(0),) * 4
-        raw = np.array(hits)   # 不带 dtype：参差、None、字符串行不会被悄悄转成数字 / no dtype, so ragged, None or string rows are not coerced
+        raw = np.array(hits)   # 不带 dtype：参差、None、字符串行不会被悄悄转成数字
     except (TypeError, ValueError) as e:
         raise bad from e
     if raw.ndim != 2 or raw.shape[1] != 6 or raw.dtype.kind not in "iuf":
@@ -141,7 +140,7 @@ def best_focus_dz(hits) -> float:
     dz = kit.focus_shift(*ray_arrays(hits, True))
     if dz is None:
         raise DesignFailure("the rays reaching the sample are parallel (or fewer than 3 usable): there is no focus")
-    if not math.isfinite(dz):   # 坐标含 NaN/inf 时闭式解会给出非有限值 / NaN or inf coordinates give a non-finite shift
+    if not math.isfinite(dz):   # 坐标含 NaN/inf 时闭式解会给出非有限值
         raise DesignFailure("the traced rays have no valid focus (non-finite focus shift)")
     return dz
 
@@ -149,10 +148,10 @@ def best_focus_dz(hits) -> float:
 def rms_radius(hits, dz: float = 0.0) -> float:
     """沿局部 z 外推 dz 后的 RMS 半径（相对质心）。/ RMS radius about the centroid after extrapolating dz along local z."""
     x, y, u, v = ray_arrays(hits, dz != 0.0)
-    if len(x) == 0:   # 空输入或外推时全部光线被滤掉 / empty input, or every ray dropped before extrapolating
+    if len(x) == 0:   # 空输入或外推时全部光线被滤掉
         raise DesignFailure("no ray reaching the sample can be used (none arrive, or all are parallel to the sample plane)")
     r = kit.spread(x + u * dz, y + v * dz)["rms_radius"] if dz != 0.0 else kit.spread(x, y)["rms_radius"]
-    if not math.isfinite(r):   # 坐标或 dz 含 NaN/inf / NaN or inf coordinates, or a non-finite dz
+    if not math.isfinite(r):   # 坐标或 dz 含 NaN/inf
         raise DesignFailure("the traced rays give a non-finite RMS spot radius (NaN/inf coordinates or focus shift)")
     return r
 
@@ -168,7 +167,7 @@ def centroid(hits) -> tuple[float, float]:
     return c[0], c[1]
 
 
-# ---- 像面所在的介质 / the medium the image plane sits in ----
+# ---- 像面所在的介质
 
 @dataclass(frozen=True)
 class Medium:
@@ -229,11 +228,11 @@ def marginal_na(ctx, wave: int, to: int | str | None = None, rays: int = 32) -> 
     return float(min(index * math.hypot(float(lx), float(my)) for lx, my in zip(r.l, r.m)))
 
 
-# ---- 零件几何 / part geometry ----
+# ---- 零件几何
 
 def is_coordinate_break(row: dict[str, Any]) -> bool:
     """Whether a surface row is a coordinate break, on either backend. / 这一面是否坐标断点（两个后端都认）。"""
-    # OpticStudio 叫 "Coordinate Break"，rtc 叫 "COORDBRK" / "Coordinate Break" in OpticStudio, "COORDBRK" in rtc
+    # OpticStudio 叫 "Coordinate Break"，rtc 叫 "COORDBRK"
     return "COORD" in str(row["type"]).upper()
 
 
@@ -256,7 +255,7 @@ def require_defined(ctx, rows: Iterable[dict[str, Any]]) -> None:
         if is_coordinate_break(s):
             continue
         i, sd = s["index"], float(s["semi_diameter"])
-        # 旋转对称面型在这四点的 x²+y² 都正好是 sd²：查一点就够 / for a rotational type all four points have x²+y² = sd² exactly
+        # 旋转对称面型在这四点的 x²+y² 都正好是 sd²：查一点就够
         points = ((sd, 0.0),) if geometry.rotational(s["type"]) else ((sd, 0.0), (0.0, sd), (-sd, 0.0), (0.0, -sd))
         for x, y in points:
             if sag(ctx, i, x, y) is None:
@@ -363,16 +362,15 @@ def min_gap(ctx, front: int | str, radius: float | None = None, rings: int = 17,
     return smallest
 
 
-# ---- 收集 / collection ----
+# ---- 收集
 
 def collection_fraction(ctx, fields, wave: int, n: int = 61) -> float:
     """几何收集比例：按光路可逆，像点能送回物方（物方 NA、物面圆内）的方向就是正向光束在像侧覆盖的方向。光瞳网格上四角都通过的
     格子，把像方单位方向向量围成的四边形面积累加为立体角，除以 4π；多个视场取平均。不含菲涅耳损失与吸收。
     Geometric collection fraction by reversibility: on the pupil grid, cells whose four corners pass add the area of the
     quadrilateral their image-side unit directions span, as solid angle over 4π; averaged over fields. No Fresnel loss or absorption."""
-    # 只追单位圆内的点：坐标与 kit.pupil 逐位相同，各光线独立追迹 / inside the unit circle only, same coordinates as kit.pupil
+    # 只追单位圆内的点：坐标与 kit.pupil 逐位相同，各光线独立追迹
     # n ≤ 3 的网格没有四角都在单位圆内的格子，积不出面积，结果恒为 0；n = 4 起中心格可积
-    # n <= 3 has no cell with all four corners inside the unit circle, so the result would always be 0
     n = _count("n", n, 4)
     fields = list(fields)
     if not fields:
@@ -400,7 +398,7 @@ def collection_fraction(ctx, fields, wave: int, n: int = 61) -> float:
     return sum(fractions) / len(fractions)
 
 
-# ---- 衍射 PSF / diffraction PSF ----
+# ---- 衍射 PSF
 
 def psf(hug, field: tuple[float, float], delta_um: float) -> kit.Psf:
     """一张 Huygens PSF；没有数据是 DesignFailure。/ One Huygens PSF; no data is DesignFailure."""
@@ -458,7 +456,7 @@ def worst_wavefront(ctx, fields: list[tuple[float, float]], wave: int) -> float:
     return worst
 
 
-# ---- 借 worker 池 / borrowing the worker pool ----
+# ---- 借 worker 池
 
 def pooled(ctx, fn: str, items: list[Any], *, keep_free: int = POOL_KEEP_FREE, min_workers: int = POOL_MIN_WORKERS,
            label: str = "pooled") -> dict[int, Any]:
@@ -482,7 +480,7 @@ def pooled(ctx, fn: str, items: list[Any], *, keep_free: int = POOL_KEEP_FREE, m
     return done
 
 
-# ---- 变焦行程 / focus travel ----
+# ---- 变焦行程
 
 def focus_travel(ctx, apply: Callable[[float], None], lo: float, hi: float, depth: Callable[[Any], float], n: int = 17,
                  refine: int = 1, points: int = 8) -> dict[str, Any]:

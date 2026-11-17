@@ -10,9 +10,8 @@ from pathlib import Path
 PACKAGE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = PACKAGE_DIR.parents[1]
 # 源码检出（仓库里 uv run）还是装好的包：装成包时 REPO_ROOT 指不到仓库，库、技能和运行目录改用包内副本与用户目录
-# a source checkout (uv run in the repository) or an installed package, whose REPO_ROOT is no repository
 IN_CHECKOUT = (REPO_ROOT / "pyproject.toml").is_file() and (REPO_ROOT / "src" / "saos").resolve() == PACKAGE_DIR
-# 装成包时随包分发的共享库与技能（pyproject 的 force-include）/ the library and skill shipped inside the wheel
+# 装成包时随包分发的共享库与技能（pyproject 的 force-include）
 PACKAGED_LIBRARY = PACKAGE_DIR / "_library"
 PACKAGED_SKILL = PACKAGE_DIR / "_skill"
 
@@ -47,7 +46,7 @@ EXPECTED_ZOS_VERSION = (24, 1, 0)
 LICENSED_INSTANCES = 8
 
 
-# 计算时给用户留下的逻辑核数，其余都可以用 / logical cores left to the user during computation; the rest may be used
+# 计算时给用户留下的逻辑核数，其余都可以用
 RESERVED_CORES = 2
 
 
@@ -56,7 +55,6 @@ def compute_cores() -> int:
 
 
 # 运行目录的根：源码检出里是仓库的 work/；装成包时落到用户目录，不写进 site-packages
-# the root of runtime directories: the checkout's work/, or the user's home for an installed package
 WORK_ROOT = REPO_ROOT / "work" if IN_CHECKOUT else Path.home() / ".saos" / "work"
 DEFAULT_INSTANCE = "main"
 INSTANCE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$")

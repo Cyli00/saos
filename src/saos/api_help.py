@@ -15,7 +15,7 @@ from saos.protocol import ErrorCode, SaosError
 
 PACKAGES = ("saos.ctx", "saos.starts", "saos.search", "saos.micro", "saos.library", "saos.kit", "saos.materials_record")
 
-# 公开但不给 agent 用的内部辅助，不列出 / public names that are internal helpers, left out of the listing
+# 公开但不给 agent 用的内部辅助，不列出
 HIDDEN = frozenset({
     "saos.library.root",
     "saos.ctx.experts.ExpertMethods", "saos.ctx.experts.asphere.mfe_residual", "saos.ctx.experts.asphere.topology",
@@ -96,9 +96,9 @@ def _is_module(name: str) -> bool:
         return False
 
 
-# 中文字符（含全角标点）；docstring 里含中文的行属于中文部分 / Chinese characters; a docstring line holding one is Chinese
+# 中文字符（含全角标点）；docstring 里含中文的行属于中文部分
 HAN = re.compile(r"[　-〿㐀-鿿＀-￯]")
-# exec --help 的行宽 / the line width of exec --help
+# exec --help 的行宽
 HELP_WIDTH = 88
 
 

@@ -30,7 +30,7 @@ ROOT = config.REPO_ROOT
 DOCS = tuple(sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / ".agents" / "skills" / "saos").rglob("*.md")))
 DIAGRAM = ROOT / "docs" / "workflow.drawio"
 COMMAND_RE = re.compile(r"(?<!from )\bsaos ([a-z][a-z-]*)(?: ([a-z][a-z-]*))?(?: ([a-z][a-z-]*))?")
-# 已删除的命令：只能出现在“原……并入 / 已取消”这类历史说明里 / removed commands may only appear in historical notes
+# 已删除的命令：只能出现在“原……并入 / 已取消”这类历史说明里
 REMOVED = {"probe", "reverify"}
 HISTORY_MARKS = ("原", "并入", "取消", "旧", "removed", "folded", "former")
 SKILL_DOCS = tuple(name for name in DOCS if name.startswith(".agents/"))
@@ -190,7 +190,7 @@ def test_the_rtc_operand_lists_in_help_come_from_the_code():
 
 
 def test_every_ctx_member_says_in_english_what_it_does():
-    # saos api ctx 是 ctx 接口说明的唯一来源；exec --help 从它的英文部分生成 / the one copy of the ctx interface
+    # saos api ctx 是 ctx 接口说明的唯一来源；exec --help 从它的英文部分生成
     members = api_help._ctx_members()
     missing = sorted(name for name, member in members.items() if not api_help.english(inspect.getdoc(member) or ""))
     assert not missing, f"给这些 ctx 成员写 docstring（英文部分进 exec --help）：{missing}"
@@ -205,9 +205,9 @@ def test_exec_help_takes_the_ctx_entries_from_the_docstrings():
     flat = " ".join(whole.split())
     for name in names:
         opening = ": " + " ".join(api_help.english(inspect.getdoc(api_help._ctx_members()[name])).split()[:6])
-        # 条目头（可能折行的签名）之后紧跟 docstring 的开头 / the entry head, its signature maybe wrapped, then the docstring
+        # 条目头（可能折行的签名）之后紧跟 docstring 的开头
         assert any(0 <= flat.find(opening, m.start()) - m.start() < 300 for m in re.finditer(rf"ctx\.{name}\b", flat)), name
-    # 每个成员都在帮助里，内部辅助除外；ctx.fast 由它自己的主题讲 / every member is in the help but internal ones
+    # 每个成员都在帮助里，内部辅助除外；ctx.fast 由它自己的主题讲
     unlisted = set(api_help._ctx_members()) - set(names) - {key[4:] for key in INTERNAL if key.startswith("ctx.")}
     assert unlisted == {"fast"} and "ctx.fast(" in cli_help.topic_help("exec", "fast")
 

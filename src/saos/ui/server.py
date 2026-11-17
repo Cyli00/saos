@@ -35,7 +35,7 @@ log = logging.getLogger("saos.ui")
 STATIC = Path(__file__).resolve().parent / "static"
 STATIC_TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8",
                 ".svg": "image/svg+xml"}
-# 窗口每 1.5 s 轮询一次；这么久没有请求说明窗口已关，服务自行退出 / no request for this long means the window is closed
+# 窗口每 1.5 s 轮询一次；这么久没有请求说明窗口已关，服务自行退出
 IDLE_EXIT_S = 900
 MAX_BODY_BYTES = 1 << 16
 
@@ -46,12 +46,11 @@ def state_file() -> Path:
 
 def endpoint_file() -> Path:
     # 上次的端口和令牌，退出后保留：重启时沿用，已经开着的窗口不用换地址就能重连
-    # the last port and token, kept after exit: a restart reuses them so open windows reconnect at the same address
     return config.daemon_dir() / "ui-endpoint.json"
 
 
 def closed_file() -> Path:
-    # 用户关掉了窗口的任务；窗口再来轮询时去掉 / jobs whose window the user closed; dropped when the window polls again
+    # 用户关掉了窗口的任务；窗口再来轮询时去掉
     return config.daemon_dir() / "ui-closed.json"
 
 
@@ -157,7 +156,7 @@ def open_page(job: jobs.Job, args: dict[str, Any]) -> dict[str, Any]:
 
 
 def _with_section(viz: dict[str, Any]) -> dict[str, Any]:
-    # 2D 剖面所在的平面；折转系统也能画 2D / the plane of the 2D section, so folded systems get a 2D view too
+    # 2D 剖面所在的平面；折转系统也能画 2D
     if viz.get("surfaces"):
         viz["section"] = section.section_plane(viz)
     return viz
@@ -230,7 +229,6 @@ class Handler(BaseHTTPRequestHandler):
     def _route(self, method: str, path: str, args: dict[str, Any]) -> Any:
         if path == "/api/ping":
             # 各任务的窗口多久之前来轮询过、当时是否隐藏（最小化），命令行据此判断窗口是否开着
-            # how long ago each job's window polled and whether it was hidden (minimised) then
             now = time.monotonic()
             return {"pid": os.getpid(), "seen_s": {k: round(now - v, 1) for k, v in self.server.seen.items()},
                     "hidden": sorted(self.server.hidden)}
@@ -248,10 +246,10 @@ class Handler(BaseHTTPRequestHandler):
             _mark_closed(job.id, False)
             (self.server.hidden.add if args.get("hidden") == "1" else self.server.hidden.discard)(job.id)
             snap = stage.snapshot(job)
-            # 关卡内容随状态一起给，窗口不用每次轮询再要一遍 / the gate comes with the state, so the window needs no second request
+            # 关卡内容随状态一起给，窗口不用每次轮询再要一遍
             return {**snap, "gate": gate_of(job, snap["current"]), "notice": self.server.notices.get(job.id)}
         if path == "/api/notice" and method == "POST":
-            # agent 停下来问用户时留的话（saos ui notify），用户在窗口里点掉 / what the agent left when it stopped to ask
+            # agent 停下来问用户时留的话（saos ui notify），用户在窗口里点掉
             message = str(args.get("message") or "").strip()
             if message:
                 self.server.notices[job.id] = {"message": message[:2000], "time": datetime.now().astimezone().isoformat(timespec="seconds")}
@@ -259,14 +257,14 @@ class Handler(BaseHTTPRequestHandler):
                 self.server.notices.pop(job.id, None)
             return {"notice": self.server.notices.get(job.id)}
         if path == "/api/closed" and method == "POST":
-            # 窗口关闭（或刷新）时发来；刷新后的页面马上轮询，标记随即去掉 / sent on close or reload; a reload polls right away
+            # 窗口关闭（或刷新）时发来；刷新后的页面马上轮询，标记随即去掉
             self.server.seen.pop(job.id, None)
             _mark_closed(job.id, True)
             return {"closed": job.id}
         if path == "/api/gate":
             return gate_of(job)
         if path == "/api/confirm" and method == "POST":
-            # 连点两下只记一次：第二次时关卡已过，sha 对不上 / a double click records once: the second finds the gate passed
+            # 连点两下只记一次：第二次时关卡已过，sha 对不上
             with self.server.confirm_lock:
                 return confirm_of(job, args)
         if path == "/api/open" and method == "POST":
@@ -275,7 +273,7 @@ class Handler(BaseHTTPRequestHandler):
             with self.server.confirm_lock:
                 return revise_of(job, args)
         if path == "/api/mode" and method == "POST":
-            # 只能从自主改为参与：agent 不能借窗口把任务切成自主 / only autonomous → interactive
+            # 只能从自主改为参与：agent 不能借窗口把任务切成自主
             if args.get("mode") != "interactive":
                 raise SaosError(ErrorCode.BAD_ARGS, "the window can only make a job interactive")
             return jobs.make_interactive(job)
@@ -313,7 +311,6 @@ class Handler(BaseHTTPRequestHandler):
 class UiServer(ThreadingHTTPServer):
     daemon_threads = True
     # Windows 的 SO_REUSEADDR 允许两个进程绑同一端口；沿用旧端口时要在被占用时报错
-    # on Windows SO_REUSEADDR lets two processes bind one port; reusing the last port must fail when it is taken
     allow_reuse_address = sys.platform != "win32"
 
     def __init__(self, port: int = 0, token: str | None = None, idle_exit_s: float = IDLE_EXIT_S) -> None:

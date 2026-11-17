@@ -29,7 +29,7 @@ class FastLens(KitMethods):
         self.backend = backend
         self.cache: dict[Any, Any] = {}
         self.changed: dict[str, Any] = {}
-        # 建立时与 OpticStudio 的追迹对照（from_context 填写）/ the trace comparison made when the copy was built
+        # 建立时与 OpticStudio 的追迹对照（from_context 填写）
         self.agreement: dict[str, Any] | None = None
 
     @property
@@ -37,7 +37,7 @@ class FastLens(KitMethods):
         """被 rtc 不重算的求解锁住的参数。/ Parameters held by solves rtc does not recompute."""
         return dict(self.backend.held)
 
-    def set(self, changes=None, **kw):  # 与 kit.set 同名 / mirrors kit.set
+    def set(self, changes=None, **kw):  # 与 kit.set 同名
         changes = {**(changes or {}), **kw}
         super().set(changes)
         self.changed.update(changes)
@@ -64,7 +64,7 @@ class FastLens(KitMethods):
         values = self.values(names)
         if values:
             ctx.set(values)
-            note = getattr(ctx, "_note_rtc", None)  # worker 上下文没有轮次，不记 / worker contexts record no rounds
+            note = getattr(ctx, "_note_rtc", None)  # worker 上下文没有轮次，不记
             if note is not None:
                 note(True)
         return values
@@ -113,7 +113,6 @@ def from_context(ctx, freeze_solves: bool = False) -> FastLens:
         shutil.rmtree(folder, ignore_errors=True)
     fast = FastLens(backend)
     # 参数逐项一致还不够：每个视场、每个波长追一批光线与 OpticStudio 比，超差就拒绝
-    # equal parameters are not enough: trace every field and wavelength on both sides and refuse beyond tolerance
     waves = list(range(1, backend.wavelength_count() + 1))
     diff = fast.compare(ctx, field_points(backend.lens), wave=waves, grid=5)
     fast.agreement = diff
@@ -123,7 +122,6 @@ def from_context(ctx, freeze_solves: bool = False) -> FastLens:
 
 
 # 建立副本时追迹对照的容差：实际瞄准时 OpticStudio 自己的收敛误差约 6e-8 mm，留一个数量级余量
-# tolerances of the build-time comparison: OpticStudio's own real-aiming error is about 6e-8 mm, one decade of margin
 POSITION_TOL = 1e-6
 DIRECTION_TOL = 1e-7
 

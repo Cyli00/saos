@@ -48,7 +48,7 @@ def test_accepted_lens_io_errors_isolation_scripts_and_analyses(saos_home, monke
         # 连续读取
         info = ok(call(daemon, "lens.info", job=job_a.id))
         surfaces = ok(call(daemon, "lens.surfaces", job=job_a.id))["surfaces"]
-        assert info["system"]["num_surfaces"] == len(surfaces) == 6  # 物面 + 4 个折射面 + 像面 / object + 4 refracting + image
+        assert info["system"]["num_surfaces"] == len(surfaces) == 6  # 物面 + 4 个折射面 + 像面
         r1 = surfaces[1]["radius"]
         effl_before = ok(call(daemon, "lens.operand", job=job_a.id, type="EFFL", int2=2))["value"]
 
@@ -59,7 +59,6 @@ def test_accepted_lens_io_errors_isolation_scripts_and_analyses(saos_home, monke
         model = json.loads((folder / "model.json").read_text(encoding="utf-8"))["model"]
         glass = [s for s in model["surfaces"] if s["material_source"]["kind"] == "catalog"]
         # 样品只有一个波长（0.5876 µm），所以不检查色散（n 在各波长间不同）；只检查目录来源和折射率范围
-        # the sample has one wavelength, so there is no dispersion to check; only the catalog source and the index range
         assert {s["material_source"]["name"] for s in glass} == {"N-BK7", "N-SF2"}
         assert all(s["material_source"]["catalogs"] and min(s["n"]) > 1.4 for s in glass)
         assert all(isinstance(v, str) and (folder / v).is_file() for v in described["layout"].values()), described["layout"]

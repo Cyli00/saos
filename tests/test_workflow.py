@@ -25,7 +25,7 @@ DEMAND = {
 }
 
 
-# 深度优化要求结构已由用户指定，或本需求版本下有已封存的结构比较 / deep optimisation needs a user-fixed structure or a sealed comparison
+# 深度优化要求结构已由用户指定，或本需求版本下有已封存的结构比较
 FIXED_STRUCTURE = {"structure": {"mode": "prescribed", "reason": "测试样品的结构由用户指定"}}
 OPT_DEMAND = {**DEMAND, **FIXED_STRUCTURE}
 
@@ -77,14 +77,14 @@ def test_as_small_as_possible_is_minimize_not_a_pass_line_of_zero():
     demand.validate(demand_with({**shorter, "weight": 2.0}))
     demand.validate(demand_with({**LENGTH, "id": "rate", "must": {"min": 80.0}, "maximize": True, "ideal": 100.0}))
     only = {k: v for k, v in shorter.items() if k not in ("must", "wish")}
-    demand.validate(demand_with(only))  # 没有达标线、只求越小越好 / no pass line, only as small as possible
+    demand.validate(demand_with(only))  # 没有达标线、只求越小越好
     with pytest.raises(SaosError, match=r"must \{max: 0\}.*minimize: true"):
         demand.validate(demand_with({**LENGTH, "must": {"max": 0.0}}))
-    for bad in ({**LENGTH, "maximize": True},                                  # 没有理想值 / no ideal
-                {**shorter, "maximize": True, "ideal": 1.0},                    # 两个方向 / both directions
+    for bad in ({**LENGTH, "maximize": True},                                  # 没有理想值
+                {**shorter, "maximize": True, "ideal": 1.0},                    # 两个方向
                 {**shorter, "minimize": "yes"},
-                {**LENGTH, "ideal": 1.0},                                      # 理想值要配方向 / ideal needs a direction
-                {k: v for k, v in only.items() if k != "scale"}):              # 没有尺度 / no scale
+                {**LENGTH, "ideal": 1.0},                                      # 理想值要配方向
+                {k: v for k, v in only.items() if k != "scale"}):              # 没有尺度
         with pytest.raises(SaosError):
             demand.validate(demand_with(bad))
 
@@ -100,7 +100,7 @@ def test_stop_rule_keeps_pursuing_after_the_pass_lines():
     rows = [{**r, "pursuing": True, "achieved": k > 0} for k, r in enumerate(rounds_of([21, 17, 17, 17, 17, 17, 17], tiers))]
     assert ledger.decide(rows, STOP)["status"] == "achieved"
     assert ledger.decide(rows[:4], {**STOP, "max_rounds": 3})["status"] == "achieved"
-    rows[-1]["achieved"] = False  # 最后一轮又掉出达标线：照常判 / the last round fell below a pass line: judged as usual
+    rows[-1]["achieved"] = False  # 最后一轮又掉出达标线：照常判
     assert ledger.decide(rows, STOP)["status"] == "exhausted"
 
 
@@ -185,7 +185,7 @@ def test_round_confirmation_handles_unsaved_changes_like_lens_load_and_blocks_a_
     loaded = daemon.loaded
     call(daemon, "lens.set", job=job.id, surface=1, param="radius", value=75.0)
     edited = daemon.backend.surfaces()
-    # 同 lens load：未保存修改要先保存或放弃 / as with lens load, unsaved changes are saved or discarded first
+    # 同 lens load：未保存修改要先保存或放弃
     refused = call(daemon, "round.confirm", job=job.id, of=recorded["round"], viz=False)["error"]
     assert refused["code"] == ErrorCode.UNSAVED_CHANGES
     assert daemon.backend.surfaces() == edited and loaded.dirty and len(ledger.load(path, raw=True)) == 1
@@ -194,7 +194,7 @@ def test_round_confirmation_handles_unsaved_changes_like_lens_load_and_blocks_a_
             raise RuntimeError("复测中断")
         monkeypatch.setattr(workflow.demand, "evaluate", broken)
     result = call(daemon, "round.confirm", job=job.id, of=recorded["round"], viz=False, discard=True)
-    # 结束（含失败）时从文件重载原镜头，后端的文件路径不变 / the lens is reloaded from its file, also on failure
+    # 结束（含失败）时从文件重载原镜头，后端的文件路径不变
     assert daemon.backend.surfaces() == saved
     assert daemon.loaded is loaded and not loaded.dirty
     assert same_path(daemon.backend.native_file(), loaded.path)
@@ -208,7 +208,7 @@ def test_round_confirmation_handles_unsaved_changes_like_lens_load_and_blocks_a_
             report.build(job)
         again = call(daemon, "round.confirm", job=job.id, of=recorded["round"], viz=False)
         assert again["ok"] and not again["result"]["agrees"]
-        # 用户停止后照常出报告，用的是 OpticStudio 复测的数 / after the user stops, the report uses OpticStudio's numbers
+        # 用户停止后照常出报告，用的是 OpticStudio 复测的数
         ledger.record_stop(job.root, demand.compute_digest(demand.validate(DEMAND)), "复测不符，按现结构交付", "就交付这一版")
         built = report.build(job)
         assert built["decision"]["status"] == "stopped" and built["deliver"]["confirmed_by"] is not None
@@ -234,7 +234,7 @@ def test_search_waits_for_a_save_after_a_restore_from_a_temporary_copy(setup):
     write_demand(job, DEMAND)
     source = "def run(ctx):\n    with ctx.restored():\n        pass\n"
     assert call(daemon, "script.exec", job=job.id, name="restore", source=source, args={})["ok"]
-    # 后端的文件路径停在 %TEMP% 的副本上：搜索结果会写到任务目录之外 / the backend's file is the copy outside the job
+    # 后端的文件路径停在 %TEMP% 的副本上：搜索结果会写到任务目录之外
     assert not same_path(daemon.backend.native_file().parent, daemon.loaded.path.parent)
     refused = call(daemon, "opt.hammer", job=job.id, max_seconds=5)["error"]
     assert refused["code"] == ErrorCode.BAD_ARGS and "native_file" in refused["details"]
@@ -285,7 +285,7 @@ def test_demand_change_needs_new_confirmation(setup):
     write_demand(job, changed, confirm=None)
     refused = call(daemon, "round.record", job=job.id, tier="local")["error"]
     assert refused["code"] == ErrorCode.DEMAND_NOT_CONFIRMED and refused["details"]["demand_sha"] == demand.digest(demand.validate(changed))
-    # 只改写总结不需要重新确认 / rewording the summary needs no new confirmation
+    # 只改写总结不需要重新确认
     write_demand(job, {**changed, "summary": f"放宽到 99 mm。{LINE}"}, confirm="改成 99 mm 也可以")
     assert call(daemon, "round.record", job=job.id, tier="local")["ok"]
     write_demand(job, {**changed, "summary": f"换个说法。{LINE}"}, confirm=None)
@@ -349,7 +349,7 @@ def test_failed_measurement_still_generates_report(setup, check):
     write_demand(job, demand_with({**LENGTH, "check": check}))
     result = call(daemon, "round.record", job=job.id)["result"]
     assert result["record"]["shortfall"] == math.inf and not result["record"]["achieved"]
-    # 判定执行出错：本轮无效，不是设计结论 / the check failed to run: an invalid round, not a design result
+    # 判定执行出错：本轮无效，不是设计结论
     assert result["record"]["measurement_errors"] == ["length"] and "fix them" in result["decision"]["reason"]
     data = report.build(job)
     for lang in ("zh", "en"):
@@ -368,7 +368,7 @@ def test_script_versions_reset_comparison_and_preserve_source(setup):
     write_demand(job, demand_with({**LENGTH, "check": {"script": "checks/check.py"}},
                         stop={"tiers": ["local"]}))
     first = call(daemon, "round.record", job=job.id)["result"]
-    # 同一镜头再记一轮被拒绝；改一个不影响总长的半径后再记 / the same lens again is refused; change a radius that leaves the track
+    # 同一镜头再记一轮被拒绝；改一个不影响总长的半径后再记
     assert call(daemon, "round.record", job=job.id, tier="local")["error"]["code"] == ErrorCode.DUPLICATE_ROUND
     daemon.backend.lens["surfaces"][1]["radius"] = 45.0
     assert call(daemon, "round.record", job=job.id, tier="local")["result"]["decision"]["status"] == "exhausted"
@@ -378,7 +378,7 @@ def test_script_versions_reset_comparison_and_preserve_source(setup):
     changed = call(daemon, "round.record", job=job.id, tier="local")["result"]
     assert changed["record"]["demand_sha"] == first["record"]["demand_sha"]
     assert changed["record"]["method_sha"] != first["record"]["method_sha"]
-    # 新窗口从对最好一轮（r0）的重测开始，本轮试了 local 仍没有进步 / the new window starts at the re-measured r0; local again gave nothing
+    # 新窗口从对最好一轮（r0）的重测开始，本轮试了 local 仍没有进步
     assert changed["rebase"]["rebase_of"] == 0 and not changed["rebase"]["equivalent"] and changed["record"]["round"] == 3
     assert changed["decision"]["status"] == "exhausted" and changed["decision"]["last_gain_round"] == 2
     assert report.build(job)["deliver"]["round"] == 2
@@ -407,7 +407,7 @@ def test_legacy_stopped_round_can_be_remeasured_without_reconfirmation(setup):
     with pytest.raises(SaosError):
         report.build(job)
     assert call(daemon, "round.record", job=job.id, tier="local")["result"]["record"]["achieved"]
-    assert report.build(job)["deliver"]["round"] == 2  # r1 是对 r0 的重测 / r1 re-measures r0
+    assert report.build(job)["deliver"]["round"] == 2  # r1 是对 r0 的重测
 
 
 def test_evidence_names_cannot_collide_on_windows(setup):
@@ -454,11 +454,11 @@ def test_rounds_need_an_approved_model_matching_the_structure(saos_home, fake_le
     approval = call(daemon, "lens.approve", job=job.id, model=folder, quote="可以")["result"]
     assert approval["quote"] == "可以" and (job.root / folder / "approval.json").is_file()
     assert call(daemon, "round.record", job=job.id)["result"]["record"]["model"] == folder
-    # 换真实材料、改半径不需要重新确认 / swapping a real material or a radius needs no new approval
+    # 换真实材料、改半径不需要重新确认
     call(daemon, "lens.set", job=job.id, surface=1, param="material", value="SF2")
     call(daemon, "lens.set", job=job.id, surface=1, param="radius", value=40.0)
     assert call(daemon, "round.record", job=job.id, tier="local")["ok"]
-    # 改面型（结构）要重新确认 / changing a surface type is a structural change
+    # 改面型（结构）要重新确认
     daemon.backend.lens["surfaces"][1]["type"] = "Even Asphere"
     refused = call(daemon, "round.record", job=job.id, tier="structure")["error"]
     assert refused["code"] == ErrorCode.MODEL_NOT_APPROVED and refused["details"]["latest_approved"] == folder
@@ -483,7 +483,7 @@ def test_report_marks_exploration_only_rounds(setup):
     daemon, job = setup
     write_demand(job, DEMAND)
     call(daemon, "round.record", job=job.id)
-    # 手工把这一轮标成含模型玻璃，模拟只做了探索 / mark the round as using a model glass
+    # 手工把这一轮标成含模型玻璃，模拟只做了探索
     path = job.root / ledger.LEDGER_FILE
     rows = ledger.load(path)
     rows[0]["model_glass"] = [1]
@@ -501,7 +501,7 @@ def test_round_archive_is_write_once_and_sealed(setup):
     write_demand(job, DEMAND)
     rec = call(daemon, "round.record", job=job.id)["result"]["record"]
     assert rec["file"] == "rounds/r000.zmx"
-    assert daemon.loaded.path == job.lenses_dir / "a.zmx"  # 回到工作文件 / back on the working file
+    assert daemon.loaded.path == job.lenses_dir / "a.zmx"  # 回到工作文件
     saved = call(daemon, "lens.save", job=job.id)["result"]
     assert saved["file"] == "a.zmx"
     assert call(daemon, "lens.save", job=job.id, file="rounds/r000.zmx", overwrite=True)["error"]["code"] == ErrorCode.BAD_ARGS
@@ -544,7 +544,7 @@ def test_support_files_are_versioned_and_copied(setup):
     assert set(first["evaluation"]["support_files"]) == {"checks/limits.json", "checks/track.py"}
     assert "saos_code_sha256" in first["evaluation"]["environment"]
     (job.root / "checks" / "limits.json").write_text('{"extra": 1}', encoding="utf-8")
-    second = call(daemon, "round.record", job=job.id, tier="local")["result"]  # 同一镜头，但判定版本变了 / same lens, new method
+    second = call(daemon, "round.record", job=job.id, tier="local")["result"]  # 同一镜头，但判定版本变了
     assert second["record"]["method_sha"] != first["record"]["method_sha"]
 
 
@@ -564,7 +564,7 @@ def test_invalid_rounds_neither_count_as_tried_nor_as_progress():
     rounds[1]["measurement_errors"] = ["length"]
     d = ledger.decide(rounds, {**STOP, "tiers": ["local"]})
     assert d["status"] == "continue" and d["untried_tiers"] == ["local"] and "fix them" in d["reason"]
-    # 轮次上限按需求版本计 / the round budget counts per demand version
+    # 轮次上限按需求版本计
     many = rounds_of([5.0] * 4, ["baseline", "local", "local", "local"])
     for r in many[2:]:
         r["demand_sha"] = "b"
@@ -582,7 +582,7 @@ def test_blocking_question_stops_rounds_and_optimisation(setup):
         assert refused["code"] == ErrorCode.DEMAND_BLOCKED and refused["details"]["blocking_questions"] == ["目标脑区是哪里？"]
     # 问题不改变需求版本：用户回答后去掉 blocking，原确认仍有效
     write_demand(job, {**asked, "open_questions": asked["open_questions"][1:]}, confirm=None)
-    daemon.backend.optimize = lambda cycles, cores, **kw: {"merit": 1.0}  # 假后端没有优化器 / the fake backend has no optimiser
+    daemon.backend.optimize = lambda cycles, cores, **kw: {"merit": 1.0}  # 假后端没有优化器
     assert call(daemon, "opt.local", job=job.id)["ok"]
     result = call(daemon, "round.record", job=job.id)["result"]
     assert result["brief"]["open_questions"] == ["染料？"] and "reminder" not in result["brief"]  # 没有证据就不提醒
@@ -676,7 +676,7 @@ def test_stop_needs_the_users_words_and_ends_the_rounds(setup):
     report.write(job, lang="zh")
     html = (job.root / "report" / "index.html").read_text(encoding="utf-8")
     assert "按用户决定停止" in html and "F20: no real focus even on axis" in html and "c：保持现结构" in html
-    # 新版本需求重新开始，停止不再适用 / a new demand version starts afresh
+    # 新版本需求重新开始，停止不再适用
     write_demand(job, demand_with({**LENGTH, "must": {"max": 99.0}}), confirm="改成 99")
     assert call(daemon, "round.record", job=job.id, tier="local")["ok"]
 
@@ -693,7 +693,7 @@ def test_report_says_no_valid_design_and_draws_infinity_apart(setup):
     assert "没有有效的设计" in html and "目前最好的镜头" not in html
     svg = report.chart(rounds_of([math.inf, 4.0, 2.0], ["baseline", "local", "local"]), report.Tr("en"))
     assert "∞: no valid value" in svg and 'class="dot inf"' in svg
-    # ∞ 的点在顶部带里，比最大有限值高 / the ∞ dot sits in the top band, above the largest finite value
+    # ∞ 的点在顶部带里，比最大有限值高
     ys = [float(v) for v in re.findall(r'cy="([0-9.]+)"', svg)]
     assert ys[0] < ys[1] < ys[2]
 
@@ -736,7 +736,7 @@ def test_long_operations_report_progress_and_honour_cancel(setup, monkeypatch):
     """长操作写 progress.json；旧的取消请求在开始时清掉；脚本和优化都能收到取消（scan 的取消见 test_kit_parallel）。"""
     daemon, job = setup
     write_demand(job, OPT_DEMAND)
-    job.request_cancel()  # 上一次留下的请求，不该影响新操作 / a stale request must not affect a new operation
+    job.request_cancel()  # 上一次留下的请求，不该影响新操作
     assert call(daemon, "round.record", job=job.id)["ok"]
     progress = job.read_progress()
     assert progress["op"] == "round.record" and progress["status"] == "done" and not job.cancel_requested()
@@ -749,7 +749,7 @@ def test_long_operations_report_progress_and_honour_cancel(setup, monkeypatch):
 
     def optimize(cycles, cores, *, max_seconds=None, on_progress=None, should_cancel=None, algorithm=None):
         on_progress({"progress": 10, "merit": 2.0, "elapsed_s": 0.5})
-        # 运行中的视图只有几何 / the mid-run view has geometry only
+        # 运行中的视图只有几何
         seen["mid_view"] = json.loads((job.root / jobs.VIEW_FILE).read_text(encoding="utf-8"))["layout"]
         job.request_cancel()
         seen.update(cores=cores, max_seconds=max_seconds, cancel=should_cancel())
@@ -760,11 +760,11 @@ def test_long_operations_report_progress_and_honour_cancel(setup, monkeypatch):
     assert call(daemon, "opt.local", job=job.id, max_seconds=30)["result"]["stopped_by"] == "cancel"
     mid = seen.pop("mid_view")
     assert mid["rays"] == [] and mid["rays_paused"]
-    # 优化器拿到的是扣掉优化前测量后的剩余预算，随机器负载略小于 30 / the remaining budget after measuring, a little under 30
+    # 优化器拿到的是扣掉优化前测量后的剩余预算，随机器负载略小于 30
     assert 29 < seen.pop("max_seconds") <= 30
     assert seen == {"cores": config.compute_cores(), "cancel": True}
     final = json.loads((job.root / jobs.VIEW_FILE).read_text(encoding="utf-8"))["layout"]
-    assert final["rays"] and "rays_paused" not in final  # 结束后带光线 / with rays once it ends
+    assert final["rays"] and "rays_paused" not in final  # 结束后带光线
     assert job.read_progress()["merit"] == 2.0
 
 
@@ -790,11 +790,11 @@ def test_pushed_rtc_results_are_flagged_until_an_opticstudio_optimisation(setup)
 
     assert warned("demand.check") and warned("round.record")
     design = lambda: next(x for x in stage.snapshot(job)["steps"] if x["id"] == "design")["detail"]
-    assert design()["rtc_unclosed"]  # 流程图窗口也看得到 / the workflow window shows it too
+    assert design()["rtc_unclosed"]  # 流程图窗口也看得到
     daemon.backend.optimize = lambda *a, **k: {"stopped_by": "cancel"}
     call(daemon, "opt.local", job=job.id, max_seconds=30)
     assert warned("demand.check")
-    def optimize(*a, **k):  # 收尾优化改了镜头，才能记新的一轮 / the closing optimisation changes the lens
+    def optimize(*a, **k):  # 收尾优化改了镜头，才能记新的一轮
         daemon.backend.set_param("1.radius", radius * 1.01)
         return {"final_merit": 1.0}
 
@@ -813,7 +813,6 @@ def test_hammer_and_global_need_a_budget_and_archive_the_systems_they_write(setu
     def search(kind, cores, *, max_seconds, on_progress=None, should_cancel=None):
         on_progress({"progress": 0, "merit": 0.5, "systems": 1000, "elapsed_s": 1.0})
         # 同 OpticStudio：Hammer 以当前系统文件名开头；全局搜索之后系统文件是最好的那个 GLOPT（实测）
-        # as in OpticStudio: Hammer is named after the system file, which a global search leaves on its best GLOPT (measured)
         stem = daemon.backend.native_file().stem
         names = [f"GLOPT_0001_{k:03d}.zmx" for k in (1, 2)] if kind == "global" else [f"{stem}_0001_HAMMER.zmx"]
         for name in names:
@@ -827,23 +826,23 @@ def test_hammer_and_global_need_a_budget_and_archive_the_systems_they_write(setu
     write_demand(job, OPT_DEMAND, confirm=None)
     assert call(daemon, "opt.global", job=job.id, max_seconds=5)["error"]["code"] == ErrorCode.DEMAND_NOT_CONFIRMED
     demand.confirm(job.root, "确认，开始吧")
-    assert call(daemon, "opt.global", job=job.id)["error"]["code"] == ErrorCode.BAD_ARGS  # 没有预算 / no budget
+    assert call(daemon, "opt.global", job=job.id)["error"]["code"] == ErrorCode.BAD_ARGS  # 没有预算
     assert call(daemon, "opt.hammer", job=job.id, max_seconds=0)["error"]["code"] == ErrorCode.BAD_ARGS
-    # 镜头旁已有 GLOPT 文件（如镜头取自 lenses/global/NNN/）会被同名覆盖：拒绝 / same-named GLOPT files would be overwritten
+    # 镜头旁已有 GLOPT 文件（如镜头取自 lenses/global/NNN/）会被同名覆盖：拒绝
     (lens_dir / "GLOPT_0001_009.zmx").write_text("old", encoding="utf-8")
     assert call(daemon, "opt.global", job=job.id, max_seconds=5)["error"]["code"] == ErrorCode.BAD_ARGS and seen == {}
     (lens_dir / "GLOPT_0001_009.zmx").unlink()
 
     out = call(daemon, "opt.global", job=job.id, max_seconds=5)["result"]
     assert out["files"] == ["global/001/GLOPT_0001_001.zmx", "global/001/GLOPT_0001_002.zmx"] and out["dirty"]
-    assert 4 < seen.pop("max_seconds") <= 5  # 剩余预算 / the remaining budget
+    assert 4 < seen.pop("max_seconds") <= 5  # 剩余预算
     assert seen == {"kind": "global", "cores": config.compute_cores()}
     assert not list(lens_dir.glob("GLOPT_*.zmx"))
     progress = job.read_progress()
     assert progress["op"] == "opt.global" and progress["stage"] == "opt.global" and progress["systems"] == 1000
     assert progress["stopped_by"] == "timeout" and progress["status"] == "done"
 
-    (lens_dir / "a_0009_HAMMER.zmx").write_text("old", encoding="utf-8")  # 运行前就有的不动 / left as it was
+    (lens_dir / "a_0009_HAMMER.zmx").write_text("old", encoding="utf-8")  # 运行前就有的不动
     assert call(daemon, "opt.hammer", job=job.id, max_seconds=5)["result"]["files"] == ["hammer/001/GLOPT_0001_001_0001_HAMMER.zmx"]
     assert (lens_dir / "a_0009_HAMMER.zmx").read_text(encoding="utf-8") == "old"
     assert call(daemon, "opt.global", job=job.id, max_seconds=5)["result"]["files"][0].startswith("global/002/")
@@ -909,7 +908,7 @@ def test_modelling_runs_in_standalone_and_the_live_view_shows_interference(saos_
     view = json.loads((job.root / jobs.VIEW_FILE).read_text(encoding="utf-8"))
     assert view["ok"] and view["lens"] == "a.zmx" and len(view["lens_data"]) == 6 and view["interference"]["overlaps"] == []
     first = view["seq"]
-    # 负的空气间隔把第二片镜片塞进第一片 / a negative air gap pushes the second lens into the first
+    # 负的空气间隔把第二片镜片塞进第一片
     assert call(daemon, "lens.set", job=job.id, surface=2, param="thickness", value=-3.0)["ok"]
     view = json.loads((job.root / jobs.VIEW_FILE).read_text(encoding="utf-8"))
     assert view["seq"] > first and view["dirty"] and [o["lenses"] for o in view["interference"]["overlaps"]] == [[[1, 2], [3, 4]]]
@@ -930,7 +929,7 @@ def test_rounds_may_use_several_tiers_and_tiers_can_be_ruled_out():
     rows[3]["tiers"] = ["variables", "materials"]
     d = ledger.decide(rows, STOP, ruled=ruled)
     assert d["status"] == "exhausted" and d["tiers_ruled_out_since_gain"] == ["global", "structure"]
-    # 排除记在最后一次进步之前就不再有效 / a rule-out made before the last gain no longer holds
+    # 排除记在最后一次进步之前就不再有效
     rows = rounds_of([10, 9, 5, 5], ["baseline", "local", "local", "variables"])
     d = ledger.decide(rows, STOP, ruled=[{**ruled[0], "round": 1}])
     assert d["last_gain_round"] == 2 and d["tiers_ruled_out_since_gain"] == [] and d["status"] == "continue"
@@ -941,7 +940,7 @@ def test_rule_out_needs_a_reason_and_feeds_the_round_decision(setup):
     write_demand(job, DEMAND)
     sha = demand.compute_digest(demand.load_job(job.root))
     with pytest.raises(SaosError):
-        ledger.record_rule_out(job.root, sha, ["structure"], "notes/probe.json")  # 还没有轮次 / no round yet
+        ledger.record_rule_out(job.root, sha, ["structure"], "notes/probe.json")  # 还没有轮次
     assert call(daemon, "round.record", job=job.id)["ok"]
     with pytest.raises(SaosError):
         ledger.record_rule_out(job.root, sha, ["structure"], " ")
@@ -949,7 +948,7 @@ def test_rule_out_needs_a_reason_and_feeds_the_round_decision(setup):
         ledger.record_rule_out(job.root, sha, ["fancy"], "x")
     (job.root / "notes").mkdir(exist_ok=True)
     (job.root / "notes" / "probe.json").write_text("{}", encoding="utf-8")
-    # 缺证据的排除照样记下，记录和返回值标出缺什么 / a rule-out without the evidence is recorded and says what is missing
+    # 缺证据的排除照样记下，记录和返回值标出缺什么
     bare = ledger.record_rule_out(job.root, sha, ["global"], "no variable moves the target, by reasoning alone")
     assert bare["unsupported"] == ["no_evidence_file"] and "cites no existing file" in bare["warnings"][0]
     untried = ledger.record_rule_out(job.root, sha, ["materials"], "notes/probe.json: no variable moves the target")
@@ -959,10 +958,10 @@ def test_rule_out_needs_a_reason_and_feeds_the_round_decision(setup):
     call(daemon, "lens.set", job=job.id, surface=1, param="radius", value=60.0)
     out = call(daemon, "round.record", job=job.id, tier="local,variables")["result"]
     assert out["record"]["tiers"] == ["local", "variables"] and out["record"]["tier"] == "local"
-    # 改半径不改变假后端的 TOTR，没有进步，排除的层级算作处理过 / the radius does not change the fake TOTR: no gain, the rule-out holds
+    # 改半径不改变假后端的 TOTR，没有进步，排除的层级算作处理过
     d = out["decision"]
     assert d["last_gain_round"] == 0 and d["tiers_ruled_out_since_gain"] == ["materials", "global", "structure"] and d["status"] == "exhausted"
-    # 后来补了证据也不抹掉先前缺证据的那几条 / later evidence does not erase the unsupported rule-outs before it
+    # 后来补了证据也不抹掉先前缺证据的那几条
     assert d["tiers_ruled_out_without_evidence"] == ["materials", "global"]
     from saos import report
 
@@ -982,7 +981,7 @@ def test_surface_parameters_and_materials_can_vary(setup):
     assert call(daemon, "opt.vary", job=job.id, param="par4", surfaces=[1])["result"]["solves"] == {1: "Variable"}
     solves = call(daemon, "opt.vary", job=job.id, param="material", surfaces=[1], mode="model")["result"]["solves"]
     assert list(solves.values()) == ["MaterialModel"]
-    # 替换的结果写明用了哪个目录；假后端没有在产目录，就是全部在用目录 / the result names the catalog substitution uses
+    # 替换的结果写明用了哪个目录；假后端没有在产目录，就是全部在用目录
     out = call(daemon, "opt.vary", job=job.id, param="material", surfaces=[1], mode="substitute")["result"]
     assert out["solves"] == {1: "MaterialSubstitute"} and out["catalog"] == "all catalogs in use"
     assert call(daemon, "opt.vary", job=job.id, param="material", surfaces=[1], mode="substitute", catalog="saos_nhg_inprod")["result"]["catalog"] == "SAOS_NHG_INPROD"
@@ -998,7 +997,7 @@ def test_a_failed_vary_leaves_the_lens_unchanged_or_marked_unsaved_and_names_gla
     assert call(daemon, "opt.vary", job=job.id, param="material", surfaces=[2], mode="substitute")["error"]["code"] == ErrorCode.BAD_ARGS
     assert call(daemon, "lens.info", job=job.id)["result"]["dirty"] is False
     assert call(daemon, "opt.vary", job=job.id, param="material", surfaces=[1, 2], mode="substitute")["error"]["code"] == ErrorCode.BAD_ARGS
-    assert call(daemon, "lens.info", job=job.id)["result"]["dirty"] is True  # 第 1 面已设为替换 / surface 1 is already set
+    assert call(daemon, "lens.info", job=job.id)["result"]["dirty"] is True  # 第 1 面已设为替换
     glass = daemon.backend.surfaces()[1]["material"]
     daemon.backend.catalog_has = lambda name, catalog: False
     out = call(daemon, "opt.vary", job=job.id, param="material", surfaces=[1], mode="substitute", catalog="SAOS_NHG_INPROD")["result"]
@@ -1047,7 +1046,7 @@ def test_doubts_come_from_evidence_not_every_round(setup):
             "objectives": [{**LENGTH, "must": {"max": 120.0}}, focus]}
     write_demand(job, hard)
     first = call(daemon, "round.record", job=job.id)["result"]["brief"]
-    # 需求是中文的，给 agent 的提醒仍是英文 / a Chinese demand still gets the English reminder
+    # 需求是中文的，给 agent 的提醒仍是英文
     assert any("focus fails and its limit rests on agent assumption" in x for x in first["doubts"])
     assert first["reminder"] == demand.QUESTION_LINE["en"]
     call(daemon, "lens.set", job=job.id, surface=1, param="radius", value=60.0)
@@ -1077,11 +1076,11 @@ def test_parallel_runs_items_in_several_workers_from_the_saved_lens(setup):
     assert out["ok"], out
     res = out["result"]["result"]
     totr = [r["totr"] if r else None for r in res["results"]]
-    # 起点 TOTR = 5 + 95；每个条目只改第 1 面厚度，互不累积 / each item changes only surface 1 from the same start
+    # 起点 TOTR = 5 + 95；每个条目只改第 1 面厚度，互不累积
     assert totr == [100.0, 101.0, None, 102.0] and "bad item" in res["errors"]["2"] and res["workers_available"] == 2
     assert {r["worker"] for r in res["results"] if r} <= {0, 1} and job.verify_seals() == []
     assert (job.root / res["folder"] / "result.json").is_file() and (job.root / res["folder"] / "work.py").is_file()
-    # 有未保存修改时拒绝，worker 只能加载已保存的文件 / refused with unsaved changes: workers load the saved file
+    # 有未保存修改时拒绝，worker 只能加载已保存的文件
     call(daemon, "lens.set", job=job.id, surface=1, param="radius", value=60.0)
     assert call(daemon, "script.exec", job=job.id, name="scan", source=run, args={})["error"]["code"] == ErrorCode.UNSAVED_CHANGES
 
@@ -1110,8 +1109,8 @@ def test_changed_checks_re_measure_the_best_round_first(setup):
     call(daemon, "round.record", job=job.id, note="start")                     # r0: TOTR 100
     call(daemon, "lens.set", job=job.id, surface=1, param="thickness", value=3.0)
     call(daemon, "lens.save", job=job.id)
-    assert call(daemon, "round.record", job=job.id, tier="local")["ok"]         # r1: TOTR 98，最好 / best
-    # 改写成 kit 的写法，数值相同 / rewritten with kit, same numbers
+    assert call(daemon, "round.record", job=job.id, tier="local")["ok"]         # r1: TOTR 98，最好
+    # 改写成 kit 的写法，数值相同
     (checks / "length.py").write_text("def run(ctx):\n    return ctx.op('TOTR')\n", encoding="utf-8")
     call(daemon, "lens.set", job=job.id, surface=1, param="thickness", value=4.0)
     call(daemon, "lens.save", job=job.id)
@@ -1119,20 +1118,20 @@ def test_changed_checks_re_measure_the_best_round_first(setup):
     assert out["rebase"] == {"round": 2, "rebase_of": 1, "equivalent": True, "diffs": {}, "shortfall": out["rebase"]["shortfall"],
                              "evaluation": out["rebase"]["evaluation"]}
     assert out["record"]["round"] == 3 and out["record"]["file"] == "rounds/r003.zmx"
-    assert out["decision"]["rounds_in_version"] == 2 and out["decision"]["last_gain_round"] == 1  # 同一窗口 / same window
+    assert out["decision"]["rounds_in_version"] == 2 and out["decision"]["last_gain_round"] == 1  # 同一窗口
     evaluation = json.loads((job.root / out["rebase"]["evaluation"]).read_text(encoding="utf-8"))
     assert evaluation["lens"]["file"] == "rounds/r001.zmx" and "src/saos/kit.py" in evaluation["saos_code_files"]
-    assert daemon.backend.surfaces()[1]["thickness"] == 4.0 and job.verify_seals() == []  # 当前镜头回来了 / the current lens is back
+    assert daemon.backend.surfaces()[1]["thickness"] == 4.0 and job.verify_seals() == []  # 当前镜头回来了
     rows = ledger.load(job.root / ledger.LEDGER_FILE)
     assert [r["tier"] for r in rows] == ["baseline", "local", "rebase", "variables"] and rows[2]["file"] == "rounds/r001.zmx"
-    # 口径变了：重测数值不同，从重测记录开新窗口 / the measurement changed: a new window starts at the rebase record
+    # 口径变了：重测数值不同，从重测记录开新窗口
     (checks / "length.py").write_text("def run(ctx):\n    return ctx.op('TOTR') + 1.0\n", encoding="utf-8")
     call(daemon, "lens.set", job=job.id, surface=1, param="thickness", value=2.0)
     call(daemon, "lens.save", job=job.id)
     out = call(daemon, "round.record", job=job.id, tier="local")["result"]
     assert not out["rebase"]["equivalent"] and out["rebase"]["rebase_of"] == 1
     assert out["rebase"]["diffs"]["length"] == {"recorded": 98.0, "now": 99.0}
-    # 新窗口不重置轮次上限：本需求版本内非 rebase 的 r1、r3、r5 / a new window keeps the round budget of the demand version
+    # 新窗口不重置轮次上限：本需求版本内非 rebase 的 r1、r3、r5
     assert out["decision"]["rounds_in_version"] == 3 and out["decision"]["last_gain_round"] == 5
     window = ledger.current_window(ledger.load(job.root / ledger.LEDGER_FILE))
     assert [r["round"] for r in window] == [4, 5] and window[0]["file"] == "rounds/r001.zmx"
@@ -1178,10 +1177,10 @@ def test_every_optimiser_entry_follows_the_same_rule(setup):
     demand.confirm(job.root, "自动化测试夹具：确认需求")
     for op, extra in entries:
         assert call(daemon, op, job=job.id, **extra)["ok"], op
-    write_demand(job, OPT_DEMAND)  # 用户指定结构：三个入口都可以运行 / structure fixed by the user: all three run
+    write_demand(job, OPT_DEMAND)  # 用户指定结构：三个入口都可以运行
     for op, extra in entries:
         assert call(daemon, op, job=job.id, **extra)["ok"], op
-    # 第一片玻璃换成空气，结构已不是认可的那一份：三个入口都拒绝 / the first glass becomes air: the approved structure no longer applies
+    # 第一片玻璃换成空气，结构已不是认可的那一份：三个入口都拒绝
     daemon.backend.lens["surfaces"][1]["material"] = ""
     for op, extra in entries:
         assert call(daemon, op, job=job.id, **extra)["error"]["code"] == ErrorCode.MODEL_NOT_APPROVED, op
@@ -1204,7 +1203,7 @@ def test_a_job_from_before_the_upgrade_keeps_its_confirmation_and_rounds(setup):
     out = call(daemon, "round.record", job=job.id, tier="local")
     assert out["ok"], out.get("error")
     assert out["result"]["record"]["demand_sha"] == demand.compute_digest(demand.load_job(job.root))
-    # 第 0 轮（升级前）和第 1 轮（升级后）是同一个版本：第 1 轮计入轮次预算；不认旧值时这里会变成 0 / round 0 (before) and 1 (after) are one version: round 1 counts
+    # 第 0 轮（升级前）和第 1 轮（升级后）是同一个版本：第 1 轮计入轮次预算；不认旧值时这里会变成 0
     assert out["result"]["decision"]["rounds_in_version"] == 1
     assert report.build(job)["confirmed"] is not None
 

@@ -204,7 +204,6 @@ class Tr:
 
 
 # 纸面风格（2026-11-03 用户决定：报告用纸面模板，第 1 页一页总览）；完整记录沿用同一套颜色
-# paper style (the user's choice: a paper template with a one-page summary first); the full record uses the same colours
 CSS = """
 :root{--bg:#f4f1ea;--fg:#1d1c1a;--muted:#57524a;--line:#d8d1c3;--card:#fbf9f4;--ok:#3f7a57;--bad:#b5432d;--warn:#a07a3c;--accent:#a07a3c;}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 system-ui,"Microsoft YaHei","PingFang SC",sans-serif}
@@ -220,8 +219,6 @@ svg .dot{fill:var(--accent)}svg .dot.ok{fill:var(--ok)}svg .dot.inf{fill:var(--b
 """
 
 # 屏幕上一次只看一页：默认第 1 页（按窗口等比缩放，不上下滚动），#full 时看完整记录；打印时两页都出，第 1 页 A3 横向
-# one page at a time on screen: the summary by default (scaled to the window, no scrolling), the full record at #full;
-# printing gives both, the summary on A3 landscape
 PAGES_CSS = """
 body{background:#e7e2d7}
 nav.pages{position:fixed;left:14px;top:8px;z-index:5;display:flex;gap:6px}
@@ -276,7 +273,7 @@ def gap_text(goal: dict[str, Any] | None, value: float | None, t: Tr) -> str:
     """差多少：用目标本身的单位写出超出达标线的量。"""
     if not goal or value is None:
         return t("no_value") if goal else "—"
-    # 只在判定为未达标时调用（判定带容差）；这里只把超出量写出来 / called for unmet items only; this only words the excess
+    # 只在判定为未达标时调用（判定带容差）；这里只把超出量写出来
     excess = demand.excess(goal, value)
     return t("met") if excess <= 0 else t("over", gap=fmt(excess))
 
@@ -306,7 +303,7 @@ def chart(rounds: list[dict[str, Any]], t: Tr) -> str:
     peak = peak if peak > 0 else 1.0
     n = max(len(rounds) - 1, 1)
     has_inf = len(finite) < len(rounds)
-    # 有 ∞ 时顶部留出一条带 / reserve a band at the top when some rounds are infinite
+    # 有 ∞ 时顶部留出一条带
     low = top + (band if has_inf else 0)
 
     def x(k: int) -> float:
@@ -409,12 +406,10 @@ def build(job: jobs.Job) -> dict[str, Any]:
     d = demand.load_job(job.root)
     jobs.require_zos_history(job.root)
     # 报告只引用完好的证据：封存过的文件被改动或删除时拒绝生成
-    # a report cites intact evidence only: refuse when a sealed file was changed or deleted
     problems = job.verify_seals()
     if problems:
         raise SaosError(ErrorCode.EVIDENCE_TAMPERED, f"{len(problems)} sealed evidence file(s) were changed or deleted; see details", {"problems": problems[:50]})
     # 版本哈希用需求文件原样的停止规则（不含阶段覆盖的 max_rounds），与判定和记录时一致
-    # version hashes use the demand file's own stop rule (without the stage's max_rounds), as when judging and recording
     stored = demand.load_job(job.root)
     rounds = ledger.load(job.root / ledger.LEDGER_FILE, stored)
     if not rounds:
@@ -424,16 +419,15 @@ def build(job: jobs.Job) -> dict[str, Any]:
         raise SaosError(ErrorCode.SPEC_CHANGED, "no round matches the current demand and check scripts; record a new round before reporting")
     decision = ledger.decide(rounds, d["stop"], ledger.stop_for(job.root, current[0], stored), ledger.ruled_out_for(job.root, current[0], stored))
     rounds = ledger.current_window(rounds)
-    # 用户停止时照常交付：被复测轮次已换成 OpticStudio 的数 / a stopped job still reports, on the round's OpticStudio numbers
+    # 用户停止时照常交付：被复测轮次已换成 OpticStudio 的数
     failed = ledger.confirmation_failure(rounds)
     if failed is not None and decision["status"] != "stopped":
         raise SaosError(ErrorCode.BAD_ARGS, f"OpticStudio disagreed with rtc on round {failed['round']}; "
                         "return to design and record a new round before reporting")
     # 只交付不含模型玻璃、满足硬条件的轮次；都不满足时取最好的一轮并标明不可交付
-    # only rounds without a model glass that keep the hard conditions are deliverable; otherwise show the best one marked as not deliverable
     deliver = ledger.deliver_round(rounds)
     if not ledger.confirmed(deliver):
-        # rtc 轮次要先在 OpticStudio 上复测，报告只用 OpticStudio 的数/ an rtc round is re-measured on OpticStudio first
+        # rtc 轮次要先在 OpticStudio 上复测，报告只用 OpticStudio 的数
         raise SaosError(ErrorCode.BAD_ARGS, f"round {deliver['round']} was measured on rtc; re-measure it on an OpticStudio instance with "
                         f"saos round --confirm --of {deliver['round']} before reporting", {"round": deliver["round"], "backend": "rtc"})
     eval_file = job.root / deliver["evaluation"]
@@ -441,13 +435,11 @@ def build(job: jobs.Job) -> dict[str, Any]:
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"missing evaluation for round {deliver['round']}")
     evaluation = json.loads(eval_file.read_text(encoding="utf-8"))
     # 交付这一轮是哪个后端算的；Optiland 之前的记录没有 backend，都是 OpticStudio 算的
-    # which backend measured the shown round; records from before Optiland have no backend and come from OpticStudio
     env = evaluation.get("environment") or {}
     backend = {"name": env.get("backend") or "zos", "version": env.get("backend_version") or env.get("opticstudio")}
     if backend["name"] not in ("zos", "fake"):
         raise SaosError(ErrorCode.BAD_ARGS, "a report requires OpticStudio measurements; rebuild legacy lenses in a new job and measure again")
     # 文字部分（总结、待确认问题）取当前文件；三类条目取这一轮实际判定时的版本，两者内容哈希相同
-    # the wording (summary, open questions) comes from the current file; the sections from the judged version, which hashes the same
     shown = {**evaluation["demand"], "summary": d["summary"], "open_questions": d.get("open_questions") or [], "lang": d.get("lang"), "stop": d["stop"]}
     from saos import milestones
 
@@ -455,7 +447,6 @@ def build(job: jobs.Job) -> dict[str, Any]:
 
     confirmed = demand.confirmation_for(job.root, demand.digest(stored), stored)
     # 第 1 页签署栏用交付镜头所依据的那次模型确认；记录里找不到时取最近一次
-    # the summary page shows the approval of the delivered lens's model, else the latest one
     approvals = model_gate.approvals(job)
     approval = next((a for a in reversed(approvals) if deliver.get("model") and a.get("model") == deliver.get("model")), approvals[-1] if approvals else None)
     return {"milestones": milestones.elapsed(job), "demand": shown, "confirmed": confirmed, "rounds": rounds, "decision": decision,
@@ -576,7 +567,7 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
         goal = item.get("goal")
         preference = goal is None
         mark = "—" if preference else (f'<span class="pass">{t("met")}</span>' if item.get("passed") else f'<span class="fail">{t("unmet")}</span>')
-        # 达标与否以判定结果为准（含容差），差多少只对未达标的项写出 / the verdict (with tolerance) decides; gaps only for unmet items
+        # 达标与否以判定结果为准（含容差），差多少只对未达标的项写出
         gap = "—" if preference else t("met") if item.get("passed") else gap_text(goal, item.get("value"), t)
         line = goal_text(goal, t) if goal else ""
         if item.get("direction"):
@@ -607,7 +598,7 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
     elif confirmed.get("via") == "window":
         confirmed_text = t("confirmed.note", quote=e(confirmed.get("quote"))) if confirmed.get("quote") else t("confirmed.window")
     else:
-        # 没有 via 的旧记录都来自命令行 / older records without via all came from the command line
+        # 没有 via 的旧记录都来自命令行
         confirmed_text = t("confirmed", quote=e(confirmed.get("quote", "")))
     demand_html = demand_section(h, t)
     evidence = []
@@ -627,7 +618,7 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
     if data.get("blocked"):
         if deliver.get("measurement_errors"):
             text = t("blocked.errors", ids=e(", ".join(deliver["measurement_errors"])))
-        # 交叠也计入 hard_failing，先给出交叠的具体位置 / a clash is in hard_failing too; name where it is first
+        # 交叠也计入 hard_failing，先给出交叠的具体位置
         elif deliver.get("parts_clash"):
             clash = deliver["parts_clash"]
             what = [f"{a}–{b}" for a, b in (c["surfaces"] for c in clash.get("crossings") or [])]
@@ -648,7 +639,7 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
             if m.get("status"):
                 source += t("mat.obsolete") if m["status"] == "Obsolete" else t("mat.status", status=m["status"])
         n = " / ".join(f"{v:.6f}" for v in m.get("n") or [])
-        # 非序列系统的材料按物体号记 / a non-sequential system records materials by object number
+        # 非序列系统的材料按物体号记
         place = m["surface"] if "surface" in m else m.get("object")
         if place in (deliver.get("environment") or []):
             source += t("mat.env")
@@ -661,7 +652,7 @@ def render(job: jobs.Job, data: dict[str, Any], lang: str) -> str:
                  if mat_rows else f"<p>{t('none')}</p>") + model_line
     from saos import report_sheet
 
-    # 第 1 页的判定表与第 2 页逐项结果同一套结论（含容差）/ page 1's check table uses the same verdicts as page 2
+    # 第 1 页的判定表与第 2 页逐项结果同一套结论（含容差）
     judged = []
     for item in data["items"]:
         goal = item.get("goal")
@@ -776,7 +767,6 @@ def write(job: jobs.Job, lang: str | None = None) -> dict[str, Any]:
         milestone["to_first_report_s"] = max(0.0, datetime.fromisoformat(generated_at).timestamp() - start)
     html = render(job, data, chosen)
     # 每次生成都留一份编号副本并封存；index.html 始终是最新一份
-    # every generation is kept as a numbered, sealed copy; index.html is always the latest
     archived = folder / f"{jobs.next_archive_number(folder):03d}-r{data['deliver']['round']:03d}-{data['decision']['status']}.html"
     write_text(archived, html)
     job.seal(archived)
@@ -786,8 +776,6 @@ def write(job: jobs.Job, lang: str | None = None) -> dict[str, Any]:
     kind = headline(data["decision"]["status"], shown, data.get("blocked"))
     # deliver 只放可以交付的镜头；没有有效设计或最好一轮不可交付时为 None，那一轮放在 diagnostic 里供诊断，
     # 免得读 JSON 的一方把失败的候选当成交付
-    # deliver holds a deliverable lens only; with no valid design or a non-deliverable best round it is None and that
-    # round goes to diagnostic, so whoever reads the JSON cannot take a failed candidate for the delivery
     deliverable = kind in ("deliver", "best_so_far")
     result = {
         "archived": archived.relative_to(job.root).as_posix(),

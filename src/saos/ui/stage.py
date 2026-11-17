@@ -15,7 +15,7 @@ from saos import client, demand, i18n, jobs, ledger, model_gate
 from saos.protocol import ErrorCode, SaosError, finite
 
 STEPS = ("interview", "demand_confirm", "modeling", "model_approve", "design", "deliver")
-# 分析任务（jobs.MODES 的 analyse）只有这一步，没有关卡 / an analysis job has this one step and no gates
+# 分析任务（jobs.MODES 的 analyse）只有这一步，没有关卡
 ANALYSE_STEPS = ("analyse",)
 FINAL = ("achieved", "exhausted", "limit", "stopped")
 
@@ -25,7 +25,6 @@ def _daemon() -> dict[str, Any]:
     if state is None or not client.pid_alive(int(state.get("pid", 0))):
         return {"running": False, "backend": None}
     # 当前在哪个后端上算、是否两个后端都有：窗口据此标明数值来源和 OpticStudio 是否占着许可
-    # which backend computes now and whether the daemon holds both: the window labels where numbers come from
     backends = state.get("backends") or {}
     backend = backends.get("active") or (state.get("opticstudio") or {}).get("backend") or "zos"
     return {"running": True, "pid": state.get("pid"), "backend": backend,
@@ -126,12 +125,11 @@ def rounds_of(job: jobs.Job) -> list[dict[str, Any]]:
         out.append({"round": r["round"], "tiers": ledger.tiers_of(r), "note": r.get("note", ""), "shortfall": finite(r["shortfall"]),
                     "achieved": bool(r.get("achieved")), "deliverable": ledger.deliverable(r), "time": r.get("time"),
                     "demand_sha": ledger.version(r)[0], "viz": bool(folder) and (job.root / folder / "viz.json").is_file(),
-                    # 谁算的这一轮；rtc 轮次复测后数值换成 OpticStudio 的/ who computed it; confirmed rtc rounds show OpticStudio's numbers
+                    # 谁算的这一轮；rtc 轮次复测后数值换成 OpticStudio 的
                     "backend": r.get("backend", "zos"),
                     **({"confirmed_by": r["confirmed_by"], "agrees": bool(r.get("agrees"))} if r.get("confirmed_by") is not None else {}),
                     "values": {k: finite(v) for k, v in (r.get("values") or {}).items()},
                     # 未达的条目及未达量（账本按判定记下的，窗口不比界限）；更早的记录没有这一项时为 None
-                    # failing items and their shortfalls as judged in the ledger (the window never compares bounds); None on older records
                     "failing": ({k: finite(v) for k, v in r["failing"].items()} if isinstance(r.get("failing"), dict) else None)})
     return out
 
@@ -163,7 +161,7 @@ def _report_current(root) -> bool:
         return False
     inputs = [root / name for name in (ledger.LEDGER_FILE, ledger.STOPS_FILE, ledger.RULED_OUT_FILE)]
     scans = root / "scans"
-    # 与 report.latest_tolerance 选同一次扫描 / the same scan report.latest_tolerance picks
+    # 与 report.latest_tolerance 选同一次扫描
     for folder in sorted((p for p in scans.iterdir() if p.is_dir()), key=lambda p: p.name, reverse=True) if scans.is_dir() else ():
         result = folder / "result.json"
         try:
@@ -200,23 +198,23 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
     status = dict.fromkeys(STEPS, "pending")
     detail: dict[str, Any] = {}
     job_state = job.read_state()
-    # 任务记住的窗口设置（saos ui open --tabs / --metrics）/ the job's remembered window settings
+    # 任务记住的窗口设置（saos ui open --tabs / --metrics）
     ui = job_state.get("ui") or {}
     out: dict[str, Any] = {"job": job.id, "name": job_state.get("name"), "mode": job.mode, "daemon": _daemon(), "progress": None,
                            "blocking": [], "decision": None, "rounds": rounds_of(job), "ui": ui, "revisions": []}
-    # 当前镜头的评价函数值和各项测量值，后台进程自动更新（saos.live）/ the live metrics, updated by the daemon
+    # 当前镜头的评价函数值和各项测量值，后台进程自动更新（saos.live）
     try:
         out["metrics"] = json.loads((root / jobs.METRICS_FILE).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         out["metrics"] = None
     view = root / jobs.VIEW_FILE
-    # 当前镜头视图的版本号：界面看到它变了才重新取 / the live view's version; the window refetches only when it changes
+    # 当前镜头视图的版本号：界面看到它变了才重新取
     out["live"] = view.stat().st_mtime_ns if view.is_file() else None
     progress = job.read_progress()
     if progress and progress.get("status") == "running":
         out["progress"] = progress
     else:
-        # 分离运行的扫描写自己的进度文件 / a detached scan writes its own progress file
+        # 分离运行的扫描写自己的进度文件
         detached = jobs.detached_runs(job.root)
         if detached:
             out["progress"] = {**detached[-1], "detail": detached[-1]["folder"]}
@@ -225,7 +223,7 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
         out["lang"] = i18n.resolve()
         return {**out, "steps": [{"id": "analyse", "status": "active", "detail": {"lens": job_state.get("current_lens")}}],
                 "current": "analyse"}
-    # 可行性记录（need.md：explore/feasibility/README.md）写了没有 / whether the feasibility record exists
+    # 可行性记录（need.md：explore/feasibility/README.md）写了没有
     out["feasibility"] = (root / "explore" / "feasibility" / "README.md").is_file()
     try:
         d = demand.load_job(root)
@@ -245,14 +243,14 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
         return {**out, "steps": [{"id": key, "status": status[key], "detail": {"legacy": True} if key == "design" else None}
                                 for key in STEPS], "current": "design"}
     sha = demand.digest(d)
-    # 版本（轮次、停止、排除、报告）用计算层哈希；确认用确认层哈希 / versions use the compute layer; confirmation uses the confirmation layer
+    # 版本（轮次、停止、排除、报告）用计算层哈希；确认用确认层哈希
     csha = demand.compute_digest(d)
     status["interview"] = "done"
     confirmed = demand.confirmation_for(root, sha, d) is not None
     out["revisions"] = pending_revisions(job, sha, confirmed)
     if not confirmed:
         status["demand_confirm"] = "waiting"
-        # 确认过旧版本：需求改过，要重新确认 / an older version was confirmed: the demand changed and needs confirming again
+        # 确认过旧版本：需求改过，要重新确认
         detail["demand_confirm"] = "reconfirm" if demand.confirmations(root) else "first"
         current = "demand_confirm"
     else:
@@ -271,7 +269,6 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
             same_lens = (isinstance(live_lens, str) and isinstance(current_lens, str)
                          and job.resolve_lens(live_lens, must_exist=False) == job.resolve_lens(current_lens, must_exist=False))
             # 说明写完时不会刷新视图；旧视图不能盖过更新的说明，否则未确认的新结构会被当成已确认
-            # describe does not refresh the view; a stale view must not override a newer description
             live_is_newer = bool(models) and view.is_file() and view.stat().st_mtime_ns >= models[-1].stat().st_mtime_ns
             if live.get("model") and same_lens and live_is_newer:
                 current_model = live["model"]
@@ -303,7 +300,7 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
             status["modeling"] = "active"
             current = "modeling"
         elif models and not latest_approved:
-            # 最新一份建模说明还没获确认，包括结构改动后重新出的说明 / the latest description awaits approval, incl. one redone after a structure change
+            # 最新一份建模说明还没获确认，包括结构改动后重新出的说明
             status["modeling"] = "done"
             status["model_approve"] = "waiting"
             detail["model_approve"] = models[-1].parent.relative_to(root).as_posix()
@@ -318,7 +315,7 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
                 out["decision"] = {k: finite(v) if isinstance(v, float) else v for k, v in decision.items() if k != "stopped"}
             detail["design"] = {"rounds": len(in_version), "last": out["rounds"][-1] if in_version else None,
                                 "rtc_unclosed": bool(job_state.get("rtc_unclosed"))}
-            # 最近一次复测与 rtc 结论不同、之后还没有新轮次：回到设计 / the latest confirmation disagreed and no round followed
+            # 最近一次复测与 rtc 结论不同、之后还没有新轮次：回到设计
             if decision is not None and "confirm_failed" in decision:
                 detail["design"]["confirm_failed"] = decision["confirm_failed"]
             if decision is not None and decision["status"] in FINAL:
@@ -328,13 +325,13 @@ def snapshot(job: jobs.Job) -> dict[str, Any]:
                 detail["deliver"] = decision["status"]
                 shown = ledger.deliver_round(ledger.current_window(rows))
                 if not ledger.confirmed(shown):
-                    # rtc 轮次待在 OpticStudio 上复测 / an rtc round awaits its OpticStudio re-measurement
+                    # rtc 轮次待在 OpticStudio 上复测
                     out["confirm_pending"] = shown["round"]
             else:
                 status["design"] = "active"
                 current = "design"
         if ledger.stopped_before_rounds(root, csha, d) is not None:
-            # 没有结构过门禁就停了：不再等确认，直接到收尾 / stopped with no structure through the gate: nothing to approve, on to the end
+            # 没有结构过门禁就停了：不再等确认，直接到收尾
             status["modeling"] = "done"
             status["model_approve"] = status["design"] = "pending"
             status["deliver"] = "done" if _report_current(root) else "active"

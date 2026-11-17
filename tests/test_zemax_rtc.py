@@ -108,7 +108,7 @@ def test_rtc_copy_matches_opticstudio_and_is_faster(zos, stop_behind):
     fast = ctx.fast()
     image = ctx.surface(-1)
 
-    # 实际瞄准时以 OpticStudio 的瞄准收敛为限，见模块说明 / with real aiming OpticStudio's own aiming tolerance limits it
+    # 实际瞄准时以 OpticStudio 的瞄准收敛为限，见模块说明
     tol_pos, tol_dir, tol_rms = (1e-6, 1e-7, 1e-5) if stop_behind else (1e-8, 1e-9, 1e-7)
     for to in (2, image):
         diff = fast.compare(ctx, FIELDS, wave=[1, 2, 3], grid=9, to=to)
@@ -120,14 +120,14 @@ def test_rtc_copy_matches_opticstudio_and_is_faster(zos, stop_behind):
     zos_rms, rtc_rms = _spot_rms(ctx), _spot_rms(fast)
     assert rtc_rms == pytest.approx(zos_rms, rel=tol_rms, abs=1e-10)
 
-    # 在副本上改一组参数，写回 OpticStudio 后两边应仍一致 / change the copy, push it, both sides agree again
+    # 在副本上改一组参数，写回 OpticStudio 后两边应仍一致
     fast.set({"2.radius": -46.0, "3.par2": 5e-7, "3.thickness": fast.get("3.thickness") - 0.5})
     pushed = fast.push(ctx)
     assert set(pushed) == {"2.radius", "3.par2", "3.thickness"}
     after = fast.compare(ctx, FIELDS, wave=[1, 2, 3], grid=9)
     assert after["ok_one_side"] == 0 and max(after["max_dx"], after["max_dy"]) < tol_pos
 
-    # 速度：同一组 49 个曲率点，每点改参数再算 4 视场 × 3 波长的点列 / speed over the same 49-point radius scan
+    # 速度：同一组 49 个曲率点，每点改参数再算 4 视场 × 3 波长的点列
     radii = np.linspace(-50.0, -42.0, 49)
     timings = {}
     for name, target in (("opticstudio", ctx), ("rtc", fast)):
@@ -277,7 +277,7 @@ def test_wizard_reference_writes_the_operand_opticstudio_does(zos):
 
 
 @pytest.mark.parametrize("data, reference", [
-    # OPDX 的参考（piston 与倾斜）怎么取还没对上：2026-11-14 实测差 0.0236 个波，见 TODO.md / OPDX's reference is not reconciled yet
+    # OPDX 的参考（piston 与倾斜）怎么取还没对上：2026-11-14 实测差 0.0236 个波，见 TODO.md
     pytest.param("Wavefront", "Centroid", marks=pytest.mark.xfail(strict=True, reason="OPDX reference not reconciled (TODO.md)")),
     ("Wavefront", "Chief Ray"), ("Wavefront", "Unreferenced"),
                                              ("Spot Radius", "Centroid"), ("Spot Radius", "Chief Ray")])

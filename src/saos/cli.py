@@ -83,15 +83,15 @@ def cmd_job(args: argparse.Namespace) -> Any:
             "job": job.id,
             "path": str(job.root),
             "state": job.read_state(),
-            # 工作流走到哪一步，与流程窗口同源 / where the job stands in the workflow, as the workflow window shows it
-            # revisions：用户在窗口里对当前版本提出、还没出新版的修改意见 / change requests on the current versions, not yet answered
+            # 工作流走到哪一步，与流程窗口同源
+            # revisions：用户在窗口里对当前版本提出、还没出新版的修改意见
             "workflow": {k: snapshot[k] for k in ("mode", "current", "steps", "blocking", "decision", "revisions")},
             "lenses": sorted(p.relative_to(job.lenses_dir).as_posix() for p in lens_files.all_lenses(job.lenses_dir)),
             "log_tail": [json.loads(line) for line in lines[-args.log:]] if args.log > 0 else [],
-            # 直接读文件，后台进程正忙时也能看 / read from the file, so it works while the daemon is busy
+            # 直接读文件，后台进程正忙时也能看
             "progress": job.read_progress(),
             "cancel_requested": job.cancel_requested(),
-            # --detach 的运行：状态和结果文件 / runs started with --detach: status and result file
+            # --detach 的运行：状态和结果文件
             "runs": client.detached_runs(job.root),
         }
     if args.action == "cancel":
@@ -154,7 +154,7 @@ def cmd_lens(args: argparse.Namespace) -> Any:
     raise AssertionError(action)
 
 
-# 一次 --surfaces 最多列出的面数，远多于任何镜头的面数 / the most surfaces one --surfaces may list, far beyond any lens
+# 一次 --surfaces 最多列出的面数，远多于任何镜头的面数
 MAX_SURFACES = 10000
 
 
@@ -163,7 +163,6 @@ def _surface_list(text: str, flag: str = "--surfaces") -> list[int]:
     out: list[int] = []
     for part in text.split(","):
         # 只认 ASCII 数字、最多 5 位：超长数字串会让 int() 抛异常，全角或其他文字的数字也不该当面号
-        # ASCII digits only, at most 5: a huge digit string makes int() fail, and full-width or other scripts' digits are no surface numbers
         m = re.fullmatch(r"[ \t]*([0-9]{1,5})[ \t]*(?:-[ \t]*([0-9]{1,5})[ \t]*)?", part)
         if not m:
             raise SaosError(ErrorCode.BAD_ARGS, f"{flag} takes numbers and ranges like 1,3,5-7; cannot read {part[:40]!r}")
@@ -172,7 +171,6 @@ def _surface_list(text: str, flag: str = "--surfaces") -> list[int]:
             raise SaosError(ErrorCode.BAD_ARGS, f"{flag} range {a}-{b} runs backwards; write it as {b}-{a}")
         out.extend(range(a, b + 1))
         # 每段最多 5 位，单段至多十万个面号；总数再设上限，免得几段大区间在发往后台之前占满内存
-        # at most 5 digits bound one range; the total is capped too, so wide ranges cannot fill memory before reaching the daemon
         if len(out) > MAX_SURFACES:
             raise SaosError(ErrorCode.BAD_ARGS, f"{flag} lists more than {MAX_SURFACES} entries")
     return out
@@ -187,7 +185,7 @@ def cmd_opt(args: argparse.Namespace) -> Any:
                        "configs": _surface_list(args.configs, "--configs") if args.configs else None, "on": not args.off}
             return client.request("opt.vary", payload, timeout=args.timeout)
         if args.objects:
-            # 非序列物体的参数 / parameters of non-sequential objects
+            # 非序列物体的参数
             if not args.param or args.surfaces:
                 raise SaosError(ErrorCode.BAD_ARGS, "opt vary --objects needs --param and no --surfaces")
             payload = {"job": args.job, "param": args.param, "objects": _surface_list(args.objects, "--objects"), "group": args.group,
@@ -211,7 +209,7 @@ def cmd_opt(args: argparse.Namespace) -> Any:
         return _send("opt.local", args, {"job": args.job, "cycles": args.cycles, "cores": args.cores, "max_seconds": args.max_seconds,
                                          "measure": args.measure, "algorithm": args.algorithm}, args.timeout)
     if args.action in ("hammer", "global"):
-        # 运行时长已知：客户端至少等到它结束后再留 2 分钟收尾 / the run length is known: wait for it plus 2 minutes to wrap up
+        # 运行时长已知：客户端至少等到它结束后再留 2 分钟收尾
         payload = {"job": args.job, "cores": args.cores, "max_seconds": args.max_seconds, "measure": args.measure}
         if getattr(args, "rel", None) is not None:
             payload["rel"] = args.rel
@@ -270,7 +268,7 @@ def cmd_stop(args: argparse.Namespace) -> Any:
 
     root = jobs.get_job(args.job).root
     d = demand.load_job(root)
-    # 不带 --quote 的停止只在自主任务里可以（record_stop 核对）/ a stop without --quote: autonomous jobs only
+    # 不带 --quote 的停止只在自主任务里可以（record_stop 核对）
     return ledger.record_stop(root, demand.compute_digest(d), args.reason, args.quote or "", d,
                               via=("ask" if args.asked else "cli") if args.quote else "auto")
 
@@ -285,7 +283,6 @@ def cmd_demand(args: argparse.Namespace) -> Any:
             return result
         result = demand.confirm(root, args.quote, via="ask" if args.asked else "cli")
         # 需求确认后确保流程图小窗口开着（已开着就不再开第二个）；SAOS_UI=0 时不开
-        # make sure the workflow window is open once the demand is confirmed (no second one); not with SAOS_UI=0
         if os.environ.get("SAOS_UI") != "0":
             from saos import ui
 
@@ -307,7 +304,7 @@ def cmd_ui(args: argparse.Namespace) -> Any:
 
 
 def cmd_round(args: argparse.Namespace) -> Any:
-    # 传输时 NaN 会变成 null、inf 变成字符串，所以发送前就要拒绝 / NaN would travel as null and inf as a string, so refuse them before sending
+    # 传输时 NaN 会变成 null、inf 变成字符串，所以发送前就要拒绝
     if args.merit is not None and not math.isfinite(args.merit):
         raise SaosError(ErrorCode.BAD_ARGS, f"--merit must be a finite number (got {args.merit})")
     if args.confirm:
@@ -348,7 +345,7 @@ def cmd_metrics(args: argparse.Namespace) -> Any:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    # 命令与子命令的说明只写在 cli_help（COMMANDS / GROUPS），由 cli_help.configure 填入 / command help lives only in cli_help
+    # 命令与子命令的说明只写在 cli_help（COMMANDS / GROUPS），由 cli_help.configure 填入
     parser = _Parser(prog="saos")
     sub = parser.add_subparsers(dest="group", required=True, parser_class=_Parser)
 
@@ -753,7 +750,7 @@ def main(argv: list[str] | None = None) -> int:
         from saos.daemon import serve
 
         if args.backend:
-            # 后台进程和它的 worker 都按这个后端启动 / the daemon and its workers start on this backend
+            # 后台进程和它的 worker 都按这个后端启动
             os.environ["SAOS_BACKEND"] = args.backend
         return serve(args.token)
     if args.group == "ui" and args.action == "serve":

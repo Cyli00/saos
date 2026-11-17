@@ -52,7 +52,7 @@ def _finite(p: dict[str, Any]) -> None:
 def _aperture(name: str) -> Callable[[dict[str, Any]], None]:
     def change(p):
         p["aperture"] = {"type": name} if name == "float_by_stop" else {"type": name, "value": 0.1 if name == "object_na" else 5}
-        # 物方孔径在物在无穷远时不成立（处方本身就拒绝）/ object-side apertures need a finite object
+        # 物方孔径在物在无穷远时不成立（处方本身就拒绝）
         if name in prescription.OBJECT_SIDE_APERTURES:
             _finite(p)
     return change
@@ -119,7 +119,6 @@ def _telecentric(p: dict[str, Any]) -> None:
 
 
 # 探针表：组 → 条目 → 对底镜头的改动。条目名取处方里的写法；other 是任何没列出的面型。
-# the probes: group → item → the change to the base lens. Items are named as in prescriptions; other is any unlisted type.
 def _probes() -> dict[str, dict[str, Callable[[dict[str, Any]], None]]]:
     from saos.backend import rtc_lens
 
@@ -206,7 +205,7 @@ def table() -> dict[str, Any]:
 
     base = _built(_probe())
     if base.unverified():
-        # 底镜头自己带了未对账路径时，每个探针都会被它染成 unreconciled / every probe would inherit the base's paths
+        # 底镜头自己带了未对账路径时，每个探针都会被它染成 unreconciled
         raise SaosError(ErrorCode.INTERNAL_ERROR, f"the capability probe lens is no longer fully reconciled on rtc: {base.unverified()}")
     with tempfile.TemporaryDirectory() as folder:
         analyses = {name: _measured(base, lambda b, n=name: b.analysis(n, {}, Path(folder) / "analysis.txt")) for name in base.analysis_types()}
@@ -255,7 +254,7 @@ def _verdict(source: dict[str, Any], load: Callable[[Any], None]) -> dict[str, A
         load(backend)
     except SaosError as exc:
         refused = _refusal(exc)
-        # 非序列物体每个带十来行 rtc 不认的 .zmx 行，全列出来只会淹没第一条原因 / an NSC object brings a dozen unknown lines each
+        # 非序列物体每个带十来行 rtc 不认的 .zmx 行，全列出来只会淹没第一条原因
         more = len(refused) - REFUSED_SHOWN
         return {**source, "backend": "zos", "refused": refused[:REFUSED_SHOWN] + ([f"and {more} more"] if more > 0 else [])}
     known = rtc_merit.merit_operands()

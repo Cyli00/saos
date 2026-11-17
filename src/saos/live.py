@@ -91,7 +91,7 @@ def measure(daemon: Any, job: jobs.Job, view: str) -> dict[str, Any]:
         merit = float(backend.merit_value())
         data["merit"] = finite(merit)
         data["merit_error"] = None if math.isfinite(merit) else "a merit row cannot be computed"
-    except Exception as exc:  # noqa: BLE001 - 没有评价函数时只是没有这个值 / no merit function just means no value
+    except Exception as exc:  # noqa: BLE001 - 没有评价函数时只是没有这个值
         data.update(merit=None, merit_error=f"{type(exc).__name__}: {getattr(exc, 'message', exc)}"[:300])
     try:
         d, scripts = demand._prepared(job.root)
@@ -106,7 +106,6 @@ def measure(daemon: Any, job: jobs.Job, view: str) -> dict[str, Any]:
     specs = demand.checked(d)
     items = data["items"]
     # 单项就超过预算的只等 check 和 round；其余按上次测的时间排，没测过和上次没轮到的在前
-    # items that alone exceed the budget wait for check and round; the rest go oldest first
     slow = [s["id"] for s in specs if (finite((items.get(s["id"]) or {}).get("duration_s")) or 0.0) > budget]
     order = sorted((s["id"] for s in specs if s["id"] not in slow), key=lambda i: (items.get(i) or {}).get("t", 0.0))
     before = backend.surfaces()

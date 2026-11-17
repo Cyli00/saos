@@ -47,7 +47,7 @@ def test_the_table_covers_every_choice_a_prescription_offers(table):
     for group in PROBED:
         for name, entry in listed[group].items():
             assert entry["status"] in capability.STATUS, (group, name)
-            # 没对上或拒绝的都要说原因，agent 才知道换什么 / anything short of reconciled says why
+            # 没对上或拒绝的都要说原因，agent 才知道换什么
             assert (entry["status"] == "reconciled") == ("why" not in entry) or group in ("measurements", "analyses"), (group, name)
 
 
@@ -60,7 +60,7 @@ def test_the_table_says_what_the_backend_does(table):
     assert status["lens"]["automatic_semi_diameter"] == "unreconciled"
     assert status["measurements"]["huygens"] == "refused"
     assert status["analyses"] == {"FftMtf": "unreconciled", "other": "refused"}
-    # 表里拒绝的每一项，带它的镜头后台进程都不在 rtc 上建 / the daemon builds no lens on rtc that holds a refused item
+    # 表里拒绝的每一项，带它的镜头后台进程都不在 rtc 上建
     probes = capability._probes()
     for group, items in probes.items():
         for name, change in items.items():
@@ -91,7 +91,7 @@ def test_operand_statuses_follow_the_rule_computed_by_uses(table):
 
 
 def test_afocal_is_refused_not_dropped():
-    # afocal: true 归一化成 {}；rtc 曾按真值判断，把它当没写，照非无焦系统去算 / afocal: true normalises to {} and used to slip through
+    # afocal: true 归一化成 {}；rtc 曾按真值判断，把它当没写，照非无焦系统去算
     raw = _probe(lambda p: p.update(afocal=True))
     with pytest.raises(SaosError) as err:
         rtc_lens.from_prescription(prescription.normalize(raw))
@@ -110,7 +110,7 @@ def _built_on(raw: dict, name: str = "route") -> tuple[str, dict | None]:
 
 def test_the_daemon_keeps_off_rtc_what_only_the_built_system_refuses(saos_home):
     aspheric_mirror = _probe(capability._mirror("EvenAspheric"))
-    # 处方转换本身接受它，拒绝出在建系统时 / the conversion accepts it; the refusal comes when the system is built
+    # 处方转换本身接受它，拒绝出在建系统时
     rtc_lens.from_prescription(prescription.normalize(aspheric_mirror))
     active, switch = _built_on(aspheric_mirror)
     assert active == "zos" and "mirror" in switch["reason"]
@@ -140,7 +140,6 @@ def test_a_merit_row_rtc_lacks_is_named(tmp_path):
     path = tmp_path / "probe.zmx"
     backend.save_as(path)
     # 把存盘的评价函数行换成 rtc 不算的操作数，相当于一份在 OpticStudio 里写了 MTFT 的镜头
-    # swap the saved merit row for an operand rtc lacks, as in a lens whose merit function was written in OpticStudio
     text = path.read_bytes().decode("utf-16")
     assert text.count("EFFL") == 1
     path.write_bytes(text.replace("EFFL", "MTFT").encode("utf-16"))
@@ -171,8 +170,7 @@ def test_settings_carried_unread_are_named_only_when_the_lens_changes_them(tmp_p
     text = case.read_bytes().decode("utf-16")
     assert "POLS 1 0 1 0 0 1 0" in text and text.count("COATING.DAT") == 2
     # 改成偏振入射、换一个膜层文件、加一行读取器不认识的文件头：三项 rtc 都原样带过去不应用。APDX 代表一项还没有存盘样本
-    # 定出行名的设置（切趾）/ polarised input, another coating file and a header line the reader does not know: rtc carries
-    # all three unread. APDX stands in for a setting whose line no OpticStudio save in the repo shows yet (apodization).
+    # 定出行名的设置（切趾）
     changed = (text.replace("POLS 1 0 1 0 0 1 0", "POLS 0 1 0 0 0 1 0").replace("COATING.DAT", "MYCOATS.DAT")
                .replace("PWAV 2", "PWAV 2\r\nAPDX 1 1", 1))
     path = tmp_path / "changed.zmx"
@@ -189,8 +187,6 @@ SEIDEL = ["ASTI", "COMA", "DIST", "FCUR", "SPHA"]
                                            for name in ("piA-r012", "piB-r007", "codex-r017")] + [(CASES / "sequential.zmx", [])])
 def test_a_lens_verdict_names_the_operands_rtc_refuses_on_it(path, refused):
     # 能力表按探针镜头判；双锥面、环面、理想透镜上 Seidel 各项会被拒，--lens 要当场说出来，measure 实际也拒
-    # the table judges on probe lenses; on biconic, toroidal or paraxial surfaces the Seidel terms are refused, and
-    # --lens says so, as measure finds
     from saos import measure
 
     verdict = capability.lens(path)

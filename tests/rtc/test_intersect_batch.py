@@ -37,7 +37,7 @@ def test_shape_solver_matches_the_general_solver(surface):
     hit = np.isfinite(t_batch)
     assert hit.mean() > 0.9 and np.isfinite(t_general[hit]).all()
     assert np.max(np.abs(t_batch[hit] - t_general[hit])) < 1e-10
-    # 交点满足矢高方程 / the intersection satisfies the sag equation
+    # 交点满足矢高方程
     x = rays[0] + t_batch * rays[3]
     y = rays[1] + t_batch * rays[4]
     z = rays[2] + t_batch * rays[5]
@@ -47,6 +47,6 @@ def test_shape_solver_matches_the_general_solver(surface):
 
 def test_conic_miss_is_nan():
     shape = geometry.make(Surface(index=1, type="STANDARD", curvature=1 / 5.0))
-    # 半径 5 的球，离轴 8 mm 平行入射：错过曲面 / a ray 8 mm off axis misses a sphere of radius 5
+    # 半径 5 的球，离轴 8 mm 平行入射：错过曲面
     t = kernel.intersect(shape.mode, shape.row(), [8.0, 1.0], [0.0, 0.0], [-10.0, -10.0], [0.0, 0.0], [0.0, 0.0], [1.0, 1.0])
     assert np.isnan(t[0]) and np.isfinite(t[1])

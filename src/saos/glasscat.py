@@ -68,7 +68,7 @@ def load_optical_catalog(path: Path) -> dict[str, dict]:
     return records
 
 
-# 在产：厂家目录里标为 Standard 或 Preferred 的牌号（2026-10-19 用户决定）/ in production: Standard or Preferred in the maker's catalog
+# 在产：厂家目录里标为 Standard 或 Preferred 的牌号（2026-10-19 用户决定）
 IN_PRODUCTION = ("Standard", "Preferred")
 CRLF = chr(13) + chr(10)
 

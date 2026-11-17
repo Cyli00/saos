@@ -32,12 +32,12 @@ from typing import Any, Callable, Iterable, Iterator, Sequence
 import numpy as np
 
 from saos import lensdata
-# 参数键、追迹结果与光瞳采样定义在 lensdata（后端也用），这里照原名导出 / defined in lensdata, exported here under their names
+# 参数键、追迹结果与光瞳采样定义在 lensdata（后端也用），这里照原名导出
 from saos.lensdata import PAR_RE, PARAMS, Rays, parse_key, pupil  # noqa: F401 - 脚本从 kit 取这些名字
 from saos.protocol import ErrorCode, SaosError, finite
 
 
-# ---------- 系统对象 / system objects ----------
+# ---------- 系统对象
 
 def system(ctx):
     """OpticStudio 的系统对象；假后端没有时返回 None。/ The OpticStudio system object; None on the fake backend."""
@@ -50,7 +50,7 @@ def zosapi(ctx):
     return ctx.backend.zosapi()
 
 
-# ---------- 面与参数 / surfaces and parameters ----------
+# ---------- 面与参数
 
 def surfaces_by_comment(ctx) -> dict[str, int]:
     """注释 → 面序号（重名时取第一个）。/ comment → surface index (the first one when a comment repeats)."""
@@ -95,7 +95,7 @@ def values(ctx, keys: Iterable[str]) -> dict[str, Any]:
     return {key: ctx.backend.get_param(key) for key in keys}
 
 
-def set(ctx, changes: dict[str, Any] | None = None, **kw: Any) -> None:  # 与 ctx.set 同名 / mirrors ctx.set
+def set(ctx, changes: dict[str, Any] | None = None, **kw: Any) -> None:  # 与 ctx.set 同名
     """一次写入几个参数，写不进去（被求解覆盖等）时报 VALUE_NOT_APPLIED。
     Write several parameters at once; VALUE_NOT_APPLIED when one does not take (a solve overrides it, …)."""
     changes = {**(changes or {}), **kw}
@@ -176,7 +176,7 @@ def restored(ctx) -> Iterator[None]:
             p.unlink(missing_ok=True)
 
 
-# ---------- 非序列 / non-sequential ----------
+# ---------- 非序列
 
 def objects(ctx) -> list[dict[str, Any]]:
     """非序列物体表：序号、类型、注释、参考物体、Inside Of、位置、倾斜、材料、参数、体散射、各波长折射率、全局变换。
@@ -235,7 +235,7 @@ def ray_hits(ctx, zrd: str, objects: Iterable[int | str], ray_filter: str = "", 
     return out
 
 
-# ---------- 操作数与分析 / operands and analyses ----------
+# ---------- 操作数与分析
 
 def op(ctx, name: str, int1: int = 0, int2: int = 0, *data: float) -> float:
     """任意优化操作数的值，例如 op(ctx, "EFFL", 0, 1)、op(ctx, "SSAG", 3, 0, 0.0, 0.2)。
@@ -317,7 +317,7 @@ def parts_clash(ctx) -> dict[str, Any] | None:
     return geometry.parts_clash(ctx.backend)
 
 
-# ---------- 衍射 PSF 与波前 / diffraction PSF and wavefront ----------
+# ---------- 衍射 PSF 与波前
 
 @dataclass
 class Psf:
@@ -342,8 +342,8 @@ def _photon_order(n_photon: Any) -> int:
 
 
 def _photons(v: float, n_photon: int) -> float:
-    # 逐次相乘而不是 v ** n：双光子与原先手写的 v * v 逐位相同 / repeated products, so two-photon matches a hand-written v * v bit for bit
-    # out = out * v 而不是 *=：v 是数组时不能改动调用方的数据 / not *=, which would change the caller's array
+    # 逐次相乘而不是 v ** n：双光子与原先手写的 v * v 逐位相同
+    # out = out * v 而不是 *=：v 是数组时不能改动调用方的数据
     out = v
     for _ in range(_photon_order(n_photon) - 1):
         out = out * v
@@ -417,8 +417,6 @@ def psf_widths(p: Psf, n_photon: int = 1, ee: float = 0.8) -> dict[str, float | 
     iy, ix = divmod(int(np.argmax(a)), nx)
     out: dict[str, float | None] = {"fwhm_x": fwhm(a[iy].tolist(), p.dx), "fwhm_y": fwhm(a[:, ix].tolist(), p.dy), "ee_diameter": None}
     # 求和用内置 sum、按原来的顺序（逐行再累加；3.12 起是补偿求和），半径用 math.hypot：与逐元素的写法逐位相同
-    # built-in sum in the original order (per row, then across rows; compensated from 3.12) and math.hypot keep the
-    # numbers bit-identical to the element-by-element version
     rows = a.tolist()
     total = sum(map(sum, rows))
     if not total > 0:
@@ -428,7 +426,7 @@ def psf_widths(p: Psf, n_photon: int = 1, ee: float = 0.8) -> dict[str, float | 
     cy = sum((a * r).ravel().tolist()) / total
     rad = np.array(list(map(math.hypot, ((c - cx) * p.dx).ravel().tolist(), ((r - cy) * p.dy).ravel().tolist())))
     flat = a.ravel()
-    order = np.lexsort((flat, rad))   # 先按半径、再按强度，同原来对 (半径, 强度) 排序 / by radius, then intensity
+    order = np.lexsort((flat, rad))   # 先按半径、再按强度，同原来对 (半径, 强度) 排序
     reached = np.flatnonzero(np.cumsum(flat[order]) >= float(ee) * total)
     if reached.size:
         out["ee_diameter"] = 2 * float(rad[order[reached[0]]])
@@ -491,7 +489,6 @@ def psf_axial(peak_at: Callable[[int], float], step_um: float, reaches: Sequence
         peak = max(curve)
         j = curve.index(peak)
         # fwhm 从首个最大值向两侧走到第一次低于半高处；某侧有低于半高的点，那一侧的交点就在已算范围内
-        # fwhm walks from the first maximum to the first value below half: one such value on a side puts that crossing inside
         left = peak > 0 and any(v < peak / 2 for v in curve[:j])
         right = peak > 0 and any(v < peak / 2 for v in curve[j + 1:])
         if left and right:
@@ -537,7 +534,7 @@ def seidel(ctx, wave: int | None = None) -> dict[str, Any]:
     return ctx.backend.seidel(0 if wave is None else int(wave))
 
 
-# ---------- 光线 / rays ----------
+# ---------- 光线
 
 def trace(ctx, rays: Iterable[Iterable[float]], to: int | str | None = None) -> Rays:
     """归一化坐标的批量实际光线追迹。rays：(wave, hx, hy, px, py) 的序列；to：目标面，默认像面。
@@ -595,7 +592,6 @@ def spot(ctx, fields: Iterable[Iterable[float]] = ((0.0, 0.0),), wave: int | Ite
         afocal = False
     if to is None and afocal:
         # 无焦系统的像在无穷远：像面上的落点不反映像质，量会被当成镜头单位误读
-        # an afocal system images to infinity: landing points on the image surface say nothing and would be read as lengths
         raise SaosError(ErrorCode.BAD_ARGS, "the system is afocal (image at infinity), so spot sizes on the image surface mean nothing; "
                         "measure the angular spread from the ray directions (ctx.trace gives l, m, n) or an operand/analysis "
                         "that reports afocal units, or pass to=<a surface> deliberately")
@@ -636,24 +632,18 @@ def spot(ctx, fields: Iterable[Iterable[float]] = ((0.0, 0.0),), wave: int | Ite
             if refocus:
                 row.update(best_dz=None, rms_radius_best=None)
     # 点列统计的取样（方格光瞳）与 OpticStudio 的 Standard Spot 不同、没对账：记在统计上，单根光线的 ctx.trace 不记
-    # spot statistics sample a square pupil grid, not OpticStudio's Standard Spot, and are unreconciled; ctx.trace is not marked
     note = getattr(getattr(ctx, "backend", None), "note_used", None)
     if note is not None:
         note(["SPOT"])
     return rows
 
 
-# ---------- 加密采样与极值 / dense sampling and extremes ----------
+# ---------- 加密采样与极值
 #
-# 一次任务里补全视场 CRA、加密光谱透过率时，边缘一点或五个波长都漏掉过极值（nightvision，2026-10-19：中间视场的 CRA
-# 达 19.88°，加密光谱后透过率出现五波长之间的低谷）。这些函数按同一个格式交回：量的定义和单位、采样范围与步长、极值和
+# 只取边缘一点或几个波长会漏掉中间的极值。这些函数按同一个格式交回：量的定义和单位、采样范围与步长、极值和
 # 它的位置、所有局部极值、读不出的点、加密后极值移动了多少，以及覆盖是否够（coverage）。
-# Filling in the full-field CRA and a denser transmission spectrum on one job, an edge point or five wavelengths missed the
-# extreme (nightvision, 2026-10-19: 19.88° CRA in mid field, a transmission dip between the five wavelengths). These
-# functions all return the quantity's definition and unit, the sampled range and step, the extreme and where it is, every
-# local extreme, unreadable points, how far refining moved the extreme, and whether the coverage is enough.
 
-# profile 一次最多等距取的点数 / the most equally spaced points one profile takes
+# profile 一次最多等距取的点数
 PROFILE_MAX_N = 10001
 
 
@@ -795,9 +785,9 @@ def wave_profile(ctx, fn: Callable[..., float | None], lo: float, hi: float, n: 
     return {"quantity": quantity, "unit": unit, "axis": "wavelength (µm)", "wave": slot, **found}
 
 
-# ---------- 缓存与任务内模块 / cache and job modules ----------
+# ---------- 缓存与任务内模块
 
-# kit.memo 在 ctx.cache 里存“这一项用到的操作数”的键前缀 / key prefix under which memo keeps the operands an entry used
+# kit.memo 在 ctx.cache 里存“这一项用到的操作数”的键前缀
 _USED = "saos.kit.memo:used"
 
 
@@ -808,7 +798,6 @@ def memo(ctx, key: Any, compute: Callable[[], Any]) -> Any:
     cache and the lens does not change during it; an exec script that changes the lens must call ctx.cache.clear()."""
     cache = ctx.cache
     # rtc 实例按判定项记用到的未对账操作数：算的时候单独记一份，从缓存取回时补记给取用的那一项
-    # the rtc instance grades each check by the operands it used: note them apart while computing, replay them on a hit
     backend = getattr(ctx, "backend", None)
     take, note = getattr(backend, "take_used", None), getattr(backend, "note_used", None)
     if key not in cache:

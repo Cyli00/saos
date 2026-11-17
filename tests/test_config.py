@@ -43,7 +43,6 @@ def test_the_checkout_finds_its_library_and_skill_and_an_override_wins(monkeypat
 
 def test_check_records_keep_their_code_labels_whatever_the_install(monkeypatch):
     # 判定记录里的标签是 src/saos/<文件>：装成包后标签不变，旧任务的判定版本因此不变
-    # labels stay src/saos/<file>, so an installed package gives older jobs the same check version
     assert config.code_path("src/saos/kit.py") == config.PACKAGE_DIR / "kit.py"
     with pytest.raises(ValueError):
         config.code_path("library/x.py")

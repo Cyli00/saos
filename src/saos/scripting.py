@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 SCRIPTS_DIR = "scripts"
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$")
 TRACEBACK_CHARS = 4000
-# ctx.solve 的求解及其参数默认值；None 表示必须给出 / ctx.solve kinds and parameter defaults; None means required
+# ctx.solve 的求解及其参数默认值；None 表示必须给出
 SOLVE_PARAMETERS: dict[str, dict[str, Any]] = {
     "fixed": {}, "variable": {}, "pickup": {"surface": None, "scale": 1.0, "offset": 0.0},
     "marginal_ray_height": {"height": 0.0, "zone": 0.0}, "f_number": {"value": None}}
@@ -43,21 +43,19 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
         self.job = job
         self.args = args
         self.backend = daemon.backend
-        # 同一次判定内各判定脚本共享，见 kit.memo / shared by the check scripts of one evaluation, see kit.memo
+        # 同一次判定内各判定脚本共享，见 kit.memo
         self.cache: dict[Any, Any] = {} if cache is None else cache
-        # 本次执行的脚本副本，ctx.map("fn", …) 在 worker 里从这里找函数 / the running script copy; ctx.map("fn", …) finds fn here
+        # 本次执行的脚本副本，ctx.map("fn", …) 在 worker 里从这里找函数
         self.script = script
-        # 判定用的上下文不给 rtc 副本/ check contexts get no rtc copy
+        # 判定用的上下文不给 rtc 副本
         self.in_check = False
 
     def __getattr__(self, name: str) -> Any:
         # 只在正常查找失败时调用。脚本常按 ZOS-API 的习惯猜 ctx.zos、ctx.lde 一类名字（2026-10 的任务日志里 6 次），报错时指明原生入口
-        # called only when normal lookup fails; scripts guessed ZOS-API style names such as ctx.zos or ctx.lde, so point to the native entries
         if name.startswith("_"):
             raise AttributeError(name)
         if hasattr(type(self), name):
             # 属性（property）内部抛出的 AttributeError 也会落到这里；重新求值，让原错误照常抛出
-            # an AttributeError raised inside a property also lands here; evaluate it again so the original error surfaces
             return object.__getattribute__(self, name)
         raise AttributeError(f"ctx has no attribute {name!r}. List the ctx methods with uv run saos api ctx and uv run saos exec --help; "
                              "on OpticStudio only, ctx.system (the IOpticalSystem: LDE, MFE, SystemData) and ctx.zosapi (the ZOSAPI "
@@ -184,7 +182,7 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
         system = getattr(self.backend, "system", None)
         if system is None:
             if self.backend.identity().get("backend") == "rtc":
-                # 检查与脚本经 ctx 读写才能在两个后端上跑/ checks and scripts run on both backends only through ctx
+                # 检查与脚本经 ctx 读写才能在两个后端上跑
                 raise SaosError(ErrorCode.BACKEND_UNSUPPORTED,
                                 "ctx.system is OpticStudio's object and rtc has none; read the lens through "
                                 "ctx.get (with <surface>.par<N> for a surface type's parameters), ctx.op (SSAG, INDX, ...), "
@@ -271,7 +269,7 @@ class ScriptContext(KitMethods, MetricMethods, ExpertMethods):
             raise SaosError(ErrorCode.FILE_EXISTS, f"job {self.job.id} already has {name}; pass overwrite=True")
         target.parent.mkdir(parents=True, exist_ok=True)
         self.backend.save_as(target)
-        # 另存不改变镜头内容：未收尾的 rtc 结果仍未收尾 / saving does not change the lens, so unclosed rtc results stay unclosed
+        # 另存不改变镜头内容：未收尾的 rtc 结果仍未收尾
         previous = self._daemon.loaded
         self._daemon.loaded = Loaded(self.job, target, rtc_unclosed=bool(previous is not None and previous.rtc_unclosed))
         rel = self.job.relative_lens(target)
@@ -370,7 +368,6 @@ def execute(daemon: Daemon, job: jobs.Job, name: str, source: str, args: dict[st
         record.update(ok=True, result=result)
         out = {"script": rel, "result": result}
         # 结果标明哪个后端算的、可信等级；rtc 实例上另带未对账的路径与操作数
-        # the result names its backend and trust level; on the rtc instance also the unreconciled paths and operands
         stamped = stamp(daemon.backend)
         record.update(stamped)
         out.update(stamped)

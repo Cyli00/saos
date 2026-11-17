@@ -61,7 +61,7 @@ def test_copy_reproduces_the_recorded_opticstudio_rays(fast, recorded):
             assert np.max(np.abs(getattr(got, k) - np.array(ref[k]))) < 1e-10, k
         for k in ("l", "m", "n"):
             assert np.max(np.abs(getattr(got, k) - np.array(ref[k]))) < 1e-12, k
-    # 点列 RMS 用的是与 ctx.spot 同一份 kit 代码 / the spot RMS runs the same kit code as ctx.spot
+    # 点列 RMS 用的是与 ctx.spot 同一份 kit 代码
     rms = [r["rms_radius"] for r in fast.spot([(0.0, 0.0), (0.0, 0.5), (0.0, 1.0), (0.3, -0.7)], wave=[1, 2, 3], grid=21)]
     assert rms == pytest.approx(recorded["spot_rms"], rel=1e-9)
     assert fast.backend.identity() == {"backend": "rtc", "version": fast.backend.identity()["version"], "precision": "float64"}
@@ -113,10 +113,10 @@ def test_settings_rtc_cannot_reproduce_are_refused(recorded, tmp_path):
     with pytest.raises(SaosError) as err:
         RtcBackend(LENS, tilted)
     assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED and "tilt" in err.value.message
-    for old, new, word in (# 物方 NA 的发射与瞄准没对上 OpticStudio（piB 差 0.096 mm）/ object space NA does not match OpticStudio
+    for old, new, word in (# 物方 NA 的发射与瞄准没对上 OpticStudio（piB 差 0.096 mm）
                            ("ENPD 10", "OBNA 0.05", "entrance pupil diameter"),
                            ("TYPE EVENASPH", "TYPE BINARY_2", "not reconciled"),
-                           # 读得懂不等于放行：这些孔径只有候选验收 / readable apertures stay refused until reconciled
+                           # 读得懂不等于放行：这些孔径只有候选验收
                            ("TYPE EVENASPH", "TYPE EVENASPH\n  ELAP 2 1 0", "aperture code 6"),
                            ("TYPE EVENASPH", "TYPE EVENASPH\n  SPID 0.5 4 0", "aperture code 3")):
         with pytest.raises(SaosError) as err:
@@ -175,7 +175,7 @@ def test_checks_and_backends_without_export_get_no_copy():
 
 
 def test_a_check_reaching_for_ctx_system_on_rtc_is_filed_as_a_backend_gap():
-    # 10-30 的光纤任务里 6 个检查直接读 ctx.system.LDE，在 rtc 上一项都算不了 / six checks read ctx.system.LDE directly
+    # 10-30 的光纤任务里 6 个检查直接读 ctx.system.LDE，在 rtc 上一项都算不了
     from saos import demand
     from saos.scripting import ScriptContext
 
@@ -188,14 +188,14 @@ def test_a_check_reaching_for_ctx_system_on_rtc_is_filed_as_a_backend_gap():
 
 
 def test_huygens_waits_for_reconciliation_on_rtc_while_wavefront_and_apertures_read(fast, recorded):
-    # rtc.psf.psf_huygens 已有，但没和 OpticStudio 对账前不给数，判定归为后端缺口 / no numbers before reconciliation
+    # rtc.psf.psf_huygens 已有，但没和 OpticStudio 对账前不给数，判定归为后端缺口
     from saos import demand, kit
 
     with pytest.raises(SaosError) as err:
         with kit.huygens(fast):
             pass
     assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED and demand.error_kind(err.value) == "backend"
-    # 波前 RMS 给数并记为未对账；按视场号和按坐标给同一个视场，结果相同 / the same field by number and by coordinates
+    # 波前 RMS 给数并记为未对账；按视场号和按坐标给同一个视场，结果相同
     fx, fy = fast.backend.lens.fields[-1][:2]
     by_number, by_point = kit.wavefront_rms(fast, [len(fast.backend.lens.fields), (fx, fy)])
     assert by_number > 0 and by_number == pytest.approx(by_point, rel=1e-12)
@@ -210,7 +210,6 @@ def test_huygens_waits_for_reconciliation_on_rtc_while_wavefront_and_apertures_r
 def test_spot_rows_about_the_centroid_share_one_polychromatic_centroid_per_field(data):
     # OpticStudio 向导写的 TRAC/TRCX/TRCY 行原样读入，逐行对 2026-11-14 真机读数：同一视场各波长共用一个复色质心。
     # 按波长各求质心时差到 3.7e-4 mm
-    # the wizard's spot rows, read as OpticStudio saved them, against its row values: one centroid for all wavelengths
     recorded = json.loads((FIXTURES / "sequential-wizard-centroid.json").read_text(encoding="utf-8"))[data]
     rows = {r["row"]: r["value"] for r in RtcBackend(FIXTURES / f"sequential-wizard-{data}-centroid.zmx", standalone=True).merit_rows()}
     assert len(recorded) >= 54

@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1] / "src" / "saos"
 
-# saos.ctx.rows 是评价函数行的构造与校验，没有依赖，后端编译评价函数行时要用 / no dependencies; backends compile merit rows with it
+# saos.ctx.rows 是评价函数行的构造与校验，没有依赖，后端编译评价函数行时要用
 BASE = {"protocol", "config", "budget", "lensdata", "geometry", "prescription", "lens_files", "glasscat", "library", "ctx", "ctx.rows"}
 MEASURE = {"kit", "fast", "search", "micro", "metrics"}
 TOP = 9
@@ -57,7 +57,7 @@ def imports(path: Path, known: dict[str, Path]):
         if base is not None:
             for alias in node.names:
                 name = f"{base}.{alias.name}" if base else alias.name
-                # from saos.x import y：y 是子模块时按子模块算，否则按 x 算 / y counts when it is a submodule, else x
+                # from saos.x import y：y 是子模块时按子模块算，否则按 x 算
                 yield node.lineno, name if name in known else base
         elif isinstance(node, ast.Import):
             for alias in node.names:
@@ -74,7 +74,7 @@ def test_lower_layers_never_import_higher_ones():
 
 
 def test_every_named_lower_module_exists():
-    # 名单里的模块改名或删掉后，这里的约束会悄悄失效 / a renamed module would silently drop out of the rules
+    # 名单里的模块改名或删掉后，这里的约束会悄悄失效
     known = modules()
     assert (BASE | MEASURE) <= set(known), sorted((BASE | MEASURE) - set(known))
 
@@ -83,8 +83,6 @@ def test_lower_layers_form_no_import_cycle():
     # 参照 ripgrep：库 crate 之间没有环，最上层（ripgrep 的 core）内部不管。L0–L2 是库，同层之间也不许成环；
     # 一个环完全落在同一个包内（backend.*、ctx.*）才相当于 crate 内部的模块而豁免。图里保留同包的边：
     # 经过同包模块绕回来的跨包环（metrics → ctx.a → ctx.b → metrics）照样要报。
-    # like ripgrep's library crates; only a cycle entirely inside one package is exempt, and same-package edges stay in
-    # the graph so a cross-package cycle through them is still caught
     known = modules()
     low = sorted(m for m in known if layer(m) < TOP)
     graph = {m: sorted({t for _, t in imports(known[m], known) if t in known and layer(t) < TOP and t != m}) for m in low}
@@ -93,7 +91,7 @@ def test_lower_layers_form_no_import_cycle():
     stack: list[str] = []
     components = []
 
-    def connect(node):  # Tarjan 强连通分量 / Tarjan's strongly connected components
+    def connect(node):  # Tarjan 强连通分量
         index[node] = lowest[node] = len(index)
         stack.append(node)
         for nxt in graph[node]:

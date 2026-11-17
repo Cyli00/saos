@@ -87,7 +87,7 @@ def test_saved_lens_reloads_unchanged_and_keeps_its_solve(tmp_path):
     assert not backend.needs_save()
     backend.load(tmp_path / "feasibility.zmx")
     assert compare_surfaces(before, backend.surfaces()) == []
-    # 求解随文件保存：改前面的曲率，像距跟着重算 / the solve is saved: changing a curvature recomputes the image distance
+    # 求解随文件保存：改前面的曲率，像距跟着重算
     backend.set_param("1.radius", 60.0)
     assert backend.needs_save()
     assert backend.surfaces()[3]["thickness"] != pytest.approx(before[3]["thickness"], rel=1e-6)
@@ -100,7 +100,7 @@ def test_finite_object_solve_follows_the_paraxial_imaging_equation():
     backend = _built(_singlet())
     n = backend.operand("INDX", 1, 0, [])
     c1, c2, t, d = 1 / 30, -1 / 30, 5.0, 50.0
-    # 近轴光线逐面：物点出发，经两面折射，求像距 / paraxial ray from the object point through both surfaces
+    # 近轴光线逐面：物点出发，经两面折射，求像距
     y, u = 1.0, 1.0 / d
     u = (u - y * c1 * (n - 1)) / n
     y += u * t
@@ -209,7 +209,7 @@ def test_live_view_says_where_the_numbers_come_from():
     assert view["backend"] == "rtc"
     assert view["unverified"] == backend.unverified()
     assert view["interference"]["crossings"] == [] and view["interference"]["overlaps"] == []
-    # 布局光线的第一个点落在第 1 面上 / layout rays start on surface 1
+    # 布局光线的第一个点落在第 1 面上
     first = view["layout"]["rays"][0]["points"][0]
     assert first[2] == pytest.approx(backend.sag(1, first[0], first[1]))
 

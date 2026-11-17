@@ -257,7 +257,7 @@ def _set_object(b, ref: Any, param: str, value: Any) -> None:
 
 
 def _names(b, kind: str, ref: Any) -> dict[str, int] | None:
-    # 按注释找面时先读一次注释表；序号不用读 / read the comments once for a surface named by comment, never for a number
+    # 按注释找面时先读一次注释表；序号不用读
     return b.surface_comments() if kind == "surface" and not str(ref).lstrip("-").isdigit() else {}
 
 
@@ -306,7 +306,7 @@ def put(b, key: str, value: Any) -> None:
                 value = b._check_material(value)
             set_cell(cell, value, f"config.{param}")
             if c == int(mce.CurrentConfiguration):
-                # 改的是当前结构：重新套用，镜头才跟着变 / the current configuration: re-apply it so the lens follows
+                # 改的是当前结构：重新套用，镜头才跟着变
                 mce.SetCurrentConfiguration(c)
             return
         if ref == "aperture":
@@ -323,7 +323,7 @@ def put(b, key: str, value: Any) -> None:
         if isinstance(value, dict):
             set_model_material(_load_zosapi(b.root), row.MaterialCell, value, f"surface {index}")
             return
-        # 材料走后端的目录校验 / materials go through the backend's catalog check
+        # 材料走后端的目录校验
         b.set_surface(index, "material", value)
         return
     if param == "comment":
@@ -353,6 +353,6 @@ def put(b, key: str, value: Any) -> None:
     actual = write(target)
     if not _same(actual, target):
         if actual != before:
-            write(before)   # 没写进去的值（如 -inf 读回 +inf）不留在镜头里 / a value that did not take is not left in the lens
+            write(before)   # 没写进去的值（如 -inf 读回 +inf）不留在镜头里
         raise SaosError(ErrorCode.VALUE_NOT_APPLIED, f"surface {index} {param} did not take {target}; a solve or pickup may override it",
                         {"requested": target, "actual": actual, "previous": before})

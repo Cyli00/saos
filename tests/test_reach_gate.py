@@ -55,7 +55,7 @@ def test_reach_applies_a_class_to_each_must():
         {"id": "mtf", "description": "mtf", "check": {"operand": {"type": "TOTR"}}, "origin": "user", "class": "quality", "must": {"min": 0.3}, "source": "user"},
     ]
     out = demand.reach(data, {"length": 94.0, "f_number": 1.21, "spot": 358.0, "mtf": 0.165})
-    # 一阶量差一点也拦；没分类的按像质算；MTF 差 1.8 倍不拦 / a first-order miss blocks however small; unclassified counts as quality
+    # 一阶量差一点也拦；没分类的按像质算；MTF 差 1.8 倍不拦
     assert out["blocking"] == ["f_number", "spot"] and out["unclassified"] == ["spot"] and out["measured"] == 4
     assert demand.reach(data, {"length": "inf"})["blocking"] == ["length"]
     assert demand.reach(data, {})["blocking"] == [] and demand.reach(data, {})["measured"] == 0
@@ -66,7 +66,7 @@ def test_class_is_validated_and_keeps_rounds_comparable():
         demand.validate(goal(**{"class": "optical"}))
     plain = copy.deepcopy(BASE)
     del plain["objectives"][0]["class"]
-    # 改类别要重新确认，但数值没变，以前的轮次仍可比较 / a new class is reconfirmed, while earlier rounds stay comparable
+    # 改类别要重新确认，但数值没变，以前的轮次仍可比较
     assert demand.digest(plain) != demand.digest(BASE) and demand.compute_digest(plain) == demand.compute_digest(BASE)
 
 
@@ -124,12 +124,12 @@ def _describe_with(lens_job, bound: float, evidence: str | None, explore: bool =
 def test_between_five_and_ten_times_an_autonomous_job_passes_only_on_cited_evidence(lens_job):
     track = _track(lens_job)
     evidence = "球差占差距的大半，explore/ramp/README.md 里再加一片后降到 2 倍"
-    # 差 7 倍、没写证据：拒绝，并说明可以凭证据放行 / 7 times off without evidence: refused, with the way through
+    # 差 7 倍、没写证据：拒绝，并说明可以凭证据放行
     job, described = _describe_with(lens_job, track / 7.0, None)
     with pytest.raises(SaosError, match="reach_evidence") as refused:
         model_gate.approve(job, described["folder"], "", via="auto", reason="理由")
     assert refused.value.details["blocking"][0]["waivable"] is True
-    # 证据引用的文件不存在：照样拒绝 / evidence citing a file that does not exist is no evidence
+    # 证据引用的文件不存在：照样拒绝
     job, described = _describe_with(lens_job, track / 7.0, evidence, explore=False)
     with pytest.raises(SaosError, match="too far") as refused:
         model_gate.approve(job, described["folder"], "", via="auto", reason="理由")
@@ -195,7 +195,7 @@ def test_a_job_no_structure_can_pass_may_still_stop_and_report(lens_job):
     stop = ledger.record_stop(job.root, sha, "见notes/gaps.md：所有结构都差 20 倍", "", d, via="auto")
     assert stop["round"] == ledger.BEFORE_ROUNDS and ledger.stopped_before_rounds(job.root, sha, d) == stop
     assert stage.snapshot(job)["current"] == "deliver" and _step(job, "deliver") == "active"
-    assert stage.snapshot(job)["no_design"]  # 后台进程据此不为它启动 OpticStudio / the daemon starts no OpticStudio for it
+    assert stage.snapshot(job)["no_design"]  # 后台进程据此不为它启动 OpticStudio
     out = report.write(job)
     assert out["headline"] == "no_design" and out["deliver"] is None and not out["deliverable"]
     html = (job.root / "report" / "index.html").read_text(encoding="utf-8")
@@ -242,7 +242,7 @@ def test_optimising_is_allowed_before_the_first_approval_only(lens_job):
     workflow.require_optimise(job, backend)
     model_gate.approve(job, described["folder"], "", via="auto", reason="理由")
     workflow.require_optimise(job, backend)
-    backend.lens["surfaces"][1]["material"] = ""  # 结构变了 / the structure changed
+    backend.lens["surfaces"][1]["material"] = ""  # 结构变了
     with pytest.raises(SaosError) as refused:
         workflow.require_optimise(job, backend)
     assert refused.value.code == ErrorCode.MODEL_NOT_APPROVED

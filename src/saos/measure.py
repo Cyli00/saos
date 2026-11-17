@@ -81,7 +81,7 @@ def run(lens: Path, checks: list[Any], *, job_root: Path | None = None, demand_i
             raw = backend.take_used()
             used = unreconciled(raw)
             provenance = {"unverified": paths, "operands_unverified": used}
-            # 单个操作数按它实际依赖的路径分档（与 lens operand 同一规则）/ one operand: graded by the paths it depends on
+            # 单个操作数按它实际依赖的路径分档（与 lens operand 同一规则）
             affecting = {"unverified_affecting": backend.affected_by(raw)} if single else {}
             return {"value": value, "trust": trust("rtc", {**provenance, **affecting}), **affecting,
                     **({"operands_unverified": used} if used else {})}
@@ -97,7 +97,7 @@ def run(lens: Path, checks: list[Any], *, job_root: Path | None = None, demand_i
             d = demand_mod.load_job(Path(job_root))
             wanted = demand_ids or [s["id"] for s in demand_mod.checked(d) if s["goal"] is not None or "direction" in s]
             rows = []
-            # 逐项单独测，才能按项分档；同一次 quick 内的缓存因此不跨项共用 / one quick per item, so each is graded on its own
+            # 逐项单独测，才能按项分档；同一次 quick 内的缓存因此不跨项共用
             kinds = {s["id"]: next(iter(s["check"])) for s in demand_mod.checked(d)}
             for item_id in dict.fromkeys(wanted):
                 out = graded(lambda item_id=item_id: demand_mod.quick(ctx, [item_id]), single=kinds.get(item_id) == "operand")

@@ -926,7 +926,7 @@ ARGUMENT_HELP = {
 ARGUMENT_HELP.update({f"d{i}": f"operand data parameter {i} (default: %(default)s)" for i in range(1, 7)})
 
 
-# 大帮助页按段拆成主题：--help 只给概览和主题表，段标题前缀 → 主题名 / topic name -> heading prefix
+# 大帮助页按段拆成主题：--help 只给概览和主题表，段标题前缀 → 主题名
 TOPICS = {
     "exec": {"params": "Parameters", "measure": "Sequential rays", "extrema": "Extrema", "checks": "Demand checks",
              "edit": "Editing the lens", "experts": "Expert search", "rtc": "The rtc instance", "fast": "The rtc copy",
@@ -1021,7 +1021,6 @@ def configure(parser, path: str = "", *, commands=None, groups=None) -> None:
         for action in current._actions:
             if isinstance(action, argparse._SubParsersAction):
                 # argparse 只给带 help 参数的子命令列说明行；命令行定义不写 help，这里按定义顺序补上
-                # argparse lists only subcommands added with help; the parser definitions leave it out, so add the rows here in order
                 listed = {choice.dest: choice for choice in action._choices_actions}
                 action._choices_actions = [listed.get(name) or action._ChoicesPseudoAction(name, (), None) for name in action.choices]
                 for name, child in action.choices.items():

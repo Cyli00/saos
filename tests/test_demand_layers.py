@@ -13,7 +13,6 @@ from saos import demand, ledger, workflow
 from saos.protocol import ErrorCode, SaosError
 
 # 旧公式在升级前对这份需求算出的值（升级前的代码，demand.digest）。公式不得改动，这个值必须永远不变。
-# The old formula's value for this demand, computed by the pre-upgrade code (demand.digest). The formula must not change.
 FIXTURE = {
     "schema": 2,
     "constants": [{"id": "lens", "description": "the sample singlet", "value": "a.zmx", "source": "user"}],
@@ -106,10 +105,10 @@ def test_as_current_maps_only_this_demands_legacy_value():
     assert demand.as_current(OLD_DIGEST, base, "compute") == demand.compute_digest(base)
     assert demand.as_current(OLD_DIGEST, base, "confirm") == demand.digest(base)
     new = demand.compute_digest(base)
-    assert demand.as_current(new, base, "compute") == new  # 新哈希原样返回 / a new hash comes back unchanged
+    assert demand.as_current(new, base, "compute") == new  # 新哈希原样返回
     assert demand.as_current(None, base) is None
     other = valid(edit("constants", "lens", value="b.zmx"))
-    assert demand.as_current(OLD_DIGEST, other, "compute") == OLD_DIGEST  # 旧值属于另一版需求，不认 / another version's old value is not recognised
+    assert demand.as_current(OLD_DIGEST, other, "compute") == OLD_DIGEST  # 旧值属于另一版需求，不认
     with pytest.raises(ValueError):
         demand.as_current(OLD_DIGEST, base, "bogus")
 
@@ -128,18 +127,18 @@ def test_confirmation_is_bound_to_the_confirmation_layer(tmp_path):
     root = job_root(tmp_path, confirmations=[{"demand_sha": demand.digest(valid(FIXTURE)), "quote": "好", "time": "t"}])
     _, before, _ = workflow.preflight(root)
     changed = edit("variables", "radii", source="user")
-    job_root(tmp_path, data=changed)  # 覆盖需求文件 / overwrite the demand file
+    job_root(tmp_path, data=changed)  # 覆盖需求文件
     with pytest.raises(SaosError) as exc:
         workflow.preflight(root)
     assert exc.value.code == ErrorCode.DEMAND_NOT_CONFIRMED and exc.value.details["demand_sha"] == demand.digest(valid(changed))
-    # 同样的计算层哈希：已有的数值证据仍对得上 / the same compute hash: existing numerical evidence still matches
+    # 同样的计算层哈希：已有的数值证据仍对得上
     assert demand.compute_digest(valid(changed)) == before
 
 
 def test_description_only_edit_keeps_confirmation_and_plan_version(tmp_path):
     """只改描述：确认仍有效，preflight 给出的版本（计划、比较、轮次都用它）不变。/ a description-only edit keeps the confirmation and the version."""
     root = job_root(tmp_path, confirmations=[{"demand_sha": demand.digest(valid(FIXTURE)), "quote": "好", "time": "t"}])
-    _, recorded, _ = workflow.preflight(root)  # 计划或轮次写下的版本 / the version a plan or round recorded
+    _, recorded, _ = workflow.preflight(root)  # 计划或轮次写下的版本
     job_root(tmp_path, data=edit("objectives", "length", description="总长，越短越好"))
     _, now, _ = workflow.preflight(root)
     assert now == recorded
@@ -153,12 +152,12 @@ def test_legacy_rounds_are_current_after_upgrade(tmp_path):
     new = rounds_of([10, 5, 5, 3], ["baseline", "local", "local", "variables"], demand.compute_digest(d))
     loaded = ledger.load(legacy, d)
     assert {r["demand_sha"] for r in loaded} == {demand.compute_digest(d)}
-    assert ledger.current_version(loaded) == loaded  # 同一版本，轮次一个不少 / one version, no round dropped
+    assert ledger.current_version(loaded) == loaded  # 同一版本，轮次一个不少
     assert ledger.decide(loaded, STOP) == ledger.decide(new[:3], STOP)
-    old_tail = {**rounds_of([5], ["local"], OLD_DIGEST)[0], "round": 2}  # 升级前的第 2 轮，与新轮次混在一份 ledger 里 / a pre-upgrade round 2 among new rounds
+    old_tail = {**rounds_of([5], ["local"], OLD_DIGEST)[0], "round": 2}  # 升级前的第 2 轮，与新轮次混在一份 ledger 里
     mixed = ledger.load(ledger_path(tmp_path / "m", new[:2] + [old_tail]), d)
     assert ledger.decide(ledger.current_window(mixed), STOP)["last_gain_round"] == ledger.decide(new[:3], STOP)["last_gain_round"]
-    # 不传需求时不做换算：调用方必须传 demand / without demand nothing is converted: callers must pass the demand
+    # 不传需求时不做换算：调用方必须传 demand
     assert ledger.version(ledger.load(legacy)[0])[0] == OLD_DIGEST
 
 
@@ -207,7 +206,7 @@ def test_legacy_stop_and_rule_out_are_recognised(tmp_path):
     sha = demand.compute_digest(d)
     assert ledger.stop_for(root, sha, d)["quote"] == "q"
     assert [r["tiers"] for r in ledger.ruled_out_for(root, sha, d)] == [["global"]]
-    assert ledger.stop_for(root, sha) is None  # 不传需求时认不出旧值 / without the demand the old value is not recognised
+    assert ledger.stop_for(root, sha) is None  # 不传需求时认不出旧值
 
 
 def test_record_stop_after_upgrade_accepts_the_legacy_round(tmp_path):

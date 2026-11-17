@@ -14,7 +14,7 @@ from typing import Any
 
 Vec = tuple[float, float, float]
 AXES = {"x": (1.0, 0.0, 0.0), "y": (0.0, 1.0, 0.0), "z": (0.0, 0.0, 1.0)}
-# 点到平面的容差，相对于整个系统的尺寸 / tolerance of a point off the plane, relative to the system size
+# 点到平面的容差，相对于整个系统的尺寸
 REL_TOL = 1e-6
 
 
@@ -96,7 +96,7 @@ def section_plane(viz: dict[str, Any]) -> dict[str, Any] | None:
                 break
             profiles[s["index"]] = key
         else:
-            # 第一个视场（通常是轴上）的某个扇整条在平面内 / one fan of the first field lies wholly in the plane
+            # 第一个视场（通常是轴上）的某个扇整条在平面内
             fan = None
             for zero in ("px", "py"):
                 traced = [r for r in rays if r["field"] == first_field and r[zero] == 0]
@@ -106,7 +106,6 @@ def section_plane(viz: dict[str, Any]) -> dict[str, Any] | None:
             if rays and fan is None:
                 continue
             # 横轴取全局 z 在平面内的投影（光轴大致沿 z）；纵轴与它垂直、主分量取正
-            # u: the global z axis projected into the plane; v: perpendicular to it, its largest component positive
             ref = AXES["z"] if abs(n[2]) < 0.9 else min(AXES["x"], AXES["y"], key=lambda a: abs(_dot(a, n)))
             u = _unit(_sub(ref, tuple(_dot(ref, n) * x for x in n)))
             v = _unit(_cross(n, u))

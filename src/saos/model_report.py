@@ -166,7 +166,7 @@ TEXT: dict[str, tuple[str, str]] = {
         "These materials are missing from sources/materials.yaml: {list}.",
     ),
     "w.undescribed": ("这些面没有说明它代表什么实物：{list}（写在 --notes 的 surfaces 里）。", "These surfaces have no description of what they stand for: {list} (add them under surfaces in --notes)."),
-    # 非序列系统 / non-sequential systems
+    # 非序列系统
     "h.nsc": ("非序列选项", "Non-sequential options"),
     "h.objects": ("物体", "Objects"),
     "h.object_params": ("物体参数与体散射", "Object parameters and volume physics"),
@@ -214,7 +214,7 @@ TEXT: dict[str, tuple[str, str]] = {
     "w.no_source": ("系统里没有光源。", "The system has no source."),
     "w.no_detector": ("系统里没有探测器，判定要读的量需要另外安排（探测器或光线数据库）。", "The system has no detector; the checks need another way to read results (a detector or the ray database)."),
     "w.obj_undescribed": ("这些物体没有说明它代表什么实物：{list}（写在 --notes 的 objects 里）。", "These objects have no description of what they stand for: {list} (add them under objects in --notes)."),
-    # 确认页的四节 / the four sections before approval
+    # 确认页的四节
     "sel.matched": ("当前结构匹配候选：{ids}", "Current structure matches: {ids}"),
     "sel.secondary": ("二手转录，原书页尚未核验", "Secondary transcription; original book pages not checked"),
     "sel.extrapolation": ("超出来源示例，需外推试算", "Outside the source example; exploratory extrapolation"),
@@ -357,7 +357,6 @@ def _flat(radius: float) -> bool:
 
 
 # 表 17-2（李晓彤《几何光学·像差·光学设计》）的下限：(外径上限 mm, 正透镜最小边厚, 负透镜最小中心厚)；外径 3 mm 以下表里没有
-# lower bounds of table 17-2 in that textbook: (outer diameter up to, mm; min edge of a positive lens; min centre of a negative lens)
 MIN_GLASS = ((6, 0.4, 0.6), (10, 0.6, 0.8), (18, 0.8, 1.0), (30, 1.2, 1.5), (50, 1.8, 2.2), (80, 2.4, 3.5), (120, 3.0, 5.0), (math.inf, 4.0, 8.0))
 
 
@@ -387,7 +386,7 @@ def checks(desc: dict[str, Any], notes: dict[str, Any] | None = None, recorded: 
         return checks_nsc(desc, notes, recorded)
     out: list[tuple[str, dict[str, Any]]] = []
     for s in desc["surfaces"]:
-        # 混合模式里非序列组的物体：模型玻璃和目录外材料同样要说明 / objects of a mixed-mode group: model glasses and uncatalogued materials
+        # 混合模式里非序列组的物体：模型玻璃和目录外材料同样要说明
         for o in s.get("objects") or []:
             src = o.get("material_source") or {}
             if o["kind"] == "object" and src.get("kind") == "model":
@@ -428,7 +427,7 @@ def checks(desc: dict[str, Any], notes: dict[str, Any] | None = None, recorded: 
         if any(abs(v) > 0 for v in (f.get("vignetting") or {}).values()):
             out.append(("vignetting", {"f": k}))
     clash = desc.get("interference") or {}
-    # 多重结构时标出结构号；警告文字给 agent 读，统一用英文写结构号 / the configuration, when there are several
+    # 多重结构时标出结构号；警告文字给 agent 读，统一用英文写结构号
     cfg = lambda x: f"[configuration {x['configuration']}] " if "configuration" in x else ""
     for c in clash.get("crossings") or []:
         out.append(("crossing", {"a": c["surfaces"][0], "b": c["surfaces"][1], "ca": c["comments"][0] or "-", "cb": c["comments"][1] or "-",
@@ -445,7 +444,6 @@ def checks(desc: dict[str, Any], notes: dict[str, Any] | None = None, recorded: 
                 out.append((f"thin_{need[1]}", {"a": c["surfaces"][0], "b": c["surfaces"][1], "min": fmt(c["min"]), "r": fmt(c["radius"]),
                                                  "d": fmt(2 * c["outer"]), "need": fmt(need[0])}))
     # LDE 的注释只是名字；说明要写清这个面代表什么实物，所以每个面都要在 notes 里有一条
-    # an LDE comment is only a name; the notes must say what each surface physically is
     missing = [str(s["index"]) for s in surfaces if not str(((notes or {}).get("surfaces") or {}).get(str(s["index"]), "")).strip()]
     if missing:
         out.append(("undescribed", {"list": ", ".join(missing)}))
@@ -825,7 +823,6 @@ def render(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[str, A
     first_order = "".join(f"<li>{e(a)}</li>" for a in notes.get("first_order") or []) or f"<li>{t('none')}</li>"
     configs_html = _configs_html(desc.get("configurations") or {}, t)
     # 混合模式：每个 NonSequential 面一组物体，notes.objects 的键写 "<面号>:<物体号>"
-    # mixed mode: one object group per NonSequential surface; notes.objects keys are "<surface>:<object>"
     obj_descr = {str(k): v for k, v in (notes.get("objects") or {}).items()}
     groups_html = "".join(f"<h2>{t('h.nsc_group', s=s['index'])}</h2>" + _objects_html(_object_rows(s["objects"], obj_descr, t, f"{s['index']}:"), t, "h3")
                           for s in desc["surfaces"] if s.get("objects"))
@@ -856,9 +853,8 @@ def render(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[str, A
 </main></body></html>"""
 
 
-# ---------- 确认页的四节 / the four sections shown before approval ----------
+# ---------- 确认页的四节
 # 数据只记代码能确定的事实；shown_sha 是这份数据（与语言无关）的摘要，页面文字由 TEXT 生成。
-# The data holds only what the code can establish; shown_sha digests this data (language-free), and the page text comes from TEXT.
 
 NEXT_BUDGET_KEYS = {"max_seconds", "plan"}
 MEASURE_FAILURES = {"not_measured", "check_error", "no_valid_value"}
@@ -878,7 +874,6 @@ def next_budget(notes: dict[str, Any] | None) -> dict[str, Any] | None:
 
 
 # 剖面图单独存成 SVG 文件，用 <img> 引用时读不到页面的 CSS，样式写进文件里
-# the section is a standalone SVG behind <img>, which sees none of the page's CSS, so it carries its own styles
 SECTION_STYLE = ("<style>text{font:11px ui-monospace,monospace;fill:#555}.ax{stroke:#222;stroke-width:.8}"
                  ".glass{fill:#a07a3c12;stroke:#222;stroke-width:.9}.axis{stroke:#999;stroke-dasharray:10 3 2 3;stroke-width:.7}"
                  ".ray{fill:none;stroke-width:.6}.img{stroke:#222;stroke-width:1.2}</style>")
@@ -1004,7 +999,6 @@ def _record(job: jobs.Job) -> tuple[list[dict[str, Any]] | None, str | None]:
 
 def _record_entry(entries: list[dict[str, Any]], name: str) -> dict[str, Any] | None:
     # 与 materials_record.recorded_names 相同的对应：牌号（zemax.name 或 name）大写相等
-    # the same match as materials_record.recorded_names: the glass name (zemax.name or name), compared in upper case
     return next((m for m in entries if str((m.get("zemax") or {}).get("name") or m.get("name")).upper() == name.upper()), None)
 
 
@@ -1056,7 +1050,7 @@ def _level_backend(name: str, catalogs: list[str], backend: str | None) -> dict[
     if backend is None:
         return _cell("unknown", "backend_unknown")
     if backend == "zos":
-        # OpticStudio 只能用在用目录里的牌号，目录列表由后端给出 / OpticStudio uses only glasses of the catalogues in use, as the backend lists them
+        # OpticStudio 只能用在用目录里的牌号，目录列表由后端给出
         return _cell("yes", "catalog_in_use", catalogs=catalogs) if catalogs else _cell("no", "not_in_use")
     return _cell("unknown", "backend_unknown")
 
@@ -1380,7 +1374,7 @@ def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, An
     budget = next_budget(notes)
     env = (notes or {}).get("environment")
     if desc.get("mode") == "non_sequential":
-        # 非序列系统按物体号（从 1 起）/ a non-sequential system lists object numbers, from 1
+        # 非序列系统按物体号（从 1 起）
         n = len(desc["objects"])
         if env is not None and not (isinstance(env, list) and all(isinstance(i, int) and not isinstance(i, bool) and 1 <= i <= n for i in env)):
             raise SaosError(ErrorCode.BAD_ARGS, f"notes.environment must list object numbers 1–{n} (environment or bought-in parts)")
@@ -1419,7 +1413,7 @@ def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, An
                 "unknown": [{"id": r["id"], "reason": r["reason"], "detail": r["detail"]} for r in requirements["rows"]
                             if r["status"] == "unknown" and r["reason"] in MEASURE_FAILURES],
                 "materials": materials}
-    # 四节的数据：摘要 shown_sha 由它算出，确认时记入 approval.json / the four sections' data; shown_sha digests it and approval records it
+    # 四节的数据：摘要 shown_sha 由它算出，确认时记入 approval.json
     shown = jsonable({"selection": selection, "requirements": requirements, "validity": validity, "budget": budget, "reach": reach})
     shown_sha = model_gate.digest(shown)
     unknowns = [{"section": "requirements", "id": r["id"], "reason": r["reason"]} for r in requirements["rows"] if r["status"] == "unknown"]
@@ -1434,7 +1428,6 @@ def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, An
     write_json(folder / "model.json", {**meta, "notes": notes, "warnings": warnings, "fingerprint": fp,
                                         "fingerprint_sha": model_gate.digest(fp), "model": desc,
                                         # 3：起型检索记录（exploration_recorded）成为确认的前提；4：自主确认要过差距门禁（shown.reach）
-                                        # 3: a search record is required for approval; 4: autonomous approval passes the reach gate (shown.reach)
                                         "approval_schema": 4, "exploration_recorded": searched, "evidence_context": context,
                                         "shown": shown, "shown_sha": shown_sha, "unknowns": unknowns})
     out = folder / "index.html"
@@ -1483,7 +1476,7 @@ def exploration_record(notes: dict[str, Any] | None) -> bool:
 
 
 def _exploration_html(notes: dict[str, Any], t: Any) -> str:
-    # 窗口确认时重建原因取自 notes.rebuild_reason，所以页面上要让用户看到 / the window's approval takes it from the notes
+    # 窗口确认时重建原因取自 notes.rebuild_reason，所以页面上要让用户看到
     reason = str(notes.get("rebuild_reason") or "").strip()
     return (f"<p><strong>{e(t('exp.rebuild', text=reason))}</strong></p>" if reason else "") + _search_html(notes, t)
 

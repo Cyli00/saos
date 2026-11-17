@@ -50,7 +50,7 @@ Max Element Cost: 0
 Max Total Cost: 0
 Relative Weight: 0
 """
-# 默认的直径下限 12 mm 会把小镜头全部排除 / the default 12 mm minimum diameter would exclude every surface of a small lens
+# 默认的直径下限 12 mm 会把小镜头全部排除
 ASPHERE_LIMITS = "ntm 2; sur sa; slo no; cvx no no; ccv no no; dia 0.001 100000; mxt 100000; aof n; go"
 
 
@@ -155,7 +155,7 @@ def run_rtc(out: Path, budget: float) -> None:
     backend = daemon.backend
     for i in range(1, codev["surfaces"] + 1):
         backend.vary(i, "radius", True)
-    # rtc 不能把求解改成变量，这样的像距留给求解 / rtc cannot turn a solve into a variable, so such an image distance stays solved
+    # rtc 不能把求解改成变量，这样的像距留给求解
     for i in codev["air_gaps"]:
         if f"{i}.thickness" not in backend.held:
             backend.vary(i, "thickness", True)

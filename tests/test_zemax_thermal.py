@@ -39,7 +39,7 @@ def zos():
 def _op(z, name, int1=0, int2=0, data=()):
     try:
         return float(z.operand(name, int1, int2, list(data)))
-    except Exception as exc:  # noqa: BLE001 - 真值里记下读不出的原因 / the reason goes into the truth
+    except Exception as exc:  # noqa: BLE001 - 真值里记下读不出的原因
         return str(exc)
 
 

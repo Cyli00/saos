@@ -168,7 +168,7 @@ def test_saved_lens_keeps_merit_rows_variables_and_carried_lines(tmp_path):
     backend.save_as(target)
     text = decode_text(target.read_bytes())
     source = decode_text((CASES / "sequential.zmx").read_bytes())
-    # rtc 不建模的文件头行原样带过去 / header lines rtc does not model are carried over
+    # rtc 不建模的文件头行原样带过去
     for line in source.splitlines():
         if line.startswith(("POLS", "GSTD", "COFN")):
             assert line.strip() in text
@@ -206,7 +206,7 @@ def test_hammer_keeps_the_start_or_finds_a_feasible_better_lens(tmp_path):
     assert result["stopped_by"] == "timeout" and result["systems"] >= 1
     assert result["checkpoints"][0]["systems"] == 1 and result["best_at_s"] is not None
     assert "best_at_s" in progress_events[-1]
-    # 找到可行解时最好的系统写在镜头文件旁，等后台进程归档 / the best feasible system is written next to the lens
+    # 找到可行解时最好的系统写在镜头文件旁，等后台进程归档
     assert (tmp_path / "work_0000_HAMMER.zmx").is_file() == result["solver_succeeded"]
 
 
@@ -258,11 +258,11 @@ def test_fft_mtf_is_one_at_zero_frequency_and_falls_to_zero_at_cutoff():
     for series in out["series"]:
         for curve in series["y"].values():
             assert curve[0] == pytest.approx(1.0, abs=1e-9)
-            # 截止频率处只剩一个像素的重叠 / at the cutoff only one pixel of the pupils overlaps
+            # 截止频率处只剩一个像素的重叠
             assert curve[-1] == pytest.approx(0.0, abs=1e-2)
 
 
-# ---- 复测记录 / confirmations ----
+# ---- 复测记录
 
 def _round(n: int, **extra) -> dict:
     return {"round": n, "tier": "local", "tiers": ["local"], "shortfall": 1.0, "achieved": False, "values": {"a": 1.0},
@@ -449,7 +449,6 @@ def test_disagreed_confirmation_returns_to_design_even_at_the_round_limit(achiev
 @needs_glass
 def test_medium_indices_follow_indx_at_the_lens_wavelengths():
     # 玻璃专家在 rtc 实例上取当前材料坐标时不改波长表，直接问材料层；它必须与 INDX 同一条路径
-    # the glass expert asks the material layer instead of editing the wavelength table; it must match INDX
     backend = _loaded()
     waves = [w["um"] for w in backend.system_info()["wavelengths"]]
     for surface in (1, 2):
@@ -460,7 +459,6 @@ def test_medium_indices_follow_indx_at_the_lens_wavelengths():
 @needs_glass
 def test_glass_coordinates_of_the_current_material_need_no_opticstudio_on_rtc():
     # 2026-11-03 验证：rtc 上 GlassExpert.candidates() 取当前材料坐标时进入要 ctx.system 的 _band，报 BACKEND_UNSUPPORTED
-    # the current material's coordinates used to go through _band, which needs OpticStudio's ctx.system
     from types import SimpleNamespace
 
     from saos.ctx.experts import GlassExpert

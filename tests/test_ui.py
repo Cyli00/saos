@@ -67,7 +67,7 @@ def test_stage_follows_the_workflow_files(flow):
     assert r0["viz"]["ok"] and (job.root / r0["viz"]["file"]).is_file()
     snap = stage.snapshot(job)
     assert snap["rounds"][0]["viz"] and snap["steps"][4]["detail"]["rounds"] == 1 and snap["decision"]["status"] == "continue"
-    # 需求改动后要重新确认：回到确认需求，带出原因 / a demand change goes back to confirmation
+    # 需求改动后要重新确认：回到确认需求，带出原因
     (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump({**DEMAND, "objectives": [{**DEMAND["objectives"][0], "must": {"max": 96.0}}]},
                                                                      allow_unicode=True), encoding="utf-8")
     snap = stage.snapshot(job)
@@ -83,7 +83,7 @@ def test_stage_follows_the_workflow_files(flow):
     report.write(job, lang="zh")
     assert steps(job)[1]["deliver"] == "done"
     assert not job.verify_seals()
-    # 报告之后记下的停止不改 ledger，报告也算过时 / a stop recorded after the report leaves the ledger alone but still makes the report stale
+    # 报告之后记下的停止不改 ledger，报告也算过时
     d = demand.load_job(job.root)
     ledger.record_stop(job.root, demand.compute_digest(d), "达成后仍按用户决定停止", "停吧", d)
     later = (job.root / "report" / "index.html").stat().st_mtime + 10
@@ -127,7 +127,7 @@ def ui(flow):
     srv.server_close()
 
 
-# 本机可能设了 HTTP_PROXY；访问 127.0.0.1 不走代理 / the machine may set HTTP_PROXY; talk to 127.0.0.1 directly
+# 本机可能设了 HTTP_PROXY；访问 127.0.0.1 不走代理
 DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
@@ -195,14 +195,14 @@ def test_the_window_confirms_what_it_showed_once_and_the_report_says_how(ui):
     gate = get(srv, f"/api/gate?job={job.id}")[1]["result"]
     assert gate["step"] == "demand_confirm" and gate["model"] is None and gate["demand"]["summary"] == DEMAND["summary"]
     shown = gate["demand"]["demand_sha"]
-    # 窗口显示之后需求改了：按下的是旧版，不记 / the demand changed after the window showed it: nothing is recorded
+    # 窗口显示之后需求改了：按下的是旧版，不记
     path.write_text(yaml.safe_dump({**DEMAND, "objectives": [{**DEMAND["objectives"][0], "must": {"max": 96.0}}]}, allow_unicode=True), encoding="utf-8")
     stale = get(srv, f"/api/confirm?job={job.id}", data={"gate": "demand", "sha": shown})[1]
     assert stale["error"]["code"] == "BAD_ARGS" and demand.confirmations(job.root) == []
     path.write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
     done = get(srv, f"/api/confirm?job={job.id}", data={"gate": "demand", "sha": shown})[1]["result"]["record"]
     assert done["via"] == "window" and done["quote"] == "" and done["demand_sha"] == shown
-    # 连点第二下：关卡已过 / a second click finds the gate passed
+    # 连点第二下：关卡已过
     assert get(srv, f"/api/confirm?job={job.id}", data={"gate": "demand", "sha": shown})[1]["error"]["code"] == "BAD_ARGS"
     assert len(demand.confirmations(job.root)) == 1
 
@@ -236,7 +236,7 @@ def test_an_autonomous_job_passes_its_gates_with_reasons_and_the_report_says_so(
     call(daemon, "lens.load", job=job.id, file="a.zmx")
     for j in (job, other):
         (j.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
-    # 参与任务里 agent 不能自己过关卡；自主任务里要写理由 / an interactive job never lets the agent pass; an autonomous one needs a reason
+    # 参与任务里 agent 不能自己过关卡；自主任务里要写理由
     with pytest.raises(SaosError):
         demand.confirm(other.root, "", via="auto", reason="题目给定")
     with pytest.raises(SaosError):
@@ -272,7 +272,7 @@ def test_the_user_can_ask_for_changes_at_a_gate_and_switch_an_autonomous_job_to_
     assert asked["target"] == sha and "总长放宽到 100 mm" in (job.root / "sources" / "interview.md").read_text(encoding="utf-8")
     snap = stage.snapshot(job)
     assert snap["current"] == "demand_confirm" and [r["note"] for r in snap["revisions"]] == ["总长放宽到 100 mm"]
-    # agent 出了新版：请求算处理过了 / a new version settles the request
+    # agent 出了新版：请求算处理过了
     path.write_text(yaml.safe_dump({**DEMAND, "objectives": [{**DEMAND["objectives"][0], "must": {"max": 100.0}}]}, allow_unicode=True), encoding="utf-8")
     assert stage.snapshot(job)["revisions"] == []
 
@@ -294,7 +294,7 @@ def test_an_analysis_job_has_one_step_no_gates_and_computes_on_rtc(ui, fake_lens
     snap = stage.snapshot(job)
     assert snap["current"] == "analyse" and [s["id"] for s in snap["steps"]] == ["analyse"]
     assert snap["steps"][0]["detail"] == {"lens": "a.zmx"}
-    # 写了需求单也不会走进设计阶段；关卡只属于设计任务 / a demand file does not start the design stages; gates belong to design jobs
+    # 写了需求单也不会走进设计阶段；关卡只属于设计任务
     (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
     assert stage.snapshot(job)["current"] == "analyse"
     with pytest.raises(SaosError, match="analysis job"):
@@ -306,7 +306,6 @@ def test_an_analysis_job_has_one_step_no_gates_and_computes_on_rtc(ui, fake_lens
 
 def test_a_quote_counts_like_the_window_and_names_its_channel(flow, monkeypatch):
     # 2026-11-13 用户决定确认渠道平权：窗口开着时也接受原话，记录写明渠道
-    # the user's decision: channels count the same; a quote is accepted with the window open and the record names it
     import saos.ui as ui_pkg
     from saos import cli
 
@@ -323,7 +322,6 @@ def test_a_quote_counts_like_the_window_and_names_its_channel(flow, monkeypatch)
 
 def test_the_window_forwards_metric_queries_and_selections_to_the_daemon(ui, monkeypatch):
     # 2026-11-03 验证：函数内重复导入 client 让它成了局部变量，其他接口一调用就 UnboundLocalError
-    # a function-local import once shadowed client, so every other endpoint raised UnboundLocalError
     (daemon, job), srv = ui
     sent = []
     monkeypatch.setattr(server.client, "request", lambda op, args, **kw: sent.append((op, args)) or {"done": op})
@@ -363,14 +361,14 @@ def test_live_view_and_window_polls_are_served(ui):
     (daemon, job), srv = ui
     msg = get(srv, f"/api/live?job={job.id}")[1]
     assert msg["ok"] and msg["result"]["lens"] == "a.zmx" and msg["result"]["lens_data"] and "interference" in msg["result"]
-    assert "spot" not in msg["result"]  # 当前视图只有布局和 Lens Data / the live view has layout and Lens Data only
-    sec = msg["result"]["section"]  # 轴对称：2D 画全局 YZ 面 / axial: the 2D view is the global YZ plane
+    assert "spot" not in msg["result"]  # 当前视图只有布局和 Lens Data
+    sec = msg["result"]["section"]  # 轴对称：2D 画全局 YZ 面
     assert (sec["u_name"], sec["v_name"], sec["fan"]) == ("z", "y", "px") and set(sec["profiles"].values()) == {"profile_y"}
     before = get(srv, "/api/ping")[1]["result"]["seen_s"]
     state = get(srv, f"/api/state?job={job.id}")[1]["result"]
     assert job.id not in before and get(srv, "/api/ping")[1]["result"]["seen_s"][job.id] < 5
     get(srv, f"/api/state?job={job.id}&hidden=1")
-    assert get(srv, "/api/ping")[1]["result"]["hidden"] == [job.id]  # 最小化的窗口 / a minimised window
+    assert get(srv, "/api/ping")[1]["result"]["hidden"] == [job.id]  # 最小化的窗口
     first = get(srv, f"/api/state?job={job.id}")[1]["result"]["live"]
     assert get(srv, "/api/ping")[1]["result"]["hidden"] == []
     assert first == state["live"]
@@ -391,17 +389,16 @@ def test_job_commands_reopen_the_window_unless_one_is_polling(saos_home, monkeyp
     monkeypatch.setattr(ui_pkg, "_foreground", lambda: 0)
     monkeypatch.setattr(ui_pkg, "RECONNECT_WAIT_S", 0.0)
     assert ui_pkg.ensure_window(job.id)["window"] == "chrome-app" and len(launched) == 1
-    assert "--disable-background-timer-throttling" in launched[0]  # 最小化后照常轮询 / keeps polling when minimised
-    assert ui_pkg.ensure_window(job.id) is None and len(launched) == 1  # 刚打开，还没轮询 / just opened, not polled yet
-    monkeypatch.setattr(ui_pkg.time, "time", lambda: 1e12)  # 很久以后，窗口没在轮询：再开 / much later, nobody polls: open again
+    assert "--disable-background-timer-throttling" in launched[0]  # 最小化后照常轮询
+    assert ui_pkg.ensure_window(job.id) is None and len(launched) == 1  # 刚打开，还没轮询
+    monkeypatch.setattr(ui_pkg.time, "time", lambda: 1e12)  # 很久以后，窗口没在轮询：再开
     assert ui_pkg.ensure_window(job.id)["window"] == "chrome-app" and len(launched) == 2
     monkeypatch.setattr(server, "read_state", lambda: {"pid": 1, "port": 1, "token": "x"})
     monkeypatch.setattr(ui_pkg.client, "pid_alive", lambda pid: True)
     monkeypatch.setattr(ui_pkg, "_seen", lambda state: ({job.id: 1.5}, set()))
     monkeypatch.setattr(ui_pkg.time, "time", lambda: 2e12)
-    assert ui_pkg.ensure_window(job.id) is None and len(launched) == 2  # 窗口开着 / the window is open
+    assert ui_pkg.ensure_window(job.id) is None and len(launched) == 2  # 窗口开着
     # 最小化的窗口轮询变慢：40 s 前来过仍算开着；没隐藏的窗口 40 s 没来就是关了
-    # a minimised window polls slowly: 40 s ago still counts as open; a visible one silent for 40 s is closed
     monkeypatch.setattr(ui_pkg, "_seen", lambda state: ({job.id: 40.0}, {job.id}))
     assert ui_pkg.ensure_window(job.id) is None and len(launched) == 2
     monkeypatch.setattr(ui_pkg, "_seen", lambda state: ({job.id: 40.0}, set()))
@@ -411,9 +408,8 @@ def test_job_commands_reopen_the_window_unless_one_is_polling(saos_home, monkeyp
     monkeypatch.setattr(ui_pkg, "_seen", lambda state: ({}, set()))
     monkeypatch.setattr(ui_pkg.time, "time", lambda: 4e12)
     assert ui_pkg.ensure_window(job.id) is None and len(launched) == 3
-    # 命令行只对改动或计算镜头的带任务命令这样做 / the CLI does it for job commands that change or compute the lens
+    # 命令行只对改动或计算镜头的带任务命令这样做
     # 记一轮、建模说明、待确认的需求单是需要用户看的节点（gate），用户关掉的窗口在这里重开
-    # a round, a model description and a demand awaiting confirmation are gates, where a window the user closed reopens
     asked = []
     monkeypatch.setattr(ui_pkg, "ensure_window", lambda job_id, gate=False: asked.append((job_id, gate)) or {"window": "chrome-app"})
     for argv in (["round", "--job", job.id], ["scan", "--job", job.id, "--show"], ["report", "--job", job.id],
@@ -423,7 +419,7 @@ def test_job_commands_reopen_the_window_unless_one_is_polling(saos_home, monkeyp
     (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
     cli.main(["demand", "show", "--job", job.id])
     demand.confirm(job.root, "可以")
-    cli.main(["demand", "show", "--job", job.id])  # 已确认：只是重读 / just rereading
+    cli.main(["demand", "show", "--job", job.id])  # 已确认：只是重读
     assert asked == [(job.id, True), (job.id, False), (job.id, True), (job.id, True)]
 
 
@@ -438,7 +434,7 @@ def test_snapshot_shows_a_detached_scan_as_the_running_operation(saos_home):
                                                       "daemon_pid": os.getpid()}), encoding="utf-8")
     progress = stage.snapshot(job)["progress"]
     assert progress["op"] == "scan.run" and progress["detail"] == "scans/001"
-    # 所属后台进程已经不在：不再显示 / the owning daemon is gone: not shown
+    # 所属后台进程已经不在：不再显示
     (folder / "progress.json").write_text(json.dumps({"op": "scan.run", "status": "running", "daemon_pid": 0}), encoding="utf-8")
     assert stage.snapshot(job)["progress"] is None
 
@@ -487,7 +483,7 @@ def test_a_window_the_user_closed_stays_closed_until_a_gate(ui, monkeypatch):
     monkeypatch.setattr(ui_pkg, "open_window", lambda job_id, **kw: opened.append(job_id) or {"window": "chrome-app"})
     assert ui_pkg.ensure_window(job.id) is None and opened == []
     assert ui_pkg.ensure_window(job.id, gate=True) == {"window": "chrome-app"} and opened == [job.id]
-    get(srv, f"/api/state?job={job.id}")  # 重开的窗口来轮询 / the reopened window polls
+    get(srv, f"/api/state?job={job.id}")  # 重开的窗口来轮询
     assert server.closed_jobs() == set()
 
 
@@ -500,7 +496,7 @@ def test_a_restarted_service_keeps_its_address_so_open_windows_reconnect(saos_ho
     first.server_close()
     second = server._make_server()
     assert (second.server_address[1], second.token) == (port, token)
-    third = server._make_server()  # 端口还被第二个占着 / the port is still held by the second
+    third = server._make_server()  # 端口还被第二个占着
     assert third.server_address[1] != port and json.loads(server.endpoint_file().read_text())["port"] == third.server_address[1]
     second.server_close()
     third.server_close()
@@ -525,14 +521,14 @@ def test_gates_raise_an_open_window_and_notify_leaves_a_line_for_the_user(ui, mo
     monkeypatch.setattr(ui_pkg.client, "pid_alive", lambda pid: True)
     raised = []
     monkeypatch.setattr(ui_pkg, "_raise_window", lambda job_id: raised.append(job_id) or True)
-    assert ui_pkg.ensure_window(job.id) is None and raised == []  # 普通命令：开着就不动 / an ordinary command leaves it
+    assert ui_pkg.ensure_window(job.id) is None and raised == []  # 普通命令：开着就不动
     assert ui_pkg.ensure_window(job.id, gate=True) == {"window": "raised"} and raised == [job.id]
 
     monkeypatch.setattr(ui_pkg, "ensure_server", lambda: {"port": srv.server_address[1], "token": srv.token, "pid": 1, "reused": True})
     out = ui_pkg.notify(job.id, "请看第 3 轮的光斑，选一个方向")
     assert out["notice"]["message"] == "请看第 3 轮的光斑，选一个方向" and out["window"] == {"window": "raised"}
     assert get(srv, f"/api/state?job={job.id}")[1]["result"]["notice"]["message"].startswith("请看第 3 轮")
-    get(srv, f"/api/notice?job={job.id}", data={"message": ""})  # 用户点“知道了” / the user dismisses it
+    get(srv, f"/api/notice?job={job.id}", data={"message": ""})  # 用户点“知道了”
     assert get(srv, f"/api/state?job={job.id}")[1]["result"]["notice"] is None
     with pytest.raises(ui_pkg.SaosError):
         ui_pkg.notify(job.id, "  ")

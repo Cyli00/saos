@@ -27,7 +27,6 @@ from saos.protocol import ErrorCode, SaosError
 
 PARAMS = ("radius", "curvature", "thickness", "conic", "semi_diameter", "mech_semi_diameter", "material", "comment", "nd", "vd", "dpgf")
 # 面型参数列（非球面系数、坐标断点的偏心和倾斜、菲涅尔基底等），按 Lens Data 的 Par 列号
-# surface-type parameter columns (aspheric terms, coordinate-break decenters and tilts, …) by their Lens Data Par number
 PAR_RE = re.compile(r"^par([1-9]\d{0,2})$")
 INT_RE = re.compile(r"^-?\d+$")
 _SYSTEM_RE = re.compile(r"^(aperture|wave\.(\d+)|field\.(\d+)\.([xy])|config\.(\d+)\.(\d+))$")
@@ -92,7 +91,7 @@ class Rays:
     x: np.ndarray
     y: np.ndarray
     z: np.ndarray
-    l: np.ndarray  # 方向余弦沿用 ZOS-API 的名字 / direction cosines keep the ZOS-API names
+    l: np.ndarray  # 方向余弦沿用 ZOS-API 的名字
     m: np.ndarray
     n: np.ndarray
     intensity: np.ndarray
@@ -117,6 +116,6 @@ def pupil(n: int = 21) -> list[tuple[float, float]]:
     """单位圆内的 n×n 方格光瞳采样点（归一化坐标）。/ An n×n square grid of normalised pupil points inside the unit circle."""
     if n < 2:
         return [(0.0, 0.0)]
-    # 与各任务原有的写法逐位一致：-1 + 2i/(n-1)，外层 px / bit-identical to the jobs' own grids: -1 + 2i/(n-1), px outer
+    # 与各任务原有的写法逐位一致：-1 + 2i/(n-1)，外层 px
     grid = [-1 + 2 * i / (n - 1) for i in range(n)]
     return [(px, py) for px in grid for py in grid if px * px + py * py <= 1 + 1e-12]

@@ -79,7 +79,7 @@ def test_glass_search_compares_over_every_configuration_and_rows_follow_the_new_
     name = backend.get_param("1.material")
     glss = next(o for o in backend.configurations()["operands"] if o["type"] == "GLSS" and o["params"] == [1])
     assert glss["solves"] == ["Fixed", "ConfigPickup", "ConfigPickup"] and {v.upper() for v in glss["values"]} == {str(name).upper()}
-    # 玻璃内厚度跟随的是新玻璃的膨胀系数 / the glass thickness follows the new glass's expansion
+    # 玻璃内厚度跟随的是新玻璃的膨胀系数
     alpha = backend._catalog().get(str(name), backend.lens.catalogs).tce * 1e-6
     thickness = next(o for o in backend.configurations()["operands"] if o["type"] == "THIC" and o["params"] == [1])
     assert thickness["values"][1] == pytest.approx(thickness["values"][0] * (1.0 + alpha * -60.0), rel=1e-12)
@@ -212,7 +212,7 @@ def test_asphere_run_makes_terms_that_follow_the_temperature(tmp_path):
     a = 7.1e-6 * -60.0
     assert par2["values"][0] != 0.0
     assert par2["values"][1] == pytest.approx(par2["values"][0] / (1.0 + a) ** 3, rel=1e-12)
-    # 写盘再读回，变量和行都在 / saved and read back, the variables and rows stay
+    # 写盘再读回，变量和行都在
     path = tmp_path / "asphere.zmx"
     backend.save_as(path)
     again = RtcBackend(None, standalone=True)
@@ -235,7 +235,7 @@ def test_focus_columns_count_what_can_really_be_adjusted():
     assert {_focus_column(follow, 3, c) for c in (1, 2, 3)} == {0}
     independent = zoom().lens
     assert [_focus_column(independent, 3, c) for c in (1, 2)] == [0, 1]
-    # 变焦行在别的面：最后厚度各结构共用 / the zoom row elsewhere: the last thickness is shared
+    # 变焦行在别的面：最后厚度各结构共用
     assert {_focus_column(independent, 2, c) for c in (1, 2)} == {0}
 
 

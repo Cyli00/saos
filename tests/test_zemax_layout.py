@@ -52,8 +52,8 @@ def test_rays_bend_inside_a_grin_lens_in_the_live_view(daemon, monkeypatch):
         assert call(daemon, "lens.set", job=job.id, surface=1, param=param, value=value)["ok"]
     view = json.loads((job.root / jobs.VIEW_FILE).read_text(encoding="utf-8"))
     assert view["ok"] and not view.get("errors", {}).get("grin"), view.get("errors")
-    assert float(backend.system.LDE.GetSurfaceAt(1).Thickness) == thickness  # 主系统不动 / the main system is untouched
-    # 不分段再导出一次作对照：同一条光线多出来的点就是 GRIN 里的中间点 / a reference export without slices
+    assert float(backend.system.LDE.GetSurfaceAt(1).Thickness) == thickness  # 主系统不动
+    # 不分段再导出一次作对照：同一条光线多出来的点就是 GRIN 里的中间点
     from saos.backend import zos
 
     monkeypatch.setattr(zos, "GRIN_SLICES", 1)
@@ -65,10 +65,10 @@ def test_rays_bend_inside_a_grin_lens_in_the_live_view(daemon, monkeypatch):
         pts, extra = ray["points"], len(ray["points"]) - len(ref["points"])
         assert extra >= 5, extra
         checked += 1
-        # 物在无穷远：第一点是第 1 面的交点，接着是 GRIN 里的中间点，然后是第 2 面 / object at infinity: surface 1, GRIN points, surface 2
+        # 物在无穷远：第一点是第 1 面的交点，接着是 GRIN 里的中间点，然后是第 2 面
         a, inner, b = pts[0], pts[1:1 + extra], pts[1 + extra]
         assert a == ref["points"][0] and b == ref["points"][1]
-        assert all(p[2] < q[2] for p, q in zip([a, *inner], [*inner, b]))  # 沿光轴依次排列 / in order along the axis
+        assert all(p[2] < q[2] for p, q in zip([a, *inner], [*inner, b]))  # 沿光轴依次排列
         for p in inner:
             t = (p[2] - a[2]) / (b[2] - a[2])
             bent = max(bent, math.hypot(p[0] - (a[0] + t * (b[0] - a[0])), p[1] - (a[1] + t * (b[1] - a[1]))))

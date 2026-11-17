@@ -17,7 +17,7 @@ from typing import Any
 
 RINGS = 4
 SPOKES = 16
-# 越过另一面超过这个距离（镜头单位）才算相交，挡住数值噪声和贴合的胶合面 / beyond numerical noise and cemented contact
+# 越过另一面超过这个距离（镜头单位）才算相交，挡住数值噪声和贴合的胶合面
 TOL = 1e-4
 
 
@@ -207,7 +207,6 @@ def _sag_at(s: dict[str, Any], x: float, y: float) -> float | None:
     sd, sags = s["sd"], s["sags"]
     r = math.hypot(x, y)
     # 外缘那一圈（r = sd）要算进来：正透镜最薄在那里，排除它会把边厚报成内一圈的值
-    # the rim ring (r = sd) counts: a positive lens is thinnest there, and leaving it out reports the next ring's thickness
     if r > sd * (1 + 1e-9) or ("ap" in s and not inside(s["ap"], x, y)):
         return None
     u = min(r / sd, 1.0) * RINGS
@@ -251,9 +250,6 @@ def crossings(surfaces: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out = []
     # 玻璃里的反射面（棱镜斜面）没有显式孔径时，实际范围由棱镜其他面决定，半口径常远大于它（实测光纤探头 0.85 对半宽 0.2），
     # 不参与检查；有矩形等显式孔径时照常检查
-    # a reflecting face inside glass (a prism hypotenuse) without an explicit aperture is bounded by the prism's other faces,
-    # not by its semi-diameter (0.85 against a half-width of 0.2 on the fibre probe), so it is left out; with an explicit
-    # aperture it is checked like any other
     bounds = [s for s in surfaces if s.get("boundary") and not (s.get("in_glass_mirror") and not (s.get("ap") or {}).get("explicit"))]
     for i, a in enumerate(bounds):
         for b in bounds[i + 1:]:
@@ -286,7 +282,7 @@ def _inside(element: tuple[dict[str, Any], dict[str, Any]], p: tuple[float, floa
     df, db = _signed(front, p), _signed(back, p)
     if df is None or db is None:
         return False
-    # 玻璃在前表面朝后表面顶点的一侧、后表面朝前表面顶点的一侧 / the glass lies on the side of each surface facing the other vertex
+    # 玻璃在前表面朝后表面顶点的一侧、后表面朝前表面顶点的一侧
     sf = _signed(front, tuple(back["off"]))
     sb = _signed(back, tuple(front["off"]))
     if not sf or not sb:
@@ -424,7 +420,7 @@ def merge_configurations(results: list[dict[str, Any]]) -> dict[str, Any]:
     return out
 
 
-# ---- 非序列物体的轮廓 / outlines of non-sequential objects ----
+# ---- 非序列物体的轮廓
 
 def _nsc_circle(r: float, z: float, n: int = 32, ry: float | None = None) -> list[list[float]]:
     ry = r if ry is None else ry
@@ -506,7 +502,7 @@ def nsc_overlaps(items: list[dict[str, Any]]) -> dict[str, Any]:
             continue
         shape = object_outline(it)
         if (shape is None or not shape.get("closed") or not it.get("global")) and it.get("mesh_box"):
-            # 没有解析轮廓的物体用导出网格的包围盒 / objects without an analytic outline use their exported mesh's box
+            # 没有解析轮廓的物体用导出网格的包围盒
             lo, hi = it["mesh_box"]
             boxes[it["index"]] = (list(lo), list(hi), it.get("comment", ""))
             continue
@@ -523,7 +519,6 @@ def nsc_overlaps(items: list[dict[str, Any]]) -> dict[str, Any]:
                 continue
             (lo1, hi1, c1), (lo2, hi2, c2) = boxes[a], boxes[b]
             # 编号大的物体整个在编号小的里面是 OpticStudio 的嵌套规则（后列的优先），不算穿插
-            # a later object wholly inside an earlier one is OpticStudio's nesting rule (the later one wins), not a clash
             if all(lo1[k] - TOL <= lo2[k] and hi2[k] <= hi1[k] + TOL for k in range(3)):
                 continue
             depth = min(min(hi1[k], hi2[k]) - max(lo1[k], lo2[k]) for k in range(3))
@@ -640,8 +635,6 @@ def detector_spill(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], l
 
 # 面型 → 根号下的二次项来自哪几列：rotational 用 LDE 的半径与圆锥；biconic 另有 X 方向（参数 1 = Rx、参数 2 = kx，
 # 与 rtc.geometry 一致）；toroidal 只查 Y 方向轮廓（有限旋转半径不在 rtc 的已标定范围内）
-# which columns feed the square root: rotational uses the LDE radius and conic; biconic adds X (par 1 = Rx, par 2 = kx,
-# as rtc.geometry); toroidal checks the Y profile only (a finite rotation radius is outside rtc's calibrated range)
 _ROTATIONAL = {"STANDARD", "EVENASPH", "EVENASPHERE", "ODDASPH", "ODDASPHERE"}
 _BICONIC = {"BICONIC", "BICONICX", "BICONICZ", "BICONICZERNIKE"}
 _TOROIDAL = {"TOROIDAL"}
@@ -702,7 +695,6 @@ def interference(surfaces: list[dict[str, Any]]) -> dict[str, Any]:
     return {"crossings": crossings(usable), "overlaps": overlaps(usable), "clearances": clearances(usable), "lenses": lenses,
             "part_radii": {int(s["index"]): float(s["sd"]) for s in usable},
             # 没有一片镜片的外缘大于净口径：检查只覆盖净口径，装配余量和机械外径都没算进去
-            # no lens edge beyond its clear aperture: the check covers clear apertures only, no allowance or mechanical diameter
             "edges_from_clear": bool(lenses) and all(e["outer"] <= e["clear"] + TOL for e in lenses), "tolerance": TOL}
 
 
@@ -721,7 +713,7 @@ def parts_clash(backend: Any, clash: dict[str, Any] | None = None) -> dict[str, 
         except SaosError:
             return None
     crossings_ = [{k: c[k] for k in ("surfaces", "depth", "configuration") if k in c} for c in clash.get("crossings") or []]
-    # 序列镜头记镜片和点数，非序列系统记物体和穿插深度 / lenses and points for a sequential lens, objects and depth for a non-sequential one
+    # 序列镜头记镜片和点数，非序列系统记物体和穿插深度
     overlaps_ = [{k: o[k] for k in ("lenses", "points", "objects", "depth", "configuration") if k in o} for o in clash.get("overlaps") or []]
     undefined = undefined_surfaces(backend.surfaces(), lambda i, n: backend.get_param(f"{i}.par{n}"), clash.get("part_radii"))
     if not (crossings_ or overlaps_ or undefined):

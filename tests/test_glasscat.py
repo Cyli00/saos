@@ -66,14 +66,14 @@ def test_substitution_catalog_defaults_to_in_production_and_is_added_only_when_u
     from saos.protocol import SaosError
 
     backend = _zos_backend(tmp_path, monkeypatch, broken={"BROKEN"})
-    assert backend.substitute_catalog(None) == ""  # 没装在产目录：全部在用目录 / not installed: every catalog in use
+    assert backend.substitute_catalog(None) == ""  # 没装在产目录：全部在用目录
     (tmp_path / "SAOS_CDGM_INPROD.AGF").write_bytes(glasscat.in_production(AGF, "test")[0].encode("utf-16"))
     assert backend.substitute_catalog(None) == "SAOS_CDGM_INPROD" and backend.substitute_catalog("schott") == "SCHOTT"
     used = backend.system.SystemData.MaterialCatalogs.used
-    assert used == {"SCHOTT"}  # 解析目录名不改镜头 / resolving the name leaves the lens alone
+    assert used == {"SCHOTT"}  # 解析目录名不改镜头
     assert backend.catalog_has("SK16", "SAOS_CDGM_INPROD") is False
     assert backend.catalog_has("SK16", "NOPE") is None and backend.catalog_has("SK16", "") is None
-    assert backend.catalog_has("1.62,60.3", "SAOS_CDGM_INPROD") is None  # 模型玻璃不算 / a model glass is no catalog glass
+    assert backend.catalog_has("1.62,60.3", "SAOS_CDGM_INPROD") is None  # 模型玻璃不算
     backend._use_catalog("SAOS_CDGM_INPROD")
     assert backend.catalog_has("H-K9L", "SAOS_CDGM_INPROD") is True
     backend._use_catalog("")
@@ -100,7 +100,7 @@ def test_inprod_refuses_a_maker_file_that_does_not_match_the_manifest(tmp_path, 
     monkeypatch.setattr("sys.argv", ["inprod.py", "--glasscat", str(tmp_path)])
     assert inprod.main() == 0
     assert [g.name for g in glasscat.load_catalog(tmp_path / "TEST_INPROD.AGF")] == ["H-K9L", "H-ZF52"]
-    (tmp_path / "MAKER.AGF").write_bytes(raw + b"\x00\x00")  # 文件换了 / the file changed
+    (tmp_path / "MAKER.AGF").write_bytes(raw + b"\x00\x00")  # 文件换了
     (tmp_path / "TEST_INPROD.AGF").unlink()
     assert inprod.main() == 1 and not (tmp_path / "TEST_INPROD.AGF").exists()
 
@@ -130,9 +130,9 @@ def test_inprod_merges_makers_and_filters_a_mixed_catalog(tmp_path, monkeypatch)
     monkeypatch.setattr(inprod, "ROOT", tmp_path)
     monkeypatch.setattr("sys.argv", ["inprod.py", "--glasscat", str(tmp_path)])
     assert inprod.main() == 0
-    # 第二家只取点名的在产牌号，停产的 H-OLD 仍被去掉 / only the named glasses in production
+    # 第二家只取点名的在产牌号，停产的 H-OLD 仍被去掉
     assert [g.name for g in glasscat.load_catalog(tmp_path / "TEST_MIX.AGF")] == ["H-K9L", "H-ZF52", "H-OTHER"]
     (tmp_path / "TEST_MIX.AGF").unlink()
-    # 同名牌号可能光学参数不同，不能静默合并 / same-named glasses may differ, never merged silently
+    # 同名牌号可能光学参数不同，不能静默合并
     write([part("ONE.AGF", one), part("ONE.AGF", one)])
     assert inprod.main() == 1 and not (tmp_path / "TEST_MIX.AGF").exists()

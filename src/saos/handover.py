@@ -23,8 +23,6 @@ def compare(rtc, zos) -> dict[str, Any]:
     mismatches = rtc.reconcile(zos.describe_model(None))
     # 物面半口径不比：rtc 不重算它（保留文件里的值，建镜头时为 0），OpticStudio 在物距无穷时给 inf；两边追迹都不用它，
     # 是否影响光线由下面的光线比对判断（2026-10-30 真实 OpticStudio：0 对 inf，126 条光线位置差 ≤ 1.6e-14 mm）
-    # the object surface's semi-diameter is skipped: rtc keeps the file's value (0 when built) while OpticStudio gives
-    # inf at an infinite object distance; neither traces with it, and the ray comparison below judges any effect
     for mine, ref in list(zip(rtc.surfaces(), zos.surfaces()))[1:]:
         a, b = float(mine["semi_diameter"]), float(ref["semi_diameter"])
         if abs(a - b) > fast.POSITION_TOL:

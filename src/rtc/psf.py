@@ -340,7 +340,7 @@ def mtf_fft(systems, hx: float = 0.0, hy: float = 0.0, frequencies=None, n: int 
         for (oy, ox, df), w in parts:
             otf = oy if axis == 0 else ox
             grid = df * np.arange(len(otf))
-            # 超出这一波长截止频率的部分为 0 / beyond this wavelength's cutoff the OTF is zero
+            # 超出这一波长截止频率的部分为 0
             re = np.interp(freq, grid, otf.real, right=0.0)
             im = np.interp(freq, grid, otf.imag, right=0.0)
             acc += w * (re + 1j * im)

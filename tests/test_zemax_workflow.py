@@ -26,7 +26,7 @@ def test_accepted_design_is_improved_in_opticstudio_and_reported(tmp_path, monke
         f0 = ok(daemon.handle({"op": "lens.operand", "args": {"job": job.id, "type": "EFFL", "int2": 1}}))["value"]
         spot0 = ok(daemon.handle({"op": "lens.analysis", "args": {"job": job.id, "type": "StandardSpot"}}))["spot"]["rms_radius"][0][0]
 
-        # 放开全部曲率，RMS 光斑为评价函数并约束焦距，在 OpticStudio 中做阻尼最小二乘 / radii free, RMS spot merit held to f0
+        # 放开全部曲率，RMS 光斑为评价函数并约束焦距，在 OpticStudio 中做阻尼最小二乘
         ok(daemon.handle({"op": "opt.vary", "args": {"job": job.id, "param": "radius", "surfaces": [1, 2, 3, 4]}}))
         ok(daemon.handle({"op": "opt.merit", "args": {"job": job.id, "action": "wizard",
                                                        "settings": {"type": "RMS", "data": "Spot Radius", "reference": "Centroid"}}}))
@@ -41,13 +41,13 @@ def test_accepted_design_is_improved_in_opticstudio_and_reported(tmp_path, monke
         assert zos_rows[0]["round"] == 0 and zos_rows[0]["tier"] == "baseline"
         assert zos_rows[-1]["round"] == rows[-1]["round"] and rows[-1]["stage"] == "zos"
 
-        # EFFL 保持在 1 % 之内；光斑 RMS 从验证基线下降 / EFFL held within 1 %; spot RMS falls from the verified baseline
+        # EFFL 保持在 1 % 之内；光斑 RMS 从验证基线下降
         effl = ok(daemon.handle({"op": "lens.operand", "args": {"job": job.id, "type": "EFFL", "int2": 1}}))["value"]
         assert effl == pytest.approx(f0, rel=0.01)
         spot = ok(daemon.handle({"op": "lens.analysis", "args": {"job": job.id, "type": "StandardSpot"}}))["spot"]["rms_radius"][0][0]
         assert spot < spot0 and decision["status"] in ("achieved", "continue")
 
-        # 报告只选 OpticStudio 阶段的合资格轮次 / the report selects only deliverable OpticStudio-stage rounds
+        # 报告只选 OpticStudio 阶段的合资格轮次
         generated = report.write(job)
         assert generated["deliverable"] is True and generated["deliver"], generated
         assert any(r["file"] == generated["deliver"] and r.get("stage") == "zos" for r in rows), generated["deliver"]

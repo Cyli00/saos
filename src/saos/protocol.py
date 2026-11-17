@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any
 
 # write_json 替换目标文件被拒时的重试次数和基础等待（第 k 次等 k 倍，合计约 1.4 s）
-# retries and base wait when write_json's replace is refused (the k-th waits k times as long, about 1.4 s in all)
 REPLACE_RETRIES = 8
 REPLACE_WAIT_S = 0.05
 
@@ -93,7 +92,7 @@ def jsonable(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [jsonable(v) for v in value]
     if type(value).__module__ == "numpy" and hasattr(value, "tolist"):
-        # numpy 标量和数组（kit 的追迹结果）/ numpy scalars and arrays (kit's trace results)
+        # numpy 标量和数组（kit 的追迹结果）
         return jsonable(value.tolist())
     return value
 
@@ -151,7 +150,6 @@ def finite(value: Any) -> float | None:
 
 
 # 一个数的可信等级，由强到弱；refused 是没有数（当前后端算不了）
-# a number's trust level, strongest first; refused means there is no number (the backend cannot compute it)
 TRUST_LEVELS = ("measured", "reconciled", "unreconciled", "refused")
 
 
@@ -169,7 +167,6 @@ def trust(backend: str | None, provenance: dict[str, Any] | None = None) -> str 
     if provenance is None:
         return "unreconciled"
     # 给了 unverified_affecting（这个数实际依赖的路径）时按它分档，否则按镜头的全部路径
-    # unverified_affecting (the paths this number depends on), where given, grades it instead of every path of the lens
     paths = provenance["unverified_affecting"] if "unverified_affecting" in provenance else provenance.get("unverified")
     return "unreconciled" if paths or provenance.get("operands_unverified") else "reconciled"
 

@@ -59,7 +59,7 @@ def test_pooled_results_keep_finished_items_and_raise_a_design_failure_from_any_
     failing = SimpleNamespace(spare_map=lambda fn, items, **kw: {"results": [None], "errors": {"0": "Traceback ...\nDesignFailure: no focus"}, "not_run": []})
     with pytest.raises(micro.DesignFailure, match="no focus"):
         micro.pooled(failing, "saos.x:f", [{}])
-    # 不在后台进程里（worker 内、离线）没有 spare_map：返回空，由调用方串行算 / no spare_map: empty, the caller goes serial
+    # 不在后台进程里（worker 内、离线）没有 spare_map：返回空，由调用方串行算
     assert micro.pooled(SimpleNamespace(), "saos.x:f", [{}]) == {}
     assert micro.pooled(SimpleNamespace(spare_map=lambda fn, items, **kw: None), "saos.x:f", [{}]) == {}
 

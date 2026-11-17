@@ -53,7 +53,7 @@ def _built(daemon, job):
 def test_opticstudio_starts_on_demand_and_the_lens_is_handed_over_both_ways(saos_home):
     daemon, stand_in, started = _daemon()
     job = jobs.create_job("both")
-    # 访谈阶段在 rtc 上，不启动 OpticStudio / the interview runs on rtc without starting OpticStudio
+    # 访谈阶段在 rtc 上，不启动 OpticStudio
     _built(daemon, job)
     assert daemon.active == "rtc" and not started and daemon.pool.backend == "rtc"
 
@@ -64,7 +64,7 @@ def test_opticstudio_starts_on_demand_and_the_lens_is_handed_over_both_ways(saos
     assert switch["handover"]["agrees"], switch["handover"]
     assert switch["handover"]["rays"]["rays"] > 0 and switch["handover"]["rays"]["ok_one_side"] == 0
 
-    # 放开后按阶段回到 rtc，OpticStudio 不再重启 / back on rtc by stage; OpticStudio is not started again
+    # 放开后按阶段回到 rtc，OpticStudio 不再重启
     call(daemon, "daemon.use", backend="auto")
     reply = call(daemon, "lens.operand", job=job.id, type="EFFL")
     assert reply["ok"] and reply["result"]["backend_switch"]["to"] == "rtc" and daemon.active == "rtc"
@@ -102,7 +102,7 @@ def test_a_lens_rtc_cannot_reproduce_stays_on_opticstudio(saos_home, monkeypatch
         reply = call(daemon, "lens.operand", job=job.id, type="EFFL")
         assert reply["ok"] and daemon.active == "zos"
         assert reply["result"]["backend_switch"]["stayed"] == "rtc does not trace mirrors"
-    assert len(calls) == 1  # 同一文件不再重试 / the same file is not retried
+    assert len(calls) == 1  # 同一文件不再重试
 
 
 def test_a_handover_difference_is_kept_as_unverified_provenance(saos_home, monkeypatch):
@@ -123,13 +123,13 @@ def test_a_handover_difference_is_kept_as_unverified_provenance(saos_home, monke
     assert daemon.active == "rtc" and not switch["handover"]["agrees"]
     assert any("surface 1 radius" in m for m in switch["handover"]["mismatches"])
     assert any(u.startswith("differs from OpticStudio at handover: surface 1 radius") for u in daemon.rtc.provenance()["unverified"])
-    # 换镜头后差异随之清空 / a new lens clears it
+    # 换镜头后差异随之清空
     assert call(daemon, "lens.load", job=job.id, file="a.zmx")["ok"]
     assert not any("handover" in u for u in daemon.rtc.unverified())
 
 
 def test_the_object_semi_diameter_is_left_to_the_ray_comparison(saos_home, monkeypatch):
-    # 真实 OpticStudio 在物距无穷时给物面半口径 inf，rtc 为 0；追迹不用它 / OpticStudio reports inf at an infinite object, rtc 0
+    # 真实 OpticStudio 在物距无穷时给物面半口径 inf，rtc 为 0；追迹不用它
     daemon, stand_in, _ = _daemon()
     job = jobs.create_job("object-sd")
     _built(daemon, job)
@@ -155,7 +155,7 @@ def test_an_rtc_only_daemon_describes_the_model_and_still_refuses_opticstudio_op
     assert not daemon.dual and daemon.rtc_instance
     job = jobs.create_job("rtc-only")
     _built(daemon, job)
-    # 模型页不需要 OpticStudio：剖面图由 saos 用 viz 数据画 / the model page needs no OpticStudio: saos draws the section
+    # 模型页不需要 OpticStudio：剖面图由 saos 用 viz 数据画
     reply = call(daemon, "lens.describe", job=job.id, notes=NOTES)
     assert reply["ok"], reply
     folder = job.root / reply["result"]["folder"]
@@ -177,7 +177,7 @@ def test_the_model_page_no_longer_starts_opticstudio(saos_home):
 
 
 def test_a_pin_holds_within_its_stage_and_is_released_when_the_stage_changes(saos_home, monkeypatch):
-    # 10-30 的任务固定 zos 后没有放开，设计阶段 11 轮全在 OpticStudio 上 / a pin left in place ran 11 design rounds on OpticStudio
+    # 10-30 的任务固定 zos 后没有放开，设计阶段 11 轮全在 OpticStudio 上
     daemon, _, _ = _daemon()
     job = jobs.create_job("pin")
     _built(daemon, job)
@@ -198,13 +198,13 @@ def test_a_pin_holds_within_its_stage_and_is_released_when_the_stage_changes(sao
 
 
 def test_a_prescription_rtc_cannot_build_is_built_on_opticstudio(saos_home):
-    # 建模归 rtc 后，带倾斜等项的处方不能卡在 rtc 上 / once modelling is on rtc, such prescriptions must not stall there
+    # 建模归 rtc 后，带倾斜等项的处方不能卡在 rtc 上
     daemon, _, started = _daemon()
     job = jobs.create_job("tilted")
     raw = json.loads((CASES / "sequential.json").read_text(encoding="utf-8"))
     raw["surfaces"][0]["decenter_tilt"] = {"before": {"tilt_x": 5.0}}
     reply = call(daemon, "lens.build", job=job.id, prescription=prescription.normalize(raw), file="t.zmx")
-    # 离线的 OpticStudio 替身也是 rtc，建不了；要看的是路由 / the offline stand-in is rtc too; the routing is what counts
+    # 离线的 OpticStudio 替身也是 rtc，建不了；要看的是路由
     switch = (reply.get("result") or reply["error"]["details"])["backend_switch"]
     assert started == [1] and daemon.active == "zos"
     assert switch["to"] == "zos" and "decenter_tilt" in switch["reason"]
@@ -229,7 +229,7 @@ def test_thermal_conditions_run_through_the_daemon_and_hand_over(saos_home):
     reply = call(daemon, "opt.vary", job=job.id, config_rows=[rows[("THIC", (3,))]], configs=[1], on=True)
     assert reply["ok"], reply
     before = rtc.merit_value()
-    # opt.local 还要过需求门禁，这里要看的是优化器和存盘 / opt.local also needs a demand; the optimiser and the save are what counts here
+    # opt.local 还要过需求门禁，这里要看的是优化器和存盘
     rtc.optimize("10")
     assert rtc.merit_value() < before
     daemon.loaded.dirty = True
@@ -264,7 +264,6 @@ def test_make_thermal_from_a_script_context(saos_home):
 
 def test_a_describe_refused_for_its_notes_leaves_no_model_folder(saos_home):
     # notes 校验失败（检索记录缺 decision）时不留下 models/NNN-<镜头>/，下一份说明仍用同一个编号
-    # notes refused (a search without its decision) leave no models/NNN-<lens>/, and the next description takes that number
     rtc = RtcBackend(None, standalone=True)
     daemon = Daemon(rtc, rtc.identity())
     job = jobs.create_job("refused-notes")

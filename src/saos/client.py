@@ -20,7 +20,7 @@ from saos import config
 from saos.protocol import ErrorCode, SaosError, decode, encode
 
 DEFAULT_REQUEST_TIMEOUT_S = 600.0
-# 分离运行的子进程等多久（一周）：计算本身有 --max-seconds 和 saos job cancel 管着 / how long a detached child waits (a week)
+# 分离运行的子进程等多久（一周）：计算本身有 --max-seconds 和 saos job cancel 管着
 DETACHED_TIMEOUT_S = 7 * 24 * 3600.0
 DEFAULT_START_TIMEOUT_S = 120.0
 STOP_WAIT_S = 60.0
@@ -129,7 +129,6 @@ def running_ops(pid: int, home=None) -> list[dict[str, Any]]:
 
 
 # 后台进程忙着长操作时照样排队的请求：ping 有自己的短超时，shutdown 由后台进程自己判断能否退出
-# requests that still queue behind a long operation: ping has its own short timeout, shutdown is judged by the daemon
 QUEUE_WHEN_BUSY = frozenset({"ping", "shutdown"})
 
 
@@ -334,7 +333,7 @@ def stop_all(discard: bool = False, force: bool = False) -> dict[str, Any]:
     return summary
 
 
-# ---- 分离运行：命令立即返回，结果写进任务的 runs/ / detached runs: the command returns at once, the result goes to the job's runs/ ----
+# ---- 分离运行：命令立即返回，结果写进任务的 runs/
 
 RUNS_DIR = "runs"
 
@@ -369,7 +368,6 @@ def detach(op: str, args: dict[str, Any], job_root) -> dict[str, Any]:
         proc = subprocess.Popen(cmd, creationflags=base_flags, **kwargs)
     rel = f"{RUNS_DIR}/{stem}.json"
     # venv 的 python.exe 是启动器，真正发请求的解释器是它的子进程，PID 写在结果文件的 pid 里
-    # the venv python.exe is a launcher; the interpreter that sends the request is its child, whose PID the run file records
     return {"detached": True, "op": op, "run": rel, "launcher_pid": proc.pid,
             "follow": f"saos job show {job_root.name} (progress and this run's status); the result lands in {rel}"}
 
@@ -392,7 +390,7 @@ def run_detached(request_path: str) -> int:
         record.update(status="done", ok=True, result=jsonable(request(spec["op"], spec.get("args") or {}, timeout=DETACHED_TIMEOUT_S)))
     except SaosError as exc:
         record.update(status="failed", ok=False, error=exc.to_dict())
-    except Exception as exc:  # noqa: BLE001 - 结果文件必须写出来 / the result file must be written
+    except Exception as exc:  # noqa: BLE001 - 结果文件必须写出来
         record.update(status="failed", ok=False, error={"code": ErrorCode.INTERNAL_ERROR, "message": f"{type(exc).__name__}: {exc}"})
     record["finished"] = jobs.now_iso()
     write_json(out, record)

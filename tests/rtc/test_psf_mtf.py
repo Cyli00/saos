@@ -36,7 +36,7 @@ def test_diffraction_limited_mtf_follows_the_circular_pupil_formula(system):
     nu = df * np.arange(n)
     x = np.clip(nu / cutoff, 0.0, 1.0)
     exact = (2 / np.pi) * (np.arccos(x) - x * np.sqrt(1 - x * x))
-    # 方格取样的圆边是台阶，误差随 1/n 收敛 / the sampled rim is a staircase, the error shrinks like 1/n
+    # 方格取样的圆边是台阶，误差随 1/n 收敛
     assert np.abs(otf_y) == pytest.approx(exact, abs=0.02)
     assert np.abs(otf_x) == pytest.approx(exact, abs=0.02)
 

@@ -10,12 +10,12 @@ from saos import lensdata
 from saos.lensdata import PAR_RE
 from saos.protocol import ErrorCode, SaosError
 
-# mech_semi_diameter：零件外缘（Lens Data 的 Mech Semi-Dia 列），交叠检查按它取零件边缘 / the part edge the interference check uses
+# mech_semi_diameter：零件外缘（Lens Data 的 Mech Semi-Dia 列），交叠检查按它取零件边缘
 NUMERIC_PARAMS = ("radius", "thickness", "conic", "semi_diameter", "mech_semi_diameter")
 TEXT_PARAMS = ("material", "comment")
 SURFACE_PARAMS = NUMERIC_PARAMS + TEXT_PARAMS
 MATERIAL_MODES = ("model", "substitute")
-# 不指定目录时玻璃替换用的目录：成都光明的在产牌号（2026-10-19 用户决定）/ the default catalog for glass substitution
+# 不指定目录时玻璃替换用的目录：成都光明的在产牌号（2026-10-19 用户决定）
 DEFAULT_SUBSTITUTE_CATALOG = "SAOS_CDGM_INPROD"
 
 
@@ -60,7 +60,7 @@ def parse_numeric(param: str, value: Any) -> float:
     if isinstance(value, str) and value.strip().lower() in ("-inf", "-infinity"):
         return -math.inf
     if isinstance(value, bool):
-        # float(True) 是 1.0，会把写错的参数悄悄当成数值 / float(True) is 1.0 and would pass a mistaken argument as a number
+        # float(True) 是 1.0，会把写错的参数悄悄当成数值
         raise SaosError(ErrorCode.BAD_ARGS, f"{param} needs a number, got {value!r}")
     try:
         number = float(value)
@@ -190,7 +190,7 @@ class Backend(ABC):
             param, value = "radius", math.inf if float(value) == 0 else 1.0 / float(value)
         self.set_surface(lensdata.surface(self, ref), param, value)
 
-    # ---- 只有 OpticStudio 有的 / OpticStudio only ----
+    # ---- 只有 OpticStudio 有的
 
     def zosapi(self):
         """ZOS-API 模块（脚本直接调 ZOS-API 时用）。/ The ZOS-API module, for scripts that call ZOS-API directly."""

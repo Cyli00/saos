@@ -34,8 +34,8 @@ def test_sag_gap_reads_the_thickness_and_resolves_references_at_the_insertion_po
     specs = rows.compile_rows(rows.sag_gap(4, 5, [(0.1, 0)], minimum=0.2), 37)
     assert [r["type"] for r in specs] == ["TTHI", "SSAG", "SSAG", "DIFF", "SUMM", "OPGT"]
     assert specs[0]["params"] == [4, 4]
-    assert specs[3]["params"] == [39, 38]          # 后面矢高 − 前面矢高 / back sag − front sag
-    assert specs[4]["params"] == [37, 40]          # 厚度 + 差 / thickness + difference
+    assert specs[3]["params"] == [39, 38]          # 后面矢高 − 前面矢高
+    assert specs[4]["params"] == [37, 40]          # 厚度 + 差
     assert specs[5]["params"] == [41] and specs[5]["target"] == 0.2
 
 
@@ -140,7 +140,7 @@ def test_unknown_ctx_names_point_to_the_native_entries(daemon, loaded):
     reply = run(daemon, loaded, "def run(ctx):\n    return ctx.zos\n")
     assert reply["error"]["code"] == "SCRIPT_ERROR"
     assert "ctx.system" in reply["error"]["message"] and "ctx.zosapi" in reply["error"]["message"]
-    # 定义过的属性照常可用 / defined attributes still work
+    # 定义过的属性照常可用
     assert run(daemon, loaded, "def run(ctx):\n    return ctx.dirty\n")["result"]["result"] is False
 
 

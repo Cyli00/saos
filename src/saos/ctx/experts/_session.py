@@ -34,14 +34,13 @@ def editable(ctx):
 
 def sequential(ctx):
     info = ctx.backend.system_info()
-    # rtc 实例（standalone）自己持有镜头，可以跑；ctx.fast 的副本不行 / the rtc instance owns its lens; an rtc copy does not
+    # rtc 实例（standalone）自己持有镜头，可以跑；ctx.fast 的副本不行
     if info.get("backend") == "rtc" and not getattr(ctx.backend, "standalone", False):
         raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, "experts require the authoritative lens, not an rtc exploration copy")
     if info.get("mode") == "non_sequential" or info.get("nsc_groups"):
         raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, "experts currently require a purely sequential lens")
     if ctx.backend.configuration_count() != 1:
         # OpticStudio 上要插 MCE 行才能让新系数跟随温度，这条路径还没有真机验证
-        # on OpticStudio new terms need MCE rows to follow the temperature, and that path has not been run on the real tool
         if info.get("backend") != "rtc":
             raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, "on OpticStudio experts require one configuration; run them on the rtc instance")
         _nominal_configuration(ctx)
@@ -116,7 +115,7 @@ def optimize(ctx, callback, budget, *, cycles="auto", cores=None, algorithm="aut
         if result.get("solver_succeeded") is False:
             raise Rejected("local optimizer failed")
     if callback is None:
-        # 在 OpticStudio 上按评价函数优化过，算作 rtc 结果的收尾 / an OpticStudio optimisation on the merit closes rtc results
+        # 在 OpticStudio 上按评价函数优化过，算作 rtc 结果的收尾
         note = getattr(ctx, "_note_rtc", None)
         if note is not None:
             note(False)
@@ -136,7 +135,7 @@ class Session:
         self.was_dirty = getattr(self.loaded, "dirty", None)
         self.serial = 0
         self.changed = False
-        self.unclosed = {}  # 快照 → 当时 rtc 结果是否未收尾，恢复快照时一并恢复 / per snapshot, restored with it
+        self.unclosed = {}  # 快照 → 当时 rtc 结果是否未收尾，恢复快照时一并恢复
 
     def __enter__(self):
         editable(self.ctx)

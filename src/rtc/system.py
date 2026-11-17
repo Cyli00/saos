@@ -512,7 +512,6 @@ class OpticalSystem:
             return self.float_stop_pupil_radius()
         if self.lens.aperture_type == "FNO":
             # 焦距按主波长算（同 pupil_reference 冻在主波长上），否则各波长的入瞳半径随色散不同
-            # the focal length is the primary wavelength's, as in pupil_reference
             if self.lens.active_wavelengths[self.lens.primary_wave - 1][0] != self.wavelength:
                 return self.primary_system().pupil_radius()
             if getattr(self, "_fno_pupil_radius", None) is None:

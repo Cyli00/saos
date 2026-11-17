@@ -19,10 +19,10 @@ from saos.protocol import ErrorCode, SaosError
 LINE = demand.QUESTION_LINE["zh"]
 LENGTH = {"id": "length", "description": "total track", "check": {"operand": {"type": "TOTR"}}, "origin": "user",
           "must": {"max": 95.0}, "scale": 5.0, "source": "user"}
-# 假镜头总长 100 mm：LOOSE 通过，TIGHT 不通过 / the fake lens is 100 mm long: LOOSE passes, TIGHT fails
+# 假镜头总长 100 mm：LOOSE 通过，TIGHT 不通过
 LOOSE = {**LENGTH, "must": {"max": 150.0}}
 TIGHT = {**LENGTH, "must": {"max": 95.0}}
-# 硬条件：总长不超过 50 mm，假镜头不满足 / a hard limit the fake lens does not meet
+# 硬条件：总长不超过 50 mm，假镜头不满足
 SHORT = {"id": "short", "description": "hard total limit", "check": {"operand": {"type": "TOTR"}}, "goal": {"max": 50.0}, "source": "user"}
 CRASH = {"id": "crash", "description": "an operand that raises", "check": {"operand": {"type": "CRASH"}}, "origin": "user",
          "must": {"max": 1.0}, "scale": 1.0, "source": "user"}
@@ -32,10 +32,10 @@ LENS = {"id": "lens", "description": "the sample singlet", "value": "a.zmx", "so
 # 硬条件（常量）：总长上限。
 MAX_LENGTH = {"id": "max_length", "description": "hard total track limit", "check": {"operand": {"type": "TOTR"}}, "goal": {"max": 150.0}, "source": "user"}
 MAX_LENGTH_TIGHT = {**MAX_LENGTH, "goal": {"max": 95.0}}
-# 判定时出现材料数据错误的目标项 / an objective whose check raises a material error
+# 判定时出现材料数据错误的目标项
 MATERIAL_PROBE = {"id": "glass_probe", "description": "an operand that needs a glass without data", "check": {"operand": {"type": "MATERIAL"}},
                   "origin": "user", "must": {"max": 10.0}, "scale": 1.0, "source": "user"}
-# 判定时出现非数值类警告的目标项 / an objective whose check raises a non-numeric warning
+# 判定时出现非数值类警告的目标项
 DEPRECATED = {"id": "dep", "description": "an operand that raises a deprecation warning", "check": {"operand": {"type": "DEPRECATED"}},
               "origin": "user", "must": {"max": 10.0}, "scale": 1.0, "source": "user"}
 DEMAND = {"schema": 2, "constants": [LENS, MAX_LENGTH],
@@ -55,7 +55,7 @@ def call(daemon, op, **args):
 
 def write_demand(job, data=DEMAND, confirm="确认，开始吧"):
     (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
-    demand._PREPARED.clear()  # 需求文件刚改过，丢掉按修改时间缓存的旧版本 / the demand file just changed: drop the cached old version
+    demand._PREPARED.clear()  # 需求文件刚改过，丢掉按修改时间缓存的旧版本
     if confirm:
         demand.confirm(job.root, confirm)
 
@@ -99,7 +99,7 @@ def judge(job, cands, stages=(), folder_name="001", **extra):
     d = demand.load_job(job.root)
     items = {i["id"]: i for i in demand.checked(d)}
     padded = list(cands)
-    # 所测项与 scan 的默认一致：所有带界限的条目 / the measured items as scan defaults them: every bounded check
+    # 所测项与 scan 的默认一致：所有带界限的条目
     measure = [i for i, item in items.items() if item["goal"] is not None]
     spec = candidates.validate(job.root, {"candidates": padded, "stages": list(stages), **extra}, items, measure)
     folder = job.root / "scans" / folder_name
@@ -217,7 +217,7 @@ def test_material_and_computation_failures_are_not_evaluated(explore, monkeypatc
     rows = judge(job, [cand("m", "explore/m.zmx")], folder_name="002")
     assert rows[0]["verdict"] == "material" and "dispersion" in rows[0]["error"]
     assert candidates.counted(rows) == []
-    # 比较页把它单列为未评估，并写出原因 / the comparison page lists it apart as not evaluated, with its reason
+    # 比较页把它单列为未评估，并写出原因
     page = candidates.page(job, job.root / "scans" / "002", {"stages": [], "measure": ["length"]}, rows, "zh").read_text(encoding="utf-8")
     assert "未评估" in page and "dispersion" in page and "说明" in page
 
@@ -240,7 +240,7 @@ def test_numeric_warnings_keep_a_valid_candidate_and_fail_an_invalid_one(explore
     assert rows[0]["verdict"] == "valid" and rows[0]["valid"] is True
     assert rows[0]["numeric_warnings"]["count"] >= 1
     assert "invalid value encountered in multiply" in rows[0]["numeric_warnings"]["first"]
-    # 无效的候选：硬条件失败，带警告的记为计算出错 / an invalid one: its hard limit fails, with a warning it is computation
+    # 无效的候选：硬条件失败，带警告的记为计算出错
     write_demand(job, with_limit(MAX_LENGTH_TIGHT, objectives=[LOOSE, WARNED]))
     rows = judge(job, [cand("bad", "explore/a.zmx")], folder_name="002")
     assert rows[0]["verdict"] == "computation" and rows[0]["numeric_warnings"]["count"] >= 1

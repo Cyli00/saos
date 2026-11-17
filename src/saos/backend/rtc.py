@@ -28,37 +28,29 @@ from saos.backend.base import DEFAULT_SUBSTITUTE_CATALOG, MATERIAL_MODES, Backen
 from saos.protocol import ErrorCode, SaosError
 
 # 求解类型里 rtc 当作普通数值的两种；其余求解（拾取、边缘光线高度、F 数…）改别的参数后 OpticStudio 会重算，rtc 不会
-# the two solve types rtc treats as plain numbers; other solves are recomputed by OpticStudio after a change, not by rtc
 PLAIN_SOLVES = ("Fixed", "Variable")
 SURFACE_APERTURES = {"None": 0, "CircularAperture": 1, "CircularObscuration": 2, "RectangularAperture": 4, "FloatingAperture": 10}
 # 系统孔径类型：OpticStudio 的名字 ↔ .zmx 的写法。float_by_stop 的孔径值由光阑半口径定，文件里没有数值。
 APERTURE_TYPES = {"EntrancePupilDiameter": "EPD", "ImageSpaceFNum": "FNO", "ObjectSpaceNA": "OBNA", "FloatByStopSize": "FLOA"}
 APERTURE_NAMES = {v: k for k, v in APERTURE_TYPES.items()}
 # 与 OpticStudio 逐条追迹对过账的面型（.zmx 类型码）；rtc 另有的 BINARY_2、FRESNELS 只在几个小样本上对过，没有真值回归，一律拒绝
-# surface types reconciled ray by ray with OpticStudio; rtc's BINARY_2 and FRESNELS were only spot-checked and have no truth regression, so they are refused
 RECONCILED_TYPES = ("STANDARD", "EVENASPH", "BICONIC", "BICONICX", "BICONICZ", "TOROIDAL", "PARAXIAL")
 GEOMETRY_TOL = 1e-9
 INDEX_TOL = 1e-8
 # 已与 OpticStudio 对过账的材料计算路径；见文件内说明
 ADMITTED_FILE = Path(__file__).with_name("rtc_admitted.json")
 # rtc 能算的操作数；参数约定同 OpticStudio 的评价函数（Int1、Int2、Hx、Hy、Px、Py…）
-# operands rtc computes, with OpticStudio's merit-function argument conventions
 RAY_OPERANDS = frozenset({"REAX", "REAY", "REAZ", "REAR", "REAA", "REAB", "REAC", "RANG", "RAID",
                           "RAGX", "RAGY", "RAGZ", "RAGA", "RAGB", "RAGC"})
 # 三阶像差（波数，Int1 = 面，SPHA/COMA/ASTI/FCUR 的 0 为各面之和、DIST 的 0 为畸变百分比，Int2 = 波长）
 # 与近轴光线：rtc.seidel，同轴 Standard / Even Asphere 折射面
-# third-order aberrations in waves (Int1 surface; 0 is the sum for SPHA/COMA/ASTI/FCUR and the percentage distortion for DIST;
-# Int2 wave) and paraxial rays: rtc.seidel
 SEIDEL_OPERANDS = {"SPHA": "W040", "COMA": "W131", "ASTI": "W222", "FCUR": "W220P", "DIST": "W311"}
 PARAXIAL_OPERANDS = frozenset({*SEIDEL_OPERANDS, "PETC", "PARY", "PATY"})
 SYSTEM_OPERANDS = frozenset({"EFFL", "WFNO", "ISFN", "TOTR", "TTHI", "EPDI", "ENPP", "EXPP", "EXPD", "PETZ", "INDX", "SSAG", "CONF",
                              *PARAXIAL_OPERANDS})
 # 其中已与 OpticStudio 批量追迹或操作数实测逐值对过账的（rtc.operands 的说明）；其余按手册定义实现
-# those reconciled value by value with OpticStudio (see rtc.operands); the rest follow the manual's definitions
 # EFFL 对 tests/fixtures/cases/reference.json 的真值到 1e-9；SPHA、COMA、ASTI、FCUR 2026-11-10 真机逐面差 1.3e-15 波。
 # DIST 与 ctx.seidel 整表（SEIDEL）不在内：OpticStudio 的 Seidel 表 W311 与它自己的 DIST 操作数差 3e-3 波
-# EFFL matches reference.json to 1e-9; SPHA, COMA, ASTI, FCUR matched OpticStudio per surface to 1.3e-15 waves on
-# 2026-11-10. DIST and the whole ctx.seidel table (SEIDEL) stay out: OpticStudio's W311 differs from its DIST by 3e-3 waves
 RECONCILED_OPERANDS = frozenset({"REAX", "REAY", "REAC", "INDX", "SSAG", "EXPP", "EXPD", "CONF", "EFFL", "SPHA", "COMA", "ASTI", "FCUR"})
 
 AUTO_SEMI = "automatic semi-diameters (pupil-rim rays of every field and wavelength)"
@@ -66,31 +58,23 @@ AUTO_SEMI = "automatic semi-diameters (pupil-rim rays of every field and wavelen
 # 渐晕标记，REA* 照旧给坐标）和按半口径取点的边厚类操作数（不在这里）。这些操作数在半口径改成 0.5–3 倍时逐位不变
 # （tests/test_trust.py 在 reflective、iris 上验证，含每面浮动孔径）。只在半口径不定孔径时成立，见 affected_by。
 # 名单单列，不跟 RECONCILED_OPERANDS 走：新准入的操作数要先证明不读半口径再加进来
-# Operands that do not depend on the automatic semi-diameters: a semi-diameter reaches a number only as the stop's under
-# Float By Stop Size, as floating-aperture clipping (vignetting flags only; REA* still report coordinates) and in the
-# edge-thickness operands, which are not here. These stay bit-identical with the semi-diameters scaled 0.5–3x
-# (tests/test_trust.py, reflective and iris, floating apertures included). Listed apart from RECONCILED_OPERANDS: a newly
-# admitted operand joins only once shown not to read semi-diameters.
 SEMI_INDEPENDENT = frozenset({"REAX", "REAY", "REAC", "INDX", "SSAG", "EXPP", "EXPD", "CONF", "EFFL", "SPHA", "COMA", "ASTI", "FCUR"})
 
-# wavefront_rms 的光瞳取样（每边点数）/ pupil samples per side for wavefront_rms
+# wavefront_rms 的光瞳取样（每边点数）
 WAVEFRONT_GRID = 64
 IDENTITY = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
 # rtc 实例能解析的多重结构操作数（rtc.thermal.SUPPORTED_OPS）；CHZN 只有 0
 THERMAL_OPS = frozenset({"THIC", "CRVT", "CONN", "PRAM", "SDIA", "MCSD", "CHZN", "GLSS", "TEMP", "PRES", "MOFF"})
 # .zmx 面型 → OpticStudio 的 TypeName（结构指纹按它比较）；BICONICZ 的名字没有实测过
-# .zmx surface type → OpticStudio's TypeName, which the structural fingerprint compares; BICONICZ's name is not measured
 TYPE_NAMES = {"STANDARD": "Standard", "EVENASPH": "Even Asphere", "PARAXIAL": "Paraxial", "BICONIC": "Biconic",
               "BICONICX": "Biconic", "TOROIDAL": "Toroidal", "BICONICZ": "Biconic Zernike"}
 # rtc 读不出、也改不了的系统设置：存盘时原样带过去，结构指纹不比较，交付前在 OpticStudio 上复测时才核对
-# system settings rtc can neither read nor change: carried over on save, left out of the fingerprint comparison, checked
-# when the round is re-measured on OpticStudio before delivery
 UNREAD_SETTINGS = ("apodization", "polarization", "coating_file")
-# 局部优化 cycles 与迭代次数；auto 也有上限 / local optimisation cycles to iterations; auto has a cap too
+# 局部优化 cycles 与迭代次数；auto 也有上限
 CYCLES = {"auto": 200, "1": 1, "5": 5, "10": 10, "50": 50}
-# 换料时每面在目录里取 n、V 最近的这么多种 / glasses per surface, nearest in n and V, that substitution chooses from
+# 换料时每面在目录里取 n、V 最近的这么多种
 SUBSTITUTE_NEIGHBOURS = 8
-# FFT MTF 的光瞳采样上限（每边点数）/ the largest pupil sampling of the FFT MTF (points per side)
+# FFT MTF 的光瞳采样上限（每边点数）
 MTF_MAX_SAMPLING = 256
 
 
@@ -171,12 +155,10 @@ class RtcBackend(Backend):
 
         # standalone：SAOS_BACKEND=rtc 的实例自己持有镜头（处方搭建、读写 .zmx），没有 OpticStudio 可对照；
         # 按手册定义实现、未对账的路径照算，用到的列进 unverified()
-        # standalone: the SAOS_BACKEND=rtc instance owns its lens (built from prescriptions, .zmx read and written) with no
-        # OpticStudio to compare against; paths implemented from the manual but not reconciled run and are listed by unverified()
         self.standalone = bool(standalone)
-        # standalone 镜头改过、还没存盘 / a standalone lens changed since it was last saved or loaded
+        # standalone 镜头改过、还没存盘
         self._dirty = False
-        # 本次脚本用到的操作数，provenance() 取走后清空 / operands used since provenance() was last taken
+        # 本次脚本用到的操作数，provenance() 取走后清空
         self._used: set[str] = set()
         self.glasses = GlassCatalog(glass_dir) if glass_dir else None
         self.model = model
@@ -187,24 +169,21 @@ class RtcBackend(Backend):
         # 建立时 OpticStudio INDX 逐值确认过的 (材料描述, 波长)：未准入的材料路径只在这些点上可用
         self.confirmed: set = set()
         # 与 OpticStudio 交接这份镜头时的逐值比对（saos.handover），换镜头时清空
-        # the value-by-value comparison made when this lens was handed over with OpticStudio, cleared with the lens
         self.handover: dict[str, Any] | None = None
-        # 被求解锁住的参数：键 → 求解类型 / parameters held by a solve: key → solve type
+        # 被求解锁住的参数：键 → 求解类型
         self.held: dict[str, str] = {}
-        # standalone 时用到的未准入材料路径 / material paths outside the admitted table used by a standalone instance
+        # standalone 时用到的未准入材料路径
         self.unverified_paths: set[str] = set()
         self.path = Path(path) if path is not None else None
         self.lens = None
         self.config = 1
         # 设计阶段：评价函数行随镜头存盘；换料变量的 .zmx 写法没见过，只在内存里
-        # design stage: merit rows are saved with the lens; material variables only live in memory
         self.merit: list = []
         self.material_vars: dict[int, dict[str, str]] = {}
-        # 读入文件里 rtc 不建模、存盘时原样带过去的行（rtc_lens.carried_lines）/ lines carried over from the file read
+        # 读入文件里 rtc 不建模、存盘时原样带过去的行（rtc_lens.carried_lines）
         self._carried: dict[str, list[str]] | None = None
         self._glass_tables: dict[str, list] = {}
         # 当前结构解析后的镜头（Lens.configured），改参数或换结构时清空；只有厚度行的镜头用不到
-        # the current configuration resolved by Lens.configured, cleared on any change; unused by THIC-only lenses
         self._view = None
         if path is None:
             if not self.standalone:
@@ -231,7 +210,7 @@ class RtcBackend(Backend):
         self.lens, self.config, self.held = lens, lens.current_config, {}
         lens.glass_lookup = self._glass_lookup
         self._view = None
-        # INDX 确认的键不含环境，只对确认时的那份镜头有效 / INDX confirmations carry no environment: valid for their lens only
+        # INDX 确认的键不含环境，只对确认时的那份镜头有效
         self.unverified_paths.clear()
         self.confirmed.clear()
         self.handover = None
@@ -264,7 +243,7 @@ class RtcBackend(Backend):
         if problems:
             raise _unsupported("rtc cannot reproduce this lens: " + "; ".join(problems), problems)
 
-    # ---- 适用范围 / what rtc reproduces ----
+    # ---- 适用范围
 
     def _file_problems(self) -> list[str]:
         from rtc import geometry
@@ -281,8 +260,6 @@ class RtcBackend(Backend):
             from saos.backend import rtc_lens
 
             # rtc 实例要写回 .zmx：不认识的面块行（拾取等求解、膜层）照算或丢掉都会让存盘的镜头与算的不同
-            # the rtc instance writes .zmx back: unknown surface lines (pickups and other solves, coatings) would make the
-            # saved lens differ from the one computed, whether ignored or dropped
             out += [f"{line} (a .zmx line rtc neither models nor carries over)" for line in rtc_lens.unknown_surface_lines(lens)]
             if lens.aperture_type not in ("EPD", "FNO", "OBNA", "FLOA"):
                 out.append(f"system aperture {lens.aperture_type} (rtc has entrance pupil diameter, image space F/#, object space NA and "
@@ -325,7 +302,6 @@ class RtcBackend(Backend):
                     out.append(f"multi-configuration row {row.op} {row.surface} solve code {row.solve_code} (rtc knows fixed, variable, pickup and thermal)")
                     break
         # 下面几条路径没有 OpticStudio 真值，对账前拒绝
-        # paths without OpticStudio truth yet are refused until reconciled
         mirrors = [s.index for s in lens.surfaces[1:] if s.mirror]
         for s in lens.surfaces[1:]:
             if s.aperture_code not in SURFACE_APERTURES.values():
@@ -446,16 +422,14 @@ class RtcBackend(Backend):
             i = int(s["index"])
             mine = lens.surface(i)
             # 像面之后没有介质，存盘时写 INFINITY、OpticStudio 读作 0，不参与追迹
-            # nothing follows the image surface: saved as INFINITY, read as 0 by OpticStudio, never traced
             names = ("radius", "conic") if i == len(surfaces) - 1 else ("radius", "thickness", "conic")
             if mine.type == "PARAXIAL":
                 # 近轴面没有圆锥系数：ZOS-API 读作 inf、存盘为 0，追迹也不用它
-                # a paraxial surface has no conic: the ZOS-API reads inf, the file holds 0, and tracing ignores it
                 names = tuple(n for n in names if n != "conic")
             for name in names:
                 got, want = float(self.get_param(f"{i}.{name}")), float(s[name])
                 if name == "radius":
-                    # 平面在 OpticStudio 里读作 inf 或 0 / a flat reads as inf or 0 in OpticStudio
+                    # 平面在 OpticStudio 里读作 inf 或 0
                     got, want = (math.inf if v == 0 else v for v in (got, want))
                 if not _same(want, got):
                     out.append(f"surface {i} {name} {s[name]} vs {got}")
@@ -520,7 +494,7 @@ class RtcBackend(Backend):
             s = self.lens.surfaces[s.index - 1]
         return s
 
-    # ---- rtc 系统 / rtc systems ----
+    # ---- rtc 系统
 
     def _catalog(self):
         from rtc.system import catalog
@@ -599,7 +573,7 @@ class RtcBackend(Backend):
         self._systems.clear()
         self._view = None
         if getattr(self, "_batch", False):
-            # apply_values 里逐项改值时不重算，全部改完再算一次 / apply_values recomputes once after all values are set
+            # apply_values 里逐项改值时不重算，全部改完再算一次
             if edit:
                 self._dirty = True
             return
@@ -608,7 +582,7 @@ class RtcBackend(Backend):
                 self._dirty = True
             self._recompute()
 
-    # ---- standalone：OpticStudio 会重算的量与来源记录 / what OpticStudio recomputes, and provenance ----
+    # ---- standalone：OpticStudio 会重算的量与来源记录
 
     def _need_lens(self):
         if self.lens is None:
@@ -751,7 +725,7 @@ class RtcBackend(Backend):
         The rtc optical system of wavelength wave (materials admitted), for exploration code using the kernel directly."""
         return self._system(wave)
 
-    # ---- Backend 接口 / the Backend interface ----
+    # ---- Backend 接口
 
     def start(self) -> dict[str, Any]:
         return self.identity()
@@ -801,7 +775,7 @@ class RtcBackend(Backend):
 
         lens = self._need_lens()
         if not lens.plain_configurations:
-            # LDE 是当前结构的值（_sync），MNUM 要报同一个结构 / the LDE holds the current configuration, and MNUM must say so
+            # LDE 是当前结构的值（_sync），MNUM 要报同一个结构
             self._lens_view()
             lens.current_config = self.config
         lens.mfe = [MFERow(op=r.type, numbers=[] if r.type == "BLNK" else [*r.params[:6], r.target, r.weight, *r.params[6:8]], raw=line)
@@ -1026,11 +1000,10 @@ class RtcBackend(Backend):
         from rtc import thermal
 
         lens = self._designing("Make Thermal")
-        # 单结构文件也可能带一行 MOFF（OpticStudio 的默认空行）/ a single-configuration file may hold OpticStudio's default MOFF row
+        # 单结构文件也可能带一行 MOFF（OpticStudio 的默认空行）
         if any(row.op != "MOFF" for row in lens.mce) or lens.num_configs > 1:
             raise _unsupported("the lens already has multi-configuration rows; Make Thermal needs a single configuration")
         # 在副本上生成并验证完才算数：任何一步失败，实例回到调用前的状态
-        # built and verified on a copy: whatever fails, the instance is left as it was before the call
         saved = self.config, self.held, self._dirty, set(self.unverified_paths)
         draft = copy.deepcopy(lens)
         draft.mce = []
@@ -1176,8 +1149,6 @@ class RtcBackend(Backend):
     @staticmethod
     def _conic(s) -> float:
         # 近轴面没有圆锥系数：ZOS-API 读作 inf、存盘为 0；按 OpticStudio 的读数给出，结构指纹才与批准记录一致
-        # a paraxial surface has no conic: the ZOS-API reads inf and the file holds 0; report OpticStudio's reading so
-        # the structural fingerprint matches approvals recorded there
         return math.inf if s.type.upper() == "PARAXIAL" else s.conic
 
     @staticmethod
@@ -1389,7 +1360,7 @@ class RtcBackend(Backend):
         vertex = system.items[k].vertex_z
         values = {"REAX": x, "REAY": y, "REAZ": z, "REAR": math.hypot(x, y), "REAA": l, "REAB": m, "REAC": n,
                   "RAGX": x, "RAGY": y, "RAGZ": z + vertex, "RAGA": l, "RAGB": m, "RAGC": n,
-                  # 手册：RANG 是相对该面局部 z 轴的光线角（弧度）/ the ray angle in radians to the local z axis
+                  # 手册：RANG 是相对该面局部 z 轴的光线角（弧度）
                   "RANG": math.atan2(math.hypot(l, m), n)}
         if op != "RAID":
             return values[op]
@@ -1405,7 +1376,7 @@ class RtcBackend(Backend):
         _, zx, zy = system.items[k].shape.sag(np.array([x]), np.array([y]))
         normal = np.array([-float(np.asarray(zx).ravel()[0]), -float(np.asarray(zy).ravel()[0]), 1.0])
         cos = abs(float(np.dot(d, normal))) / (float(np.linalg.norm(d)) * float(np.linalg.norm(normal)))
-        # 手册：RAID 是入射光线与面法线的夹角（度），总为正 / the angle of incidence in degrees, always positive
+        # 手册：RAID 是入射光线与面法线的夹角（度），总为正
         return math.degrees(math.acos(min(1.0, cos)))
 
     def sag(self, index: int, x: float, y: float) -> float | None:
@@ -1425,7 +1396,6 @@ class RtcBackend(Backend):
 
     def huygens(self, wave: int, pupil: int, image: int) -> Any:
         # rtc.psf.psf_huygens 已有，但出瞳取法与 OpticStudio 未对账（变形面不一致），对账通过前不给数
-        # rtc.psf.psf_huygens exists, but its exit pupil is not reconciled with OpticStudio (anamorphic surfaces differ)
         raise _unsupported("rtc: the Huygens PSF is not reconciled with OpticStudio yet; measure it on OpticStudio")
 
     def wavefront_rms(self, wave: int, fields: list[int | tuple[float, float]]) -> list[float | None]:
@@ -1525,7 +1495,7 @@ class RtcBackend(Backend):
                 break
         return {"surface": index, "thickness_before": before, "thickness_after": lens.thickness(index, self.config), "backend": "rtc"}
 
-    # ---- 设计阶段：变量、评价函数与优化/ the design stage: variables, merit function, optimisation ----
+    # ---- 设计阶段：变量、评价函数与优化
 
     def _designing(self, what: str):
         if not self.standalone:
@@ -1570,7 +1540,7 @@ class RtcBackend(Backend):
             raise SaosError(ErrorCode.BAD_ARGS, f"surface {surface} {name} is held by a {self.held[f'{surface}.{name}']} solve")
         cell = self._surface_cell(surface, param)
         if cell is not None:
-            # 多重结构行盖住了 LDE 的格：变量要设在单元格上 / a configuration row overrides the LDE cell: the variable goes on the row
+            # 多重结构行盖住了 LDE 的格：变量要设在单元格上
             if cell.solve_code not in (0, 1):
                 raise SaosError(ErrorCode.BAD_ARGS, f"surface {surface} {name} follows configuration {cell.source_config} in configuration {self.config}; "
                                 f"select configuration {cell.source_config} to make it a variable")
@@ -1638,7 +1608,7 @@ class RtcBackend(Backend):
         self.material_vars[s.index] = {"mode": "substitute", "catalog": name}
         return "MaterialSubstitute"
 
-    # 面型的 SurfaceType 名（ZosBackend.change_surface_type 的返回值）/ SurfaceType names, as ZosBackend.change_surface_type returns
+    # 面型的 SurfaceType 名（ZosBackend.change_surface_type 的返回值）
     SURFACE_TYPES = {"STANDARD": "Standard", "EVENASPH": "EvenAspheric"}
 
     def change_surface_type(self, index: int, surface_type: str) -> str:
@@ -1957,7 +1927,7 @@ class RtcBackend(Backend):
                 self.set_param(f"{s}.material", name)
             problem.apply(best.x)
 
-    # ---- 流程图窗口 / the workflow window ----
+    # ---- 流程图窗口
 
     @staticmethod
     def _aperture_spec(surface) -> dict[str, Any]:
@@ -2204,7 +2174,7 @@ class RtcBackend(Backend):
             self.config = n
             self._changed(edit=False)
 
-    # ---- 参数 / parameters ----
+    # ---- 参数
 
     def _index(self, ref: Any) -> int:
         from saos.lensdata import surface
@@ -2358,7 +2328,7 @@ class RtcBackend(Backend):
         if cell is None:
             if param == "material":
                 for row in self.lens.mce:
-                    # 当前结构和跟随它的格；别的结构固定写的玻璃不动 / this configuration and its pickups, not glasses fixed elsewhere
+                    # 当前结构和跟随它的格；别的结构固定写的玻璃不动
                     if row.op == "GLSS" and row.surface == index and (row.config == self.config or row.solve_code == 2):
                         row.text, row.edited = s.glass, True
             return
@@ -2369,7 +2339,7 @@ class RtcBackend(Backend):
         cell.value, cell.edited = float(value), True
 
     def _guard(self, key: str) -> None:
-        # standalone 自己重算求解（_recompute），不需要冻结 / a standalone instance recomputes its solves itself
+        # standalone 自己重算求解（_recompute），不需要冻结
         if self.held and not self.freeze_solves and not self.standalone:
             raise _unsupported(f"cannot change {key}: the lens has solves rtc does not recompute ({self.held}); "
                                "pass freeze_solves=True to keep their saved values fixed in rtc, or make them fixed")
@@ -2407,7 +2377,7 @@ class RtcBackend(Backend):
             raise SaosError(ErrorCode.BAD_ARGS, f"{label} {k} out of range 1–{count}")
         return k - 1
 
-    # ---- 追迹 / tracing ----
+    # ---- 追迹
 
     def trace_batch(self, rays, to: int):
         from rtc.trace import trace
@@ -2431,7 +2401,6 @@ class RtcBackend(Backend):
                 raise _unsupported(f"rtc: {exc}") from exc
             k = block.surface_index.index(to)
             # 只有目标面及其之前的错误和渐晕才算数，与 OpticStudio 追到目标面为止一致
-            # only errors and vignetting up to the target surface count, as OpticStudio traces no further
             error = np.where((np.abs(block.error) > 0) & (np.abs(block.error) <= to), block.error, 0)
             vig = np.where((block.vig > 0) & (block.vig <= to), block.vig, 0)
             rows = np.column_stack([error, vig, block.x[:, k], block.y[:, k], block.z[:, k], block.l[:, k], block.m[:, k],

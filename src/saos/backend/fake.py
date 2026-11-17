@@ -120,7 +120,7 @@ class FakeBackend(Backend):
             raise SaosError(ErrorCode.BAD_ARGS, f"surface {index!r} out of range")
         surface = lens["surfaces"][index]
         if is_par(param):
-            # 假镜头的面型参数直接存在面数据里，键名就是 par<N> / fake surface-type parameters live in the surface under par<N>
+            # 假镜头的面型参数直接存在面数据里，键名就是 par<N>
             if param not in surface:
                 raise SaosError(ErrorCode.BAD_ARGS, f"surface {index} has no numeric parameter {param[3:]}")
             surface[param] = parse_numeric(param, value)

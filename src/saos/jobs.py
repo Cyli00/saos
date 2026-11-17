@@ -35,14 +35,13 @@ def now_iso(*, timespec: str = "seconds") -> str:
 
 SEALS_FILE = "seals.jsonl"
 # 长时间计算的进度和取消请求：工具写、任何时候都能直接读，不经过可能正忙的后台进程
-# progress of a long computation and a cancel request: written by the tools, readable at any time without the busy daemon
 PROGRESS_FILE = "progress.json"
-# 当前镜头的布局、Lens Data 和交叠检查，每次改动镜头后由后台进程重写，给 saos ui 显示 / the live view for saos ui
+# 当前镜头的布局、Lens Data 和交叠检查，每次改动镜头后由后台进程重写，给 saos ui 显示
 VIEW_FILE = "view.json"
-# 当前镜头的评价函数值和需求各项的值，后台进程在回复之后自动测（saos.live）/ the live metrics, measured by the daemon after replying
+# 当前镜头的评价函数值和需求各项的值，后台进程在回复之后自动测（saos.live）
 METRICS_FILE = "metrics.json"
 CANCEL_FILE = "cancel.request"
-# lenses/ 下的归档目录：工具写入一次，之后不再改 / archive folders under lenses/: written once by the tools
+# lenses/ 下的归档目录：工具写入一次，之后不再改
 ARCHIVE_LENS_DIRS = ("rounds", "captures")
 
 
@@ -179,7 +178,7 @@ class Job:
 
     def request_cancel(self) -> dict[str, Any]:
         (self.root / CANCEL_FILE).write_text(now_iso(), encoding="utf-8")
-        # 分离运行的扫描有自己的取消文件，同一条命令一起停 / detached scans have their own cancel file; stop them too
+        # 分离运行的扫描有自己的取消文件，同一条命令一起停
         detached = detached_runs(self.root)
         for run in detached:
             (self.root / run["folder"] / CANCEL_FILE).write_text(now_iso(), encoding="utf-8")
@@ -251,7 +250,7 @@ def detached_runs(root: Path) -> list[dict[str, Any]]:
         if not base.is_dir():
             continue
         for folder in sorted(base.iterdir()):
-            # 写坏或被改过的进度文件只跳过，不让同一任务的其他查询失败 / a damaged progress file is skipped, not fatal for the job
+            # 写坏或被改过的进度文件只跳过，不让同一任务的其他查询失败
             try:
                 progress = json.loads((folder / PROGRESS_FILE).read_text(encoding="utf-8"))
                 alive = (isinstance(progress, dict) and progress.get("status") == "running"
@@ -273,9 +272,8 @@ def get_job(job_id: str) -> Job:
 
 
 # 任务的流程：从头设计用 interactive，用户要任务时授权 agent 代为过关的用 autonomous（练习、测试属于这种），关于现成镜头的问题（测量、对比）用 analyse，它没有关卡
-# the workflows of a job: interactive and autonomous design, and analyse for questions about existing lenses (no gates)
 MODES = ("interactive", "autonomous", "analyse")
-# 用户在窗口里对关卡提出的修改意见 / change requests the user made at a gate in the window
+# 用户在窗口里对关卡提出的修改意见
 REVISIONS_FILE = "revisions.jsonl"
 
 
@@ -313,7 +311,7 @@ def make_interactive(job: Job, quote: str = "", via: str = "window") -> dict[str
         raise SaosError(ErrorCode.BAD_ARGS, f"via must be one of {MODE_VIA}")
     quote = str(quote or "").strip()
     if job.mode == "analyse":
-        # 分析任务没有关卡可交给用户；要设计就另建任务 / an analysis job has no gates; a design gets its own job
+        # 分析任务没有关卡可交给用户；要设计就另建任务
         raise SaosError(ErrorCode.BAD_ARGS, "an analysis job has no gates to hand to the user; create an interactive job for a design")
     if via in ("cli", "ask") and not quote:
         raise SaosError(ErrorCode.BAD_ARGS, "--quote must hold the user's own words asking to take the gates back")

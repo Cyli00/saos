@@ -27,9 +27,8 @@ from saos.backend.base import merit_or_none
 from saos.protocol import ErrorCode, SaosError, jsonable, write_json
 
 # 连续这么多轮没有明显进步，就提醒先审视需求和结构，而不是继续加码
-# after this many rounds without a clear gain, remind the agent to question the demand and structure before escalating
 REVIEW_AFTER = 2
-# 一项连续这么多轮没有有效值、或硬条件这么多轮都没满足，就提出质疑 / raise a doubt after this many rounds without a valid value or a met hard limit
+# 一项连续这么多轮没有有效值、或硬条件这么多轮都没满足，就提出质疑
 DOUBT_AFTER = 2
 
 
@@ -41,7 +40,7 @@ def check(ctx, only: list[str] | None = None) -> dict[str, Any]:
     after, _ = lens_state(ctx)
     changed = lens_changes(before, after)
     if changed:
-        # 只取值时也提示：同样的判定在记录轮次时会被拒绝 / warn here too: the same checks would be refused when recording a round
+        # 只取值时也提示：同样的判定在记录轮次时会被拒绝
         result["lens_modified_by_checks"] = changed[:30]
     return result
 
@@ -126,7 +125,7 @@ def brief(d: dict[str, Any], evaluation: dict[str, Any], decision: dict[str, Any
         review = (f"{why}. Before spending more compute, reread the demand summary and your first-order analysis. If the demand, "
                   "the structure or a measurement looks wrong or unreachable, stop and ask the user, with the evidence, its impact and options.")
     far = demand.reach(d, {i["id"]: i.get("value") for i in evaluation["items"]})["blocking"]
-    # 只在新出现时提醒：用户破例后每轮都提醒，提醒就没人看了 / only when newly far: after the user overrules it, a reminder every round would go unread
+    # 只在新出现时提醒：用户破例后每轮都提醒，提醒就没人看了
     before = demand.reach(d, window[-2].get("values") or {})["blocking"] if window and len(window) > 1 else []
     newly_far = sorted(set(far) - set(before))
     if newly_far:
@@ -139,7 +138,7 @@ def brief(d: dict[str, Any], evaluation: dict[str, Any], decision: dict[str, Any
     if far:
         out["reach_blocking"] = far
     if found:
-        # 只在有证据时提醒质疑需求；给 agent 的文字一律英文 / only with evidence; text for the agent is always English
+        # 只在有证据时提醒质疑需求；给 agent 的文字一律英文
         out["reminder"] = demand.QUESTION_LINE["en"]
     return out
 
@@ -155,9 +154,8 @@ def lens_state(ctx) -> tuple[dict[str, Any], str]:
 
 # 判定前后的镜头在这个容差内一致就算没改：检查把参数写回原值时，OpticStudio 舍到 15 位有效数字，末位会变
 # （2026-10-18 fiber-printed：−0.020209160377426934 → −0.0202091603774269，下游全局顶点差约 1e-17 mm）
-# within these the lens is unchanged: a check writing a value back gets it rounded to 15 significant digits by OpticStudio
 # 2026-11-02 起 saos 的参数写入经 backend.zos.exact_double 用往返字符串补齐末位，Fixed、Variable 单元格逐位恢复；
-# 有求解的单元格和字符串写入失败时仍是 15 位，容差保留 / since 2026-11-02 saos writes keep the bits on cells without a solve
+# 有求解的单元格和字符串写入失败时仍是 15 位，容差保留
 LENS_RTOL = 1e-12
 LENS_ATOL = 1e-15
 
@@ -218,13 +216,13 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
         raise SaosError(ErrorCode.NO_LENS_LOADED, f"job {ctx.job.id} has no lens loaded")
     h, sha, confirmation = preflight(ctx.job.root)
     stop_policy = h["stop"]
-    # 结构核对只读数据、不画布局图 / the structure check reads data only, no layout pictures
+    # 结构核对只读数据、不画布局图
     desc, lens_sha = lens_state(ctx)
     approved = model_gate.require_approved(ctx.job, desc)
     scripts = demand.prepare_scripts(ctx.job.root, h)
     method_sha = demand.method_digest(scripts)
     path = ctx.path(ledger.LEDGER_FILE)
-    # 编号按存下的每一行（含复测记录），比较和判定按 effective 之后的轮次 / numbers count every stored row, decisions the effective rounds
+    # 编号按存下的每一行（含复测记录），比较和判定按 effective 之后的轮次
     number = len(ledger.load(path, h, raw=True))
     history = ledger.load(path, h)
     ruled = ledger.ruled_out_for(ctx.job.root, sha, h)
@@ -232,7 +230,7 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
     if not history:
         tiers = ["baseline"]
     else:
-        # 一轮可以同时用几个层级，例如 "variables,materials" / a round may use several tiers, e.g. "variables,materials"
+        # 一轮可以同时用几个层级，例如 "variables,materials"
         tiers = list(dict.fromkeys(t.strip() for t in str(tier or "").split(",") if t.strip()))
         if not tiers or any(t not in h["stop"]["tiers"] for t in tiers):
             raise SaosError(ErrorCode.BAD_ARGS, f"tier must be one or more (comma-separated) of {h['stop']['tiers']} (ladder: {', '.join(TIERS)})")
@@ -243,33 +241,29 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
                 raise SaosError(ErrorCode.BAD_ARGS, f"rounds already stopped ({status}); review the demand with the user to continue", {"status": status})
             if last.get("lens_sha") == lens_sha:
                 # 同一镜头、同一需求和判定版本再记一次没有意义；多半是超时后的重试，返回已有的那一轮
-                # the same lens under the same version again: most likely a retry after a timeout; point to the existing round
                 raise SaosError(ErrorCode.DUPLICATE_ROUND, f"round {last['round']} already recorded this lens under the same demand and checks",
                                 {"round": last["round"], "file": last.get("file"), "evaluation": last.get("evaluation")})
         elif ledger.version(last)[0] == sha:
             if status in ("limit", "stopped"):
-                # 轮次上限和用户的停止决定按需求版本算，改判定解除不了 / the round budget and the user's stop hold per demand version
+                # 轮次上限和用户的停止决定按需求版本算，改判定解除不了
                 raise SaosError(ErrorCode.BAD_ARGS, f"rounds already stopped ({status}) under this demand version, and changed checks do not lift that; "
                                 "review the demand with the user to continue", {"status": status})
             # 同一需求下判定代码改了：先用新判定重测此前最好的一轮，之后的比较都对着它
-            # the check code changed under the same demand: re-measure the best earlier round first and compare with that
             window = [r for r in ledger.current_window(history) if ledger.valid(r) and r.get("file")]
             best = min(window, key=lambda r: r["shortfall"]) if window else None
     merit_from_agent = merit is not None
     if merit is not None:
         # agent 在 OpticStudio 评价函数之外优化时，记录它实际优化的目标值
-        # when the agent optimised outside the OpticStudio merit function, record the value it actually optimised
         if isinstance(merit, bool) or not isinstance(merit, (int, float)) or not math.isfinite(merit):
             raise SaosError(ErrorCode.BAD_ARGS, f"--merit must be a finite number (got {merit!r})")
         merit = float(merit)
     else:
         merit = merit_or_none(ctx.backend)
         if merit is not None and not math.isfinite(merit):
-            # rtc 的评价函数有行算不出时为 inf / rtc's merit is inf when a row cannot be computed
+            # rtc 的评价函数有行算不出时为 inf
             merit = None
     evaluation = demand.evaluate(ctx, h, scripts)
     # 判定不能改动镜头：否则归档的镜头和测得的数值对不上，本轮不记录
-    # checks must not change the lens; otherwise the archived lens would not be the one measured, so no round is recorded
     desc_after, _ = lens_state(ctx)
     changed = lens_changes(desc, desc_after)
     if changed:
@@ -277,7 +271,6 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
                         {"changed": changed[:30], "evaluation": evaluation["evidence_dir"]})
     clash = evaluation.get("parts_clash")
     # 存一份本轮的归档镜头，然后回到原来的工作文件，避免之后的 lens save 改写归档
-    # archive this round's lens, then switch back to the working file so a later lens save cannot rewrite the archive
     working = ctx.lens
     rebase_number, number = (number, number + 1) if best is not None else (None, number)
     _set_aside(ctx, ctx.job.resolve_lens(f"rounds/r{number:03d}.zmx", must_exist=False))
@@ -288,7 +281,7 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
     rebase = None
     if best is not None:
         rebase = _rebase(ctx, h, scripts, best, rebase_number, sha, method_sha, confirmation)
-        # 旧记录没有判定版本，不算同一版本内的终止 / records from before check versions existed never stopped this version
+        # 旧记录没有判定版本，不算同一版本内的终止
         if rebase["equivalent"] and status != "continue" and best.get("method_sha"):
             raise SaosError(ErrorCode.BAD_ARGS, f"rounds already stopped ({status}) and the new checks give the same numbers; review the demand with the user to continue",
                             {"status": status, "evaluation": rebase["evaluation"]})
@@ -296,29 +289,25 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
     record = {
         "round": number,
         # stage 只标明不是旧的双后端任务；算这一轮的后端记在 backend（rtc 轮次交付前要在 OpticStudio 上复测）
-        # stage only marks a job that is not a legacy hybrid one; backend says who computed the round (rtc rounds are
-        # re-measured on OpticStudio before delivery)
         "stage": "zos",
         "backend": measured_by.get("backend", "zos"),
         **({"provenance": measured_by["provenance"]} if measured_by.get("provenance") else {}),
         "trust": evaluation.get("trust"),
-        # tier 留第一个层级，兼容旧记录；tiers 是本轮用到的全部层级 / tier keeps the first for older readers; tiers lists them all
+        # tier 留第一个层级，兼容旧记录；tiers 是本轮用到的全部层级
         "tier": tiers[0],
         "tiers": tiers,
         "note": str(note),
         "file": rel,
         "lens_sha": lens_sha,
         # 完整判定只存一份：evaluations/NNN/result.json 是权威记录
-        # the full judgement is stored once: evaluations/NNN/result.json is the authoritative record
         "evaluation": evaluation["evidence_file"],
         "shortfall": evaluation["shortfall"],
         # 零件交叠的镜头物理上不成立：demand.evaluate 已判为未达成并计入 hard_failing，不能交付
-        # parts that clash make the lens impossible: demand.evaluate already counts it as not achieved and hard failing
         "achieved": evaluation["achieved"],
         **({"parts_clash": clash} if clash else {}),
         **({"pursuing": True} if evaluation.get("pursuing") else {}),
         "measurement_errors": evaluation["measurement_errors"],
-        # 常量或变量范围不满足的轮次不能交付 / a round that breaks a constant or a variable range is not deliverable
+        # 常量或变量范围不满足的轮次不能交付
         "hard_failing": evaluation["hard_failing"],
         "values": {i["id"]: i["value"] for i in evaluation["items"]},
         "failing": {i["id"]: i["shortfall"] for i in evaluation["items"] if i.get("shortfall", 0) > 0},
@@ -329,22 +318,19 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
         "confirmation": confirmation,
         "model": approved["model"],
         # 所用材料逐轮留档；含模型玻璃的轮次只是探索，不能交付
-        # materials are archived per round; a round with a model glass is exploration only and cannot be delivered
         "materials": model_gate.materials(desc),
-        # 本设计要做的面的膜层是设计变量，逐轮留档 / coatings of the surfaces this design makes are design variables, archived per round
+        # 本设计要做的面的膜层是设计变量，逐轮留档
         "coatings": model_gate.coatings(desc),
-        # 环境面和外购件（建模说明中声明）不受模型玻璃限制 / environment and bought-in surfaces (declared in the approved model) are exempt
+        # 环境面和外购件（建模说明中声明）不受模型玻璃限制
         "model_glass": [i for i in model_gate.model_glass_surfaces(desc) if i not in approved["environment"]],
         "environment": approved["environment"],
         "time": jobs.now_iso(),
     }
     # 封存这一轮实际写出的全部镜头文件（快照，以及有的话 .zmx）；一个都没有就不能记录这一轮
-    # seal every lens file this round actually wrote (the snapshot, and the .zmx when there is one); none means no round
     if not lens_files.files(archived):
         raise SaosError(ErrorCode.FILE_NOT_FOUND, f"the archived lens of round {number} was not written; nothing is recorded")
     ctx.job.seal(*lens_files.files(archived))
     # 写进 ledger 是本轮完成的标志；之前任何一步失败都不留下轮次
-    # appending to the ledger is what completes a round; a failure before this leaves no round behind
     added = [rebase, record] if rebase is not None else [record]
     for row in added:
         ledger.append(path, row)
@@ -439,7 +425,7 @@ def confirm_round(ctx, of: int | None = None, viz: bool = True) -> dict[str, Any
     return out
 
 
-# 判定代码改了以后，重测的数值与原记录在这个相对容差内一致，就算口径没变 / within this the new checks measure the same thing
+# 判定代码改了以后，重测的数值与原记录在这个相对容差内一致，就算口径没变
 EQUAL_RTOL = 1e-9
 
 
@@ -474,7 +460,7 @@ def _rebase(ctx, h: dict[str, Any], scripts: dict[str, Any], best: dict[str, Any
     return {
         "round": number, "tier": ledger.REBASE, "tiers": [ledger.REBASE], "note": f"r{int(best['round']):03d} re-measured with the new checks",
         "file": best["file"], "lens_sha": before, "rebase_of": best["round"],
-        # 数值不变说明只是换了写法，比较窗口延续；否则从这条开始新窗口 / same numbers: the window goes on; otherwise a new one starts here
+        # 数值不变说明只是换了写法，比较窗口延续；否则从这条开始新窗口
         "equivalent": not diffs and not ev["measurement_errors"], "diffs": diffs,
         "evaluation": ev["evidence_file"], "shortfall": ev["shortfall"], "achieved": ev["achieved"],
         **({"parts_clash": clash} if clash else {}),

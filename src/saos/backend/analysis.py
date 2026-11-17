@@ -29,11 +29,11 @@ def net_doubles(values, ny: int, nx: int):
     try:
         from System.Runtime.InteropServices import GCHandle, GCHandleType
 
-        # 只有 double[,] 能按 8 字节浮点整块读；别的元素类型逐个取 / only a double[,] reads as a block of 8-byte floats
+        # 只有 double[,] 能按 8 字节浮点整块读；别的元素类型逐个取
         shape_ok = (str(values.GetType().GetElementType().FullName) == "System.Double" and int(values.Rank) == 2
                     and (int(values.GetLength(0)), int(values.GetLength(1))) == (ny, nx))
         handle = GCHandle.Alloc(values, GCHandleType.Pinned) if shape_ok else None
-    except Exception:  # noqa: BLE001 - 退回逐个取值，结果相同只是慢 / fall back to indexing: same values, slower
+    except Exception:  # noqa: BLE001 - 退回逐个取值，结果相同只是慢
         handle = None
     if handle is None:
         return np.array([[float(values[iy, ix]) for ix in range(nx)] for iy in range(ny)], dtype=float).reshape(ny, nx)
@@ -172,8 +172,7 @@ def _series(r, problems: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for i in range(int(r.NumberOfDataSeries)):
         try:
             s = r.GetDataSeries(i)
-            # 实测相对照度在模型给不出结果时 XData 为 None（2026-10-19 nightvision）；记下而不是在 .Data 上抛 AttributeError
-            # relative illumination had XData None on a model without a result (nightvision, 2026-10-19); note it instead of failing on .Data
+            # 相对照度在模型给不出结果时 XData 为 None（实测）；记下而不是在 .Data 上抛 AttributeError
             if s is None or s.XData is None or s.YData is None:
                 problems.append({"part": f"series[{i}]", "kind": "empty_series",
                                  "message": "OpticStudio returned this data series without X or Y data",
@@ -185,7 +184,7 @@ def _series(r, problems: list[dict[str, Any]]) -> list[dict[str, Any]]:
             labels = [str(label) for label in s.SeriesLabels]
             y = {labels[c] if c < len(labels) else str(c): [_finite(float(data[k, c])) for k in range(len(x))] for c in range(cols)}
             out.append({"description": str(s.Description), "x_label": str(s.XLabel), "x": x, "y": y})
-        except Exception as exc:  # noqa: BLE001 - 一条序列读不出不连累其他结果 / one unreadable series spares the rest
+        except Exception as exc:  # noqa: BLE001 - 一条序列读不出不连累其他结果
             problems.append({"part": f"series[{i}]", "kind": "extract_failed", "message": f"{type(exc).__name__}: {exc}"[:300]})
     return out
 
@@ -195,7 +194,7 @@ def _grids(r, problems: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for i in range(int(r.NumberOfDataGrids)):
         try:
             out.append(_grid(r.GetDataGrid(i)))
-        except Exception as exc:  # noqa: BLE001 - 同上 / as above
+        except Exception as exc:  # noqa: BLE001 - 同上
             problems.append({"part": f"grids[{i}]", "kind": "extract_failed", "message": f"{type(exc).__name__}: {exc}"[:300]})
     return out
 
@@ -235,7 +234,6 @@ def _spot(r, fields: int, waves: int) -> dict[str, Any] | None:
         return None
     # OpticStudio 忽略 GetRMSSpotSizeFor/GetGeoSpotSizeFor 的波长参数，各列都是分析设置里所选波长的值；选全部波长时，
     # 每个波长追的光线数与其权重成正比，权重小于 1 的波长常漏掉边缘光线，GEO 偏小（2026-10-20 Cooke 样例实测）
-    # the wave argument is ignored; with all wavelengths, rays per wavelength scale with its weight, so GEO can miss rim rays
     return {"rms_radius": rms, "geo_radius": geo, "index": "[field-1][wave-1]",
             "note": "every wave column holds the value for the analysis' Wavelength setting; with all wavelengths OpticStudio traces "
                     "rays per wavelength in proportion to its weight, so GEO can miss the rim rays of wavelengths weighted below 1"}

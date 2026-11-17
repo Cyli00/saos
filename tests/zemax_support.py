@@ -23,7 +23,6 @@ def call(daemon, op, **args):
     return reply
 
 # 两片玻璃的样品：第 1 面 N-BK7 为目录玻璃，第 3 面 N-SF2 用于替换与模型玻璃测试
-# Two-glass sample: surface 1 is a catalog glass (N-BK7), surface 3 another one (N-SF2) for the substitution tests
 TWO_GLASS = {
     "title": "two-glass sample (test fixture)",
     "aperture": {"type": "entrance_pupil_diameter", "value": 10.0},
@@ -84,7 +83,7 @@ def design_session(home: Path, monkeypatch, name: str = "accepted"):
         if daemon is not None:
             daemon.pool.close()
         backend.close()
-        # 关闭后进程退出有延迟：等待最多 30 s，仍在的才算残留 / exit is asynchronous: wait up to 30 s before calling it a leftover
+        # 关闭后进程退出有延迟：等待最多 30 s，仍在的才算残留
         deadline = time.monotonic() + 30
         leftover = opticstudio_pids() - before
         while leftover and time.monotonic() < deadline:

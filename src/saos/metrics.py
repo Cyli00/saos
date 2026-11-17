@@ -35,8 +35,6 @@ class Parameter:
                 _bad(f"metric parameter {name} must be a finite {self.type}")
             # number 在入口转成 float：超过 float 范围的 int 在这里报错，不留到测量里溢出；int 本身总是有限值，
             # 与浮点边界精确比较，不能对它调 isfinite（超大 int 会溢出）
-            # numbers become floats here, so an int beyond float range fails now rather than overflowing in the measurement;
-            # an int is always finite and compares exactly with float bounds
             if self.type == "number":
                 try:
                     value = float(value)
@@ -87,7 +85,7 @@ class Metric:
     def arguments(self, params: Any) -> dict[str, Any]:
         if not isinstance(params, dict) or set(params) - self.params.keys():
             _bad(f"{self.id}: params must be a mapping; allowed: {sorted(self.params)}")
-        # 有缺省值的参数显式给 null 会绕过缺省值落到测量函数里，在入口拒绝 / an explicit null would bypass the default
+        # 有缺省值的参数显式给 null 会绕过缺省值落到测量函数里，在入口拒绝
         nulls = sorted(k for k, v in params.items() if v is None and self.params[k].default is not None)
         if nulls:
             _bad(f"{self.id}: {', '.join(nulls)} must not be null; omit a parameter to use its default")

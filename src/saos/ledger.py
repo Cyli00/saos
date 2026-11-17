@@ -64,11 +64,11 @@ from saos.protocol import ErrorCode, SaosError, jsonable, read_jsonl, trust
 LEDGER_FILE = "ledger.jsonl"
 STOPS_FILE = "stops.jsonl"
 RULED_OUT_FILE = "ruled_out.jsonl"
-# 判定代码改动后对此前最好一轮的重测记录 / the re-measurement of the best earlier round after the check code changed
+# 判定代码改动后对此前最好一轮的重测记录
 REBASE = "rebase"
-# rtc 轮次在 OpticStudio 上的复测记录 / the OpticStudio re-measurement of an rtc round
+# rtc 轮次在 OpticStudio 上的复测记录
 CONFIRM = "confirm"
-# 复测时换成 OpticStudio 数值的字段 / the fields a confirmation replaces with OpticStudio's numbers
+# 复测时换成 OpticStudio 数值的字段
 MEASURED = ("evaluation", "shortfall", "achieved", "parts_clash", "pursuing", "measurement_errors", "hard_failing", "values", "failing",
             "materials", "coatings", "model_glass", "trust")
 
@@ -83,7 +83,6 @@ def load(path: Path, demand: dict[str, Any] | None = None, *, raw: bool = False)
     for r in rows:
         r["shortfall"] = float(r["shortfall"])
         # 可信等级出现之前的记录没有 trust：按 backend 与 provenance 推出，文件不改
-        # records older than trust levels lack the field: derive it from backend and provenance, leaving the file alone
         if r.get("trust") is None:
             r["trust"] = trust(r.get("backend", "zos"), r.get("provenance"))
         if demand is not None:
@@ -149,12 +148,10 @@ def append(path: Path, record: dict[str, Any]) -> None:
 
 # 证据要落到任务里的文件上：只写一句推理，就能把没试过的手段排除掉（2026-11-06 用户决定）。排除不因此被拒，
 # 缺证据的排除记在记录里，在轮次结论和交付报告里标出（2026-11-13 用户决定：关卡只设在昂贵的地方）
-# evidence has to be a file in the job: a sentence of reasoning alone could rule out a tier nobody tried. Such a
-# rule-out is no longer refused: it is marked in the record and shown in the round decision and the delivery report
 _EVIDENCE = re.compile(r"\b(?:scans|evaluations|scripts|analyses|parallel|explore|notes|sources|lenses|models|checks)/[\w./-]*\w", re.ASCII)
-# 确实跑不了材料搜索时（OpticStudio 上的多重结构、需求固定玻璃）用这个前缀写明原因 / the prefix for a materials search that truly cannot run
+# 确实跑不了材料搜索时（OpticStudio 上的多重结构、需求固定玻璃）用这个前缀写明原因
 NOT_RUNNABLE = "not runnable:"
-# 停在第一轮之前：之后再记轮次，这条停止就不再适用 / a stop before any round: a later round no longer falls under it
+# 停在第一轮之前：之后再记轮次，这条停止就不再适用
 BEFORE_ROUNDS = -1
 
 
@@ -192,7 +189,7 @@ def record_stop(root: Path, demand_sha: str, reason: str, quote: str, demand: di
     if rounds and version(rounds[-1])[0] == demand_sha:
         number = int(rounds[-1]["round"])
     else:
-        # 没有结构过得了差距门禁时没有轮次可引用，这也是一种结论 / no structure passed the reach gate: no round to refer to, and still a conclusion
+        # 没有结构过得了差距门禁时没有轮次可引用，这也是一种结论
         if demand is None or confirmation_for(root, digest(demand), demand) is None:
             raise SaosError(ErrorCode.BAD_ARGS, "confirm the demand before stopping; a stop before any round needs a confirmed demand to judge against")
         _require_evidence(root, reason)
@@ -265,7 +262,7 @@ def significant(best: float, g: float, rel: float) -> bool:
 
 
 def version(record: dict[str, Any]) -> tuple[Any, Any]:
-    # 旧记录的字段名是 harness_sha / older records call it harness_sha
+    # 旧记录的字段名是 harness_sha
     return record.get("demand_sha", record.get("harness_sha")), record.get("method_sha")
 
 
@@ -278,7 +275,7 @@ def _continues(prev: dict[str, Any], record: dict[str, Any]) -> bool:
         return False
     if version(record) == version(prev):
         return True
-    # 判定改了，但在旧镜头上重测的数值不变：仍是同一个比较窗口 / new checks, same numbers on the old lens: the same window
+    # 判定改了，但在旧镜头上重测的数值不变：仍是同一个比较窗口
     return is_rebase(record) and bool(record.get("equivalent")) and version(record)[0] == version(prev)[0]
 
 
@@ -316,11 +313,9 @@ def deliver_round(window: list[dict[str, Any]]) -> dict[str, Any]:
     candidates = [r for r in window if deliverable(r)] or window
     best = min(candidates, key=lambda r: (r["shortfall"], r["round"]))
     # 达成的轮次里取 G 最小的（有越小/越大越好的目标时 G 在达标后还会变小）；相同取最新的，它用的是当前的判定
-    # among achieved rounds the smallest G (it keeps shrinking after the pass lines with objectives to pursue); the latest on a
-    # tie, judged with the current checks
     achieved = [r for r in window if r.get("achieved") and deliverable(r)]
     deliver = min(achieved, key=lambda r: (r["shortfall"], -r["round"])) if achieved else best
-    # 没有任何有效轮次时，列最后一轮供诊断，而不是挑一个"最好"的 / with no valid round, show the last one for diagnosis instead of a "best"
+    # 没有任何有效轮次时，列最后一轮供诊断，而不是挑一个"最好"的
     return deliver if math.isfinite(deliver["shortfall"]) else window[-1]
 
 
@@ -334,9 +329,9 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str
     if not rounds:
         raise ValueError("ledger has no rounds")
     if stopped is not None and int(stopped["round"]) == BEFORE_ROUNDS:
-        stopped = None  # 已经记了轮次，这条停止不再适用 / rounds were recorded since, so this stop no longer applies
+        stopped = None  # 已经记了轮次，这条停止不再适用
     rel, cap, tiers = float(stop["rel"]), int(stop["max_rounds"]), [t for t in TIERS if t in stop["tiers"]]
-    # 需求最后一次改动之后的轮次才可比 / only rounds since the last demand change are comparable
+    # 需求最后一次改动之后的轮次才可比
     window = current_window(rounds)
     best, last_gain = (window[0]["shortfall"] if valid(window[0]) else math.inf), 0
     for k, r in enumerate(window[1:], start=1):
@@ -351,7 +346,7 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str
     excluded = {t for x in ruled or [] if int(x["round"]) >= gain_round for t in x["tiers"]}
     unsupported = {t for x in ruled or [] if int(x["round"]) >= gain_round and x.get("unsupported") for t in x["tiers"]}
     untried = [t for t in tiers if t not in tried and t not in excluded]
-    # 重测记录不计入轮次上限 / re-measurements (rebase) do not count against max_rounds
+    # 重测记录不计入轮次上限
     in_version = current_version(rounds)
     counted = sum(1 for r in in_version[1:] if not is_rebase(r))
     current = rounds[-1]
@@ -363,11 +358,11 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str
         "rounds_without_gain": len(since),
         "tiers_tried_since_gain": sorted(tried & set(tiers), key=TIERS.index),
         "tiers_ruled_out_since_gain": sorted((excluded - tried) & set(tiers), key=TIERS.index),
-        # 排除理由缺证据的层级（record_rule_out 的 unsupported）/ tiers ruled out without the evidence record_rule_out asks for
+        # 排除理由缺证据的层级（record_rule_out 的 unsupported）
         **({"tiers_ruled_out_without_evidence": sorted((unsupported - tried) & set(tiers), key=TIERS.index)}
            if (unsupported - tried) & set(tiers) else {}),
         "untried_tiers": untried,
-        # 轮次预算按需求版本计：用户确认新版本后重新计数 / the round budget counts per demand version
+        # 轮次预算按需求版本计：用户确认新版本后重新计数
         "rounds_in_version": counted,
     }
     failed = confirmation_failure(window)
@@ -379,9 +374,9 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str
         if not current.get("pursuing"):
             return {**base, "status": "achieved", "reason": "every constant, variable range and objective pass line is met"}
         if current["shortfall"] <= 0:
-            # 越小/越大越好的目标都已到理想值，G 为 0，不可能再有明显进步 / every pursued objective is at its ideal: G is 0 and cannot gain
+            # 越小/越大越好的目标都已到理想值，G 为 0，不可能再有明显进步
             return {**base, "status": "achieved", "reason": "every pass line is met and every objective to minimise or maximise is at its ideal value"}
-        # 达标后继续压越小/越大越好的目标，直到各手段都不再明显进步 / after the pass lines, keep pursuing until no tier gains
+        # 达标后继续压越小/越大越好的目标，直到各手段都不再明显进步
         if not untried or counted >= cap:
             return {**base, "status": "achieved",
                     "reason": "every pass line is met and the objectives to minimise or maximise gained less than "
@@ -400,7 +395,6 @@ def decide(rounds: list[dict[str, Any]], stop: dict[str, Any], stopped: dict[str
                 "reason": f"checks failed to run ({', '.join(current['measurement_errors'])}); fix them and measure again; this round is not a design result"}
     if current.get("achieved"):
         # 指标达到了，但材料还不是真实材料：继续，换成有来源的材料
-        # targets met with a model glass: keep going and replace it with a sourced material
         return {**base, "status": "continue", "next_tier": "materials",
                 "reason": f"targets met, but surfaces {current['model_glass']} still use a model glass; replace it with a sourced material, "
                           f"e.g. ctx.GlassExpert({current['model_glass']}).run() in an exec script"}

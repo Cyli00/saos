@@ -69,7 +69,7 @@ def test_variable_kinds_on_the_accepted_lens(tmp_path, monkeypatch):
         surfaces = ok(daemon.handle({"op": "lens.surfaces", "args": {"job": job.id}}))["surfaces"]
         glass = next(s for s in surfaces if s["material"] and s["index"] > 0)  # N-BK7
 
-        # 模型玻璃：起点取目录玻璃的 nd、νd；--off 保留数值、停止变化 / model glass starts from the catalog glass's nd and Vd
+        # 模型玻璃：起点取目录玻璃的 nd、νd；--off 保留数值、停止变化
         varied = ok(daemon.handle({"op": "opt.vary", "args": {"job": job.id, "param": "material", "mode": "model", "surfaces": [glass["index"]]}}))
         assert list(varied["solves"].values()) == ["MaterialModel"]
         model_src = MODEL.format(surface=glass["index"])
@@ -87,17 +87,17 @@ def test_variable_kinds_on_the_accepted_lens(tmp_path, monkeypatch):
         assert script(daemon, job, CATALOGS, "catalogs") == before
         sub = ok(daemon.handle({"op": "opt.vary", "args": {"job": job.id, "param": "material", "mode": "substitute", "surfaces": [glass["index"]]}}))
         assert list(sub["solves"].values()) == ["MaterialSubstitute"]
-        assert sub["outside_catalog"] == []  # 这一面现在是模型玻璃，不是哪家的牌号 / a model glass belongs to no maker
+        assert sub["outside_catalog"] == []  # 这一面现在是模型玻璃，不是哪家的牌号
         if (glasscat.DEFAULT_GLASSCAT_DIR / "SAOS_CDGM_INPROD.AGF").is_file():
             assert sub["catalog"] == "SAOS_CDGM_INPROD" and "SAOS_CDGM_INPROD" in script(daemon, job, CATALOGS, "catalogs")
-            # 第 3 面 N-SF2 是 SCHOTT 牌号，不在成都光明的目录里 / N-SF2 (SCHOTT) is not in CDGM's catalog
+            # 第 3 面 N-SF2 是 SCHOTT 牌号，不在成都光明的目录里
             other = next(s for s in surfaces if s["material"] and s["index"] > glass["index"])
             sub = ok(daemon.handle({"op": "opt.vary", "args": {"job": job.id, "param": "material", "mode": "substitute", "surfaces": [other["index"]]}}))
             assert sub["outside_catalog"] == [{"surface": other["index"], "material": other["material"]}] and "note" in sub, sub
         assert daemon.handle({"op": "opt.vary", "args": {"job": job.id, "param": "material", "mode": "model", "surfaces": [air["index"]]}})["error"]["code"] \
             == ErrorCode.BAD_ARGS
 
-        # 面型参数列：偶次非球面的系数可以写入、读回、设为变量；没有的列报错 / asphere coefficients: write, read back, vary; missing columns refused
+        # 面型参数列：偶次非球面的系数可以写入、读回、设为变量；没有的列报错
         headers = script(daemon, job, ASPHERE, "asphere")
         assert set(headers) == {1, 2, 3}, headers
         set_ = ok(daemon.handle({"op": "lens.set", "args": {"job": job.id, "surface": 1, "param": "par2", "value": 1e-6}}))
@@ -105,7 +105,7 @@ def test_variable_kinds_on_the_accepted_lens(tmp_path, monkeypatch):
         assert ok(daemon.handle({"op": "opt.vary", "args": {"job": job.id, "param": "par2", "surfaces": [1]}}))["solves"] == {1: "Variable"}
         assert daemon.handle({"op": "lens.set", "args": {"job": job.id, "surface": 2, "param": "par2", "value": 1}})["error"]["code"] == ErrorCode.BAD_ARGS
 
-        # 插入带倾斜的坐标断点后系统变为非轴对称，剖面图窗口据此改用 3D / a tilted break makes the system non-axial
+        # 插入带倾斜的坐标断点后系统变为非轴对称，剖面图窗口据此改用 3D
         fold = script(daemon, job, FOLD, "fold")
         assert fold == {"before": False, "after": True, "mode": "Sequential"}, fold
 
