@@ -8,62 +8,19 @@ tests/rtc/test_material_golden.py）。实际瞄准时 OpticStudio 自己的瞄�
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from saos import fast as fast_mod
 from saos import prescription
-from saos.kit import KitMethods
+from record_truth import doublet
 
 pytestmark = [
     pytest.mark.zemax,
     pytest.mark.skipif(os.environ.get("SAOS_RUN_ZEMAX") != "1", reason="需要真实 OpticStudio，设置 SAOS_RUN_ZEMAX=1"),
 ]
-
-FIXTURES = Path(__file__).parent / "fixtures" / "rtc"
-
-
-def doublet(stop_behind: bool) -> dict:
-    """f ≈ 100 mm 的双胶合（N-BK7 / N-SF2），第 3 面带 4 次非球面项；视场含 x 分量，检验径向归一化。"""
-    lens = [
-        {"radius": 61.47, "thickness": 6.0, "material": "N-BK7"},
-        {"radius": -44.64, "thickness": 2.5, "material": "N-SF2"},
-        {"type": "EvenAspheric", "radius": -129.94, "thickness": 5.0 if stop_behind else 94.0, "material": "", "params": {"par2": 2e-7}},
-    ]
-    if stop_behind:
-        surfaces = [*lens, {"radius": "inf", "thickness": 89.0, "material": "", "stop": True}]
-    else:
-        surfaces = [{**lens[0], "stop": True}, *lens[1:]]
-    return {
-        "title": "rtc doublet (test fixture)",
-        "aperture": {"type": "entrance_pupil_diameter", "value": 10.0},
-        "fields": {"type": "angle", "y": [0.0, 3.5, 5.0], "x": [0.0, 0.0, 2.0]},
-        "wavelengths": {"um": [0.4861, 0.5876, 0.6563], "weights": [1.0, 1.0, 1.0], "primary": 2},
-        "ray_aiming": "real" if stop_behind else "off",
-        "object": {"thickness": "inf"},
-        "surfaces": surfaces,
-    }
-
-
-FIELDS = [(0.0, 0.0), (0.0, 0.5), (0.0, 1.0), (0.3, -0.7)]
-
-
-class Ctx(KitMethods):
-    """测试用的最小上下文：kit 方法直接作用在 ZosBackend 上。/ A minimal context: kit methods on a ZosBackend."""
-
-    in_check = False
-
-    def __init__(self, backend):
-        self.backend = backend
-        self.cache = {}
-
-    def fast(self, freeze_solves=False):
-        return fast_mod.from_context(self, freeze_solves)
-
 
 @pytest.fixture(scope="module")
 def zos():
@@ -73,11 +30,6 @@ def zos():
     backend.start()
     yield backend
     backend.close()
-
-
-def _spot_rms(ctx_like) -> list[float]:
-    rows = ctx_like.spot(FIELDS, wave=[1, 2, 3], grid=21)
-    return [r["rms_radius"] for r in rows]
 
 
 CASES = Path(__file__).parent / "fixtures" / "cases"
@@ -211,33 +163,6 @@ def test_opticstudio_wizard_rows_have_the_same_values_on_rtc(zos, tmp_path, data
         assert rtc.merit_value() == pytest.approx(zos.merit_value(), rel=1e-8)
     finally:
         rtc.close()
-
-
-def test_record_offline_fixture(zos):
-    """SAOS_RTC_RECORD=1 时重写 tests/fixtures/rtc/ 的基准；否则跳过。/ Rewrite the offline fixture when asked."""
-    if os.environ.get("SAOS_RTC_RECORD") != "1":
-        pytest.skip("set SAOS_RTC_RECORD=1 to rewrite tests/fixtures/rtc/")
-    zos.build(prescription.normalize(doublet(False)))
-    ctx = Ctx(zos)
-    FIXTURES.mkdir(parents=True, exist_ok=True)
-    model = zos.export_rtc(FIXTURES / "doublet.zmx")
-    (FIXTURES / "doublet.ZDA").unlink(missing_ok=True)
-    for local in ("glass_dir", "file"):
-        model.pop(local, None)
-    rows = [(w, hx, hy, px, py) for hx, hy in FIELDS for w in (1, 2, 3) for px, py in [(0.0, 0.0), *ctx_pupil()]]
-    traces = {}
-    for to in (2, ctx.surface(-1)):
-        r = ctx.trace(rows, to)
-        traces[str(to)] = {k: getattr(r, k).tolist() for k in ("error", "vignette", "x", "y", "z", "l", "m", "n")}
-    data = {"source": "OpticStudio 24.1 ZOS-API standalone, tests/test_zemax_rtc.py::test_record_offline_fixture",
-            "model": model, "rays": rows, "traces": traces, "spot_rms": _spot_rms(ctx)}
-    (FIXTURES / "doublet.json").write_text(json.dumps(data, indent=1, allow_nan=True), encoding="utf-8")
-
-
-def ctx_pupil():
-    from saos.kit import pupil
-
-    return pupil(7)
 
 
 def test_a_prescription_rtc_cannot_build_is_built_on_opticstudio_and_stays_there(zos, saos_home, monkeypatch):

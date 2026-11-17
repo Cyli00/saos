@@ -1,30 +1,22 @@
-"""在 OpticStudio 上录热结构真值（tests/thermal_variants.py），并验证它读得进 rtc 写的热结构文件。
+"""OpticStudio 读得进 rtc 写的热结构文件、两个后端交接与多结构评价函数一致：这几项要真机现算，录不成离线真值。
 
-录真值：SAOS_RUN_ZEMAX=1 SAOS_CASE_RECORD=1 uv run pytest tests/test_zemax_thermal.py -s -k record
-读回：  SAOS_RUN_ZEMAX=1 uv run pytest tests/test_zemax_thermal.py -s -k reads
-录完跑离线的 tests/rtc/test_thermal_truth.py。
+SAOS_RUN_ZEMAX=1 uv run pytest tests/test_zemax_thermal.py -s
+真值由 tests/record_truth.py thermal 录入，离线回放在 tests/rtc/test_thermal_truth.py。
 """
 
 from __future__ import annotations
 
 import math
 import os
-import tempfile
-from datetime import date
-from pathlib import Path
 
 import pytest
 
 from saos import prescription
 from saos.backend import rtc_lens
 from saos.backend.rtc import RtcBackend
-from thermal_variants import ALL, TCE, Variant, save_truth, truth
+from thermal_variants import ALL, TCE, truth
 
 pytestmark = [pytest.mark.zemax, pytest.mark.skipif(os.environ.get("SAOS_RUN_ZEMAX") != "1", reason="需要真实 OpticStudio，设置 SAOS_RUN_ZEMAX=1")]
-
-PUPIL = [(0.0, 0.0), (0.95, 0.0), (-0.95, 0.0), (0.0, 0.95), (0.0, -0.95), (0.5, 0.5), (-0.5, 0.5)]
-RAY_KEYS = ("error", "vignette", "x", "y", "z", "l", "m", "n")
-
 
 @pytest.fixture(scope="module")
 def zos():
@@ -34,71 +26,6 @@ def zos():
     backend.start()
     yield backend
     backend.close()
-
-
-def _op(z, name, int1=0, int2=0, data=()):
-    try:
-        return float(z.operand(name, int1, int2, list(data)))
-    except Exception as exc:  # noqa: BLE001 - 真值里记下读不出的原因
-        return str(exc)
-
-
-def _rays(z, count_waves, fields, image):
-    rows = [(w, hx, hy, px, py) for w in range(1, count_waves + 1) for hx, hy in fields for px, py in PUPIL]
-    rays = z.trace_batch(rows, image)
-    columns = [getattr(rays, key).tolist() for key in RAY_KEYS]
-    return [[*row, *cell] for row, cell in zip(rows, zip(*columns))]
-
-
-def _field_points(z):
-    from rtc import zmx
-    from saos import fast
-
-    with tempfile.TemporaryDirectory() as folder:
-        saved = Path(folder) / "lens.zmx"
-        z.export_native(saved)
-        return fast.field_points(zmx.parse(saved)), zmx.decode_zmx_bytes(saved.read_bytes())
-
-
-def record(z, variant: Variant) -> dict:
-    z.build(prescription.normalize(variant.prescription()))
-    with tempfile.TemporaryDirectory() as folder:
-        saved = Path(folder) / "nominal.zmx"
-        z.export_native(saved)
-        from rtc import zmx
-
-        nominal = zmx.decode_zmx_bytes(saved.read_bytes())
-    z.make_thermal(list(variant.temperatures), TCE)
-    if variant.after is not None:
-        variant.after(z)
-        z.system.UpdateStatus()
-    fields, text = _field_points(z)
-    image = z.surface_count() - 1
-    waves = int(z.system.SystemData.Wavelengths.NumberOfWavelengths)
-    count = z.configuration_count()
-    per_config = {}
-    for c in range(1, count + 1):
-        z.select_configuration(c)
-        item = {
-            "index": {str(i): [_op(z, "INDX", i, w) for w in range(1, waves + 1)] for i in range(1, image)},
-            "operands": {name: _op(z, name, 0, 0) for name in ("EFFL", "EPDI", "WFNO", "TOTR")},
-            "semi": {str(s["index"]): float(s["semi_diameter"]) for s in z.surfaces()[1:]},
-            "thickness": {str(s["index"]): float(s["thickness"]) for s in z.surfaces()[:-1]},
-            "radius": {str(s["index"]): float(s["radius"]) for s in z.surfaces()[1:]},
-        }
-        if variant.rays:
-            item["rays"] = _rays(z, waves, fields, image)
-        per_config[str(c)] = item
-    z.select_configuration(1)
-    return {"source": f"OpticStudio 24.1 ZOS-API standalone, tests/test_zemax_thermal.py, {date.today().isoformat()}",
-            "variant": variant.name, "case": variant.case, "serves": variant.serves, "temperatures": list(variant.temperatures), "tce": TCE,
-            "nominal_zmx": nominal, "zmx": text, "image": image, "configurations": z.configurations(), "per_config": per_config}
-
-
-@pytest.mark.skipif(os.environ.get("SAOS_CASE_RECORD") != "1", reason="设置 SAOS_CASE_RECORD=1 才重录真值")
-@pytest.mark.parametrize("variant", ALL, ids=lambda v: v.name)
-def test_record(zos, variant):
-    save_truth(variant.name, record(zos, variant))
 
 
 # seq_asphere 一个变体就含全部行类型（含 PRAM）；iris_6 换一种结构数，并带空气光阑、面孔径和 Float By Stop Size。

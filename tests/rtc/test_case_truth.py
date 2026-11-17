@@ -1,4 +1,4 @@
-"""rtc 与 OpticStudio 真值逐条比对；真值由 tests/test_zemax_cases.py 录入，这里只回放，不启动 OpticStudio。
+"""rtc 与 OpticStudio 真值逐条比对；真值由 tests/record_truth.py cases 录入，这里只回放，不启动 OpticStudio。
 
 比对的是位置、方向、错误码、渐晕码、光程、一阶量、自动半口径和波前。
 通过不代表生产放行：准入由 saos.backend.rtc 的 _file_problems 决定。

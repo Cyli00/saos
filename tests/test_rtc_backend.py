@@ -1,7 +1,7 @@
 """rtc 副本（saos.backend.rtc、saos.fast）的离线回归，不开 OpticStudio。
 
 基准是 tests/fixtures/rtc/：4 面双胶合（光阑在第 1 面、不瞄准）由 OpticStudio 24.1 存出的副本、它的 describe_model
-和 OpticStudio 的批量追迹结果，由 tests/test_zemax_rtc.py::test_record_offline_fixture 生成。玻璃取本机
+和 OpticStudio 的批量追迹结果，由 tests/record_truth.py doublet 生成。玻璃取本机
 Documents/Zemax/Glasscat（与 OpticStudio 同一份 AGF），找不到 SCHOTT.AGF 时跳过。
 """
 

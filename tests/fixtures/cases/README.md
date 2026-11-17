@@ -12,7 +12,7 @@ saos 自身测试里的光学场景只用这五个案例，覆盖序列、非序
 
 每个案例有两份文件：`<案例>.json` 是 `saos lens build` 的处方，`<案例>.zmx` 是 saos 用它在 OpticStudio 24.1.0 里建出并保存的镜头。前三个案例的实测参考值在 `reference.json`。
 
-`iris`、`reflective` 有一批变体，定义在 `tests/case_variants.py`，各自要验证的项写在变体的 `serves` 里。变体的 `.zmx` 文本和所有读数在 `truth.json`（一个变体一行），由 `tests/test_zemax_cases.py` 录入（`SAOS_RUN_ZEMAX=1 SAOS_CASE_RECORD=1`）。改了处方或变体就要重录。
+`iris`、`reflective` 有一批变体，定义在 `tests/case_variants.py`，各自要验证的项写在变体的 `serves` 里。变体的 `.zmx` 文本和所有读数在 `truth.json`（一个变体一行），由 `uv run python tests/record_truth.py cases [变体 ...]` 在真机上录入。改了处方或变体就要重录。
 
 用法：
 
@@ -20,7 +20,7 @@ saos 自身测试里的光学场景只用这五个案例，覆盖序列、非序
 - 真机测试（`SAOS_RUN_ZEMAX=1`）经 daemon 的 `lens.build` 重建，再取 `ScriptContext`，例如 `tests/test_zemax_experts.py` 的 `build()`；`test_cases_rebuild_to_their_reference_values` 核对前三个案例的重建结果与 `reference.json` 一致；`iris`、`reflective` 与 OpticStudio 的逐条光线对照只走录下的真值，离线回放。
 - 需要变体时在测试里改处方副本（例如把玻璃换成模型玻璃来模拟专利起点），不改这里的文件。
 
-热结构的真值在 `thermal.json`，变体定义在 `tests/thermal_variants.py`（都由这五个案例派生，加 Make Thermal），由 `tests/test_zemax_thermal.py` 录入（`SAOS_RUN_ZEMAX=1 SAOS_CASE_RECORD=1 uv run pytest tests/test_zemax_thermal.py -k record`），离线比对在 `tests/rtc/test_thermal_truth.py`。改了 `src/rtc/thermal.py` 的规则不用重录，改了处方或变体才要。
+热结构的真值在 `thermal.json`，变体定义在 `tests/thermal_variants.py`（都由这五个案例派生，加 Make Thermal），由 `uv run python tests/record_truth.py thermal [变体 ...]` 录入，离线比对在 `tests/rtc/test_thermal_truth.py`。改了 `src/rtc/thermal.py` 的规则不用重录，改了处方或变体才要。
 
 所有变体都在 `tests/rtc/test_case_truth.py` 里回放比对：逐光线、逐面、光程、一阶量、R3 存盘往返、R5 自动半口径、R6 表外渐晕、R8 实验 OPDC。比对通过不等于生产放行，准入只看 `saos.backend.rtc` 的拒绝清单；R3、R5 的比对范围由 `case_variants.py` 的 serves 字段选取。
 

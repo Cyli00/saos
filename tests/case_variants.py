@@ -1,4 +1,4 @@
-"""iris、reflective 的变体定义，录真值的 tests/test_zemax_cases.py 和离线的 tests/rtc/test_case_truth.py 共用。
+"""iris、reflective 的变体定义，录真值的 tests/record_truth.py 和离线的 tests/rtc/test_case_truth.py 共用。
 
 每个变体是基础处方的副本加一处改动，各自要验证的项写在它的 serves 里。
 基础版的 .zmx 在 tests/fixtures/cases/，变体的 .zmx 和所有读数在 truth.json，一个变体一行。
@@ -34,7 +34,7 @@ def truth(name: str) -> dict[str, Any]:
         return _all_truth()[name]
     except KeyError as exc:
         raise KeyError(f"缺少 {name} 的 OpticStudio 真值；请运行 "
-                       f"SAOS_RUN_ZEMAX=1 SAOS_CASE_RECORD=1 uv run pytest tests/test_zemax_cases.py -s -k {name}") from exc
+                       f"uv run python tests/record_truth.py cases {name}") from exc
 
 
 def save_truth(name: str, data: dict[str, Any]) -> None:

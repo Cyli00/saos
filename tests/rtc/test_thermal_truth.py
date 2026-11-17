@@ -63,11 +63,9 @@ def test_every_thermal_cell_matches_opticstudio(name):
     assert checked > 0
 
 
-@pytest.mark.parametrize("name", ACCEPTED)
+@pytest.mark.parametrize("name", [v.name for v in ALL if v.rays])
 def test_tracing_each_configuration_matches_opticstudio(tmp_path, name):
     data = truth(name)
-    if "rays" not in data["per_config"]["1"]:
-        pytest.skip("这个变体只录单元格")
     backend = instance(tmp_path, data["zmx"])
     image = data["image"]
     for config, item in data["per_config"].items():

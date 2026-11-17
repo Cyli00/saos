@@ -143,7 +143,7 @@ def truth(name: str) -> dict[str, Any]:
     try:
         return _all_truth()[name]
     except KeyError as exc:
-        raise KeyError(f"缺少 {name} 的 OpticStudio 真值；请运行 SAOS_RUN_ZEMAX=1 SAOS_CASE_RECORD=1 uv run pytest tests/test_zemax_thermal.py -s -k record") from exc
+        raise KeyError(f"缺少 {name} 的 OpticStudio 真值；请运行 uv run python tests/record_truth.py thermal {name}") from exc
 
 
 def save_truth(name: str, data: dict[str, Any]) -> None:
