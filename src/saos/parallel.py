@@ -35,6 +35,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import queue
 import shutil
 import subprocess
 import sys
@@ -74,6 +75,21 @@ BELOW_NORMAL = 0x00004000  # Windows BELOW_NORMAL_PRIORITY_CLASS
 
 def idle_seconds() -> float:
     return float(os.environ.get("SAOS_POOL_IDLE_S", "600"))
+
+
+def start_timeout_s() -> float:
+    """worker 启动到回报就绪的时限：许可证或自动保存恢复提示框会让 OpticStudio 一直卡着。
+    How long a worker may take to get ready: a licence or autosave-recovery dialog can hold OpticStudio forever."""
+    return float(os.environ.get("SAOS_WORKER_START_S", "300"))
+
+
+def item_timeout_s() -> float:
+    """单个条目的时限；超时的 worker 被结束，条目记为出错。/ How long one item may run before its worker is killed."""
+    return float(os.environ.get("SAOS_WORKER_ITEM_S", "7200"))
+
+
+WAIT_POLL_S = 0.25
+STOP_WAIT_S = 60.0
 
 
 class WorkerContext(KitMethods, MetricMethods, ExpertMethods):
@@ -218,14 +234,6 @@ def worker_main(index: int) -> int:
     return 0
 
 
-def _read(proc: subprocess.Popen) -> dict[str, Any] | None:
-    """读到下一条协议行；进程结束时返回 None。/ Read the next protocol line; None when the process ended."""
-    for line in proc.stdout:  # type: ignore[union-attr]
-        if line.startswith(PREFIX):
-            return json.loads(line[len(PREFIX):])
-    return None
-
-
 class _Worker:
     def __init__(self, index: int, backend: str):
         self.index = index
@@ -236,11 +244,48 @@ class _Worker:
         self.proc = subprocess.Popen([sys.executable, "-m", "saos.parallel", str(index)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                      stderr=subprocess.DEVNULL, text=True, encoding="utf-8", creationflags=flags,
                                      env={**os.environ, "SAOS_WORKER_BACKEND": backend})
+        self._messages: queue.Queue[dict[str, Any] | None] = queue.Queue()
+        threading.Thread(target=self._pump, daemon=True).start()
+
+    def _pump(self) -> None:
+        """把 worker 的协议行搬进队列，进程结束时放一个 None。/ Move protocol lines into the queue; None when the process ends."""
+        try:
+            for line in self.proc.stdout:  # type: ignore[union-attr]
+                if line.startswith(PREFIX):
+                    self._messages.put(json.loads(line[len(PREFIX):]))
+        except ValueError as exc:
+            self.error = f"unreadable message from the worker: {exc}"[:500]
+            self.kill()
+        finally:
+            self._messages.put(None)
+
+    def _receive(self, timeout_s: float, cancelled=None) -> dict[str, Any] | None:
+        """等下一条消息；超时或取消时结束 worker，返回 None，原因在 error 里；进程自己退出时同样返回 None。
+        Wait for the next message; on a timeout or a cancel kill the worker and return None with the reason in error,
+        and return None when the process exited by itself."""
+        deadline = time.monotonic() + timeout_s
+        while True:
+            try:
+                message = self._messages.get(timeout=max(0.0, min(WAIT_POLL_S, deadline - time.monotonic())))
+            except queue.Empty:
+                pass
+            else:
+                if message is None:
+                    self.error = self.error or "the worker exited"
+                return message
+            if cancelled is not None and cancelled():
+                self.error = "cancelled while waiting for the worker"
+            elif time.monotonic() >= deadline:
+                self.error = f"no answer from the worker within {timeout_s:.0f} s"
+            else:
+                continue
+            self.kill()
+            return None
 
     def wait_ready(self) -> bool:
-        hello = _read(self.proc)
+        hello = self._receive(start_timeout_s())
         if not hello or not hello.get("ready"):
-            self.error = (hello or {}).get("error", "the worker exited before it was ready")
+            self.error = (hello or {}).get("error") or self.error or "the worker exited before it was ready"
             self.stop()
             return False
         self.start_s = hello.get("start_s")
@@ -250,10 +295,26 @@ class _Worker:
     def alive(self) -> bool:
         return self.error is None and self.proc.poll() is None
 
-    def ask(self, message: dict[str, Any]) -> dict[str, Any] | None:
-        self.proc.stdin.write(json.dumps(message, ensure_ascii=False) + "\n")  # type: ignore[union-attr]
-        self.proc.stdin.flush()  # type: ignore[union-attr]
-        return _read(self.proc)
+    def ask(self, message: dict[str, Any], cancelled=None) -> dict[str, Any] | None:
+        """发一个条目并等它的回复；None 表示 worker 已退出或被结束，原因在 error 里。
+        Send one item and wait for its reply; None when the worker exited or was killed, the reason in error."""
+        try:
+            self.proc.stdin.write(json.dumps(message, ensure_ascii=False) + "\n")  # type: ignore[union-attr]
+            self.proc.stdin.flush()  # type: ignore[union-attr]
+        except (OSError, ValueError) as exc:
+            self.error = f"the worker exited: {exc}"
+            return None
+        return self._receive(item_timeout_s(), cancelled)
+
+    def kill(self) -> None:
+        from saos.client import kill_tree
+
+        if self.proc.poll() is None:
+            kill_tree(self.proc.pid)
+        try:
+            self.proc.wait(timeout=STOP_WAIT_S)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
 
     def stop(self) -> None:
         try:
@@ -262,9 +323,9 @@ class _Worker:
         except (OSError, ValueError):
             pass
         try:
-            self.proc.wait(timeout=60)
+            self.proc.wait(timeout=STOP_WAIT_S)
         except subprocess.TimeoutExpired:
-            self.proc.kill()
+            self.kill()
 
 
 class Pool:
@@ -488,13 +549,16 @@ def dispatch(pool: Pool, job: jobs.Job, lens: Path | None, fn: str, script: Path
                     i = pending.pop(0)
                 reply = worker.ask({"i": i, "item": items[i], "fn": fn, "script": None if script is None else str(script),
                                     "base": None if base is None else str(base), "job": str(job.root), "args": args or {},
-                                    "reset": reset or first})
+                                    "reset": reset or first}, cancelled)
                 first = False
                 if reply is None:
                     with lock:
-                        errors[i] = "the worker exited while working on this item"
+                        if cancelled():
+                            pending.append(i)
+                            stop.set()
+                        else:
+                            errors[i] = f"{worker.error} while working on this item"
                     info["died"] = True
-                    worker.error = "died"
                     break
                 with lock:
                     if reply["ok"]:

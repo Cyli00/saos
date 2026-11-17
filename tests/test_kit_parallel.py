@@ -221,6 +221,34 @@ def test_map_runs_script_functions_on_a_reused_pool(setup):
     assert closed["workers"] == 2 and daemon.pool.status()["workers"] == 0
 
 
+STUCK_SCRIPT = '''
+def run(ctx):
+    out = ctx.map("point", [0, 1, 2], workers=2)
+    return {"results": out["results"], "errors": out["errors"]}
+
+
+def point(w, i):
+    import time
+    if i == 0:
+        time.sleep(60)
+    return i
+'''
+
+
+def test_a_stuck_item_times_out_and_the_other_workers_go_on(setup, monkeypatch):
+    import time
+
+    daemon, job = setup
+    monkeypatch.setenv("SAOS_WORKER_ITEM_S", "2")
+    started = time.monotonic()
+    out = exec_script(daemon, job, STUCK_SCRIPT, name="stuck")
+    assert out["ok"], out
+    res = out["result"]["result"]
+    assert res["results"][1:] == [1, 2] and "within 2 s" in res["errors"]["0"]
+    assert time.monotonic() - started < 30
+    assert daemon.pool.status()["workers"] == 1
+
+
 def test_map_refuses_unsaved_changes_and_unknown_functions(setup):
     daemon, job = setup
     write_demand(job)

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import ctypes
 import json
+import logging
 import os
 import secrets
+import signal
 import subprocess
 import sys
 import time
@@ -22,6 +24,9 @@ DEFAULT_REQUEST_TIMEOUT_S = 600.0
 DETACHED_TIMEOUT_S = 7 * 24 * 3600.0
 DEFAULT_START_TIMEOUT_S = 120.0
 STOP_WAIT_S = 60.0
+KILL_TIMEOUT_S = 30.0
+
+log = logging.getLogger("saos.client")
 
 _CREATE_NO_WINDOW = 0x08000000
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -177,8 +182,18 @@ def _log_tail(lines: int = 20) -> list[str]:
     return text.splitlines()[-lines:]
 
 
-def _kill_tree(pid: int) -> None:
-    subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, check=False)
+def kill_tree(pid: int) -> None:
+    """强制结束进程及其子进程（OpticStudio 是调用它的进程的子进程）。/ Kill a process and its children (OpticStudio included)."""
+    if os.name != "nt":
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        return
+    try:
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, check=False, timeout=KILL_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        log.warning("taskkill did not finish within %s s for pid %s", KILL_TIMEOUT_S, pid)
 
 
 def _spawn(token: str, backend: str | None = None) -> subprocess.Popen:
@@ -439,7 +454,7 @@ def start(timeout: float = DEFAULT_START_TIMEOUT_S, backend: str | None = None) 
             info = request("ping", timeout=10)
             return {"started": True, "startup_s": round(time.monotonic() - started, 2), **info}
         time.sleep(0.25)
-    _kill_tree(proc.pid)
+    kill_tree(proc.pid)
     _clear_stale_state()
     raise SaosError(ErrorCode.DAEMON_TIMEOUT, f"the daemon was not ready within {timeout:.0f} s and was killed", {"log_tail": _log_tail()})
 
@@ -457,7 +472,7 @@ def stop(discard: bool = False, force: bool = False) -> dict[str, Any]:
     except SaosError as exc:
         if not force:
             raise
-        _kill_tree(pid)
+        kill_tree(pid)
         _clear_stale_state()
         _clear_registry(pid)
         return {"stopped": True, "pid": pid, "forced": True, "reason": exc.to_dict()}
@@ -470,7 +485,7 @@ def stop(discard: bool = False, force: bool = False) -> dict[str, Any]:
     if force:
         for p in [pid, *opticstudio]:
             if pid_alive(p):
-                _kill_tree(p)
+                kill_tree(p)
         _clear_stale_state()
         _clear_registry(pid)
         return {"stopped": True, "pid": pid, "forced": True, "reason": "exit timed out", "opticstudio_pids": opticstudio}

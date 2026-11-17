@@ -74,6 +74,8 @@ Environment
   SAOS_LIVE_S: seconds the daemon spends measuring the live metrics after each
     lens change (default 3; 0 off).
   SAOS_POOL_IDLE_S: worker idle lifetime, default 600 seconds.
+  SAOS_WORKER_START_S / SAOS_WORKER_ITEM_S: how long a worker may take to get
+    ready (default 300) and to answer one item (default 7200) before it is killed.
   SAOS_OPTICSTUDIO_DIR: OpticStudio installation; SAOS_BACKEND: auto (default), zos or rtc as
     daemon start --backend, fake for tool tests; SAOS_GLASSCAT: AGF folder for rtc,
     default Documents/Zemax/Glasscat.
@@ -669,6 +671,8 @@ Parallel work
     cores. Licence limit is 8 total including user windows and daemon; inspect
     uv run saos daemon status first. Refused sizes are not retried until pool closes.
     The pool serves one scan or map at a time (POOL_BUSY).
+    A worker that does not answer in time (SAOS_WORKER_ITEM_S) is killed and its item
+    lands in errors; saos job cancel kills a worker mid-item and leaves the item in not_run.
 
 Search control (from saos import search; evaluations still go through ctx)
   search.grid(axes): Cartesian parameter grid.
