@@ -140,7 +140,7 @@ def test_swaps_follow_the_material_admission_table(tmp_path, monkeypatch):
     # OHARA 的 25 °C 参考玻璃在 Adjust Index 关闭时走 catalog:2:fixed，已准入
     fast.set({"1.material": "S-BSL7"})
     assert fast.get("1.material") == "S-BSL7"
-    assert all(np.isfinite(fast.backend._system(w).items[0].n_after) for w in (1, 2, 3))
+    assert all(np.isfinite(fast.backend.optical_system(w).items[0].n_after) for w in (1, 2, 3))
     # Herzberger（公式 3）不在这张准入表里：拒绝，副本不变
     with pytest.raises(SaosError) as err:
         fast.set({"1.material": "HWS1"})
@@ -183,8 +183,8 @@ def test_a_check_reaching_for_ctx_system_on_rtc_is_filed_as_a_backend_gap():
     with pytest.raises(SaosError) as err:
         ctx.system
     assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED and "ctx.get" in err.value.message
-    assert demand._error_kind(err.value) == "backend"
-    assert demand._error_kind(ValueError("bad geometry")) == "computation"
+    assert demand.error_kind(err.value) == "backend"
+    assert demand.error_kind(ValueError("bad geometry")) == "computation"
 
 
 def test_huygens_waits_for_reconciliation_on_rtc_while_wavefront_and_apertures_read(fast, recorded):
@@ -194,7 +194,7 @@ def test_huygens_waits_for_reconciliation_on_rtc_while_wavefront_and_apertures_r
     with pytest.raises(SaosError) as err:
         with kit.huygens(fast):
             pass
-    assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED and demand._error_kind(err.value) == "backend"
+    assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED and demand.error_kind(err.value) == "backend"
     # 波前 RMS 给数并记为未对账；按视场号和按坐标给同一个视场，结果相同 / the same field by number and by coordinates
     fx, fy = fast.backend.lens.fields[-1][:2]
     by_number, by_point = kit.wavefront_rms(fast, [len(fast.backend.lens.fields), (fx, fy)])

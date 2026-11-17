@@ -282,6 +282,10 @@ class Backend(ABC):
         """评价函数各行（不含 BLNK）的类型、目标、权重、值和贡献。/ Each merit row but BLNK: type, target, weight, value, contribution."""
         raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} has no merit function")
 
+    def configurations(self) -> dict[str, Any]:
+        """多重结构：结构数、当前结构和多重结构编辑器的各行。/ Multi-configuration data: count, current and the editor rows."""
+        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} has no multi-configuration data")
+
     def catalogs_in_use(self) -> list[str]:
         """镜头在用的玻璃目录。/ The glass catalogs the lens uses."""
         raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} has no glass catalogs")

@@ -114,12 +114,12 @@ def test_configuration_equals_single_configuration_lens(name):
 def test_save_and_reload_keeps_every_cell(tmp_path, name):
     data = truth(name)
     backend = instance(tmp_path, data["zmx"])
-    first = backend._configurations()
+    first = backend.configurations()
     path = tmp_path / "written.zmx"
     backend.save_as(path)
     again = RtcBackend(None, standalone=True)
     again.load(path)
-    second = again._configurations()
+    second = again.configurations()
     assert [(o["type"], o["params"], o["solves"]) for o in first["operands"]] == [(o["type"], o["params"], o["solves"]) for o in second["operands"]]
     for a, b in zip(first["operands"], second["operands"]):
         assert a["values"] == pytest.approx(b["values"], rel=1e-14) if a["type"] != "GLSS" else a["values"] == b["values"]
@@ -129,7 +129,7 @@ def test_save_and_reload_keeps_every_cell(tmp_path, name):
 def test_describe_rows_are_the_ones_opticstudio_describes(tmp_path, name):
     """结构指纹比较的字段（类型、参数、求解）两边一致；交付前换后端不会误判换了模型。"""
     data = truth(name)
-    mine = instance(tmp_path, data["zmx"])._configurations()
+    mine = instance(tmp_path, data["zmx"]).configurations()
     theirs = data["configurations"]
     assert [(o["type"], o["params"], o["solves"]) for o in mine["operands"]] == [(o["type"], o["params"], o["solves"]) for o in theirs["operands"]]
 
@@ -145,7 +145,7 @@ def test_make_thermal_builds_what_opticstudio_builds(tmp_path, name):
         if s.index and s.index < len(ref.surfaces) - 1:
             s.semi_diameter, s.semi_fixed = r.semi_diameter, True
     backend.make_thermal(data["temperatures"], data["tce"])
-    backend._configurations()
+    backend.configurations()
     assert [(r.op, r.surface, r.param, r.config, r.solve_code, r.source_config, int(r.solve[4])) for r in backend.lens.mce] ==            [(r.op, r.surface, r.param, r.config, r.solve_code, r.source_config, int(r.solve[4])) for r in ref.mce]
     # 弯曲像面的矢高取自像面自动半口径，两边算的半口径差约 1e-5 mm，间隔差到 1e-6 mm
     tol = 2e-6 if name == "seq_curved_image" else 2e-9
@@ -307,7 +307,7 @@ def test_make_thermal_rolls_back_an_unexpected_failure(monkeypatch):
 def test_prescription_declares_conditions_without_opticstudio():
     backend = thermal_instance()
     assert backend.configuration_count() == 3
-    temps = next(o for o in backend._configurations()["operands"] if o["type"] == "TEMP")
+    temps = next(o for o in backend.configurations()["operands"] if o["type"] == "TEMP")
     assert temps["values"] == [20.0, -40.0, 65.0]
     backend.select_configuration(2)
     assert backend.lens.environment.temperature == -40.0
@@ -319,11 +319,11 @@ def test_prescription_declares_conditions_without_opticstudio():
 
 def test_nominal_edit_follows_in_other_configurations():
     backend = thermal_instance()
-    before = backend._configurations()
+    before = backend.configurations()
     backend.set_param("1.radius", 70.0)
     backend.select_configuration(2)
     assert backend.get_param("1.radius") == pytest.approx(70.0 / (1.0 + 7.1e-6 * -60.0) ** -1, rel=1e-9)
-    after = backend._configurations()
+    after = backend.configurations()
     assert before != after
 
 

@@ -93,14 +93,14 @@ def test_asphere_ranking_reads_boundary_operands_and_restores_the_lens(session):
     # 满足中的边界行对残差的贡献是 0，按权重重算才会和原生 merit 对不上
     assert rows[bound]["contribution"] == 0 and e[bound] == 0
     assert float(np.linalg.norm(e)) == pytest.approx(ctx.backend.merit_value(), rel=1e-9)
-    surfaces, merit, dirty = ctx.backend.surfaces(), ctx.backend.merit_value(), ctx._daemon.loaded.dirty
+    surfaces, merit, dirty = ctx.backend.surfaces(), ctx.backend.merit_value(), ctx.dirty
 
     result = ctx.AsphereExpert([1, 3], terms=2, max_seconds=300).rank()
     assert "stopped_by" not in result
     assert result["order"] and all(r["improvement_factor"] >= 0 for r in result["selected"])
     assert ctx.backend.surfaces() == surfaces
     assert ctx.backend.merit_value() == pytest.approx(merit, rel=1e-12)
-    assert ctx._daemon.loaded.dirty == dirty
+    assert ctx.dirty == dirty
 
 
 def test_glass_candidates_keep_the_lens_and_offer_catalog_partial_dispersion(session):
@@ -141,7 +141,7 @@ def test_model_glasses_of_a_patent_start_become_in_production_glasses(session):
     names = {g.name.upper() for g in glasscat.load_catalogs([catalog], ctx.backend._glass_dir())}
     for s in ctx.backend.surfaces()[1:3]:
         assert s["solves"]["material"] != "MaterialModel" and s["material"].upper() in names
-    assert ctx._daemon.loaded.dirty
+    assert ctx.dirty
 
 
 def test_rtc_catalog_indices_match_opticstudio_indx(session):
@@ -171,7 +171,7 @@ def test_rtc_catalog_indices_match_opticstudio_indx(session):
 
 def test_rtc_asphere_ranking_runs_on_the_sequential_case_and_restores_the_lens(session):
     ctx = prepare(build(session, "sequential"))
-    surfaces, merit, dirty = ctx.backend.surfaces(), ctx.backend.merit_value(), ctx._daemon.loaded.dirty
+    surfaces, merit, dirty = ctx.backend.surfaces(), ctx.backend.merit_value(), ctx.dirty
 
     result = ctx.AsphereExpert([1, 3], terms=2, engine="rtc", max_seconds=300).rank()
     assert "stopped_by" not in result and result["engine"] == "rtc"
@@ -182,7 +182,7 @@ def test_rtc_asphere_ranking_runs_on_the_sequential_case_and_restores_the_lens(s
     assert all(r["improvement_factor"] >= 0 for r in result["selected"])
     assert ctx.backend.surfaces() == surfaces
     assert ctx.backend.merit_value() == pytest.approx(merit, rel=1e-12)
-    assert ctx._daemon.loaded.dirty == dirty
+    assert ctx.dirty == dirty
 
 
 @pytest.mark.parametrize("name", ["non_sequential", "mixed"])

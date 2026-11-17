@@ -68,7 +68,7 @@ def test_recovered_material_changes_match_application_indx(zos, temperature, pre
         fast.set({"1.material": material})
         fast.push(ctx)
         for wave in (1, 2, 3):
-            assert fast.backend._system(wave).items[0].n_after == pytest.approx(ctx.op("INDX", 1, wave), rel=0, abs=1e-8)
+            assert fast.backend.optical_system(wave).items[0].n_after == pytest.approx(ctx.op("INDX", 1, wave), rel=0, abs=1e-8)
         rebuilt = ctx.fast()
         assert rebuilt.backend.lens.environment == fast.backend.lens.environment
 

@@ -77,11 +77,11 @@ def test_glass_search_compares_over_every_configuration_and_rows_follow_the_new_
     assert result["final_merit"] == pytest.approx(backend.merit_value(), rel=1e-9)
     assert result["final_merit"] <= result["initial_merit"]
     name = backend.get_param("1.material")
-    glss = next(o for o in backend._configurations()["operands"] if o["type"] == "GLSS" and o["params"] == [1])
+    glss = next(o for o in backend.configurations()["operands"] if o["type"] == "GLSS" and o["params"] == [1])
     assert glss["solves"] == ["Fixed", "ConfigPickup", "ConfigPickup"] and {v.upper() for v in glss["values"]} == {str(name).upper()}
     # 玻璃内厚度跟随的是新玻璃的膨胀系数 / the glass thickness follows the new glass's expansion
     alpha = backend._catalog().get(str(name), backend.lens.catalogs).tce * 1e-6
-    thickness = next(o for o in backend._configurations()["operands"] if o["type"] == "THIC" and o["params"] == [1])
+    thickness = next(o for o in backend.configurations()["operands"] if o["type"] == "THIC" and o["params"] == [1])
     assert thickness["values"][1] == pytest.approx(thickness["values"][0] * (1.0 + alpha * -60.0), rel=1e-12)
 
 
@@ -149,7 +149,7 @@ def test_converted_surface_has_the_rows_opticstudio_gives_an_asphere():
     for s in (1, 2, 3):
         backend.set_param(f"{s}.semi_diameter", ref.cell("SDIA", s, 1).value)
         backend.set_param(f"{s}.mech_semi_diameter", ref.cell("MCSD", s, 1).value)
-    backend._configurations()
+    backend.configurations()
     mine = backend.lens
     assert [(r.op, r.surface, r.param, r.config, r.solve_code, r.source_config, int(r.solve[4])) for r in mine.mce] == \
            [(r.op, r.surface, r.param, r.config, r.solve_code, r.source_config, int(r.solve[4])) for r in ref.mce]
@@ -180,11 +180,11 @@ def test_term_above_the_rows_is_refused_on_a_thermal_lens():
 @pytest.mark.parametrize("engine", ["rtc", "opticstudio"])
 def test_rank_leaves_the_lens_unchanged(engine):
     backend = ready(thermal())
-    before = backend._configurations()
+    before = backend.configurations()
     merit = backend.merit_value()
     result = AsphereExpert(ctx_of(backend), [1, 2, 3], terms=2, engine=engine, max_seconds=60).rank()
     assert result["order"] or result["selected"]
-    assert backend._configurations() == before
+    assert backend.configurations() == before
     assert backend.merit_value() == pytest.approx(merit, rel=1e-12)
     assert backend.current_configuration() == 1
 
@@ -207,7 +207,7 @@ def test_asphere_run_makes_terms_that_follow_the_temperature(tmp_path):
     assert result["installed"], result["status"]
     assert result["installed"][0]["after"] < before
     assert backend.merit_value() < before
-    par2 = next(o for o in backend._configurations()["operands"] if o["type"] == "PRAM" and o["params"] == [1, 2])
+    par2 = next(o for o in backend.configurations()["operands"] if o["type"] == "PRAM" and o["params"] == [1, 2])
     assert par2["solves"][0] == "Variable" and par2["solves"][1:] == ["ThermalPickup", "ThermalPickup"]
     a = 7.1e-6 * -60.0
     assert par2["values"][0] != 0.0
@@ -244,4 +244,8 @@ def test_model_surfaces_are_found_on_the_rtc_instance():
     p["surfaces"][0]["material"] = {"model": {"nd": 1.6, "vd": 45.0}}
     backend = RtcBackend(None, standalone=True)
     backend.build(prescription.normalize(p))
-    assert GlassExpert(ctx_of(backend), "model", materials=GLASSES)._surfaces() == [1]
+    backend.merit_wizard(WIZARD)
+    backend.vary(1, "radius", True)
+    result = GlassExpert(ctx_of(backend), "model", materials=GLASSES, neighbors=2, max_passes=1, max_seconds=60, cycles="1",
+                         single_optimization_pass=True).run()
+    assert result["surfaces"] == [1]

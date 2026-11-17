@@ -39,6 +39,13 @@ SKILL_DOCS = tuple(name for name in DOCS if name.startswith(".agents/"))
 INTERNAL = {"ctx.child", "saos daemon run", "saos ui serve"} | api_help.HIDDEN
 
 
+def _signature(obj) -> str:
+    try:
+        return str(inspect.signature(obj))
+    except (TypeError, ValueError):
+        return ""
+
+
 def _subcommands(parser) -> dict:
     for action in parser._actions:
         if action.__class__.__name__ == "_SubParsersAction":
@@ -236,7 +243,7 @@ def test_saos_api_answers_every_listed_interface_as_the_full_scan_does():
     known = api_help.modules()
     assert {m: api_help.describe(m)["target"] for m in known} == {m: m for m in known}
     for name, obj in api_help.public_names().items():
-        assert api_help.describe(name)["signature"] == api_help._signature(obj)
+        assert api_help.describe(name)["signature"] == _signature(obj)
     for missing in ("saos.nothing", "saos.kit.nothing", "saos.kit.op.nothing", "os.path", "saos.ctx.experts._session", "saos.kit._nothing"):
         with pytest.raises(SaosError) as err:
             api_help.describe(missing)

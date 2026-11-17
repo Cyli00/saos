@@ -301,7 +301,7 @@ def test_an_analysis_job_has_one_step_no_gates_and_computes_on_rtc(ui, fake_lens
         demand.confirm(job.root, "", via="auto", reason="题目给定")
     assert get(srv, f"/api/mode?job={job.id}", data={"mode": "interactive"})[1]["error"]["code"] == "BAD_ARGS"
     assert jobs.get_job(job.id).mode == "analyse"
-    assert daemon._stage_of({"job": job.id}) == "analyse" and STAGE_BACKENDS["analyse"] == "rtc"
+    assert STAGE_BACKENDS[stage.snapshot(job)["current"]] == "rtc"
 
 
 def test_a_quote_counts_like_the_window_and_names_its_channel(flow, monkeypatch):
@@ -342,13 +342,11 @@ def test_window_prefers_chrome_and_falls_back_to_the_default_browser(saos_home, 
     monkeypatch.setattr(ui_pkg.shutil, "which", lambda name: None)
     for key in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA"):
         monkeypatch.delenv(key, raising=False)
-    assert ui_pkg._chrome() is None
     # 按用户安装的 Chrome 在 LOCALAPPDATA 下
     exe = tmp_path / ui_pkg.CHROME_SUBPATH
     exe.parent.mkdir(parents=True)
     exe.write_bytes(b"")
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    assert ui_pkg._chrome() == str(exe)
 
     monkeypatch.setattr(ui_pkg.jobs, "get_job", lambda job_id: type("J", (), {"id": job_id})())
     monkeypatch.setattr(ui_pkg, "ensure_server", lambda: {"port": 1, "token": "x", "pid": 2, "reused": True})
@@ -418,16 +416,14 @@ def test_job_commands_reopen_the_window_unless_one_is_polling(saos_home, monkeyp
     # a round, a model description and a demand awaiting confirmation are gates, where a window the user closed reopens
     asked = []
     monkeypatch.setattr(ui_pkg, "ensure_window", lambda job_id, gate=False: asked.append((job_id, gate)) or {"window": "chrome-app"})
-    parser = cli.build_parser()
-    assert cli._ensure_window(parser.parse_args(["round", "--job", job.id])) == {"window": "chrome-app"}
-    assert cli._ensure_window(parser.parse_args(["scan", "--job", job.id, "--show"])) is None
-    assert cli._ensure_window(parser.parse_args(["report", "--job", job.id])) is None
-    cli._ensure_window(parser.parse_args(["opt", "local", "--job", job.id]))
-    cli._ensure_window(parser.parse_args(["lens", "describe", "--job", job.id]))
+    for argv in (["round", "--job", job.id], ["scan", "--job", job.id, "--show"], ["report", "--job", job.id],
+                 ["opt", "local", "--job", job.id], ["lens", "describe", "--job", job.id]):
+        cli.main(argv)
+    assert asked == [(job.id, True), (job.id, False), (job.id, True)]
     (job.root / "sources" / "demand.yaml").write_text(yaml.safe_dump(DEMAND, allow_unicode=True), encoding="utf-8")
-    cli._ensure_window(parser.parse_args(["demand", "show", "--job", job.id]))
+    cli.main(["demand", "show", "--job", job.id])
     demand.confirm(job.root, "可以")
-    assert cli._ensure_window(parser.parse_args(["demand", "show", "--job", job.id])) is None  # 已确认：只是重读 / just rereading
+    cli.main(["demand", "show", "--job", job.id])  # 已确认：只是重读 / just rereading
     assert asked == [(job.id, True), (job.id, False), (job.id, True), (job.id, True)]
 
 

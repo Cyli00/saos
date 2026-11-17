@@ -195,7 +195,7 @@ def test_a_job_no_structure_can_pass_may_still_stop_and_report(lens_job):
     stop = ledger.record_stop(job.root, sha, "见notes/gaps.md：所有结构都差 20 倍", "", d, via="auto")
     assert stop["round"] == ledger.BEFORE_ROUNDS and ledger.stopped_before_rounds(job.root, sha, d) == stop
     assert stage.snapshot(job)["current"] == "deliver" and _step(job, "deliver") == "active"
-    assert lens_job.daemon._stage_of({"job": job.id}) == "modeling"  # 不为它启动 OpticStudio / no OpticStudio for it
+    assert stage.snapshot(job)["no_design"]  # 后台进程据此不为它启动 OpticStudio / the daemon starts no OpticStudio for it
     out = report.write(job)
     assert out["headline"] == "no_design" and out["deliver"] is None and not out["deliverable"]
     html = (job.root / "report" / "index.html").read_text(encoding="utf-8")

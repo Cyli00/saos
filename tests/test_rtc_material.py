@@ -118,19 +118,19 @@ def test_warm_herzberger_swap_uses_parsed_environment(fast):
     assert fast.backend.lens.environment.temperature == -40
     assert fast.backend.lens.environment.pressure == 0
     assert fast.backend.lens.environment.adjust is True
-    assert all(fast.backend._system(w).items[0].n_after > 1 for w in (1, 2, 3))
+    assert all(fast.backend.optical_system(w).items[0].n_after > 1 for w in (1, 2, 3))
 
 
 @pytest.mark.parametrize("value,code", [("NARROW", ErrorCode.BACKEND_UNSUPPORTED), ("UNKNOWN", ErrorCode.BACKEND_UNSUPPORTED),
                                         ("MIRROR", ErrorCode.BACKEND_UNSUPPORTED), ("MISSING", ErrorCode.BAD_ARGS)])
 def test_bad_material_preserves_state_and_existing_cached_system(fast, value, code):
     # 越过 LD、未实现的公式、反射镜是能力缺口；目录里没有的牌号是参数错误
-    before = fast.backend._system(1)
+    before = fast.backend.operand("INDX", 1, 1, [])
     with pytest.raises(SaosError) as exc:
         fast.set({"1.material": value})
     assert exc.value.code == code
     assert fast.get("1.material") == "REF" and fast.changed == {}
-    assert fast.backend._system(1) is before
+    assert fast.backend.operand("INDX", 1, 1, []) == before
 
 
 @pytest.mark.parametrize("value", [{"nd": -1.0, "vd": 50}, {"nd": 1.5}, {"nd": 1.5, "vd": 50, "x": 1}])
@@ -143,7 +143,7 @@ def test_invalid_model_material_is_bad_args(fast, value):
 def test_model_glass_uses_formula_without_lookup_table(fast):
     fast.set({"1.material": {"nd": 1.5168, "vd": 64.17, "dpgf": 0.0}})
     # rtc fixtures/material 的 ZOS-API 实测：λ=.36、T=-40、P=0、Adjust=1
-    assert fast.backend._system(1).items[0].n_after == pytest.approx(1.5378765180018454, rel=0, abs=1e-14)
+    assert fast.backend.optical_system(1).items[0].n_after == pytest.approx(1.5378765180018454, rel=0, abs=1e-14)
     fast.set({"1.nd": 1.637, "1.vd": 57.3, "1.dpgf": .027})
     assert fast.get("1.material") == {"nd": 1.637, "vd": 57.3, "dpgf": .027}
     assert fast.values(["1.nd", "1.vd", "1.dpgf"]) == {"1.nd": 1.637, "1.vd": 57.3, "1.dpgf": .027}
@@ -192,7 +192,7 @@ def test_strict_copy_uses_indx_confirmation_but_refuses_unconfirmed_swaps(fast, 
     monkeypatch.undo()
     monkeypatch.setattr(rtc_backend, "admitted_paths", lambda: NARROW)
     strict = FastLens(RtcBackend(lens_path, model, glass_dir=lens_path.parent))
-    assert all(n > 1 for n in (strict.backend._system(w).items[0].n_after for w in (1, 2, 3)))
+    assert all(n > 1 for n in (strict.backend.optical_system(w).items[0].n_after for w in (1, 2, 3)))
     with pytest.raises(SaosError) as exc:
         strict.set({"1.material": "WARM"})
     assert exc.value.code == ErrorCode.BACKEND_UNSUPPORTED and "catalog:3:thermal" in exc.value.message
@@ -204,16 +204,16 @@ def test_strict_copy_uses_indx_confirmation_but_refuses_unconfirmed_swaps(fast, 
 
 
 def test_wave_edit_validates_before_commit_and_air_swap_clears_model(fast):
-    before = fast.backend._system(1)
+    before = fast.backend.operand("INDX", 1, 1, [])
     with pytest.raises(SaosError) as exc:
         fast.set({"wave.2": 3.0})
     assert exc.value.code == ErrorCode.BACKEND_UNSUPPORTED
-    assert fast.get("wave.2") == .55 and fast.backend._system(1) is before
+    assert fast.get("wave.2") == .55 and fast.backend.operand("INDX", 1, 1, []) == before
     fast.set({"1.material": {"nd": 1.65, "vd": 52, "dpgf": .02}})
     fast.set({"1.material": ""})
     assert fast.get("1.material") == ""
     assert fast.backend.lens.surface(1).model_nd is None
-    assert fast.backend._system(1).items[0].n_after == 1.0
+    assert fast.backend.optical_system(1).items[0].n_after == 1.0
 
 
 @pytest.mark.parametrize("field,value", [("temperature", 20), ("pressure", .5), ("adjust_index", False)])

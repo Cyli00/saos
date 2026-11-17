@@ -867,7 +867,7 @@ class RtcBackend(Backend):
             "fields": {"type": fields["type"], "normalization": fields["normalization"],
                        "items": fields["items"]},
             "wavelengths": info["wavelengths"], "material_catalogs": list(lens.catalogs), "stop_surface": lens.stop_index,
-            "environment": info["environment"], "configurations": self._configurations(), "unread": list(UNREAD_SETTINGS),
+            "environment": info["environment"], "configurations": self.configurations(), "unread": list(UNREAD_SETTINGS),
             "surfaces": surfaces, "layout": {},
         }
 
@@ -922,8 +922,8 @@ class RtcBackend(Backend):
                 out.append(None)
         return out
 
-    def _configurations(self) -> dict[str, Any]:
-        """多重结构，形式同 ZosBackend._configurations。/ Multi-configuration data, shaped as ZosBackend._configurations."""
+    def configurations(self) -> dict[str, Any]:
+        """多重结构，形式同 ZosBackend.configurations。/ Multi-configuration data, shaped as ZosBackend.configurations."""
         lens = self.lens
         count = self.configuration_count()
         if not lens.plain_configurations:
@@ -1046,7 +1046,7 @@ class RtcBackend(Backend):
                 problems = self._system_problems()
             if problems:
                 raise _unsupported("rtc cannot make this lens thermal: " + "; ".join(problems), problems)
-            return self._configurations()
+            return self.configurations()
         except BaseException as exc:
             self.lens, self._view = lens, None
             self.config, self.held, self._dirty, self.unverified_paths = saved

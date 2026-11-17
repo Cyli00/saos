@@ -922,10 +922,10 @@ class ZosBackend(Backend):
                                    "pupil_shift": [float(aim.PupilShiftX), float(aim.PupilShiftY), float(aim.PupilShiftZ)],
                                    "pupil_compress": [float(aim.PupilCompressX), float(aim.PupilCompressY)]},
             "coating_file": str(sd.Files.CoatingFile),
-            "configurations": self._configurations(),
+            "configurations": self.configurations(),
         }
 
-    def _configurations(self) -> dict[str, Any]:
+    def configurations(self) -> dict[str, Any]:
         """多重结构：结构数、当前结构和每行操作数（类型、整数参数、各结构的值与求解）。单结构时 operands 为空。
         Multi-configuration: count, current configuration and each operand row (type, integer parameters, values and solves)."""
         mce = self.system.MCE
@@ -965,7 +965,7 @@ class ZosBackend(Backend):
                     row.GetOperandCell(c).DoubleValue = float(value)
         mce.SetCurrentConfiguration(1)
         system.UpdateStatus()
-        return self._configurations()
+        return self.configurations()
 
     def vary_config(self, rows: list[int], configs: list[int] | None, on: bool) -> dict[str, str]:
         """把多重结构的格设为变量或固定；configs 为空时是该行的全部结构。返回 {"<行>.<结构>": 求解类型}。

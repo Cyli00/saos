@@ -296,13 +296,15 @@ def test_the_delivered_round_is_the_achieved_one_with_the_smallest_shortfall():
     assert ledger.deliver_round([_round(0, shortfall=math.inf)])["round"] == 0
 
 
-@pytest.mark.parametrize("op, expected", [("SUMM", 3.0), ("DIFF", 3.0), ("PROD", 0.0)])
+@needs_glass
+@pytest.mark.parametrize("op, expected", [("SUMM", 3.0), ("DIFF", 3.0), ("PROD", 0.0), ("DIVI", None)])
 def test_arithmetic_with_a_zero_second_operand(op, expected):
-    row = rtc_merit.Row(op, [1, 2, 0, 0, 0, 0, 0, 0])
-    assert rtc_merit.Evaluator._arithmetic(row, [3.0, 0.0]) == expected
-    row.type = "DIVI"
-    with pytest.raises(ZeroDivisionError):
-        rtc_merit.Evaluator._arithmetic(row, [3.0, 0.0])
+    backend = _loaded()
+    backend.merit_clear()
+    backend.merit_append([{"type": "CONS", "target": 3.0}, {"type": "CONS", "target": 0.0}, {"type": op, "params": [1, 2]}])
+    row = backend.merit_rows()[2]
+    assert row["value"] == expected
+    assert ("error" in row) == (op == "DIVI")
 
 
 @needs_glass
@@ -332,7 +334,7 @@ def test_continuously_varied_model_glass_does_not_grow_the_shared_cache():
     size = len(backend._media)
     for i in range(100):
         backend.set_param("1.material", {"nd": 1.5 + i * 1e-5, "vd": 60.0})
-        backend._system(2)
+        backend.optical_system(2)
     assert len(backend._media) == size
     assert all(not isinstance(key[0], Model) for key in backend._media)
     assert backend.operand("INDX", 1, 2, []) > 1.5
@@ -373,12 +375,12 @@ def test_wavefront_evaluation_uses_one_trace_per_wavelength(monkeypatch):
     rows = rtc_merit.wizard_rows(backend.lens, {"rings": 3, "arms": 6, "reference": "Unreferenced"})
     evaluator = rtc_merit.Evaluator(backend, rows)
     trace = trace_module.trace
-    primary = backend._system(backend.lens.primary_wave)
+    primary = backend.optical_system(backend.lens.primary_wave)
     expected = []
     for row in rows:
         if row.type == "OPDC":
             hx, hy, px, py = row.data[:4]
-            system = backend._system(row.int2)
+            system = backend.optical_system(row.int2)
             # 参考球取主波长主光线的，OPD 相对本波长的主光线
             sphere = reference_sphere(primary, trace(primary, [0.0], [0.0], hx, hy))
             opd, ok = opd_from_trace(system, trace(system, [0.0, px], [0.0, py], hx, hy), hx=hx, hy=hy, reference=sphere)
@@ -529,7 +531,7 @@ def test_chief_referenced_rows_use_the_primary_wavelength_chief_ray(settings, op
         if row.type != operand:
             continue
         hx, hy, px, py = row.data[:4]
-        system = backend._system(row.int2)
+        system = backend.optical_system(row.int2)
         if operand == "OPDC":
             opd, _ = opd_rays(system, [px], [py], hx, hy)
             own = opd[0] / (system.wavelength * 1e-3)

@@ -727,7 +727,7 @@ def _evidence_path(ctx, path: Path) -> str | None:
         return None
 
 
-def _error_kind(exc: Exception) -> str:
+def error_kind(exc: Exception) -> str:
     """判定出错的类别：材料数据不可用为 material，当前后端算不了为 backend，其余为 computation。按类型判断，不看消息文字。
     The kind of a failed check: unusable material data is material, a computation the current backend lacks is backend,
     anything else computation. Decided by type, not by text."""
@@ -783,7 +783,7 @@ def measure(ctx: ScriptContext, item: dict[str, Any], folder: Path, scripts: dic
         # a failed measurement is a reportable result; a lost connection or a blocked window still goes to the daemon
         if not ctx.backend.healthy() or (isinstance(exc, SaosError) and exc.code == ErrorCode.ZOS_CONNECTION_LOST):
             raise
-        return {"value": None, "error": f"{type(exc).__name__}: {exc}", "error_kind": _error_kind(exc), "evidence": evidence}
+        return {"value": None, "error": f"{type(exc).__name__}: {exc}", "error_kind": error_kind(exc), "evidence": evidence}
     if not math.isfinite(value):
         # 判定正常执行、但这个设计给不出有效数值（例如光线到不了像面）：是设计结果，不是测量失败
         # the check ran but this design has no valid value (e.g. no ray reaches the image): a design result, not a failed measurement

@@ -87,7 +87,7 @@ def _compute(ctx, frame):
             metric = metrics.definition(spec["id"])
             items[request["key"]] = {**stamp, "id": request["key"], "metric_id": spec["id"], "value": None,
                                      "name": metric.name, "shape": metric.shape, **metrics.picked(spec),
-                                     "error": f"{type(exc).__name__}: {exc}"[:500], "error_kind": demand._error_kind(exc)}
+                                     "error": f"{type(exc).__name__}: {exc}"[:500], "error_kind": demand.error_kind(exc)}
         items[request["key"]]["duration_s"] = round(time.monotonic() - started, 3)
     return items
 

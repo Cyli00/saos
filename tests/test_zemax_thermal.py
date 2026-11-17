@@ -92,7 +92,7 @@ def record(z, variant: Variant) -> dict:
     z.select_configuration(1)
     return {"source": f"OpticStudio 24.1 ZOS-API standalone, tests/test_zemax_thermal.py, {date.today().isoformat()}",
             "variant": variant.name, "case": variant.case, "serves": variant.serves, "temperatures": list(variant.temperatures), "tce": TCE,
-            "nominal_zmx": nominal, "zmx": text, "image": image, "configurations": z._configurations(), "per_config": per_config}
+            "nominal_zmx": nominal, "zmx": text, "image": image, "configurations": z.configurations(), "per_config": per_config}
 
 
 @pytest.mark.skipif(os.environ.get("SAOS_CASE_RECORD") != "1", reason="设置 SAOS_CASE_RECORD=1 才重录真值")
@@ -219,7 +219,7 @@ def test_prescription_thermal_builds_the_same_rows_on_both_backends(zos):
     zos.build(normalized)
     rtc = RtcBackend(None, standalone=True)
     rtc.build(normalized)
-    theirs, mine = zos._configurations(), rtc._configurations()
+    theirs, mine = zos.configurations(), rtc.configurations()
     assert [(o["type"], o["params"], o["solves"]) for o in theirs["operands"]] == [(o["type"], o["params"], o["solves"]) for o in mine["operands"]]
     assert next(o for o in theirs["operands"] if o["type"] == "TEMP")["values"] == [20.0, -40.0, 65.0]
 

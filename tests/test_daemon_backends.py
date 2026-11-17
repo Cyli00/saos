@@ -225,7 +225,7 @@ def test_thermal_conditions_run_through_the_daemon_and_hand_over(saos_home):
     reply = call(daemon, "opt.merit", job=job.id, action="wizard", settings={"data": "Spot Radius", "reference": "Centroid", "rings": 2, "arms": 6})
     assert reply["ok"], reply
     assert [r.int1 for r in rtc.merit if r.type == "CONF"] == [1, 1, 2, 3]
-    rows = {(o["type"], tuple(o["params"])): o["row"] for o in rtc._configurations()["operands"]}
+    rows = {(o["type"], tuple(o["params"])): o["row"] for o in rtc.configurations()["operands"]}
     reply = call(daemon, "opt.vary", job=job.id, config_rows=[rows[("THIC", (3,))]], configs=[1], on=True)
     assert reply["ok"], reply
     before = rtc.merit_value()
@@ -239,7 +239,7 @@ def test_thermal_conditions_run_through_the_daemon_and_hand_over(saos_home):
     assert pinned["ok"], pinned
     assert stand_in.configuration_count() == 3
     assert rtc.handover["agrees"], rtc.handover
-    assert [o["values"] for o in stand_in._configurations()["operands"] if o["type"] == "TEMP"] == [[20.0, -40.0, 65.0]]
+    assert [o["values"] for o in stand_in.configurations()["operands"] if o["type"] == "TEMP"] == [[20.0, -40.0, 65.0]]
 
 
 def test_make_thermal_from_a_script_context(saos_home):

@@ -235,7 +235,7 @@ def test_paraxial_conic_reads_as_opticstudio_does():
     assert math.isinf(backend.get_param("1.conic"))
     desc = backend.describe_model(None)
     assert math.isinf(desc["surfaces"][1]["conic"])
-    assert model_gate.fingerprint(desc, [1])["surfaces"][1]["conic"] == model_gate._num(math.inf)
+    assert model_gate.fingerprint(desc, [1])["surfaces"][1]["conic"] == "inf"
     # kept 恢复时把读出的 inf 写回，不改镜头；其他值无处可写
     backend.set_param("1.conic", math.inf)
     with pytest.raises(SaosError) as err:

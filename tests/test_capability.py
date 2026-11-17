@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from saos import capability, cli, prescription
+from saos import capability, cli, jobs, prescription
 from saos.backend import rtc, rtc_lens
 from saos.backend.rtc import RtcBackend
 from saos.daemon import Daemon
@@ -98,14 +98,23 @@ def test_afocal_is_refused_not_dropped():
     assert err.value.code == ErrorCode.BACKEND_UNSUPPORTED and "afocal" in err.value.message
 
 
-def test_the_daemon_keeps_off_rtc_what_only_the_built_system_refuses(saos_home):
+def _built_on(raw: dict, name: str = "route") -> tuple[str, dict | None]:
+    """auto 后台进程把这份处方建在哪个后端上，以及切换说明；OpticStudio 的位置放一个 rtc 替身，看的是路由。
+    Where an auto daemon builds this prescription, and the switch note; an rtc stand-in takes OpticStudio's place."""
     backend = RtcBackend(None, standalone=True)
     daemon = Daemon(backend, backend.identity(), lambda: (RtcBackend(None, standalone=True), {"backend": "zos"}))
+    job = jobs.create_job(name)
+    reply = daemon.handle({"op": "lens.build", "args": {"job": job.id, "prescription": raw, "file": "a.zmx"}})
+    return daemon.active, (reply.get("result") or reply["error"]["details"]).get("backend_switch")
+
+
+def test_the_daemon_keeps_off_rtc_what_only_the_built_system_refuses(saos_home):
     aspheric_mirror = _probe(capability._mirror("EvenAspheric"))
     # 处方转换本身接受它，拒绝出在建系统时 / the conversion accepts it; the refusal comes when the system is built
     rtc_lens.from_prescription(prescription.normalize(aspheric_mirror))
-    assert "mirror" in daemon._rtc_cannot_build("lens.build", {"prescription": aspheric_mirror})
-    assert daemon._rtc_cannot_build("lens.build", {"prescription": capability._probe()}) is None
+    active, switch = _built_on(aspheric_mirror)
+    assert active == "zos" and "mirror" in switch["reason"]
+    assert _built_on(capability._probe(), "plain") == ("rtc", None)
 
 
 @needs_glass
@@ -116,10 +125,8 @@ def test_the_test_cases_land_where_the_daemon_puts_them(case, backend, saos_home
         assert verdict["backend"] == backend, verdict
         assert ("refused" in verdict and bool(verdict["refused"])) == (backend == "zos")
         assert len(verdict.get("refused", [])) <= capability.REFUSED_SHOWN + 1
-    stand_in = RtcBackend(None, standalone=True)
-    daemon = Daemon(stand_in, stand_in.identity(), lambda: (RtcBackend(None, standalone=True), {"backend": "zos"}))
     raw = json.loads((CASES / f"{case}.json").read_text(encoding="utf-8"))
-    assert (daemon._rtc_cannot_build("lens.build", {"prescription": raw}) is None) == (backend == "rtc")
+    assert _built_on(raw)[0] == backend
     if backend == "rtc":
         loaded = RtcBackend(None, standalone=True)
         loaded.load(CASES / f"{case}.zmx")

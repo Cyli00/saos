@@ -165,7 +165,7 @@ def test_backend_operands_and_table_are_the_same_numbers():
     # 逐面 DIST 是 W311；Int1=0 的 DIST 是最大视场的畸变百分比（同 DISG），不是 W311 之和
     assert [backend.operand("DIST", row["surface"], 0, []) for row in table["surfaces"]] == pytest.approx(
         [row["W311"] for row in table["surfaces"]], rel=1e-12)
-    system = backend._system(2)
+    system = backend.optical_system(2)
     _, chief = sd.paraxial(system)
     k = len(system.items) - 1
     real = trace(system, [0.0], [0.0], 0.0, 1.0)
@@ -190,7 +190,7 @@ def test_backend_operands_and_table_are_the_same_numbers():
 def test_paraxial_operands_use_the_field_angle_not_a_scaled_maximum_field():
     # 0.6 × 5° 必须按 tan 3° 取，不能取 0.6 × tan 5°：后者在像面差 8.6e-3 mm（2026-11-10 与 OpticStudio 的 PARY 实测）
     backend = RtcBackend(CASES / "sequential.zmx", standalone=True)
-    system = backend._system(2)
+    system = backend.optical_system(2)
     marginal, chief = sd.paraxial(system, 0.6)
     _, maximum = sd.paraxial(system)
     for surface, k in ((1, 0), (3, 2), (4, 3)):
