@@ -1,24 +1,20 @@
-"""rtc 副本（ctx.fast()）与真实 OpticStudio 2024 R1 的逐条光线对照和速度对比。默认跳过：
+"""rtc 与真实 OpticStudio 的对照里，录不成离线真值的那几项：exec 脚本与 worker 里的 ctx.fast()、Seidel 与近轴操作数、
+评价函数向导写出的行、建不了的处方留在 OpticStudio、半口径无关的操作数。默认跳过：
 SAOS_RUN_ZEMAX=1 uv run pytest tests/test_zemax_rtc.py -s
 
-样品是一片双胶合加偶次非球面的 4 面小镜头（建模、追迹都在秒级以内），两种设置：光阑在第 1 面且不瞄准；光阑在镜后且
-实际光线瞄准。2026-10-26 实测：不瞄准时 600 条光线位置差 ≤ 1.4e-14 mm；实际瞄准时差 5.7e-8 mm，来自 OpticStudio 自己的
-瞄准收敛：px = 1 的光线落在光阑 4.537567644 mm 处，比光阑半径（瞄准目标）4.537567657 mm 短 2.8e-9（相对），rtc 落在
-目标上，所以瞄准设置的容差放宽到 1e-6 mm。另设 SAOS_RTC_RECORD=1 时把第一种设置的镜头副本、describe_model 和 OpticStudio 追迹结果写进
-tests/fixtures/rtc/，供不开 OpticStudio 的 test_rtc_backend.py 回归。
+逐条光线、一阶量、材料折射率已录成真值，离线回放（tests/rtc/test_case_truth.py、tests/test_rtc_backend.py、
+tests/rtc/test_material_golden.py）。实际瞄准时 OpticStudio 自己的瞄准收敛差 5.7e-8 mm（2026-10-26），容差按 1e-6 mm 放。
 """
 
 from __future__ import annotations
 
 import json
 import os
-import time
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from case_variants import truth
 from saos import fast as fast_mod
 from saos import prescription
 from saos.kit import KitMethods
@@ -56,23 +52,6 @@ def doublet(stop_behind: bool) -> dict:
 FIELDS = [(0.0, 0.0), (0.0, 0.5), (0.0, 1.0), (0.3, -0.7)]
 
 
-@pytest.mark.parametrize("temperature,pressure,adjust", [(-40.0, 0.0, True), (60.0, .5, True), (20.0, 1.0, False)])
-def test_recovered_material_changes_match_application_indx(zos, temperature, pressure, adjust):
-    model = doublet(False)
-    model["catalogs"] = ["SCHOTT", "OHARA"]
-    model["environment"] = {"temperature": temperature, "pressure": pressure, "adjust_index": adjust}
-    zos.build(prescription.normalize(model))
-    ctx = Ctx(zos)
-    fast = ctx.fast()
-    for material in ("S-BSL7", {"nd": 1.637, "vd": 57.3, "dpgf": .027}):
-        fast.set({"1.material": material})
-        fast.push(ctx)
-        for wave in (1, 2, 3):
-            assert fast.backend.optical_system(wave).items[0].n_after == pytest.approx(ctx.op("INDX", 1, wave), rel=0, abs=1e-8)
-        rebuilt = ctx.fast()
-        assert rebuilt.backend.lens.environment == fast.backend.lens.environment
-
-
 class Ctx(KitMethods):
     """测试用的最小上下文：kit 方法直接作用在 ZosBackend 上。/ A minimal context: kit methods on a ZosBackend."""
 
@@ -101,79 +80,7 @@ def _spot_rms(ctx_like) -> list[float]:
     return [r["rms_radius"] for r in rows]
 
 
-@pytest.mark.parametrize("stop_behind", [False, True], ids=["stop-first-no-aiming", "stop-behind-real-aiming"])
-def test_rtc_copy_matches_opticstudio_and_is_faster(zos, stop_behind):
-    zos.build(prescription.normalize(doublet(stop_behind)))
-    ctx = Ctx(zos)
-    fast = ctx.fast()
-    image = ctx.surface(-1)
-
-    # 实际瞄准时以 OpticStudio 的瞄准收敛为限，见模块说明
-    tol_pos, tol_dir, tol_rms = (1e-6, 1e-7, 1e-5) if stop_behind else (1e-8, 1e-9, 1e-7)
-    for to in (2, image):
-        diff = fast.compare(ctx, FIELDS, wave=[1, 2, 3], grid=9, to=to)
-        print(f"\n[{'B' if stop_behind else 'A'}] surface {to}: {diff}")
-        assert diff["ok_one_side"] == 0 and diff["ok_rtc"] == diff["rays"]
-        assert max(diff["max_dx"], diff["max_dy"], diff["max_dz"]) < tol_pos
-        assert max(diff["max_dl"], diff["max_dm"], diff["max_dn"]) < tol_dir
-
-    zos_rms, rtc_rms = _spot_rms(ctx), _spot_rms(fast)
-    assert rtc_rms == pytest.approx(zos_rms, rel=tol_rms, abs=1e-10)
-
-    # 在副本上改一组参数，写回 OpticStudio 后两边应仍一致
-    fast.set({"2.radius": -46.0, "3.par2": 5e-7, "3.thickness": fast.get("3.thickness") - 0.5})
-    pushed = fast.push(ctx)
-    assert set(pushed) == {"2.radius", "3.par2", "3.thickness"}
-    after = fast.compare(ctx, FIELDS, wave=[1, 2, 3], grid=9)
-    assert after["ok_one_side"] == 0 and max(after["max_dx"], after["max_dy"]) < tol_pos
-
-    # 速度：同一组 49 个曲率点，每点改参数再算 4 视场 × 3 波长的点列
-    radii = np.linspace(-50.0, -42.0, 49)
-    timings = {}
-    for name, target in (("opticstudio", ctx), ("rtc", fast)):
-        with target.kept(["2.radius"]):
-            started = time.perf_counter()
-            for r in radii:
-                target.set({"2.radius": float(r)})
-                _spot_rms(target)
-            timings[name] = time.perf_counter() - started
-    print(f"[{'B' if stop_behind else 'A'}] 49-point scan, 12 spots/point, grid 21: "
-          f"OpticStudio {timings['opticstudio']:.2f} s, rtc {timings['rtc']:.2f} s, "
-          f"×{timings['opticstudio'] / timings['rtc']:.1f}")
-    assert timings["rtc"] < timings["opticstudio"]
-
-
 CASES = Path(__file__).parent / "fixtures" / "cases"
-
-
-def _case(name: str) -> dict:
-    return json.loads((CASES / f"{name}.json").read_text(encoding="utf-8"))
-
-
-@pytest.mark.parametrize("name", ["iris", "reflective"])
-def test_case_copy_matches_opticstudio_ray_by_ray(zos, name):
-    """iris（Float By Stop Size + 面孔径）与 reflective（两次反射、负厚度、中心遮挡、穿过主镜孔）：
-    面 2 与像面逐条光线对照，并核对 EPDI、EFFL、WFNO 与自动半口径。"""
-    model = _case(name)
-    zos.build(prescription.normalize(model))
-    ctx = Ctx(zos)
-    fast = ctx.fast()
-    image = ctx.surface(-1)
-    fields = fast_mod.field_points(fast.backend.lens)
-    tol = 1e-6 if model["ray_aiming"] == "real" else 1e-9
-    reference = truth(name)
-
-    for to in (2, image):
-        diff = fast.compare(ctx, fields, wave=[1, 2, 3], grid=7, to=to)
-        print(f"\n[{name}] surface {to}: {diff}")
-        assert diff["ok_one_side"] == 0
-        assert max(diff["max_dx"], diff["max_dy"], diff["max_dz"]) < tol
-
-    for operand in ("EPDI", "EFFL", "WFNO"):
-        got = fast.backend.operand(operand, 0, 0, [])
-        want = ctx.op(operand, 0, 0)
-        assert got == pytest.approx(want, rel=1e-6), operand
-        assert got == pytest.approx(reference["operands"][operand], rel=1e-6), operand
 
 
 IN_DAEMON = '''

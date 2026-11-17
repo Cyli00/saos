@@ -17,7 +17,7 @@ saos 自身测试里的光学场景只用这五个案例，覆盖序列、非序
 用法：
 
 - 不需要 OpticStudio 的测试读处方：`json.loads((Path(__file__).parent / "fixtures" / "cases" / "mixed.json").read_text(encoding="utf-8"))`，例如 `tests/test_prescription.py`；`iris`、`reflective` 及其变体的离线比对在 `tests/rtc/test_case_truth.py`。
-- 真机测试（`SAOS_RUN_ZEMAX=1`）经 daemon 的 `lens.build` 重建，再取 `ScriptContext`，例如 `tests/test_zemax_experts.py` 的 `build()`；`test_cases_rebuild_to_their_reference_values` 核对前三个案例的重建结果与 `reference.json` 一致，`iris`、`reflective` 由 `tests/test_zemax_rtc.py` 的 `test_case_copy_matches_opticstudio_ray_by_ray` 与 OpticStudio 对照。
+- 真机测试（`SAOS_RUN_ZEMAX=1`）经 daemon 的 `lens.build` 重建，再取 `ScriptContext`，例如 `tests/test_zemax_experts.py` 的 `build()`；`test_cases_rebuild_to_their_reference_values` 核对前三个案例的重建结果与 `reference.json` 一致；`iris`、`reflective` 与 OpticStudio 的逐条光线对照只走录下的真值，离线回放。
 - 需要变体时在测试里改处方副本（例如把玻璃换成模型玻璃来模拟专利起点），不改这里的文件。
 
 热结构的真值在 `thermal.json`，变体定义在 `tests/thermal_variants.py`（都由这五个案例派生，加 Make Thermal），由 `tests/test_zemax_thermal.py` 录入（`SAOS_RUN_ZEMAX=1 SAOS_CASE_RECORD=1 uv run pytest tests/test_zemax_thermal.py -k record`），离线比对在 `tests/rtc/test_thermal_truth.py`。改了 `src/rtc/thermal.py` 的规则不用重录，改了处方或变体才要。
