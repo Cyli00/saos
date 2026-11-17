@@ -61,6 +61,14 @@ def test_docs_are_cross_job():
     assert bad == [], f"docs/ holds workflow.drawio only; decisions live in code, tests, help and the skill, open work in TODO.md: {bad}"
 
 
+def test_markdown_lives_only_where_code_cannot_say_it():
+    """Markdown 只有：根目录的 README、TODO、AGENTS；技能（.agents/）；数据目录说明来源与许可的 README（library/、tests/ 的夹具）。
+    其余说明写进 docstring 或命令帮助。"""
+    bad = [str(p) for p in repo_files() if p.suffix.lower() == ".md"
+           and not (len(p.parts) == 1 or p.parts[0] in (".agents", ".claude") or (p.parts[0] in ("library", "tests") and p.name == "README.md"))]
+    assert bad == [], f"write this into a docstring or the command help instead: {bad}"
+
+
 @pytest.mark.parametrize("top", ["library"])
 def test_every_library_has_a_readme(top):
     files = [p for p in repo_files() if p.parts[0] == top]

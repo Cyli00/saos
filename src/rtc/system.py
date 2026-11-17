@@ -109,7 +109,7 @@ class OpticalSystem:
         # 调用方可以给自己的玻璃库（例如 OpticStudio 实际使用的 Glasscat 目录）；默认用进程内共享的那份
         self.glasses = glasses if glasses is not None else catalog()
         # 默认用文件保存时选中的结构（MNUM 第 2 个数）。codex-r017 保存时停在第 5 个结构，
-        # 拿结构 1 去比会差 2e-2 mm（src/rtc/SURFACE-PARAMS.md「其它实测事实」）。
+        # 拿结构 1 去比会差 2e-2 mm（rtc.geometry 模块说明「其它实测事实」）。
         self.config = lens.current_config if config is None else config
         if glasses is not None and lens.glass_lookup is None:
             lens.glass_lookup = glasses.get
