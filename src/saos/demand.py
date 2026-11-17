@@ -39,7 +39,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 
 from saos import i18n, jobs
-from saos.protocol import ErrorCode, SaosError, read_jsonl, trust, write_json
+from saos.protocol import ErrorCode, SaosError, read_jsonl, trust, write_json, write_text
 
 if TYPE_CHECKING:
     from saos.scripting import ScriptContext
@@ -770,7 +770,7 @@ def measure(ctx: ScriptContext, item: dict[str, Any], folder: Path, scripts: dic
             if script["source"] is None:
                 return {"value": None, "error": script["error"], "evidence": {"source": str(spec)}}
             copy = folder / f"{item['id']}.py"
-            copy.write_text(script["source"], encoding="utf-8")
+            write_text(copy, script["source"])
             evidence = {"script": _evidence_path(ctx, copy), "source": str(spec), "sha256": script["sha256"]}
             namespace: dict[str, Any] = {"__name__": f"saos_check_{item['id']}", "__file__": str(ctx.path(str(spec)))}
             exec(compile(script["source"], str(copy), "exec"), namespace)

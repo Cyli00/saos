@@ -12,7 +12,7 @@ from typing import Any
 
 from saos import demand, geometry, i18n, jobs, lens_files, model_gate, prescription
 from saos.backend.base import merit_or_none
-from saos.protocol import ErrorCode, SaosError, finite, jsonable, write_json
+from saos.protocol import ErrorCode, SaosError, finite, jsonable, write_json, write_text
 
 MIN_CANDIDATES = 1
 MAX_CANDIDATES = 12
@@ -530,5 +530,5 @@ def page(job: jobs.Job, folder: Path, plan: dict[str, Any], rows: list[dict[str,
 <div class="wrap"><table><thead><tr>{header_row(t('候选', 'Candidate') + '|' + '|'.join(ids))}</tr></thead><tbody>{values}</tbody></table></div>
 </main></body></html>"""
     out = folder / "index.html"
-    out.write_text(html, encoding="utf-8")
+    write_text(out, html)
     return out

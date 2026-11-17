@@ -15,7 +15,7 @@ from html import escape
 from typing import Any
 
 from saos import demand, i18n, jobs, ledger
-from saos.protocol import ErrorCode, SaosError, write_json
+from saos.protocol import ErrorCode, SaosError, write_json, write_text
 
 # 每条文本为 (中文, 英文)，带 {name} 的按 str.format 填参数
 TEXT: dict[str, tuple[str, str]] = {
@@ -746,10 +746,10 @@ def _write_no_design(job: jobs.Job, stop: dict[str, Any], lang: str | None) -> d
     folder = job.root / "report"
     folder.mkdir(exist_ok=True)
     archived = folder / f"{jobs.next_archive_number(folder):03d}-no-rounds-stopped.html"
-    archived.write_text(html, encoding="utf-8")
+    write_text(archived, html)
     job.seal(archived)
     out = folder / "index.html"
-    out.write_text(html, encoding="utf-8")
+    write_text(out, html)
     result = {"archived": archived.relative_to(job.root).as_posix(), "report": str(out), "lang": chosen, "status": "stopped", "headline": "no_design",
               "deliverable": False, "achieved": False, "deliver": None, "diagnostic": None, "round": None, "shortfall": None,
               "backend": None, "opticstudio_verified": False}
@@ -778,10 +778,10 @@ def write(job: jobs.Job, lang: str | None = None) -> dict[str, Any]:
     # 每次生成都留一份编号副本并封存；index.html 始终是最新一份
     # every generation is kept as a numbered, sealed copy; index.html is always the latest
     archived = folder / f"{jobs.next_archive_number(folder):03d}-r{data['deliver']['round']:03d}-{data['decision']['status']}.html"
-    archived.write_text(html, encoding="utf-8")
+    write_text(archived, html)
     job.seal(archived)
     out = folder / "index.html"
-    out.write_text(html, encoding="utf-8")
+    write_text(out, html)
     shown = data["deliver"]
     kind = headline(data["decision"]["status"], shown, data.get("blocked"))
     # deliver 只放可以交付的镜头；没有有效设计或最好一轮不可交付时为 None，那一轮放在 diagnostic 里供诊断，

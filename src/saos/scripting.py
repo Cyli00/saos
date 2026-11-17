@@ -18,7 +18,7 @@ from saos.ctx.experts import ExpertMethods
 from saos.kit import KitMethods
 from saos.metrics import MetricMethods
 from saos.lens_files import companion
-from saos.protocol import ErrorCode, SaosError, finite, jsonable, stamp, write_json
+from saos.protocol import ErrorCode, SaosError, finite, jsonable, stamp, write_json, write_text
 
 if TYPE_CHECKING:
     from saos.daemon import Daemon
@@ -348,7 +348,7 @@ def execute(daemon: Daemon, job: jobs.Job, name: str, source: str, args: dict[st
     from saos.ctx.hints import direct_api_hints
 
     copy = next_copy(job, name)
-    copy.write_text(source, encoding="utf-8")
+    write_text(copy, source)
     rel = copy.relative_to(job.root).as_posix()
     record: dict[str, Any] = {"script": rel, "args": args}
     hints = direct_api_hints(source)

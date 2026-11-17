@@ -100,16 +100,21 @@ def jsonable(value: Any) -> Any:
 
 def write_json(path: Path, data: Any, *, strict: bool = False) -> None:
     """原子写入 JSON（先写临时文件再替换）。strict=True 时遇到 NaN/inf 直接报错，不做 jsonable 转换。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(data, ensure_ascii=False, indent=2, allow_nan=False) if strict else json.dumps(jsonable(data), ensure_ascii=False, indent=2)
-    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, prefix=path.name + ".", suffix=".tmp", delete=False) as fh:
-        tmp = Path(fh.name)
-        fh.write(text)
-    # Windows 上另一进程正打开目标文件读取时（流程图窗口轮询 progress.json、杀毒扫描），替换会报 WinError 5；
-    # 读者很快就会关掉文件，短暂重试几次，仍失败才报错
-    # on Windows, replacing a file another process holds open for reading (the workflow window polling progress.json,
-    # a virus scan) fails with WinError 5; readers close it quickly, so retry briefly before giving up
+    write_text(path, text)
+
+
+def write_text(path: Path, text: str) -> None:
+    """原子写入 UTF-8 文本：先写同目录的临时文件再替换，中途失败时目标文件保持原样。
+    Write UTF-8 text atomically: a temporary file in the same folder replaces the target, which stays as it was on failure."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    tmp = Path(name)
     try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        # Windows 上另一进程正打开目标文件读取时（流程图窗口轮询 progress.json、杀毒扫描），替换会报 WinError 5；
+        # 读者很快就会关掉文件，短暂重试几次，仍失败才报错
         for attempt in range(REPLACE_RETRIES):
             try:
                 os.replace(tmp, path)

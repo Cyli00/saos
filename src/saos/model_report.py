@@ -28,7 +28,7 @@ import yaml
 
 from saos import demand, i18n, jobs, materials_record, model_gate
 from saos.prescription import FACE_IS
-from saos.protocol import ErrorCode, SaosError, jsonable
+from saos.protocol import ErrorCode, SaosError, jsonable, write_text
 from saos.report import CSS, e, fmt, header_row
 
 TEXT: dict[str, tuple[str, str]] = {
@@ -896,7 +896,7 @@ def section_layout(viz: dict[str, Any], folder: Path, prefix: str = "layout") ->
     folder.mkdir(parents=True, exist_ok=True)
     target = folder / f"{prefix}-cross-section.svg"
     body = svg.replace('<svg viewBox=', '<svg xmlns="http://www.w3.org/2000/svg" width="960" height="420" viewBox=', 1)
-    target.write_text(body.replace(">", ">" + SECTION_STYLE, 1), encoding="utf-8")
+    write_text(target, body.replace(">", ">" + SECTION_STYLE, 1))
     return {"cross-section": target.name}
 
 
@@ -1438,7 +1438,7 @@ def write(job: jobs.Job, desc: dict[str, Any], folder: Path, notes: dict[str, An
                                         "approval_schema": 4, "exploration_recorded": searched, "evidence_context": context,
                                         "shown": shown, "shown_sha": shown_sha, "unknowns": unknowns})
     out = folder / "index.html"
-    out.write_text(render(desc, notes, meta, chosen, found, shown), encoding="utf-8")
+    write_text(out, render(desc, notes, meta, chosen, found, shown))
     job.seal(folder)
     return {
         "page": str(out),

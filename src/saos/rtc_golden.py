@@ -18,6 +18,8 @@ from dataclasses import asdict
 from datetime import date
 from pathlib import Path
 
+from saos.protocol import write_text
+
 WAVELENGTHS = (.36, .4358343, .4861327, .55, .5875618, .6562725, 1.0, 2.5)
 TEMPERATURES = (-40.0, 20.0, 25.0, 60.0)
 PRESSURES = (0.0, .5, 1.0)
@@ -110,7 +112,7 @@ def collect(output: Path, catalogs: list[str], *, max_cases: int = 20000) -> dic
                         description = backend.export_rtc(snapshot)
                         if isinstance(spec, Catalog) and all(n == 1.0 for n in description["surfaces"][1]["n"]):
                             raise ValueError("OpticStudio gives n = 1 at every wavelength: it did not apply the material")
-                        snapshot.with_suffix(".json").write_text(json.dumps(description, ensure_ascii=False, indent=2), encoding="utf-8")
+                        write_text(snapshot.with_suffix(".json"), json.dumps(description, ensure_ascii=False, indent=2))
                         lens = zmx.parse(snapshot)
                         api_env = description["environment"]
                         if (api_env["temperature"], api_env["pressure"], api_env["adjust_index"]) != (t, p, adjust):
@@ -160,7 +162,7 @@ def collect(output: Path, catalogs: list[str], *, max_cases: int = 20000) -> dic
                 report["status"] = "incomplete"
             for entry in report["paths"].values():
                 entry["worst"] = entry["worst"] if math.isfinite(entry["worst"]) else None
-            (output / "summary.json").write_text(json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False), encoding="utf-8")
+            write_text(output / "summary.json", json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False))
 
 
 def admit(summary_path: Path) -> list[str]:
@@ -178,7 +180,7 @@ def admit(summary_path: Path) -> list[str]:
             registry["paths"][path] = (f"OpticStudio {version} INDX：{entry['points']} 个 LD 内点，最大差 {entry['worst']:.1e}，"
                                        f"样品 {entry['samples']}（{summary.get('date')}，{Path(summary_path).resolve()}）")
             added.append(path)
-    rtc_backend.ADMITTED_FILE.write_text(json.dumps(registry, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_text(rtc_backend.ADMITTED_FILE, json.dumps(registry, ensure_ascii=False, indent=2) + "\n")
     rtc_backend.admitted_paths.cache_clear()
     return added
 
