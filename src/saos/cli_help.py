@@ -686,6 +686,9 @@ Results and files
 
 Common errors
   SCRIPT_ERROR includes traceback and archive references; daemon stays alive.
+  INTERNAL_ERROR when the run record could not be written or sealed: the script
+  ran, details.result holds what it returned. A failing script whose record also
+  failed carries details.record_error.
   ZOS_CONNECTION_LOST instead ends the daemon; restart after inspecting evidence.
   VALUE_NOT_APPLIED, PATH_OUTSIDE_JOB, UNSAVED_CHANGES, JOB_MISMATCH, POOL_BUSY,
   BUSY, DAEMON_TIMEOUT (client wait ended; computation may continue).

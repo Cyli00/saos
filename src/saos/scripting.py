@@ -376,20 +376,42 @@ def execute(daemon: Daemon, job: jobs.Job, name: str, source: str, args: dict[st
         out.update(stamped)
         if hints:
             out["hints"] = hints
-        return out
     except SaosError as exc:
         record.update(ok=False, error=exc.to_dict())
+        _keep_record(job, copy, record, started, exc)
         raise
     except Exception as exc:
         tb = traceback.format_exc()[-TRACEBACK_CHARS:]
         record.update(ok=False, error={"exception": type(exc).__name__, "message": str(exc)[:2000], "traceback": tb})
         if not daemon.backend.healthy():
+            _keep_record(job, copy, record, started, exc)
             raise  # 交给后台进程按连接中断处理
-        raise SaosError(ErrorCode.SCRIPT_ERROR, f"script raised {type(exc).__name__}: {exc}", {"script": rel, "traceback": tb}) from exc
-    finally:
-        record["elapsed_s"] = round(time.perf_counter() - started, 3)
-        try:
-            write_json(copy.with_suffix(".json"), record)
-            job.seal(copy, copy.with_suffix(".json"))
-        except (OSError, ValueError, TypeError):
-            pass
+        error = SaosError(ErrorCode.SCRIPT_ERROR, f"script raised {type(exc).__name__}: {exc}", {"script": rel, "traceback": tb})
+        _keep_record(job, copy, record, started, error)
+        raise error from exc
+    except BaseException as exc:
+        record.update(ok=False, error={"exception": type(exc).__name__, "message": str(exc)[:2000]})
+        _keep_record(job, copy, record, started, exc)
+        raise
+    _keep_record(job, copy, record, started)
+    return out
+
+
+def _keep_record(job: jobs.Job, copy: Path, record: dict[str, Any], started: float, failing: BaseException | None = None) -> None:
+    """写出并封存脚本的执行记录。脚本本身已失败时，记录写不出只附在那个错误上，不盖掉它；脚本成功时记录写不出就报错，结果放在 details 里。
+    Write and seal the script's run record. A record that cannot be kept is attached to the script's own error when there is one,
+    and is an error of its own (the result in its details) when the script succeeded."""
+    record["elapsed_s"] = round(time.perf_counter() - started, 3)
+    path = copy.with_suffix(".json")
+    try:
+        write_json(path, record)
+        job.seal(copy, path)
+    except (OSError, ValueError, TypeError) as exc:
+        rel = path.relative_to(job.root).as_posix()
+        problem = f"the run record {rel} could not be written or sealed: {type(exc).__name__}: {exc}"
+        if failing is None:
+            raise SaosError(ErrorCode.INTERNAL_ERROR, problem, {"script": record["script"], "result": record.get("result")}) from exc
+        if isinstance(failing, SaosError):
+            failing.details["record_error"] = problem
+        else:
+            failing.add_note(problem)

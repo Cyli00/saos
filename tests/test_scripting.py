@@ -54,6 +54,16 @@ def test_script_errors_keep_daemon_alive(daemon, loaded):
     assert daemon.handle({"op": "ping"})["ok"]
 
 
+def test_a_run_record_that_cannot_be_kept_is_reported(daemon, loaded):
+    (loaded.root / jobs.SEALS_FILE).mkdir()
+    out = run(daemon, loaded, "def run(ctx):\n    return {'x': 1}\n")
+    assert out["error"]["code"] == ErrorCode.INTERNAL_ERROR and "001-probe.json" in out["error"]["message"]
+    assert out["error"]["details"]["result"] == {"x": 1}
+
+    out = run(daemon, loaded, "def run(ctx):\n    raise ValueError('boom')\n", name="bad")
+    assert out["error"]["code"] == ErrorCode.SCRIPT_ERROR and "002-bad.json" in out["error"]["details"]["record_error"]
+
+
 def test_script_cannot_act_for_another_job(daemon, loaded):
     other = jobs.create_job("other")
     assert run(daemon, other, "def run(ctx):\n    return 1\n")["error"]["code"] == ErrorCode.JOB_MISMATCH
