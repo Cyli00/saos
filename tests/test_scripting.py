@@ -126,4 +126,3 @@ def test_exec_api_hints_are_advisory_and_archived(daemon, loaded):
     assert result['hints'][0]['suggestion'] == 'ctx.get("3.radius")'
     record = json.loads((loaded.root / result['script']).with_suffix('.json').read_text(encoding='utf-8'))
     assert record['hints'] == result['hints']
-

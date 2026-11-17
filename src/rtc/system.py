@@ -180,9 +180,6 @@ class OpticalSystem:
             n = values[self.wavelength] = float(medium.index(self.wavelength, env))
         return medium, n
 
-    def _index_of(self, s: zmx.Surface) -> float:
-        return self._medium(s.material)[1]
-
     def packed(self):
         """编译内核的面数据，首次调用时排好。"""
         if "_packed" not in self.__dict__:
@@ -417,7 +414,6 @@ class OpticalSystem:
             return 0.0, 1.0
         r1 = self._paraxial(1.0, 0.0, k0=self.stop)
         r2 = self._paraxial(0.0, 1.0, k0=self.stop)
-        z_end = self.items[-1].vertex_z
         # 最后一面之后还有一段到像面（像面就是最后一项），用像面处的光线
         yA, uA = r1[-1][0], r1[-1][2]
         yB, uB = r2[-1][0], r2[-1][2]

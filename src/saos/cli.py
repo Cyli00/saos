@@ -131,8 +131,6 @@ def cmd_lens(args: argparse.Namespace) -> Any:
             raise SaosError(ErrorCode.BAD_ARGS, "--notes must contain a JSON object")
         return _lens_request("lens.describe", args, {"notes": notes, "lang": args.lang})
     if action == "approve":
-        from saos import ui
-
         via = "auto" if args.reason else "ask" if args.asked else "cli"
         return _lens_request("lens.approve", args, {"model": args.model, "quote": args.quote or "", "rebuild_reason": args.rebuild_reason,
                                                     "via": via, "reason": args.reason or ""})

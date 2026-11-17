@@ -830,8 +830,6 @@ class Daemon:
 
     def op_describe(self, args: dict[str, Any]) -> dict[str, Any]:
         """建模说明：models/NNN-<镜头>/ 下的 index.html、model.json 和布局图，给用户在优化前核对模型。"""
-        from saos import model_report
-
         job = self._job(args)
         loaded = self._require_loaded(job)
         notes = _arg(args, "notes", dict, default=None)

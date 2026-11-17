@@ -324,10 +324,6 @@ class Backend(ABC):
         """当前系统所有面的完整数据，用于从设计文件重建验收模型。"""
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support snapshot")
 
-    def zernike(self, *, wave: int, field: int, samp: int, max_term: int, terms: tuple[int, ...]) -> dict[int, float]:
-        """一次拟合到 max_term 项（Zernike Standard，参考主光线），返回所需各项；负项号含义同 ZERN。"""
-        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support zernike")
-
     def seidel(self, wave: int = 0) -> dict[str, Any]:
         """逐面三阶像差（波数）：{"units": "waves", "wave", "columns", "surfaces": [{"surface", W040, W131, W222, W220P, W311}],
         "totals"}。列对应操作数 SPHA、COMA、ASTI、FCUR、DIST，面号 1 到像面前一面；wave 为 0 取主波长。
@@ -372,6 +368,3 @@ class Backend(ABC):
         """结构交叠检查：面相交（crossings）、镜片穿插（overlaps）。/ Interference: crossing surfaces and interpenetrating lenses."""
         raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support interference")
 
-    def trace_check(self, rays: list[tuple[int, float, float, float, float]]) -> list[dict[str, Any]]:
-        """追迹到像面，返回失败或被截断的光线：(wave, hx, hy, px, py) 及 error/vignette 码。"""
-        raise SaosError(ErrorCode.ZOS_ERROR, f"{type(self).__name__} does not support trace_check")

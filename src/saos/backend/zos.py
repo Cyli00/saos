@@ -1694,22 +1694,6 @@ class ZosBackend(Backend):
             rows.append(item)
         return rows
 
-    def zernike(self, *, wave: int, field: int, samp: int, max_term: int, terms: tuple[int, ...]) -> dict[int, float]:
-        from saos.backend.analysis import zernike_values
-
-        for name, value in (("wave", wave), ("field", field), ("samp", samp), ("max_term", max_term)):
-            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-                raise SaosError(ErrorCode.BAD_ARGS, f"zernike {name} must be a positive integer")
-        if not terms:
-            return {}
-        if any(isinstance(t, bool) or not isinstance(t, int) or t < -8 for t in terms) or samp > 5:
-            raise SaosError(ErrorCode.BAD_ARGS, "Zernike terms must be integers from -8; samp must be 1–5")
-        count = max(11, max_term, *terms)
-        size = 32 * 2 ** (samp - 1)
-        text = self._analysis_texts("ZernikeStandardCoefficients", [{"Field": field, "Wavelength": wave,
-                                    "SampleSize": f"S_{size}x{size}", "MaximumNumberOfTerms": count}])[0]
-        return zernike_values(text, terms)
-
     def _analysis_texts(self, name: str, settings: list[dict[str, Any]]) -> list[str]:
         """同一个分析依次套用每组设置、各导出一次文本，只开一个分析窗口。只要文本的测量（Zernike 系数、波前 RMS）走这里：
         通用的 analysis() 每次还读整份系统信息、提取全部数据序列与网格，这些测量用不上。没有结果时同 analysis() 报 ZOS_ERROR；
@@ -2216,11 +2200,6 @@ class ZosBackend(Backend):
         finally:
             tool.Close()
         return {"surface": self.system.LDE.NumberOfSurfaces - 2, "thickness_before": before, "thickness_after": float(surface.Thickness)}
-
-    def trace_check(self, rays: list[tuple[int, float, float, float, float]]) -> list[dict[str, Any]]:
-        image = self.system.LDE.NumberOfSurfaces - 1
-        return [{"ray": list(ray), "error": error, "vignette": vignette}
-                for ray, (error, vignette, *_) in zip(rays, self._batch(rays, image)) if error or vignette]
 
     # ---- 每轮的可视化数据（saos ui 只读这些导出，不自己算光学量）----
 

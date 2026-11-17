@@ -77,9 +77,8 @@ class Operands:
         it = self.system.items[0]
         z, _, _ = it.shape.sag(x, y)
         if mode == 1:
-            from .geometry import Paraxial, Standard
+            from .geometry import Standard
 
-            base = it.surface.curvature
             z0, _, _ = Standard(it.surface).sag(x, y)
             z = np.asarray(z) - np.asarray(z0)
         return z

@@ -379,7 +379,7 @@ def _rx_table(viz: dict[str, Any], t: _T) -> str:
 def risks(data: dict[str, Any], viz: dict[str, Any] | None, t: _T) -> list[tuple[str, bool]]:
     """第 1 页必须如实列出的未验证项与风险；(文字, 是否为未解决项)。"""
     out: list[tuple[str, bool]] = []
-    deliver, decision = data["deliver"], data["decision"]
+    decision = data["decision"]
     if data["backend"]["name"] == "fake":
         out.append((t("risk.fake"), True))
     if any(r.get("backend") == "rtc" for r in data["rounds"]):
