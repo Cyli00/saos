@@ -216,3 +216,10 @@ def test_spot_rows_about_the_centroid_share_one_polychromatic_centroid_per_field
     assert len(recorded) >= 54
     for row, value in recorded.items():
         assert rows[int(row)] == pytest.approx(value, abs=1e-12), row
+
+
+def test_the_catalogs_in_use_tell_an_obsolete_glass(recorded):
+    backend = RtcBackend(LENS, copy.deepcopy(recorded["model"]))
+    catalogs = backend.catalogs_in_use()
+    assert catalogs == ["SCHOTT"]
+    assert backend.glass_status("N-BK7", catalogs) != "Obsolete" and backend.glass_status("LAFN7", catalogs) == "Obsolete"

@@ -23,6 +23,7 @@ from typing import Any
 
 from saos import demand, jobs, ledger, lens_files, model_gate
 from saos.demand import TIERS
+from saos.backend.base import merit_or_none
 from saos.protocol import ErrorCode, SaosError, jsonable, write_json
 
 # 连续这么多轮没有明显进步，就提醒先审视需求和结构，而不是继续加码
@@ -262,10 +263,7 @@ def record_round(ctx, tier: str | None = None, note: str = "", merit: float | No
             raise SaosError(ErrorCode.BAD_ARGS, f"--merit must be a finite number (got {merit!r})")
         merit = float(merit)
     else:
-        try:
-            merit = float(ctx.backend.merit_value())
-        except Exception:  # noqa: BLE001 - 没有评价函数或后端不支持时只是不记录 / no merit function: just not recorded
-            merit = None
+        merit = merit_or_none(ctx.backend)
         if merit is not None and not math.isfinite(merit):
             # rtc 的评价函数有行算不出时为 inf / rtc's merit is inf when a row cannot be computed
             merit = None
@@ -401,10 +399,7 @@ def confirm_round(ctx, of: int | None = None, viz: bool = True) -> dict[str, Any
     ev = demand.evaluate(ctx, h, scripts, lens={"file": target["file"], "round": target["round"], "purpose": CONFIRM_PURPOSE})
     desc_after, _ = lens_state(ctx)
     clash = ev.get("parts_clash")
-    try:
-        merit = float(ctx.backend.merit_value())
-    except Exception:  # noqa: BLE001 - 没有评价函数时只是不记录 / no merit function: just not recorded
-        merit = None
+    merit = merit_or_none(ctx.backend)
     view = export_viz(ctx, ev["evidence_dir"]) if viz else None
     if lens_changes(desc, desc_after):
         raise SaosError(ErrorCode.LENS_MODIFIED_BY_CHECK, f"a check changed the lens of round {target['round']} while re-measuring it; "

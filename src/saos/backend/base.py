@@ -34,6 +34,17 @@ def check_field(field: Any) -> int | tuple[float, float]:
     raise SaosError(ErrorCode.BAD_ARGS, f"field must be a field number (1, 2, ...) or (x, y) in the lens's field units, got {field!r}")
 
 
+def merit_or_none(backend: Backend) -> float | None:
+    """评价函数值；后端没有评价函数或还没有镜头时为 None，其余错误照常抛出。
+    The merit value; None when the backend has no merit function or no lens, any other error is raised."""
+    try:
+        return float(backend.merit_value())
+    except SaosError as exc:
+        if exc.code in (ErrorCode.BACKEND_UNSUPPORTED, ErrorCode.NO_LENS_LOADED):
+            return None
+        raise
+
+
 def is_par(param: str) -> bool:
     return bool(PAR_RE.match(str(param)))
 
@@ -262,6 +273,22 @@ class Backend(ABC):
         """当前镜头处评价函数残差对各变量的雅可比；只有 rtc 给。/ The Jacobian of the merit residuals; rtc only."""
         raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} gives no merit Jacobian; rtc does (the stages before "
                         "delivery, or saos daemon use rtc)")
+
+    def merit_value(self) -> float:
+        """评价函数值。/ The merit function value."""
+        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} has no merit function")
+
+    def merit_rows(self) -> list[dict[str, Any]]:
+        """评价函数各行（不含 BLNK）的类型、目标、权重、值和贡献。/ Each merit row but BLNK: type, target, weight, value, contribution."""
+        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} has no merit function")
+
+    def catalogs_in_use(self) -> list[str]:
+        """镜头在用的玻璃目录。/ The glass catalogs the lens uses."""
+        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} has no glass catalogs")
+
+    def glass_status(self, name: str, catalogs: list[str]) -> str | None:
+        """牌号在这些目录里的状态（Standard、Obsolete 等）；找不到时为 None。/ A glass's catalog status; None when not found."""
+        raise SaosError(ErrorCode.BACKEND_UNSUPPORTED, f"{type(self).__name__} has no glass catalogs")
 
     def insert_surface(self, index: int, surface_type: str = "Standard") -> str:
         """在 index 处插入一个面（像面之前），返回面型。/ Insert a surface at index (before the image); returns its type."""

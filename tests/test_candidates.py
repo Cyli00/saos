@@ -434,3 +434,17 @@ def test_prepare_connection_error_propagates(explore):
         judge(job, [cand("a", "explore/a.zmx")], stages=[{"local": {"max_seconds": 1}}],
               folder_name="prep-connection", prepare="prepare.py")
     assert raised.value.code == ErrorCode.ZOS_CONNECTION_LOST
+
+
+def test_merit_is_absent_only_when_the_backend_has_none(monkeypatch):
+    from saos.backend.base import merit_or_none
+    backend = FakeBackend()
+    assert merit_or_none(backend) is None
+
+    def lost(self):
+        raise SaosError(ErrorCode.ZOS_CONNECTION_LOST, "gone")
+
+    monkeypatch.setattr(FakeBackend, "merit_value", lost)
+    with pytest.raises(SaosError) as err:
+        merit_or_none(backend)
+    assert err.value.code == ErrorCode.ZOS_CONNECTION_LOST

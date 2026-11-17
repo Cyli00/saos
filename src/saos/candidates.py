@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from saos import demand, geometry, i18n, jobs, lens_files, model_gate, prescription
+from saos.backend.base import merit_or_none
 from saos.protocol import ErrorCode, SaosError, finite, jsonable, write_json
 
 MIN_CANDIDATES = 1
@@ -186,10 +187,7 @@ def _state(w, plan: dict[str, Any]) -> dict[str, Any]:
         out["parts_clash"] = m["parts_clash"]
     # 出错的类别（material 或 computation），判定时据此归类 / each failure's kind, used to file the verdict
     out["error_kinds"] = dict(m.get("error_kinds") or {})
-    try:
-        out["merit"] = float(w.backend.merit_value())
-    except Exception:  # noqa: BLE001 - 没有评价函数时只是不记 / no merit function: just not recorded
-        out["merit"] = None
+    out["merit"] = merit_or_none(w.backend)
     try:
         out["interference"] = geometry.summary(w.backend.interference())
     except Exception as exc:  # noqa: BLE001
@@ -269,17 +267,20 @@ def _saved(desc: dict[str, Any]) -> dict[str, Any]:
 
 
 def _obsolete(w) -> list[dict[str, Any]] | None:
+    """用到停产牌号的面；后端没有玻璃目录时为 None。/ Surfaces with an obsolete glass; None when the backend has no catalogs."""
     b = w.backend
     try:
-        catalogs = b._catalogs_in_use()
-        out = []
-        for s in b.surfaces():
-            name = str(s.get("material") or "")
-            if name and name.upper() != "MIRROR" and b.glass_status(name, catalogs) == "Obsolete":
-                out.append({"surface": s["index"], "material": name})
-        return out
-    except Exception:  # noqa: BLE001 - 读不到状态时不报，不挡比较 / unreadable status: not reported, does not block
-        return None
+        catalogs = b.catalogs_in_use()
+    except SaosError as exc:
+        if exc.code == ErrorCode.BACKEND_UNSUPPORTED:
+            return None
+        raise
+    out = []
+    for s in b.surfaces():
+        name = str(s.get("material") or "")
+        if name and name.upper() != "MIRROR" and b.glass_status(name, catalogs) == "Obsolete":
+            out.append({"surface": s["index"], "material": name})
+    return out
 
 
 def _run_stage(w, kind: str, spec: dict[str, Any]) -> dict[str, Any]:
@@ -330,7 +331,9 @@ def _evaluate(w, item: dict[str, Any], row: dict[str, Any], temp: Path) -> None:
                             {"candidate_setup": True, "phase": "prepare", "cause_code": getattr(exc, "code", None)}) from exc
     try:
         merit_rows = len(w.backend.merit_rows())
-    except Exception:  # noqa: BLE001
+    except SaosError as exc:
+        if exc.code != ErrorCode.BACKEND_UNSUPPORTED:
+            raise
         merit_rows = None
     if (plan.get("stages") or plan.get("require_merit")) and not merit_rows:
         raise SaosError(ErrorCode.BAD_ARGS, "候选没有评价函数；prepare 必须设置变量和评价函数", {"candidate_setup": True})

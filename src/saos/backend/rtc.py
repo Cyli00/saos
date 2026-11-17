@@ -1707,6 +1707,9 @@ class RtcBackend(Backend):
                 self._glass_tables[key] = []
         return self._glass_tables[key]
 
+    def catalogs_in_use(self) -> list[str]:
+        return list(self._need_lens().catalogs)
+
     def glass_status(self, name: str, catalogs: list[str]) -> str | None:
         for catalog in catalogs:
             for g in self._glass_table(catalog):

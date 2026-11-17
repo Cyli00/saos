@@ -589,8 +589,8 @@ class ZosBackend(Backend):
         if app is not None:
             try:
                 app.CloseApplication()
-            except Exception:
-                pass
+            except Exception:  # noqa: BLE001 - 关闭时 OpticStudio 可能已经退出 / OpticStudio may already be gone
+                log.warning("closing OpticStudio failed", exc_info=True)
 
     def healthy(self) -> bool:
         try:
@@ -707,7 +707,7 @@ class ZosBackend(Backend):
                     "lens_units": str(sd.Units.LensUnits),
                     "wavelengths": [{"um": float(w.Wavelength), "weight": float(w.Weight), "primary": bool(w.IsPrimary)}
                                     for w in (waves.GetWavelength(i) for i in range(1, waves.NumberOfWavelengths + 1))],
-                    "material_catalogs": self._catalogs_in_use(), "nsc": nsc.settings(system),
+                    "material_catalogs": self.catalogs_in_use(), "nsc": nsc.settings(system),
                     "objects": [{"index": i, "type": str(o.Type), "comment": str(o.Comment)}
                                 for i, o in ((i, system.NCE.GetObjectAt(i)) for i in range(1, int(system.NCE.NumberOfObjects) + 1))]}
         return {
@@ -735,7 +735,7 @@ class ZosBackend(Backend):
                 {"um": float(w.Wavelength), "weight": float(w.Weight), "primary": bool(w.IsPrimary)}
                 for w in (waves.GetWavelength(i) for i in range(1, waves.NumberOfWavelengths + 1))
             ],
-            "material_catalogs": [c for c in self._catalogs_in_use()],
+            "material_catalogs": [c for c in self.catalogs_in_use()],
             "num_surfaces": int(lde.NumberOfSurfaces),
             "stop_surface": int(lde.StopSurface),
             **({"nsc_groups": nsc.groups(system), "nsc": nsc.settings(system)} if nsc.groups(system) else {}),
@@ -789,7 +789,7 @@ class ZosBackend(Backend):
         fields = sd.Fields
         waves = sd.Wavelengths
         n_waves = int(waves.NumberOfWavelengths)
-        catalogs = self._catalogs_in_use()
+        catalogs = self.catalogs_in_use()
         info = {
             "file": str(system.SystemFile),
             "title": str(sd.TitleNotes.Title),
@@ -875,7 +875,7 @@ class ZosBackend(Backend):
         The model description of a non-sequential system: system items, NSC options and every object."""
         system = self.system
         sd = system.SystemData
-        catalogs = self._catalogs_in_use()
+        catalogs = self.catalogs_in_use()
         members = {c: {str(m).upper() for m in sd.MaterialCatalogs.GetMaterialsInCatalog(c)} for c in catalogs}
         # 交叠和探测器检查由 interference()（后台进程随后调用）给出 / overlaps and detector checks come from interference()
         items = self._described_objects(zosapi, members)
@@ -1238,7 +1238,7 @@ class ZosBackend(Backend):
             cell = type_param_cell(zosapi, row, label, param) if is_par(param) else getattr(row, f"{param.capitalize()}Cell")
         return self._solve_dict(cell.GetSolveData())
 
-    def _catalogs_in_use(self) -> list[str]:
+    def catalogs_in_use(self) -> list[str]:
         return [str(c) for c in self.system.SystemData.MaterialCatalogs.GetCatalogsInUse() if str(c)]
 
     def _check_material(self, name: str) -> str:
@@ -1250,12 +1250,12 @@ class ZosBackend(Backend):
             raise MaterialError(
                 ErrorCode.BAD_ARGS,
                 f"{name!r} is not in the catalogs in use",
-                {"catalogs": self._catalogs_in_use()},
+                {"catalogs": self.catalogs_in_use()},
             )
         return upper
 
     def _names_in_use(self) -> set[str]:
-        catalogs = tuple(self._catalogs_in_use())
+        catalogs = tuple(self.catalogs_in_use())
         if catalogs not in self._material_cache:
             mc = self.system.SystemData.MaterialCatalogs
             names: set[str] = set()
@@ -2145,7 +2145,7 @@ class ZosBackend(Backend):
         finally:
             tool.Close()
         # 玻璃替换常换成停产牌号（Cooke 上 3 次 Hammer、1 次全局搜索共 12 个替换，9 个是 Obsolete），把状态一并报出 / substitution often picks obsolete glasses
-        catalogs = self._catalogs_in_use()
+        catalogs = self.catalogs_in_use()
         out["materials_changed"] = [{"surface": i, "before": a, "after": b, "status": self.glass_status(b, catalogs)}
                                     for i, (a, b) in enumerate(zip(before, materials())) if a.upper() != b.upper()]
         return out
