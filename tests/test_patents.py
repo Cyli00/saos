@@ -192,3 +192,32 @@ def test_generate_takes_patent_candidates(saos_home, library, monkeypatch):
     plan = json.loads((job.root / out["screen_plan"]).read_text(encoding="utf-8"))
     provenance = plan["candidates"][0]["provenance"]
     assert provenance["file"] == "seq/or00001.seq" and provenance["seq_sha"] == provenance["sha256"] and provenance["validation"] == "patent_unverified"
+
+
+MANGIN = HEAD + """S     0.0 20.0
+  STO
+S     -200.0 3.0 516800.641700
+S     -220.0 -3.0 REFL
+S     -200.0 -60.0
+  PIM
+SI    0.0 0.0
+GO
+"""
+
+
+@pytest.mark.parametrize("text,position", [(SINGLET, None), (ZOOM, 1), (ZOOM, 2), (MANGIN, None)], ids=["singlet", "zoom-1", "zoom-2", "mangin"])
+def test_converted_lens_matches_the_paraxial_prescreen(text, position):
+    """转换后的合成 .seq 在 rtc 上建出：波长取 d 线，模型玻璃的折射率就是 nd，EFFL 与 seq.paraxial 一致，PIM 求解后的像距与
+    近轴像距一致（含反射面和变焦位置）。rtc 的 EFFL 与 OpticStudio 对过账（tests/rtc/test_case_truth.py）。"""
+    from saos import prescription as rx
+    from saos.backend.rtc import RtcBackend
+
+    data = seq.parse(text, "synthetic")
+    p = copy.deepcopy(seq.to_prescription(data, position=position)["prescription"])
+    p["wavelengths"] = {"um": [0.5875618], "primary": 1}
+    backend = RtcBackend(None, standalone=True)
+    backend.build(rx.normalize(p))
+    px = seq.paraxial(data, position)
+    assert backend.operand("EFFL", 0, 1, []) == pytest.approx(px["efl"], rel=1e-5)
+    last = len(p["surfaces"]) - (1 if data["image"]["thickness"] else 0)
+    assert backend.surfaces()[last]["thickness"] == pytest.approx(px["image_distance"], rel=1e-5, abs=1e-6)

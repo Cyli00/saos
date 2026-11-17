@@ -4,7 +4,6 @@ from __future__ import annotations
 import copy
 import json
 import math
-import os
 
 import pytest
 
@@ -93,23 +92,18 @@ def test_all_candidates_screen_before_equal_short_budget(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("factor", [.5, 2.0, 10.0])
-@pytest.mark.zemax
-@pytest.mark.skipif(os.environ.get("SAOS_RUN_ZEMAX") != "1", reason="需要用户安排真实 ZOS 测试")
-def test_zos_first_order_scales_with_prescription(factor):
-    from saos.backend.zos import ZosBackend
-    b = ZosBackend()
-    b.start()
+def test_first_order_scales_with_prescription(factor):
+    from saos.backend.rtc import RtcBackend
+
     data = {"aperture": {"type": "entrance_pupil_diameter", "value": 2}, "fields": {"type": "angle", "y": [0, .1]},
             "wavelengths": {"um": [.55]}, "object": {"thickness": "inf"},
-            "surfaces": [{"radius": 50, "thickness": 5, "material": "N-BK7", "stop": True},
+            "surfaces": [{"radius": 50, "thickness": 5, "material": {"model": {"nd": 1.5168, "vd": 64.17}}, "stop": True},
                          {"radius": -50, "thickness": 48, "material": ""}]}
-    try:
-        b.build(prescription.normalize(data))
-        before = b.operand("EFFL", 0, 0, [])
-        b.build(prescription.normalize(scale_prescription(data, factor)))
-        assert b.operand("EFFL", 0, 0, []) == pytest.approx(before * factor, rel=1e-9, abs=1e-9)
-    finally:
-        b.close()
+    before = RtcBackend(None, standalone=True)
+    before.build(prescription.normalize(data))
+    after = RtcBackend(None, standalone=True)
+    after.build(prescription.normalize(scale_prescription(data, factor)))
+    assert after.operand("EFFL", 0, 0, []) == pytest.approx(before.operand("EFFL", 0, 0, []) * factor, rel=1e-9, abs=1e-9)
 
 
 @pytest.mark.parametrize("data", [None, {}, {"surfaces": []}, {"surfaces": [None]},
