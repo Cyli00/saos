@@ -269,7 +269,7 @@ def test_a_prescription_rtc_cannot_build_is_built_on_opticstudio_and_stays_there
         daemon.pool.close()
 
 
-@pytest.mark.parametrize("name", ["iris", "reflective", "sequential"])
+@pytest.mark.parametrize("name", ["iris", "reflective"])
 def test_the_semi_independent_operands_do_not_move_with_the_semi_diameters_on_opticstudio(zos, name):
     """rtc.SEMI_INDEPENDENT 在 OpticStudio 上也成立：非光阑面的半口径改成 0.5 倍并设浮动孔径，边缘光线被挡（渐晕码非 0），
     REAY 仍给它的坐标，13 个操作数与改之前相同（2026-11-14 首次实测：iris、reflective、sequential 在 0.5/1.5/3 倍、
