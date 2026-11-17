@@ -985,7 +985,7 @@ def detector(zosapi, system, number: int, grid: bool = False) -> dict[str, Any]:
     if kind_of(kind) != "detector":
         raise SaosError(ErrorCode.BAD_ARGS, f"object {number} is a {o.TypeName}, not a detector")
     nsdd = zosapi.Editors.MFE.MeritOperandType.NSDD
-    value = lambda pix: float(system.MFE.GetOperandValue(nsdd, 1, number, pix, 0, 0, 0, 0, 0))  # noqa: E731
+    value = lambda pix: float(system.MFE.GetOperandValue(nsdd, 1, number, pix, 0, 0, 0, 0, 0))
     ok, nx, ny = nce.GetDetectorDimensions(number, 0, 0)
     out: dict[str, Any] = {"object": number, "comment": str(o.Comment), "type": kind}
     if kind == "DetectorPolar":

@@ -190,7 +190,7 @@ def _state(w, plan: dict[str, Any]) -> dict[str, Any]:
     out["merit"] = merit_or_none(w.backend)
     try:
         out["interference"] = geometry.summary(w.backend.interference())
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - 交叠检查失败记进结果，不挡候选比较
         out["interference"] = {"error": f"{type(exc).__name__}: {exc}"[:300]}
     return out
 
@@ -417,7 +417,7 @@ def candidate(w, item: dict[str, Any]) -> dict[str, Any]:
             warnings.showwarning = numeric
             try:
                 _evaluate(w, item, row, temp)
-            except Exception as exc:  # noqa: BLE001 - 一个候选的失败记为结论，不让 worker 退出；连接和界面阻塞交给后台进程
+            except Exception as exc:  # 一个候选的失败记为结论，不让 worker 退出；连接和界面阻塞交给后台进程
                 if isinstance(exc, SaosError) and exc.code in (ErrorCode.ZOS_CONNECTION_LOST, ErrorCode.CANCELLED):
                     raise
                 _failed(row, exc)

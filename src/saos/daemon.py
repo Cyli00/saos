@@ -263,7 +263,7 @@ class Daemon:
                 result.update(stamp(self.backend, single=op == "lens.operand"))
         except SaosError as exc:
             error = exc
-        except Exception as exc:  # noqa: BLE001 - 后台进程不能因单个请求崩溃
+        except Exception as exc:  # 后台进程不能因单个请求崩溃
             log.exception(_t("操作 %s 出现未预期异常", "unexpected error in op %s"), op)
             error = self._unexpected(exc)
         duration_ms = round((time.perf_counter() - started) * 1000, 1)
@@ -355,13 +355,13 @@ class Daemon:
         started = time.perf_counter()
         try:
             data: dict[str, Any] = {"ok": True, **self.backend.viz_data(None, full=False, rays=rays)}
-        except Exception as exc:  # noqa: BLE001 - 视图只是给人看的 / the view is for people only
+        except Exception as exc:  # 视图只是给人看的 / the view is for people only
             log.exception(_t("导出当前视图失败", "exporting the live view failed"))
             data = {"ok": False, "error": f"{type(exc).__name__}: {getattr(exc, 'message', exc)}"[:500]}
         described_at = time.perf_counter()
         try:
             data["model"] = self.backend.describe_model(None)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - 视图只是给人看的，错误随视图给出
             data["model_error"] = f"{type(exc).__name__}: {exc}"[:500]
         data["timing"] = {"viz_s": round(described_at - started, 6),
                           "model_s": round(time.perf_counter() - described_at, 6)}
@@ -448,7 +448,7 @@ class Daemon:
                     self._submit_live(loaded.job)
                 else:
                     live.measure(self, loaded.job, self.view_token)
-        except Exception:  # noqa: BLE001 - 刷新只是给人看的 / the refresh is for people only
+        except Exception:  # 刷新只是给人看的 / the refresh is for people only
             log.exception(_t("回复之后刷新当前镜头失败", "refreshing the live lens after the reply failed"))
 
     def _relabel_view(self) -> None:
@@ -1113,7 +1113,7 @@ class Daemon:
                 out["parts_clash"] = parts
                 valid = False
                 warnings.append("parts cross or interpenetrate: the editor holds a physically invalid system")
-        except Exception as exc:  # noqa: BLE001 - 复核出错不能吞掉已经完成的优化结果 / a failing review must not lose a finished run
+        except Exception as exc:  # 复核出错不能吞掉已经完成的优化结果 / a failing review must not lose a finished run
             log.exception("interference check after the optimisation failed")
             out["interference"] = {"error": f"{type(exc).__name__}: {getattr(exc, 'message', exc)}"[:500]}
             # 没检查完不能说没问题 / an unfinished check is no clean bill
@@ -1123,7 +1123,7 @@ class Daemon:
             job.write_progress(stage="measure after")
             try:
                 after = demand.quick(scripting.ScriptContext(self, job, {}), ids)
-            except Exception as exc:  # noqa: BLE001 - 同上 / as above
+            except Exception as exc:  # 同上 / as above
                 log.exception("measuring after the optimisation failed")
                 out["measured"] = {"error": f"{type(exc).__name__}: {getattr(exc, 'message', exc)}"[:500]}
                 out["valid"] = False
@@ -1408,7 +1408,7 @@ def serve(token: str = "") -> int:
         log.error(_t("启动失败：%s", "start failed: %s"), exc.message)
         write_json(error_file, exc.to_dict())
         return 1
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.exception(_t("启动失败", "start failed"))
         write_json(error_file, SaosError(ErrorCode.DAEMON_START_FAILED, str(exc)).to_dict())
         return 1
@@ -1442,7 +1442,7 @@ def serve(token: str = "") -> int:
                 continue
             try:
                 _serve_one(daemon, conn)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 log.exception(_t("处理请求时出错", "error while handling a request"))
             finally:
                 conn.close()

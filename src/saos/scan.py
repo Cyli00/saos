@@ -758,10 +758,10 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
         checked = {i["id"]: i for i in demand.checked(d)}
         scales = {k: None if checked[k]["goal"] is None else float(checked[k].get("scale", demand._default_scale(checked[k]["goal"])))
                   for k in plan["measure"]}
-        post = lambda rows: _probe_result(plan, scales, rows)  # noqa: E731
+        post = lambda rows: _probe_result(plan, scales, rows)
     if plan["mode"] == "tolerance":
         checked = {i["id"]: i for i in demand.checked(d)}
-        post = lambda rows: _tolerance_result(plan, checked, rows)  # noqa: E731
+        post = lambda rows: _tolerance_result(plan, checked, rows)
     if plan["mode"] == "minimize":
         # 与 opt local 同一判定：需求已确认、结构有资格、当前模型已认可 / the same rule as opt local
         _, demand_sha = workflow.require_optimise(ctx.job, ctx.backend)
@@ -850,7 +850,7 @@ def run(ctx, plan: dict[str, Any], workers: int | None = None, detach: bool = Fa
             summary = _execute(job, folder, plan, items, pool, base, count, args, progress=lambda stage: report(stage=stage),
                                cancelled=lambda: job.cancel_requested() or (folder / jobs.CANCEL_FILE).is_file(), on_done=report, post=post)
             log.info("detached scan %s finished: %s valid of %s", folder.name, summary["valid"], summary["points"])
-        except Exception as exc:  # noqa: BLE001 - 后台线程不能让后台进程退出 / a background thread must not take the daemon down
+        except Exception as exc:  # 后台线程不能让后台进程退出 / a background thread must not take the daemon down
             log.exception("detached scan %s failed", folder.name)
             report(status="failed", error=f"{type(exc).__name__}: {exc}"[:1000])
         finally:

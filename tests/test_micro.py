@@ -114,4 +114,4 @@ def test_bad_sampling_and_the_image_as_front_are_caller_errors_that_guarded_does
             call()
         assert exc.value.code == ErrorCode.BAD_ARGS, name
         with pytest.raises(SaosError):
-            micro.guarded(lambda _ctx: call())(None)
+            micro.guarded(lambda _ctx, call=call: call())(None)

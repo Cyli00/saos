@@ -429,7 +429,7 @@ def checks(desc: dict[str, Any], notes: dict[str, Any] | None = None, recorded: 
             out.append(("vignetting", {"f": k}))
     clash = desc.get("interference") or {}
     # 多重结构时标出结构号；警告文字给 agent 读，统一用英文写结构号 / the configuration, when there are several
-    cfg = lambda x: f"[configuration {x['configuration']}] " if "configuration" in x else ""  # noqa: E731
+    cfg = lambda x: f"[configuration {x['configuration']}] " if "configuration" in x else ""
     for c in clash.get("crossings") or []:
         out.append(("crossing", {"a": c["surfaces"][0], "b": c["surfaces"][1], "ca": c["comments"][0] or "-", "cb": c["comments"][1] or "-",
                                  "depth": fmt(c["depth"]), "cfg": cfg(c)}))
@@ -755,7 +755,7 @@ def render(desc: dict[str, Any], notes: dict[str, Any] | None, meta: dict[str, A
     found = checks(desc, notes) if found is None else found
     warnings = "".join(f"<li>{e(t('w.' + code, **args))}</li>" for code, args in found)
     ap = desc["aperture"]
-    yn = lambda v: t("yes") if v else t("no")  # noqa: E731
+    yn = lambda v: t("yes") if v else t("no")
     system_rows = [
         (t("units"), desc.get("lens_units")),
         (t("aperture"), f"{ap['type']} = {fmt(ap['value'])}"),

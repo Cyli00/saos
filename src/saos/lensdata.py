@@ -92,7 +92,7 @@ class Rays:
     x: np.ndarray
     y: np.ndarray
     z: np.ndarray
-    l: np.ndarray  # noqa: E741 - 方向余弦沿用 ZOS-API 的名字 / direction cosines keep the ZOS-API names
+    l: np.ndarray  # 方向余弦沿用 ZOS-API 的名字 / direction cosines keep the ZOS-API names
     m: np.ndarray
     n: np.ndarray
     intensity: np.ndarray

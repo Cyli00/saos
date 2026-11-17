@@ -789,7 +789,7 @@ def test_pushed_rtc_results_are_flagged_until_an_opticstudio_optimisation(setup)
         return daemon_mod.UNCLOSED_RTC in out["result"].get("warnings", [])
 
     assert warned("demand.check") and warned("round.record")
-    design = lambda: next(x for x in stage.snapshot(job)["steps"] if x["id"] == "design")["detail"]  # noqa: E731
+    design = lambda: next(x for x in stage.snapshot(job)["steps"] if x["id"] == "design")["detail"]
     assert design()["rtc_unclosed"]  # 流程图窗口也看得到 / the workflow window shows it too
     daemon.backend.optimize = lambda *a, **k: {"stopped_by": "cancel"}
     call(daemon, "opt.local", job=job.id, max_seconds=30)

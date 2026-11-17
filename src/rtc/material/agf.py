@@ -144,7 +144,7 @@ def parse_agf(text: str, *, catalog: str = "") -> CatalogDocument:
             continue
         current.raw.append(line.rstrip("\r\n"))
 
-        def numbers(count):
+        def numbers(count, tokens=tokens):
             result = [float(tokens[i]) if i < len(tokens) else 0.0 for i in range(1, count + 1)]
             if not all(np.isfinite(v) for v in result):
                 raise ValueError("非有限 AGF 数值")

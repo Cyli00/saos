@@ -179,7 +179,7 @@ def test_a_parts_clash_fails_check_opt_and_scan_at_the_top_level(saos_home, tmp_
                         "origin": "user", "must": {"max": 120.0}, "scale": 5.0, "source": "user"}]}), encoding="utf-8")
     demand._PREPARED.clear()
     demand.confirm(job.root, "ok")
-    call = lambda op, **args: daemon.handle({"op": op, "args": {"job": job.id, **args}})  # noqa: E731
+    call = lambda op, **args: daemon.handle({"op": op, "args": {"job": job.id, **args}})
     assert call("lens.import", src=str(src), name="a.zmx")["ok"] and call("lens.load", file="a.zmx")["ok"]
     notes = {"surfaces": {str(k): f"s{k}" for k in range(6)}, "assumptions": ["test"], "first_order": ["f=50"],
              "exploration": {"fixed_by_user": {"parts": "two lenses", "quote": "use two lenses"}}}

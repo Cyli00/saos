@@ -56,13 +56,13 @@ def predict(backend, *, rings: int = 3, arms: int = 8, should_cancel=None) -> di
                             ("entrance_pupil_diameter", "EPDI", 0), ("f_number", "ISFN", 0)):
         try:
             first[key] = op(name, wave=wave)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - failed() 放过连接中断与取消，其余记进 errors
             first[key] = None
             failed(key, exc)
     try:
         _, position = backend.global_matrix(info["stop_surface"])
         first["stop_z"] = float(position[2])
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - failed() 放过连接中断与取消，其余记进 errors
         failed("stop_z", exc)
     try:
         # 在最后一个实体面，用后端近轴高度与斜率求相对该面的焦点距离。
@@ -72,7 +72,7 @@ def predict(backend, *, rings: int = 3, arms: int = 8, should_cancel=None) -> di
         if not slope:
             raise ValueError("近轴出射光线平行，没有有限后焦距")
         first["bfl"] = -height / slope
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - failed() 放过连接中断与取消，其余记进 errors
         failed("bfl", exc)
     out["first_order"] = first
     centered = all(str(row.get("type", "standard")).lower() == "standard" and not row.get("tilt_decenter")
@@ -85,7 +85,7 @@ def predict(backend, *, rings: int = 3, arms: int = 8, should_cancel=None) -> di
         f = first.get("efl")
         out["petzval"] = {"radius": radius, "radius_over_efl": radius / f if radius is not None and f else None,
                           "reason": None if radius is not None else "Petzval 曲率为零，无有限半径"}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - failed() 放过连接中断与取消，其余记进 errors
         failed("petzval", exc)
     try:
         if not centered:
@@ -95,7 +95,7 @@ def predict(backend, *, rings: int = 3, arms: int = 8, should_cancel=None) -> di
         out["third_order"] = {"columns": list(COLUMNS), "units": "waves", "surfaces": values,
                               "totals": {name: sum(row[name] for row in values) for name in COLUMNS},
                               "distortion_percent": op("DIST", 0, primary)}
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - failed() 放过连接中断与取消，其余记进 errors
         failed("third_order", exc)
     try:
         checkpoint()
@@ -111,7 +111,7 @@ def predict(backend, *, rings: int = 3, arms: int = 8, should_cancel=None) -> di
                                       "text": _read_text_export(path), "messages": data.get("messages", [])}
     except LookupError:
         out["native_analysis"] = None
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - failed() 放过连接中断与取消，其余记进 errors
         failed("native_analysis", exc)
     pupil = [(0.0, 0.0)] + [(r / rings * math.cos(a * 2 * math.pi / arms), r / rings * math.sin(a * 2 * math.pi / arms))
                            for r in range(1, rings + 1) for a in range(arms)]
@@ -132,7 +132,7 @@ def predict(backend, *, rings: int = 3, arms: int = 8, should_cancel=None) -> di
                                           "valid_samples": len(angles)})
             if surface == len(rows) - 1:
                 incidence["invalid"] = len(rays) - int(sum(traced.ok))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - failed() 放过连接中断与取消，其余记进 errors
             failed(f"incidence.{surface}", exc)
             incidence["surfaces"].append({"surface": surface, "max_deg": None, "valid_samples": 0})
     out["incidence"] = incidence

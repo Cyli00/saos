@@ -451,7 +451,7 @@ def test_snapshot_shows_a_detached_scan_as_the_running_operation(saos_home):
 
 def _surface(index, vertex, y_dir, x_dir, sd=1.0):
     """平面镜片面：顶点、局部 y 轴、局部 x 轴的全局方向 / a flat face given its vertex and local y and x axes."""
-    at = lambda d, k: [vertex[i] + d[i] * k for i in range(3)]  # noqa: E731
+    at = lambda d, k: [vertex[i] + d[i] * k for i in range(3)]
     return {"index": index, "vertex": list(vertex), "profile_y": [at(y_dir, k) for k in (-sd, 0.0, sd)],
             "profile_x": [at(x_dir, k) for k in (-sd, 0.0, sd)], "rim": [at(y_dir, sd), at(x_dir, sd), at(y_dir, -sd), at(x_dir, -sd)]}
 

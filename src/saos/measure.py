@@ -88,7 +88,7 @@ def run(lens: Path, checks: list[Any], *, job_root: Path | None = None, demand_i
 
         items = []
         for kind, spec in specs:
-            out = graded(lambda: _one(ctx, kind, spec), single=kind == "operand")
+            out = graded(lambda kind=kind, spec=spec: _one(ctx, kind, spec), single=kind == "operand")
             items.append({"check": {kind: spec}, **out, "value": finite(out["value"])})
         result: dict[str, Any] = {"lens": str(lens), "computed_by": {**backend.identity(), "unverified": paths}, "items": items}
         if demand:
@@ -100,7 +100,7 @@ def run(lens: Path, checks: list[Any], *, job_root: Path | None = None, demand_i
             # 逐项单独测，才能按项分档；同一次 quick 内的缓存因此不跨项共用 / one quick per item, so each is graded on its own
             kinds = {s["id"]: next(iter(s["check"])) for s in demand_mod.checked(d)}
             for item_id in dict.fromkeys(wanted):
-                out = graded(lambda: demand_mod.quick(ctx, [item_id]), single=kinds.get(item_id) == "operand")
+                out = graded(lambda item_id=item_id: demand_mod.quick(ctx, [item_id]), single=kinds.get(item_id) == "operand")
                 quick = out.pop("value") or {}
                 error = (quick.get("errors") or {}).get(item_id)
                 if error and (quick.get("error_kinds") or {}).get(item_id) == "backend":

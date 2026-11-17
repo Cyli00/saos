@@ -381,7 +381,7 @@ def make(lens, temperatures: list[float], tce: float) -> None:
 
     add("TEMP", 0, [env.temperature, *temperatures], follow=False)
     add("PRES", 0, [env.pressure] * count, follow=False)
-    same = lambda v: [float(v)] * count  # noqa: E731
+    same = lambda v: [float(v)] * count
     if isfinite(ordered[0].thickness):
         add("THIC", 0, same(ordered[0].thickness))
     for s in ordered[1:-1]:

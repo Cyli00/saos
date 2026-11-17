@@ -33,7 +33,7 @@ import numpy as np
 
 from saos import lensdata
 # 参数键、追迹结果与光瞳采样定义在 lensdata（后端也用），这里照原名导出 / defined in lensdata, exported here under their names
-from saos.lensdata import PAR_RE, PARAMS, Rays, parse_key, pupil  # noqa: F401
+from saos.lensdata import PAR_RE, PARAMS, Rays, parse_key, pupil  # noqa: F401 - 脚本从 kit 取这些名字
 from saos.protocol import ErrorCode, SaosError, finite
 
 
@@ -95,7 +95,7 @@ def values(ctx, keys: Iterable[str]) -> dict[str, Any]:
     return {key: ctx.backend.get_param(key) for key in keys}
 
 
-def set(ctx, changes: dict[str, Any] | None = None, **kw: Any) -> None:  # noqa: A001 - 与 ctx.set 同名 / mirrors ctx.set
+def set(ctx, changes: dict[str, Any] | None = None, **kw: Any) -> None:  # 与 ctx.set 同名 / mirrors ctx.set
     """一次写入几个参数，写不进去（被求解覆盖等）时报 VALUE_NOT_APPLIED。
     Write several parameters at once; VALUE_NOT_APPLIED when one does not take (a solve overrides it, …)."""
     changes = {**(changes or {}), **kw}
@@ -865,7 +865,7 @@ class KitMethods:
     def values(self, keys):
         return values(self, keys)
 
-    def set(self, changes=None, **kw):  # noqa: A003
+    def set(self, changes=None, **kw):
         return set(self, changes, **kw)
 
     def kept(self, keys):

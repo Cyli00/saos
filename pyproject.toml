@@ -17,6 +17,7 @@ saos = "saos.cli:main"
 [dependency-groups]
 dev = [
     "pytest>=8",
+    "ruff>=0.17.5",
 ]
 
 [build-system]
@@ -36,3 +37,11 @@ testpaths = ["tests"]
 markers = [
     "zemax: 需要本机真实 OpticStudio，默认跳过；设置 SAOS_RUN_ZEMAX=1 后运行",
 ]
+
+[tool.ruff]
+line-length = 160
+target-version = "py312"
+
+[tool.ruff.lint]
+# 只开约束得住的规则：未用导入与赋值、闭包抓循环变量、宽泛 except 与吞异常、失效的 noqa
+select = ["F401", "F841", "B023", "BLE001", "S110", "S112", "RUF100"]

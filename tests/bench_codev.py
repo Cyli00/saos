@@ -38,7 +38,7 @@ class CodeV:
         self.log = []
 
     def __enter__(self):
-        import clr  # noqa: F401
+        import clr  # noqa: F401 - 导入即加载 pythonnet
         from System import Activator, Array, Int32, Object, Type
         from System.Globalization import CultureInfo
         from System.Reflection import BindingFlags
@@ -99,7 +99,7 @@ class CodeV:
         except BaseException as exc:
             try:
                 self.call("StopCommand")
-            except Exception as cleanup:
+            except Exception as cleanup:  # noqa: BLE001 - 清理失败附在原错误上
                 exc.add_note(f"CODE V 取消失败：{cleanup}")
             raise
         output = str(self.get("CommandOutput"))
@@ -115,11 +115,11 @@ class CodeV:
         try:
             try:
                 self.call("StopCodeV")
-            except Exception as cleanup:
+            except Exception as cleanup:  # noqa: BLE001 - 清理失败附在原错误上
                 failures.append(cleanup)
             try:
                 self.marshal.FinalReleaseComObject(self.object)
-            except Exception as cleanup:
+            except Exception as cleanup:  # noqa: BLE001 - 清理失败附在原错误上
                 failures.append(cleanup)
         finally:
             self.object = None

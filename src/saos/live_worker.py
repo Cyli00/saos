@@ -83,7 +83,7 @@ def _compute(ctx, frame):
                     gap = demand.shortfall(request["spec"], value)
                     entry.update(gap=finite(gap), passed=gap == 0)
             items[request["key"]] = entry
-        except Exception as exc:  # 单项失败作为帧数据返回；进程连接与超时由父进程处理。
+        except Exception as exc:  # noqa: BLE001 - 单项失败作为帧数据返回；进程连接与超时由父进程处理
             metric = metrics.definition(spec["id"])
             items[request["key"]] = {**stamp, "id": request["key"], "metric_id": spec["id"], "value": None,
                                      "name": metric.name, "shape": metric.shape, **metrics.picked(spec),
@@ -111,11 +111,11 @@ def _main(connection):
                 result = {"items": _compute(ctx, frame)}
                 try:
                     result["merit"] = finite(backend.merit_value())
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 - 失败记进结果，不连累其余部分
                     result["merit_error"] = f"{type(exc).__name__}: {exc}"[:300]
                 result["provenance"] = backend.provenance()
                 connection.send(result)
-            except Exception as exc:  # 帧加载失败必须可见，不影响下一份完整快照。
+            except Exception as exc:  # noqa: BLE001 - 帧加载失败必须可见，不影响下一份完整快照
                 connection.send({"error": f"{type(exc).__name__}: {exc}"[:500]})
     except (EOFError, BrokenPipeError):
         return

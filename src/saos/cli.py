@@ -715,7 +715,7 @@ def _ensure_window(args: argparse.Namespace) -> dict[str, Any] | None:
         if showing_demand and not gate:
             return None
         return ui.ensure_window(args.job, gate=gate)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - 窗口打不开只记进结果，命令本身照常完成
         return {"error": f"{type(exc).__name__}: {exc}"[:300]}
 
 
@@ -768,7 +768,7 @@ def main(argv: list[str] | None = None) -> int:
     except SaosError as exc:
         _emit(fail(exc))
         return 1
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - 命令行入口：未预期的错误也要以 JSON 报出
         _emit(fail(SaosError(ErrorCode.INTERNAL_ERROR, f"{type(exc).__name__}: {exc}")))
         return 1
     _emit(ok(result))

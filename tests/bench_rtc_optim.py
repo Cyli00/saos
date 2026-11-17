@@ -105,7 +105,7 @@ def main() -> None:
         for t in timers.values():
             t.restore()
 
-    ms = lambda v: round(v * 1e3, 2)  # noqa: E731
+    ms = lambda v: round(v * 1e3, 2)
     result = {
         "case": args.case, "asphere": args.asphere, "rings": args.rings, "arms": args.arms,
         "rtc_threads": os.environ.get("RTC_THREADS", "default (logical cores - 2)"),

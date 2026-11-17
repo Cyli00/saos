@@ -24,12 +24,12 @@ def direct_api_hints(source):
             continue
         aliases = {}
 
-        def expand(node):
+        def expand(node, aliases=aliases):
             if isinstance(node, ast.Name) and node.id in aliases:
                 return aliases[node.id]
             return node
 
-        def is_lde(node):
+        def is_lde(node, context=context):
             node = expand(node)
             if not isinstance(node, ast.Attribute) or node.attr != "LDE":
                 return False

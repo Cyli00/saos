@@ -37,7 +37,7 @@ class FastLens(KitMethods):
         """被 rtc 不重算的求解锁住的参数。/ Parameters held by solves rtc does not recompute."""
         return dict(self.backend.held)
 
-    def set(self, changes=None, **kw):  # noqa: A003 - 与 kit.set 同名 / mirrors kit.set
+    def set(self, changes=None, **kw):  # 与 kit.set 同名 / mirrors kit.set
         changes = {**(changes or {}), **kw}
         super().set(changes)
         self.changed.update(changes)

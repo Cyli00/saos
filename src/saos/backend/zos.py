@@ -54,14 +54,14 @@ def _mech_semi_diameter(row) -> float | None:
     """Lens Data 的 Mech Semi-Dia；读不到时为 None，不让一列拖垮整张面表。/ Mech Semi-Dia; None when unreadable."""
     try:
         return float(row.MechanicalSemiDiameter)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 该面型没有这一列时 .NET 抛的异常类型不固定
         return None
 
 
 def _cell_solve(row, cell: str) -> str | None:
     try:
         return str(getattr(row, cell).GetSolveData().Type)
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - 没有求解数据的单元格读不出类型
         return None
 
 
@@ -309,8 +309,8 @@ def set_cell(cell, value: Any, label: str) -> None:
             # 没写进去的值不留在镜头里 / a value that did not take is not left in the lens
             set_value = {"Double": "DoubleValue", "Integer": "IntegerValue"}.get(kind, "Value")
             setattr(cell, set_value, before)
-        except Exception:  # noqa: BLE001 - 写回失败时仍报原错误 / the original error is reported either way
-            pass
+        except Exception:  # 写回失败时仍报原错误 / the original error is reported either way
+            log.warning("could not write %r back to %s", before, label, exc_info=True)
         raise SaosError(ErrorCode.BAD_ARGS, f"{label} did not take {value!r} (now {actual!r}; the previous value {before!r} was written back)")
 
 
@@ -342,7 +342,7 @@ def _named(label: str):
         yield
     except SaosError:
         raise
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise SaosError(ErrorCode.BAD_ARGS, f"{label}: {type(exc).__name__}: {exc}"[:500]) from exc
 
 
@@ -589,13 +589,13 @@ class ZosBackend(Backend):
         if app is not None:
             try:
                 app.CloseApplication()
-            except Exception:  # noqa: BLE001 - 关闭时 OpticStudio 可能已经退出 / OpticStudio may already be gone
+            except Exception:  # 关闭时 OpticStudio 可能已经退出 / OpticStudio may already be gone
                 log.warning("closing OpticStudio failed", exc_info=True)
 
     def healthy(self) -> bool:
         try:
             return self.app is not None and bool(self.app.IsValidLicenseForAPI) and self.app.PrimarySystem is not None
-        except Exception:
+        except Exception:  # noqa: BLE001 - 探测连接：任何失败都说明实例不可用
             return False
 
     @property
@@ -637,7 +637,7 @@ class ZosBackend(Backend):
             text_path.parent.mkdir(parents=True, exist_ok=True)
             try:
                 text_file = bool(results.GetTextFile(str(text_path)))
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001 - 导出失败记为没有文本，数值照常提取
                 text_file = False
             info = self.system_info()
             out = analysis.extract(results, len(info["fields"]["items"]), len(info["wavelengths"]))
@@ -848,7 +848,7 @@ class ZosBackend(Backend):
                 try:
                     cell = row.GetSurfaceCell(col)
                     header = str(cell.Header)
-                except Exception:  # noqa: BLE001 - 超出该面型的列
+                except Exception:  # noqa: BLE001, S112 - 超出该面型的列
                     continue
                 if not header or "unused" in header.lower():
                     continue
@@ -1069,7 +1069,7 @@ class ZosBackend(Backend):
             for key in ("DecenterX", "DecenterY", "TiltX", "TiltY", "TiltZ"):
                 try:
                     v = float(getattr(td, f"{side}Surface{key}"))
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: BLE001, S112 - 该面型没有这一项
                     continue
                 if v:
                     out[f"{side.lower()}_{key}"] = v
@@ -1077,7 +1077,7 @@ class ZosBackend(Backend):
         for key, attr, default in (("after_mode", "AfterSurfaceMode", "Explicit"), ("coordinate_return", "CoordinateReturn", "None")):
             try:
                 value = str(getattr(td, attr))
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: BLE001, S112 - 该面型没有这一项
                 continue
             if value not in ("", default) and (key != "after_mode" or out):
                 out[key] = value
@@ -1092,7 +1092,7 @@ class ZosBackend(Backend):
                      "_S_EllipticalAperture", "_S_EllipticalObscuration", "_S_Spider"):
             try:
                 s = getattr(settings, attr)
-            except Exception:  # noqa: BLE001 - 不是这种孔径
+            except Exception:  # noqa: BLE001, S112 - 不是这种孔径
                 continue
             if s is None:
                 continue
@@ -1100,7 +1100,7 @@ class ZosBackend(Backend):
                         "ApertureXDecenter", "ApertureYDecenter"):
                 try:
                     out[key] = float(getattr(s, key))
-                except Exception:  # noqa: BLE001 - 该孔径类型没有这个量
+                except Exception:  # noqa: BLE001, S110 - 该孔径类型没有这个量
                     pass
             break
         if bool(data.IsPickedUp):
@@ -2081,7 +2081,7 @@ class ZosBackend(Backend):
         if tool is None:
             raise SaosError(ErrorCode.ZOS_ERROR, f"OpticStudio cannot open the {kind} optimiser (another tool is open, or the licence lacks it)")
         lde = self.system.LDE
-        materials = lambda: [str(lde.GetSurfaceAt(i).Material) for i in range(lde.NumberOfSurfaces)]  # noqa: E731
+        materials = lambda: [str(lde.GetSurfaceAt(i).Material) for i in range(lde.NumberOfSurfaces)]
         before = materials()
         try:
             tool.Algorithm = opt.OptimizationAlgorithm.DampedLeastSquares
@@ -2089,10 +2089,10 @@ class ZosBackend(Backend):
                 tool.NumberOfCores = int(cores)
             if kind == "hammer":
                 tool.AutomaticOptimization = False
-                best = lambda: float(tool.CurrentMeritFunction)  # noqa: E731
+                best = lambda: float(tool.CurrentMeritFunction)
             else:
                 tool.NumberToSave = opt.OptimizationSaveCount.Save_10
-                best = lambda: float(tool.CurrentMeritFunction(1))  # noqa: E731
+                best = lambda: float(tool.CurrentMeritFunction(1))
             # rel：每个检查点比较最好的 merit，增益不足时借取消停下 / rel: compare the best merit per checkpoint, stop via Cancel
             from saos.budget import checkpoint_interval, stalled
             checkpoint = {"at": time.monotonic(), "merit": None, "stalled": False}
@@ -2183,7 +2183,7 @@ class ZosBackend(Backend):
                 time.sleep(0.2)
             if not tool.IsRunning:
                 tool.WaitForCompletion()
-        except Exception:  # noqa: BLE001 - 已经在处理另一个异常 / already handling another error
+        except Exception:  # 已经在处理另一个异常 / already handling another error
             log.exception("could not stop the optimisation tool")
 
     def quick_focus(self) -> dict[str, Any]:
@@ -2264,7 +2264,7 @@ class ZosBackend(Backend):
                 thickness = float(row.Thickness)
                 try:
                     row.ThicknessCell.MakeSolveFixed()
-                except Exception:  # noqa: BLE001 - 没有求解时无需处理 / nothing to fix
+                except Exception:  # noqa: BLE001, S110 - 没有求解时无需处理 / nothing to fix
                     pass
                 main = self._global(g)
                 # 从 GRIN 前表面最凸处切起：更薄的切片落在光线入射点之前 / start beyond the front face's sag
@@ -2350,7 +2350,7 @@ class ZosBackend(Backend):
         for read in (lambda: float(row.MechanicalSemiDiameter), lambda: clear + float(row.ChipZone)):
             try:
                 value = read()
-            except Exception:  # noqa: BLE001 - 某些面型没有这些列 / some surface types lack these columns
+            except Exception:  # noqa: BLE001, S112 - 某些面型没有这些列 / some surface types lack these columns
                 continue
             if math.isfinite(value):
                 edge = max(edge, value)
@@ -2375,7 +2375,7 @@ class ZosBackend(Backend):
         fields = info["fields"]["items"]
         try:
             normalization = str(system.SystemData.Fields.Normalization)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 - 读不到归一化方式时按默认的径向
             normalization = "Radial"
         if normalization == "Rectangular":
             mx, my = max(abs(f["x"]) for f in fields), max(abs(f["y"]) for f in fields)

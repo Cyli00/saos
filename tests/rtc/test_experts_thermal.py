@@ -11,14 +11,14 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from rtc import zmx  # noqa: E402
-from saos import prescription  # noqa: E402
-from saos.backend import rtc_lens  # noqa: E402
-from saos.backend.rtc import RtcBackend  # noqa: E402
-from saos.ctx.experts import AsphereExpert, GlassCandidate, GlassExpert  # noqa: E402
-from saos.protocol import ErrorCode, SaosError  # noqa: E402
-from saos.kit import KitMethods  # noqa: E402
-from thermal_variants import TCE, TRUTH_FILE, base, truth  # noqa: E402
+from rtc import zmx
+from saos import prescription
+from saos.backend import rtc_lens
+from saos.backend.rtc import RtcBackend
+from saos.ctx.experts import AsphereExpert, GlassCandidate, GlassExpert
+from saos.protocol import ErrorCode, SaosError
+from saos.kit import KitMethods
+from thermal_variants import TCE, TRUTH_FILE, base, truth
 
 pytestmark = pytest.mark.skipif(not TRUTH_FILE.exists(), reason="还没有录热结构真值")
 WIZARD = {"data": "Spot Radius", "reference": "Centroid", "rings": 2, "arms": 6}

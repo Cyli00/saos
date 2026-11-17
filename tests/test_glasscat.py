@@ -40,17 +40,17 @@ def _zos_backend(glass_dir, monkeypatch, in_use=("SCHOTT",), broken=()):
         def __init__(self):
             self.used = set(in_use)
 
-        def IsCatalogInUse(self, name):  # noqa: N802 - ZOS-API 的名字
+        def IsCatalogInUse(self, name):  # ZOS-API 的名字
             return name in self.used
 
-        def AddCatalog(self, name):  # noqa: N802
+        def AddCatalog(self, name):
             if name not in broken:
                 self.used.add(name)
 
-        def GetCatalogsInUse(self):  # noqa: N802
+        def GetCatalogsInUse(self):
             return sorted(self.used)
 
-        def GetMaterialsInCatalog(self, name):  # noqa: N802
+        def GetMaterialsInCatalog(self, name):
             return {"SCHOTT": ["SK16", "N-BK7"], "SAOS_CDGM_INPROD": ["H-K9L", "H-ZF52"]}.get(name, [])
 
     backend = ZosBackend.__new__(ZosBackend)

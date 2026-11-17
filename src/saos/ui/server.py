@@ -166,7 +166,7 @@ def _with_section(viz: dict[str, Any]) -> dict[str, Any]:
 class Handler(BaseHTTPRequestHandler):
     server: "UiServer"
 
-    def log_message(self, fmt: str, *args: Any) -> None:  # noqa: D102 - 不往标准错误刷访问日志
+    def log_message(self, fmt: str, *args: Any) -> None:  # 不往标准错误刷访问日志
         log.debug(fmt, *args)
 
     def _send(self, code: int, body: bytes, kind: str) -> None:
@@ -221,7 +221,7 @@ class Handler(BaseHTTPRequestHandler):
         except SaosError as exc:
             self._json(fail(exc))
             return
-        except Exception as exc:  # noqa: BLE001 - 单个请求出错不影响服务
+        except Exception as exc:  # 单个请求出错不影响服务
             log.exception("ui request failed")
             self._json(fail(SaosError(ErrorCode.INTERNAL_ERROR, f"{type(exc).__name__}: {exc}")))
             return
@@ -291,7 +291,7 @@ class Handler(BaseHTTPRequestHandler):
             return viz_of(job, number)
         raise SaosError(ErrorCode.BAD_ARGS, f"unknown endpoint {method} {path}")
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path.startswith("/api/"):
             self._api("GET")
@@ -303,7 +303,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send(200, target.read_bytes(), STATIC_TYPES[target.suffix])
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         if urlparse(self.path).path.startswith("/api/"):
             self._api("POST")
         else:

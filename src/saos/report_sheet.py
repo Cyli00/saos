@@ -204,8 +204,8 @@ def _section(viz: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, 
     sec = section.section_plane(viz)
     if not sec:
         return None
-    dot = lambda a, p: a[0] * p[0] + a[1] * p[1] + a[2] * p[2]  # noqa: E731
-    P = lambda p: [dot(sec["normal"], p) - sec["offset"], dot(sec["v"], p), dot(sec["u"], p)]  # noqa: E731
+    dot = lambda a, p: a[0] * p[0] + a[1] * p[1] + a[2] * p[2]
+    P = lambda p: [dot(sec["normal"], p) - sec["offset"], dot(sec["v"], p), dot(sec["u"], p)]
     profiles = {str(k): v for k, v in (sec.get("profiles") or {}).items()}
     out = []
     for s in surfaces:
@@ -234,9 +234,9 @@ def lens_svg(viz: dict[str, Any], width: int = 560, height: int = 300) -> str | 
     scale = min((width - 2 * pad) / ((z1 - z0) or 1), (height - 2 * pad) / ((y1 - y0) or 1))
     ox = (width - (z1 - z0) * scale) / 2 - z0 * scale
     oy = (height + (y1 + y0) * scale) / 2
-    X = lambda z: ox + z * scale  # noqa: E731
-    Y = lambda y: oy - y * scale  # noqa: E731
-    path = lambda ps: "M" + "L".join(f"{X(p[2]):.1f},{Y(p[1]):.1f}" for p in ps)  # noqa: E731
+    X = lambda z: ox + z * scale
+    Y = lambda y: oy - y * scale
+    path = lambda ps: "M" + "L".join(f"{X(p[2]):.1f},{Y(p[1]):.1f}" for p in ps)
     out = [f'<line class="axis" x1="0" x2="{width}" y1="{Y(0):.1f}" y2="{Y(0):.1f}"/>']
     by_index = {s["index"]: s for s in surfaces}
     for s in surfaces:
@@ -298,8 +298,8 @@ def spot_svg(viz: dict[str, Any], t: _T) -> tuple[str, str] | None:
 def _plot(curves: list[dict[str, Any]], xr: tuple[float, float], yr: tuple[float, float], xl: str, yl: str,
           width: int = 420, height: int = 230, log_y: bool = False) -> str:
     left, right, top, bottom = 40, 8, 10, 28
-    X = lambda x: left + (x - xr[0]) / ((xr[1] - xr[0]) or 1) * (width - left - right)  # noqa: E731
-    Y = lambda y: top + (1 - (y - yr[0]) / ((yr[1] - yr[0]) or 1)) * (height - top - bottom)  # noqa: E731
+    X = lambda x: left + (x - xr[0]) / ((xr[1] - xr[0]) or 1) * (width - left - right)
+    Y = lambda y: top + (1 - (y - yr[0]) / ((yr[1] - yr[0]) or 1)) * (height - top - bottom)
     out = []
     for v in _ticks(yr[0], yr[1]):
         label = f"1e{int(v)}" if log_y and float(v).is_integer() else _num(v, 3)
@@ -352,7 +352,7 @@ def g_svg(rounds: list[dict[str, Any]], t: _T) -> str | None:
     positive = [g for _, g, _ in pts if g > 0]
     log = bool(positive) and max(positive) / min(positive) > 100
     floor = min(positive) / 2 if positive else 1.0
-    fy = (lambda g: math.log10(max(g, floor))) if log else (lambda g: g)  # noqa: E731
+    fy = (lambda g: math.log10(max(g, floor))) if log else (lambda g: g)
     ys = [fy(g) for _, g, _ in pts]
     lo, hi = (math.floor(min(ys)), math.ceil(max(ys))) if log else (0.0, max(ys) or 1.0)
     xr = (min(p[0] for p in pts), max(p[0] for p in pts))
@@ -367,7 +367,7 @@ def _rx_table(viz: dict[str, Any], t: _T) -> str:
         return ""
     shown = rows[:RX_ROWS]
     head = "".join(f'<th class="{"l" if i in (1, 2) else ""}">{c}</th>' for i, c in enumerate(t("th.rx").split("|")))
-    mark = lambda r, k: ("" if (r.get("solves") or {}).get(k) in (None, "Fixed", "Automatic", "None") else " V" if (r.get("solves") or {}).get(k) == "Variable" else f' {(r.get("solves") or {}).get(k)[0]}')  # noqa: E731
+    mark = lambda r, k: ("" if (r.get("solves") or {}).get(k) in (None, "Fixed", "Automatic", "None") else " V" if (r.get("solves") or {}).get(k) == "Variable" else f' {(r.get("solves") or {}).get(k)[0]}')
     body = "".join(
         f'<tr><td>{r.get("index")}{" STO" if r.get("is_stop") else ""}</td><td class="l">{_e(r.get("comment") or "")}</td><td class="l">{_e(r.get("material") or "")}</td>'
         f'<td class="num">{_num(r.get("radius"), 6)}{mark(r, "radius")}</td><td class="num">{_num(r.get("thickness"), 6)}{mark(r, "thickness")}</td>'
@@ -435,8 +435,8 @@ def render_sheet(job: jobs.Job, data: dict[str, Any], lang: str, *, status_text:
     # 签署栏 / the sign-offs
     confirmed = data.get("confirmed") or {}
     approval = data.get("approval") or {}
-    via = lambda r: t("via." + (r.get("via") or "cli")) if r else t("via.none")  # noqa: E731
-    stamp_time = lambda r: _e((r.get("time") or "")[:16].replace("T", " ")) if r else "—"  # noqa: E731
+    via = lambda r: t("via." + (r.get("via") or "cli")) if r else t("via.none")
+    stamp_time = lambda r: _e((r.get("time") or "")[:16].replace("T", " ")) if r else "—"
     backend = data["backend"]
     tol = data.get("tolerance")
     signs = [

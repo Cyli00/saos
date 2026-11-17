@@ -12,14 +12,14 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from rtc import thermal, zmx  # noqa: E402
-from rtc.system import OpticalSystem  # noqa: E402
-from rtc.trace import trace  # noqa: E402
-from saos import prescription  # noqa: E402
-from saos.backend import rtc_lens, rtc_merit  # noqa: E402
-from saos.backend.rtc import RtcBackend  # noqa: E402
-from saos.protocol import ErrorCode, SaosError  # noqa: E402
-from thermal_variants import ALL, TCE, TRUTH_FILE, base, truth  # noqa: E402
+from rtc import thermal, zmx
+from rtc.system import OpticalSystem
+from rtc.trace import trace
+from saos import prescription
+from saos.backend import rtc_lens, rtc_merit
+from saos.backend.rtc import RtcBackend
+from saos.protocol import ErrorCode, SaosError
+from thermal_variants import ALL, TCE, TRUTH_FILE, base, truth
 
 pytestmark = pytest.mark.skipif(not TRUTH_FILE.exists(), reason="还没有录热结构真值")
 # OpticStudio 存盘的单元格只有 13 位有效数字

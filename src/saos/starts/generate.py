@@ -177,7 +177,7 @@ def generate(job: jobs.Job, bindings: dict, *, short_seconds: float, prepare: st
                 reference = prescription.normalize(reference)
                 from saos.starts.prediction import predict
 
-                def measured(on):
+                def measured(on, reference=reference):
                     nonlocal phase
                     phase = "reference_build"
                     on.build(reference)

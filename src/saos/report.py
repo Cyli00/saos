@@ -492,7 +492,7 @@ def latest_tolerance(job: jobs.Job, deliver: dict[str, Any]) -> dict[str, Any] |
         plan = json.loads((folder / "plan.json").read_text(encoding="utf-8"))
         base = next(folder.glob("base.*"), None)
         delivered = job.lenses_dir / deliver["file"]
-        digest = lambda p: hashlib.sha256(p.read_bytes()).hexdigest() if p is not None and p.is_file() else None  # noqa: E731
+        digest = lambda p: hashlib.sha256(p.read_bytes()).hexdigest() if p is not None and p.is_file() else None
         return {"scan": f"scans/{folder.name}", "lens": plan.get("lens"), "same_lens": digest(base) is not None and digest(base) == digest(delivered),
                 "seed": plan["tolerance"].get("seed", 1), "nominal": result.get("nominal"), "sensitivity": result.get("sensitivity") or [],
                 "monte_carlo": result.get("monte_carlo") or {}}
@@ -503,7 +503,7 @@ def tolerance_section(tol: dict[str, Any] | None, deliver: dict[str, Any], t: Tr
     if tol is None:
         return f"<p>{t('tol.none')}</p>"
     mc = tol["monte_carlo"]
-    pct = lambda v: "—" if v is None else f"{100 * v:.1f}%"  # noqa: E731
+    pct = lambda v: "—" if v is None else f"{100 * v:.1f}%"
     head = t("tol.match" if tol["same_lens"] else "tol.other", scan=e(tol["scan"]), lens=e(tol["lens"]), n=deliver["round"],
              samples=mc.get("samples", 0), seed=tol["seed"])
     out = f"<p>{head}</p>"

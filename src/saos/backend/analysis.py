@@ -114,7 +114,7 @@ def describe_settings(impl) -> dict[str, str]:
             continue
         try:
             value = getattr(impl, name)
-        except Exception:  # noqa: BLE001 - 部分属性在当前系统下不可读
+        except Exception:  # noqa: BLE001, S112 - 部分属性在当前系统下不可读
             continue
         if callable(value) and name not in SELECTORS:
             continue
@@ -159,7 +159,7 @@ def apply_settings(impl, values: dict[str, Any]) -> None:
             setattr(impl, key, _convert(current, value))
         except SaosError:
             raise
-        except Exception as exc:  # noqa: BLE001 - 设置值被 OpticStudio 拒绝
+        except Exception as exc:  # 设置值被 OpticStudio 拒绝
             raise SaosError(ErrorCode.BAD_ARGS, f"cannot set {key}={value!r}: {exc}") from exc
 
 
@@ -244,7 +244,7 @@ def _spot(r, fields: int, waves: int) -> dict[str, Any] | None:
 def _guarded(problems: list[dict[str, Any]], part: str, read, default):
     try:
         return read()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - 失败记进结果，不连累其余部分
         problems.append({"part": part, "kind": "extract_failed", "message": f"{type(exc).__name__}: {exc}"[:300]})
         return default
 

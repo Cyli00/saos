@@ -110,7 +110,7 @@ def test_opticstudio_reads_rtc_file(zos, tmp_path, variant):
     rtc = RtcBackend(None, standalone=True)
     try:
         rtc.load(source)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - rtc 拒绝的变体跳过
         pytest.skip(f"rtc 拒绝这个变体：{exc}")
     rtc.set_param("1.thickness", float(rtc.get_param("1.thickness")) * 1.01)
     written = tmp_path / "written.zmx"
